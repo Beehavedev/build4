@@ -1,0 +1,532 @@
+[GET]
+build4-1.onrender.com/api/aster/markprice/BTCUSDT clientIP="2.51.180.232" requestID="a3673e41-a2f0-4f69" responseTimeMS=85 responseBytes=341 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/aster/positions clientIP="2.51.180.232" requestID="80348850-e7fb-4a20" responseTimeMS=650 responseBytes=179 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="2.51.180.232" requestID="844ffe7b-767e-42b8" responseTimeMS=1254 responseBytes=180 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[Aster] signed /fapi/v3/balance failed for 0x7f2D91Cc0258C4963425D79013656E45cc64Fc76 → 400 { code: -1000, msg: 'No agent found' } — falling back to JSON-RPC
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash actions=anthropic:err,xai:err,hyperbolic:LONG,akash:err noQuorumRate=7/7 (100.0%)
+[Agent SeanBuild4] Tick completed in 11335ms
+[GET]
+build4-1.onrender.com/api/me/positions clientIP="2.51.180.232" requestID="d2426d7d-079e-4ae8" responseTimeMS=559 responseBytes=747 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/predictions/latest clientIP="2.51.180.232" requestID="c420bf4e-e1f0-4bc1" responseTimeMS=555 responseBytes=3302 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '5m', limit: 100 }
+[POST]
+build4-1.onrender.com/api/webhook clientIP="91.108.5.66" requestID="b5211f0c-9d56-468c" responseTimeMS=953 responseBytes=270 userAgent=""
+[Aster] klines fetch (cache miss): { symbol: '1000WOJAKUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: '1000WOJAKUSDT', interval: '5m', limit: 100 }
+[GET]
+build4-1.onrender.com/api/aster/markprice/BTCUSDT clientIP="2.51.180.232" requestID="4963ad14-7e72-4f6a" responseTimeMS=80 responseBytes=346 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash actions=anthropic:err,xai:err,hyperbolic:HOLD,akash:err noQuorumRate=8/8 (100.0%)
+[Agent SeanBuild4] HOLD on 1000WOJAKUSDT — Lack of clear directional momentum, waiting for a breakout or a sign of exhausti
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash actions=anthropic:err,xai:err,hyperbolic:LONG,akash:err noQuorumRate=9/9 (100.0%)
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash actions=anthropic:err,xai:err,hyperbolic:LONG,akash:err noQuorumRate=10/10 (100.0%)
+[Agent BTPredict] Tick completed in 20917ms
+[Agent BNT] Tick completed in 21122ms
+[POST]
+build4-1.onrender.com/api/webhook clientIP="91.108.5.66" requestID="c4a91807-2bc0-443c" responseTimeMS=1270 responseBytes=270 userAgent=""
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash actions=anthropic:err,xai:err,hyperbolic:HOLD,akash:err noQuorumRate=11/11 (100.0%)
+[Agent BTPredict] HOLD on 1000WOJAKUSDT — Insufficient price discovery and unclear direction, waiting for a more favorable
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash actions=anthropic:err,xai:err,hyperbolic:HOLD,akash:err noQuorumRate=12/12 (100.0%)
+[Agent BNT] HOLD on 1000WOJAKUSDT — Insufficient data to determine a clear direction, recent candles are too short t
+[POST]
+build4-1.onrender.com/api/webhook clientIP="91.108.5.66" requestID="a5d1a715-5ef4-4384" responseTimeMS=1304 responseBytes=270 userAgent=""
+[Runner] Ticking 3 agents in batches of 50
+[Runner] Dispatched 3 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'EDUUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'EDUUSDT', interval: '5m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '5m', limit: 100 }
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash actions=anthropic:err,xai:err,hyperbolic:LONG,akash:err noQuorumRate=13/13 (100.0%)
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash actions=anthropic:err,xai:err,hyperbolic:LONG,akash:err noQuorumRate=14/14 (100.0%)
+[Agent SeanBuild4] Tick completed in 9657ms
+[Agent BNT] Tick completed in 9909ms
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '5m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: '1000WOJAKUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: '1000WOJAKUSDT', interval: '5m', limit: 100 }
+[GET]
+build4-1.onrender.com/api/predictions/latest clientIP="2.51.180.232" requestID="50c609cb-87f3-4fdd" responseTimeMS=710 responseBytes=3306 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/me/positions clientIP="2.51.180.232" requestID="e7ea88f5-131d-42cd" responseTimeMS=559 responseBytes=747 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash actions=anthropic:err,xai:err,hyperbolic:LONG,akash:err noQuorumRate=15/15 (100.0%)
+[Agent BTPredict] Tick completed in 13035ms
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash actions=anthropic:err,xai:err,hyperbolic:HOLD,akash:err noQuorumRate=16/16 (100.0%)
+[Agent SeanBuild4] HOLD on 1000WOJAKUSDT — Insufficient price action and volume confirmation to determine a clear direction
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash actions=anthropic:err,xai:err,hyperbolic:HOLD,akash:err noQuorumRate=17/17 (100.0%)
+[Agent BTPredict] HOLD on 1000WOJAKUSDT — Recent candles show no clear direction, and the regime is still in the early sta
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash actions=anthropic:err,xai:err,hyperbolic:HOLD,akash:err noQuorumRate=18/18 (100.0%)
+[Agent BNT] HOLD on 1000WOJAKUSDT — Insufficient data to form a strong trading decision. The listing is still in its
+[Aster] klines fetch (cache miss): { symbol: '1000WOJAKUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '4h', limit: 200 }
+[Listing] Baseline pair set captured
+[News] Analysis failed: 400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."},"request_id":"req_011CaLJtxTimyuxatTJxNxj4"}
+[GET]
+build4-1.onrender.com/ clientIP="34.83.77.94" requestID="13e28ce7-a621-49d6" responseTimeMS=4 responseBytes=397 userAgent="Go-http-client/2.0"
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 200 }
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash actions=anthropic:err,xai:err,hyperbolic:HOLD,akash:err noQuorumRate=43/43 (100.0%)
+[Agent SeanBuild4] HOLD on DOGEUSDT — Waiting for better timeframe alignment and volume confirmation.
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash actions=anthropic:err,xai:err,hyperbolic:HOLD,akash:err noQuorumRate=44/44 (100.0%)
+[Agent BNT] HOLD on DOGEUSDT — Waiting for all technical indicators to align and for volume to confirm the tren
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash actions=anthropic:err,xai:err,hyperbolic:HOLD,akash:err noQuorumRate=45/45 (100.0%)
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=1/1 (100.0%)
+[Agent BTPredict] HOLD on DOGEUSDT — Waiting for more favorable timeframe alignment and higher volume to increase con
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=2/2 (100.0%)
+[Agent BTPredict] HOLD on DOGEUSDT — Waiting for more favorable timeframe alignment and higher volume.
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=3/3 (100.0%)
+[GET]
+build4-1.onrender.com/api/predictions/latest clientIP="2.51.180.232" requestID="c0d00635-a6fd-42d5" responseTimeMS=1245 responseBytes=3302 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[Agent BNT] HOLD on DOGEUSDT — Waiting for better timeframe alignment and higher volume to increase confidence 
+[Agent SeanBuild4] HOLD on DOGEUSDT — Waiting for more favorable timeframe alignment, higher volume, and a positive MA
+[GET]
+build4-1.onrender.com/api/me/positions clientIP="2.51.180.232" requestID="5c4f5990-8116-4472" responseTimeMS=827 responseBytes=747 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[Runner] Ticking 3 agents in batches of 50
+[Runner] Dispatched 3 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'LINKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'EDUUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '4h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 200 }
+[Runner] Ticking 3 agents in batches of 50
+[Runner] Dispatched 3 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:ERR(parse failed: Unexpected token '!', ..."ionTrade":!null }" is not valid JSON) | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=4/4 (100.0%)
+[Agent BNT] HOLD on DOGEUSDT — no specific reason
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=5/5 (100.0%)
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=6/6 (100.0%)
+[Agent SeanBuild4] HOLD on DOGEUSDT — Need a positive MACD cross or a support retest with significant volume confirmat
+[Agent BTPredict] HOLD on DOGEUSDT — Mixed timeframe alignment and low volume
+[GET]
+build4-1.onrender.com/api/me/positions clientIP="2.51.180.232" requestID="5a1377f9-0eb9-4775" responseTimeMS=739 responseBytes=747 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/predictions/latest clientIP="2.51.180.232" requestID="56ef8f28-2005-497a" responseTimeMS=561 responseBytes=3302 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/admin/predictions/diagnose clientIP="34.148.98.177" requestID="783056dd-dece-4202" responseTimeMS=2110 responseBytes=776 userAgent="curl/8.14.1"
+[Runner] Ticking 3 agents in batches of 50
+[Runner] Dispatched 3 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'LINKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'EDUUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: '1000WOJAKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 200 }
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=7/7 (100.0%)
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=8/8 (100.0%)
+[Agent BNT] HOLD on DOGEUSDT — Waiting for clearer alignment and more favorable momentum indicators.
+[Agent BTPredict] HOLD on DOGEUSDT — Waiting for a more favorable setup with better timeframe alignment and higher vo
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=9/9 (100.0%)
+[Agent SeanBuild4] HOLD on DOGEUSDT — Lack of trend alignment and volume confirmation
+[GET]
+build4-1.onrender.com/api/predictions/latest clientIP="2.51.180.232" requestID="ed4187cd-b5f0-48f7" responseTimeMS=1233 responseBytes=3296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/me/positions clientIP="2.51.180.232" requestID="02f64a21-7568-421d" responseTimeMS=738 responseBytes=747 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[Runner] Ticking 3 agents in batches of 50
+[Runner] Dispatched 3 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'LINKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'EDUUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: '1000WOJAKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: '1000WOJAKUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '4h', limit: 200 }
+[Listing] Baseline pair set captured
+[News] Analysis failed: 400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."},"request_id":"req_011CaLJtxTimyuxatTJxNxj4"}
+[GET]
+build4-1.onrender.com/ clientIP="34.83.77.94" requestID="13e28ce7-a621-49d6" responseTimeMS=4 responseBytes=397 userAgent="Go-http-client/2.0"
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 200 }
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash actions=anthropic:err,xai:err,hyperbolic:HOLD,akash:err noQuorumRate=43/43 (100.0%)
+[Agent SeanBuild4] HOLD on DOGEUSDT — Waiting for better timeframe alignment and volume confirmation.
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash actions=anthropic:err,xai:err,hyperbolic:HOLD,akash:err noQuorumRate=44/44 (100.0%)
+[Agent BNT] HOLD on DOGEUSDT — Waiting for all technical indicators to align and for volume to confirm the tren
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash actions=anthropic:err,xai:err,hyperbolic:HOLD,akash:err noQuorumRate=45/45 (100.0%)
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=1/1 (100.0%)
+[Agent BTPredict] HOLD on DOGEUSDT — Waiting for more favorable timeframe alignment and higher volume to increase con
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=2/2 (100.0%)
+[Agent BTPredict] HOLD on DOGEUSDT — Waiting for more favorable timeframe alignment and higher volume.
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=3/3 (100.0%)
+[GET]
+build4-1.onrender.com/api/predictions/latest clientIP="2.51.180.232" requestID="c0d00635-a6fd-42d5" responseTimeMS=1245 responseBytes=3302 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[Agent BNT] HOLD on DOGEUSDT — Waiting for better timeframe alignment and higher volume to increase confidence 
+[Agent SeanBuild4] HOLD on DOGEUSDT — Waiting for more favorable timeframe alignment, higher volume, and a positive MA
+[GET]
+build4-1.onrender.com/api/me/positions clientIP="2.51.180.232" requestID="5c4f5990-8116-4472" responseTimeMS=827 responseBytes=747 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[Runner] Ticking 3 agents in batches of 50
+[Runner] Dispatched 3 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'LINKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'EDUUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '4h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 200 }
+[Runner] Ticking 3 agents in batches of 50
+[Runner] Dispatched 3 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:ERR(parse failed: Unexpected token '!', ..."ionTrade":!null }" is not valid JSON) | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=4/4 (100.0%)
+[Agent BNT] HOLD on DOGEUSDT — no specific reason
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=5/5 (100.0%)
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=6/6 (100.0%)
+[Agent SeanBuild4] HOLD on DOGEUSDT — Need a positive MACD cross or a support retest with significant volume confirmat
+[Agent BTPredict] HOLD on DOGEUSDT — Mixed timeframe alignment and low volume
+[GET]
+build4-1.onrender.com/api/me/positions clientIP="2.51.180.232" requestID="5a1377f9-0eb9-4775" responseTimeMS=739 responseBytes=747 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/predictions/latest clientIP="2.51.180.232" requestID="56ef8f28-2005-497a" responseTimeMS=561 responseBytes=3302 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/admin/predictions/diagnose clientIP="34.148.98.177" requestID="783056dd-dece-4202" responseTimeMS=2110 responseBytes=776 userAgent="curl/8.14.1"
+[Runner] Ticking 3 agents in batches of 50
+[Runner] Dispatched 3 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'LINKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'EDUUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: '1000WOJAKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 200 }
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=7/7 (100.0%)
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=8/8 (100.0%)
+[Agent BNT] HOLD on DOGEUSDT — Waiting for clearer alignment and more favorable momentum indicators.
+[Agent BTPredict] HOLD on DOGEUSDT — Waiting for a more favorable setup with better timeframe alignment and higher vo
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=9/9 (100.0%)
+[Agent SeanBuild4] HOLD on DOGEUSDT — Lack of trend alignment and volume confirmation
+[GET]
+build4-1.onrender.com/api/predictions/latest clientIP="2.51.180.232" requestID="ed4187cd-b5f0-48f7" responseTimeMS=1233 responseBytes=3296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/me/positions clientIP="2.51.180.232" requestID="02f64a21-7568-421d" responseTimeMS=738 responseBytes=747 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[Runner] Ticking 3 agents in batches of 50
+[Runner] Dispatched 3 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'LINKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'EDUUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '15m', limit: 100 }
+Menu
+[Aster] klines fetch (cache miss): { symbol: '1000WOJAKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 200 }
+[Agent BTPredict] HOLD on DOGEUSDT — Waiting for more favorable timeframe alignment and higher volume to increase con
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=2/2 (100.0%)
+[Agent BTPredict] HOLD on DOGEUSDT — Waiting for more favorable timeframe alignment and higher volume.
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=3/3 (100.0%)
+[GET]
+build4-1.onrender.com/api/predictions/latest clientIP="2.51.180.232" requestID="c0d00635-a6fd-42d5" responseTimeMS=1245 responseBytes=3302 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[Agent BNT] HOLD on DOGEUSDT — Waiting for better timeframe alignment and higher volume to increase confidence 
+[Agent SeanBuild4] HOLD on DOGEUSDT — Waiting for more favorable timeframe alignment, higher volume, and a positive MA
+[GET]
+build4-1.onrender.com/api/me/positions clientIP="2.51.180.232" requestID="5c4f5990-8116-4472" responseTimeMS=827 responseBytes=747 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[Runner] Ticking 3 agents in batches of 50
+[Runner] Dispatched 3 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'LINKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'EDUUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '4h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 200 }
+[Runner] Ticking 3 agents in batches of 50
+[Runner] Dispatched 3 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:ERR(parse failed: Unexpected token '!', ..."ionTrade":!null }" is not valid JSON) | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=4/4 (100.0%)
+[Agent BNT] HOLD on DOGEUSDT — no specific reason
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=5/5 (100.0%)
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=6/6 (100.0%)
+[Agent SeanBuild4] HOLD on DOGEUSDT — Need a positive MACD cross or a support retest with significant volume confirmat
+[Agent BTPredict] HOLD on DOGEUSDT — Mixed timeframe alignment and low volume
+[GET]
+build4-1.onrender.com/api/me/positions clientIP="2.51.180.232" requestID="5a1377f9-0eb9-4775" responseTimeMS=739 responseBytes=747 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/predictions/latest clientIP="2.51.180.232" requestID="56ef8f28-2005-497a" responseTimeMS=561 responseBytes=3302 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/admin/predictions/diagnose clientIP="34.148.98.177" requestID="783056dd-dece-4202" responseTimeMS=2110 responseBytes=776 userAgent="curl/8.14.1"
+[Runner] Ticking 3 agents in batches of 50
+[Runner] Dispatched 3 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'LINKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'EDUUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: '1000WOJAKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 200 }
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=7/7 (100.0%)
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=8/8 (100.0%)
+[Agent BNT] HOLD on DOGEUSDT — Waiting for clearer alignment and more favorable momentum indicators.
+[Agent BTPredict] HOLD on DOGEUSDT — Waiting for a more favorable setup with better timeframe alignment and higher vo
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=9/9 (100.0%)
+[Agent SeanBuild4] HOLD on DOGEUSDT — Lack of trend alignment and volume confirmation
+[GET]
+build4-1.onrender.com/api/predictions/latest clientIP="2.51.180.232" requestID="ed4187cd-b5f0-48f7" responseTimeMS=1233 responseBytes=3296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/me/positions clientIP="2.51.180.232" requestID="02f64a21-7568-421d" responseTimeMS=738 responseBytes=747 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[Runner] Ticking 3 agents in batches of 50
+[Runner] Dispatched 3 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'LINKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'EDUUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: '1000WOJAKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: '1000WOJAKUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '4h', limit: 200 }
+[Listing] Baseline pair set captured
+[News] Analysis failed: 400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."},"request_id":"req_011CaLJtxTimyuxatTJxNxj4"}
+==> Your service is live 🎉
+==> 
+==> ///////////////////////////////////////////////////////////
+==> 
+==> Available at your primary URL https://build4-1.onrender.com
+==> 
+==> ///////////////////////////////////////////////////////////
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash actions=anthropic:err,xai:err,hyperbolic:HOLD,akash:err noQuorumRate=43/43 (100.0%)
+[GET]
+build4-1.onrender.com/ clientIP="34.83.77.94" requestID="13e28ce7-a621-49d6" responseTimeMS=4 responseBytes=397 userAgent="Go-http-client/2.0"
+[Agent SeanBuild4] HOLD on DOGEUSDT — Waiting for better timeframe alignment and volume confirmation.
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash actions=anthropic:err,xai:err,hyperbolic:HOLD,akash:err noQuorumRate=44/44 (100.0%)
+[Agent BNT] HOLD on DOGEUSDT — Waiting for all technical indicators to align and for volume to confirm the tren
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash actions=anthropic:err,xai:err,hyperbolic:HOLD,akash:err noQuorumRate=45/45 (100.0%)
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=1/1 (100.0%)
+[Agent BTPredict] HOLD on DOGEUSDT — Waiting for more favorable timeframe alignment and higher volume to increase con
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=2/2 (100.0%)
+[Agent BTPredict] HOLD on DOGEUSDT — Waiting for more favorable timeframe alignment and higher volume.
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=3/3 (100.0%)
+[GET]
+build4-1.onrender.com/api/predictions/latest clientIP="2.51.180.232" requestID="c0d00635-a6fd-42d5" responseTimeMS=1245 responseBytes=3302 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[Agent BNT] HOLD on DOGEUSDT — Waiting for better timeframe alignment and higher volume to increase confidence 
+[Agent SeanBuild4] HOLD on DOGEUSDT — Waiting for more favorable timeframe alignment, higher volume, and a positive MA
+[GET]
+build4-1.onrender.com/api/me/positions clientIP="2.51.180.232" requestID="5c4f5990-8116-4472" responseTimeMS=827 responseBytes=747 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[Runner] Ticking 3 agents in batches of 50
+[Runner] Dispatched 3 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Runner] Ticking 3 agents in batches of 50
+[Runner] Dispatched 3 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'LINKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'EDUUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '4h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 200 }
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:ERR(parse failed: Unexpected token '!', ..."ionTrade":!null }" is not valid JSON) | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=4/4 (100.0%)
+[Agent BNT] HOLD on DOGEUSDT — no specific reason
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=5/5 (100.0%)
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=6/6 (100.0%)
+[Agent SeanBuild4] HOLD on DOGEUSDT — Need a positive MACD cross or a support retest with significant volume confirmat
+[Agent BTPredict] HOLD on DOGEUSDT — Mixed timeframe alignment and low volume
+[GET]
+build4-1.onrender.com/api/me/positions clientIP="2.51.180.232" requestID="5a1377f9-0eb9-4775" responseTimeMS=739 responseBytes=747 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/predictions/latest clientIP="2.51.180.232" requestID="56ef8f28-2005-497a" responseTimeMS=561 responseBytes=3302 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/admin/predictions/diagnose clientIP="34.148.98.177" requestID="783056dd-dece-4202" responseTimeMS=2110 responseBytes=776 userAgent="curl/8.14.1"
+[Runner] Ticking 3 agents in batches of 50
+[Runner] Dispatched 3 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'LINKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'EDUUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: '1000WOJAKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 200 }
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=7/7 (100.0%)
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=8/8 (100.0%)
+[Agent BNT] HOLD on DOGEUSDT — Waiting for clearer alignment and more favorable momentum indicators.
+[Agent BTPredict] HOLD on DOGEUSDT — Waiting for a more favorable setup with better timeframe alignment and higher vo
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=9/9 (100.0%)
+[Agent SeanBuild4] HOLD on DOGEUSDT — Lack of trend alignment and volume confirmation
+[GET]
+build4-1.onrender.com/api/predictions/latest clientIP="2.51.180.232" requestID="ed4187cd-b5f0-48f7" responseTimeMS=1233 responseBytes=3296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/me/positions clientIP="2.51.180.232" requestID="02f64a21-7568-421d" responseTimeMS=738 responseBytes=747 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[Runner] Ticking 3 agents in batches of 50
+[Runner] Dispatched 3 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'LINKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'EDUUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: '1000WOJAKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 200 }
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=10/10 (100.0%)
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=11/11 (100.0%)
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=12/12 (100.0%)
+[Agent SeanBuild4] HOLD on DOGEUSDT — Waiting for a more favorable setup with a positive MACD cross and significant vo
+[Agent BTPredict] HOLD on DOGEUSDT — Waiting for more favorable timeframe alignment and higher volume.
+[Agent BNT] HOLD on DOGEUSDT — Waiting for all technical indicators to align and for volume to increase to conf
+[Runner] Ticking 3 agents in batches of 50
+[Runner] Dispatched 3 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'LINKUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'EDUUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: '1000WOJAKUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'LINKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'EDUUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: '1000WOJAKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 200 }
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=13/13 (100.0%)
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=14/14 (100.0%)
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=15/15 (100.0%)
+[Agent BNT] HOLD on DOGEUSDT — Need to see more alignment in timeframes and an increase in volume to confirm th
+[Agent BTPredict] HOLD on DOGEUSDT — Waiting for a more favorable setup with better timeframe alignment and higher vo
+[Agent SeanBuild4] HOLD on DOGEUSDT — Waiting for a positive MACD cross or a support retest with significant volume co
+==> Detected service running on port 500
+==> Docs on specifying a port: https://render.com/docs/web-services#port-binding
+[Runner] Ticking 3 agents in batches of 50
+[Runner] Dispatched 3 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'LINKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'EDUUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: '1000WOJAKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 200 }
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=16/16 (100.0%)
+Menu
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=17/17 (100.0%)
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=18/18 (100.0%)
+[Agent BTPredict] HOLD on DOGEUSDT — Waiting for a more favorable setup with better timeframe alignment and higher vo
+[Agent BNT] HOLD on DOGEUSDT — Waiting for better timeframe alignment and volume confirmation.
+[Agent SeanBuild4] HOLD on DOGEUSDT — Waiting for a more favorable setup with positive MACD cross or support retest wi
+[GET]
+build4-1.onrender.com/api/predictions/latest clientIP="2.51.180.232" requestID="8b3aabe4-dd75-4352" responseTimeMS=1263 responseBytes=3301 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/me/positions clientIP="2.51.180.232" requestID="f8fd3fce-a8fa-4745" responseTimeMS=748 responseBytes=747 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"

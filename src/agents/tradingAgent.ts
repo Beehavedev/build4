@@ -639,7 +639,27 @@ export async function runDecisionLLM(
         user: userMessage,
         jsonMode: true,
         maxTokens: 1000,
-        schema: (t) => JSON.parse(t.replace(/```json|```/g, '').trim()) as AgentDecision,
+        schema: (t) => {
+          // Strip markdown fences. Some providers (observed in prod with
+          // Hyperbolic) occasionally emit JS-style literals like `!null` or
+          // `!true` instead of valid JSON, which crashes JSON.parse and was
+          // killing our only surviving provider during the credit-outage
+          // window. Normalise the common cases before parsing:
+          //   :!null  → :null   (model meant "no value")
+          //   :!true  → :false
+          //   :!false → :true
+          // Trailing commas inside objects/arrays are also a frequent LLM
+          // glitch — drop those too. All edits are conservative regex passes
+          // that only touch JSON-syntax positions.
+          const cleaned = t
+            .replace(/```json|```/g, '')
+            .trim()
+            .replace(/:\s*!null\b/g, ':null')
+            .replace(/:\s*!true\b/g, ':false')
+            .replace(/:\s*!false\b/g, ':true')
+            .replace(/,(\s*[}\]])/g, '$1')
+          return JSON.parse(cleaned) as AgentDecision
+        },
         getAction: (d) => d.action,
         getPredictionKey: (d) =>
           d.predictionTrade
