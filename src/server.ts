@@ -1155,6 +1155,98 @@ app.post('/api/hyperliquid/approve', requireTgUser, async (req, res) => {
   }
 })
 
+// POST /api/hyperliquid/order
+//
+// Place a perp order on Hyperliquid using the user's agent wallet.
+// Body: { coin, side: 'LONG'|'SHORT', type: 'MARKET'|'LIMIT', notionalUsdc, limitPx?, leverage? }
+//   - notionalUsdc: USD size of the position; we resolve mark price and
+//     convert to base-coin size before sending. Keeps the UX in dollars
+//     (what users actually think in) rather than HL's base units.
+//   - leverage: optional, defaults to whatever the user already has set on
+//     that asset. Cross-margin only for now.
+app.post('/api/hyperliquid/order', requireTgUser, async (req, res) => {
+  try {
+    const user = (req as any).user
+    if (!user.hyperliquidOnboarded) {
+      return res.status(400).json({
+        success: false,
+        error: 'Activate Hyperliquid trading first',
+        needsApprove: true,
+      })
+    }
+
+    const { coin, side, type = 'MARKET', notionalUsdc, limitPx, leverage } = req.body ?? {}
+    if (typeof coin !== 'string' || !coin) {
+      return res.status(400).json({ success: false, error: 'coin required' })
+    }
+    if (side !== 'LONG' && side !== 'SHORT') {
+      return res.status(400).json({ success: false, error: 'side must be LONG or SHORT' })
+    }
+    if (type !== 'MARKET' && type !== 'LIMIT') {
+      return res.status(400).json({ success: false, error: 'type must be MARKET or LIMIT' })
+    }
+    const notional = Number(notionalUsdc)
+    if (!Number.isFinite(notional) || notional <= 0) {
+      return res.status(400).json({ success: false, error: 'notionalUsdc must be > 0' })
+    }
+    if (type === 'LIMIT' && (!Number.isFinite(Number(limitPx)) || Number(limitPx) <= 0)) {
+      return res.status(400).json({ success: false, error: 'limitPx required for LIMIT orders' })
+    }
+
+    const wallet = await db.wallet.findFirst({ where: { userId: user.id, isActive: true } })
+    if (!wallet) return res.status(404).json({ success: false, error: 'No active wallet' })
+
+    const { resolveAgentCreds, getMarkPrice, placeOrder } = await import('./services/hyperliquid')
+    const creds = await resolveAgentCreds(user, wallet.address)
+    if (!creds) {
+      return res.status(400).json({
+        success: false,
+        error: 'Agent credentials missing — re-activate Hyperliquid',
+        needsApprove: true,
+      })
+    }
+
+    // Convert USD notional → base-coin size using mark price. For LIMIT
+    // orders we still size off the mark, not the limit price — gives the
+    // user the position size they asked for in dollars regardless of
+    // where their limit sits.
+    const sym = coin.toUpperCase().replace(/USDT?$/, '').replace(/-USD$/, '')
+    const { markPrice } = await getMarkPrice(sym)
+    if (markPrice <= 0) {
+      return res.status(500).json({ success: false, error: `Could not resolve mark price for ${sym}` })
+    }
+    const sz = Number((notional / markPrice).toFixed(6))
+    if (sz <= 0) {
+      return res.status(400).json({ success: false, error: 'computed size is 0; increase notionalUsdc' })
+    }
+
+    const result = await placeOrder(creds, {
+      coin: sym,
+      side,
+      type,
+      sz,
+      limitPx: type === 'LIMIT' ? Number(limitPx) : undefined,
+      leverage: leverage ? Number(leverage) : undefined,
+    })
+
+    if (!result.success) {
+      return res.status(400).json(result)
+    }
+    return res.json({
+      ...result,
+      coin:     sym,
+      side,
+      type,
+      sz,
+      markPrice,
+      notionalUsdc: notional,
+    })
+  } catch (err: any) {
+    console.error('[API] /hyperliquid/order failed:', err?.message ?? err)
+    res.status(500).json({ success: false, error: err?.message ?? 'Internal error' })
+  }
+})
+
 app.get('/api/hyperliquid/account', requireTgUser, async (req, res) => {
   try {
     const user = (req as any).user

@@ -33,6 +33,47 @@ export default function Hyperliquid() {
   const [activating, setActivating] = useState(false)
   const [activateMsg, setActivateMsg] = useState<string | null>(null)
 
+  // Order ticket state
+  const [orderCoin, setOrderCoin]         = useState('BTC')
+  const [orderSide, setOrderSide]         = useState<'LONG' | 'SHORT'>('LONG')
+  const [orderNotional, setOrderNotional] = useState('25')
+  const [orderLeverage, setOrderLeverage] = useState('5')
+  const [placing, setPlacing]             = useState(false)
+  const [orderMsg, setOrderMsg]           = useState<string | null>(null)
+
+  const placeOrder = async () => {
+    setPlacing(true)
+    setOrderMsg(null)
+    try {
+      const r = await apiFetch<{ success: boolean; error?: string; sz?: number; markPrice?: number }>(
+        '/api/hyperliquid/order',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            coin:         orderCoin,
+            side:         orderSide,
+            type:         'MARKET',
+            notionalUsdc: Number(orderNotional),
+            leverage:     Number(orderLeverage),
+          }),
+        },
+      )
+      if (r.success) {
+        setOrderMsg(
+          `${orderSide} ${r.sz?.toFixed(4) ?? '?'} ${orderCoin} @ ~$${r.markPrice?.toFixed(2) ?? '?'} placed.`,
+        )
+        await load()
+      } else {
+        setOrderMsg(r.error ?? 'Order failed')
+      }
+    } catch (e: any) {
+      setOrderMsg(e?.message ?? 'Order failed')
+    } finally {
+      setPlacing(false)
+    }
+  }
+
   const activate = async () => {
     setActivating(true)
     setActivateMsg(null)
@@ -172,6 +213,142 @@ export default function Hyperliquid() {
               </span>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Order ticket — only when onboarded */}
+      {account?.onboarded && (
+        <div style={cardStyle} data-testid="card-hl-order">
+          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10 }}>Place order</div>
+
+          {/* Coin selector */}
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
+            {COINS.map(c => (
+              <button
+                key={c}
+                onClick={() => setOrderCoin(c)}
+                data-testid={`button-hl-coin-${c}`}
+                style={{
+                  padding: '6px 10px', borderRadius: 8, fontSize: 12, fontWeight: 600,
+                  background: orderCoin === c ? '#7c3aed' : '#1f2937',
+                  color: '#fff', border: 'none', cursor: 'pointer',
+                }}
+              >
+                {c}
+              </button>
+            ))}
+          </div>
+
+          {/* LONG / SHORT */}
+          <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+            <button
+              onClick={() => setOrderSide('LONG')}
+              data-testid="button-hl-side-long"
+              style={{
+                flex: 1, padding: '10px', borderRadius: 8, fontSize: 13, fontWeight: 600,
+                background: orderSide === 'LONG' ? '#22c55e' : '#1f2937',
+                color: '#fff', border: 'none', cursor: 'pointer',
+              }}
+            >
+              LONG
+            </button>
+            <button
+              onClick={() => setOrderSide('SHORT')}
+              data-testid="button-hl-side-short"
+              style={{
+                flex: 1, padding: '10px', borderRadius: 8, fontSize: 13, fontWeight: 600,
+                background: orderSide === 'SHORT' ? '#ef4444' : '#1f2937',
+                color: '#fff', border: 'none', cursor: 'pointer',
+              }}
+            >
+              SHORT
+            </button>
+          </div>
+
+          {/* Notional + leverage */}
+          <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+            <div style={{ flex: 2 }}>
+              <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 4 }}>Size (USDC)</div>
+              <input
+                type="number"
+                value={orderNotional}
+                onChange={(e) => setOrderNotional(e.target.value)}
+                data-testid="input-hl-notional"
+                style={{
+                  width: '100%', padding: '10px', borderRadius: 8, fontSize: 14,
+                  background: '#0f172a', border: '1px solid #334155', color: '#fff',
+                  boxSizing: 'border-box',
+                }}
+              />
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 4 }}>Leverage</div>
+              <input
+                type="number"
+                value={orderLeverage}
+                onChange={(e) => setOrderLeverage(e.target.value)}
+                min="1"
+                max="50"
+                data-testid="input-hl-leverage"
+                style={{
+                  width: '100%', padding: '10px', borderRadius: 8, fontSize: 14,
+                  background: '#0f172a', border: '1px solid #334155', color: '#fff',
+                  boxSizing: 'border-box',
+                }}
+              />
+            </div>
+          </div>
+
+          {/* Quick size buttons */}
+          <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+            {['10', '25', '100', '500'].map(amt => (
+              <button
+                key={amt}
+                onClick={() => setOrderNotional(amt)}
+                data-testid={`button-hl-quick-${amt}`}
+                style={{
+                  flex: 1, padding: '6px', borderRadius: 6, fontSize: 11,
+                  background: '#1f2937', color: '#9ca3af', border: 'none', cursor: 'pointer',
+                }}
+              >
+                ${amt}
+              </button>
+            ))}
+          </div>
+
+          <button
+            onClick={placeOrder}
+            disabled={placing || !orderNotional || Number(orderNotional) <= 0}
+            data-testid="button-hl-place-order"
+            style={{
+              width: '100%', padding: '12px', borderRadius: 10, fontSize: 14, fontWeight: 600,
+              background: placing ? '#4c1d95'
+                : orderSide === 'LONG' ? 'linear-gradient(90deg,#16a34a,#22c55e)'
+                : 'linear-gradient(90deg,#dc2626,#ef4444)',
+              color: '#fff', border: 'none', cursor: placing ? 'wait' : 'pointer',
+            }}
+          >
+            {placing
+              ? 'Placing…'
+              : `${orderSide} $${orderNotional || '0'} ${orderCoin} @ ${orderLeverage}x`}
+          </button>
+
+          {orderMsg && (
+            <div
+              style={{
+                marginTop: 8, padding: 8, borderRadius: 6, fontSize: 11,
+                background: /placed|filled/i.test(orderMsg) ? '#064e3b' : '#7f1d1d',
+                color: /placed|filled/i.test(orderMsg) ? '#a7f3d0' : '#fecaca',
+              }}
+              data-testid="text-hl-order-msg"
+            >
+              {orderMsg}
+            </div>
+          )}
+
+          <div style={{ fontSize: 10, color: '#64748b', marginTop: 10, lineHeight: 1.4 }}>
+            Market orders execute immediately at best available price (5% slippage cap). BUILD4 takes a 0.1% builder fee on every fill.
+          </div>
         </div>
       )}
 
