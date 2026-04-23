@@ -1154,7 +1154,17 @@ export async function closeUserPredictionPosition(
   try {
     receipt = await trader.sellOutcome(pos.marketAddress, pos.tokenId, tokenAmt, minUsdtOut);
   } catch (err) {
-    return { ok: false, reason: friendlyTraderError(err, 'sellOutcome') };
+    // User-initiated path — surface the friendly mapper output (with code +
+    // hint) so Predictions.tsx can swap the Sell button for a more useful
+    // CTA. The agent's closePredictionPosition uses friendlyTraderError
+    // instead because no user is watching that response.
+    const friendly = friendlySellError((err as Error).message);
+    return {
+      ok: false,
+      reason: friendly.message,
+      hint: friendly.hint,
+      code: friendly.code,
+    } as { ok: false; reason: string; hint?: string; code?: string };
   }
   const txHash = receiptHash(receipt);
 
