@@ -814,13 +814,23 @@ function hashStringToInt32(s: string): number {
 }
 
 /**
- * Pull the most recent live (real on-chain) OPEN_PREDICTION position that has
- * per-provider swarm telemetry attached. This is the row /showcase renders
- * for the partnership demo. Falls back across users — the demo cares about
- * the swarm verdict + tx, not which user's wallet.
+ * Pull the most recent live (real on-chain) open prediction position.
+ * Used to populate the Predictions hero card / showcase.
+ *
+ * Originally this required `providers IS NOT NULL` so we'd only ever surface
+ * swarm-driven trades. In practice the agents produce OPEN_PREDICTION
+ * extremely rarely (HOLD dominates), so the hero card was almost always
+ * empty even though plenty of live (non-paper) trades existed via the manual
+ * buy path. We relax the filter to ANY live open position; rows with swarm
+ * telemetry render full per-provider verdicts, rows without render with
+ * agentCount=0 (the API mapper already handles both cases).
+ *
+ * Preference order so swarm rows still win when they exist:
+ *   1. Most recent live open with providers attached (real swarm trade)
+ *   2. Most recent live open of any kind (manual buy)
  */
 export async function getMostRecentLiveSwarmPrediction(): Promise<OutcomePositionRow | null> {
-  const rows = await db.$queryRawUnsafe<OutcomePositionRow[]>(
+  const swarmFirst = await db.$queryRawUnsafe<OutcomePositionRow[]>(
     `SELECT * FROM "OutcomePosition"
      WHERE "providers" IS NOT NULL
        AND "paperTrade" = false
@@ -829,7 +839,17 @@ export async function getMostRecentLiveSwarmPrediction(): Promise<OutcomePositio
      ORDER BY "openedAt" DESC
      LIMIT 1`,
   );
-  return rows[0] ?? null;
+  if (swarmFirst[0]) return swarmFirst[0];
+
+  const anyLive = await db.$queryRawUnsafe<OutcomePositionRow[]>(
+    `SELECT * FROM "OutcomePosition"
+     WHERE "paperTrade" = false
+       AND "txHashOpen" IS NOT NULL
+       AND status = 'open'
+     ORDER BY "openedAt" DESC
+     LIMIT 1`,
+  );
+  return anyLive[0] ?? null;
 }
 
 /** Manually close (sell back to USDT). Settlement-by-resolution uses settleResolvedPositions instead. */
