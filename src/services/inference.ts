@@ -134,6 +134,73 @@ export function __resetTestDeps(): void {
 const DEFAULT_TIMEOUT_MS = 30_000
 const DEFAULT_MAX_TOKENS = 1024
 
+// ---- Circuit breaker for fatal auth/billing errors ------------------------
+// When a provider returns 401/402/403 or a body matching billing-exhausted
+// language ("insufficient credits", "credit balance is too low"), we park it
+// for CIRCUIT_COOLOFF_MS so the agent runner stops hammering a known-dead key
+// every tick. The first call after the cool-off retries the real provider
+// (so the breaker self-heals once credits are topped up). Per-tick logs stay
+// quiet during the park window — we emit one "tripped" line per provider per
+// park and that's it.
+const CIRCUIT_COOLOFF_MS = 10 * 60_000
+const FATAL_STATUS = new Set([401, 402, 403])
+const FATAL_BODY_PATTERNS = [
+  /insufficient[_\s-]*credits?/i,
+  /credit[_\s]*balance[_\s]*(is[_\s]*)?too[_\s]*low/i,
+  /quota[_\s]*exceeded/i,
+  /billing/i,
+  /does not have permission/i,
+]
+const circuitParkedUntil: Partial<Record<Provider, number>> = {}
+
+function isFatalError(status: number, body: string): boolean {
+  if (FATAL_STATUS.has(status)) return true
+  if (!body) return false
+  return FATAL_BODY_PATTERNS.some((re) => re.test(body))
+}
+
+function tripCircuit(provider: Provider, status: number, body: string): void {
+  const now = Date.now()
+  const until = now + CIRCUIT_COOLOFF_MS
+  if ((circuitParkedUntil[provider] ?? 0) > now) return // already parked, no log spam
+  circuitParkedUntil[provider] = until
+  const snippet = body.slice(0, 120).replace(/\s+/g, ' ')
+  console.warn(
+    `[inference:${provider}] circuit tripped — status=${status} parked for ${Math.round(
+      CIRCUIT_COOLOFF_MS / 60_000,
+    )}m. body=${snippet}`,
+  )
+}
+
+function checkCircuit(provider: Provider): void {
+  const until = circuitParkedUntil[provider]
+  if (!until) return
+  if (Date.now() < until) {
+    throw new InferenceError(
+      provider,
+      503,
+      'circuit-open',
+      `[inference:${provider}] circuit open — provider had a fatal error recently, parked until ${new Date(
+        until,
+      ).toISOString()}`,
+    )
+  }
+  // window elapsed; clear and allow the next call to probe the provider
+  delete circuitParkedUntil[provider]
+}
+
+/** Test/admin helper — clear all parked providers immediately. */
+export function __resetCircuits(): void {
+  for (const k of Object.keys(circuitParkedUntil) as Provider[]) {
+    delete circuitParkedUntil[k]
+  }
+}
+
+/** Snapshot of currently parked providers and their unpark time (ms epoch). */
+export function getCircuitState(): Partial<Record<Provider, number>> {
+  return { ...circuitParkedUntil }
+}
+
 interface ResolvedCall {
   apiKey: string
   model: string
@@ -156,14 +223,23 @@ function resolveCall(args: CallLLMArgs, cfg: ProviderConfig): ResolvedCall {
   }
 }
 
+
 export async function callLLM(args: CallLLMArgs): Promise<CallLLMResult> {
   const cfg = PROVIDERS[args.provider]
   if (!cfg) throw new Error(`[inference] unknown provider: ${args.provider}`)
+  checkCircuit(args.provider)
   const resolved = resolveCall(args, cfg)
-  if (args.provider === 'anthropic') {
-    return callAnthropic(args, resolved)
+  try {
+    if (args.provider === 'anthropic') {
+      return await callAnthropic(args, resolved)
+    }
+    return await callOpenAICompat(args, resolved, cfg.baseUrl)
+  } catch (err) {
+    if (err instanceof InferenceError && isFatalError(err.status, err.body)) {
+      tripCircuit(args.provider, err.status, err.body)
+    }
+    throw err
   }
-  return callOpenAICompat(args, resolved, cfg.baseUrl)
 }
 
 function isTextBlock(block: ContentBlock): block is TextBlock {

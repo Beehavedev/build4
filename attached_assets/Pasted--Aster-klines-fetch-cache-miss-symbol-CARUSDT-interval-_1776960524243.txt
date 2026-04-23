@@ -1,0 +1,67 @@
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: '1000WOJAKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '5m', limit: 100 }
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=19/19 (100.0%)
+[Agent BTPredict] HOLD on OPGUSDT — Unclear direction after initial listing, waiting for stronger momentum indicator
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=20/20 (100.0%)
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=21/21 (100.0%)
+[Agent SeanBuild4] HOLD on OPGUSDT — Recent candles show a mix of upward and downward movements with no clear directi
+[Agent BNT] HOLD on OPGUSDT — Insufficient data to confirm a strong trend, and recent candles do not show a cl
+[Runner] Ticking 3 agents in batches of 50
+[Runner] Dispatched 3 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '5m', limit: 100 }
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=22/22 (100.0%)
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=23/23 (100.0%)
+[Agent BTPredict] HOLD on OPGUSDT — Regime appears to be in a consolidation phase after an initial drop, waiting for
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=24/24 (100.0%)
+[Agent BNT] HOLD on OPGUSDT — Insufficient price discovery and unclear trend direction. Waiting for more candl
+[Agent SeanBuild4] HOLD on OPGUSDT — Insufficient bullish momentum and unclear trend direction. Recent candles show a
+[Runner] Ticking 3 agents in batches of 50
+[Runner] Dispatched 3 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'LINKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'LINKUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: '1000WOJAKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: '1000WOJAKUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '5m', limit: 100 }
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=25/25 (100.0%)
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=26/26 (100.0%)
+[Agent SeanBuild4] HOLD on OPGUSDT — Recent candles show a decline in price with increasing volume, indicating a pote
+[Agent BNT] HOLD on OPGUSDT — The current market data does not provide a clear directional signal. The recent 
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=27/27 (100.0%)
+[Agent BTPredict] HOLD on OPGUSDT — Recent candles show a downward trend with increasing volume on red candles, indi
+[Runner] Ticking 3 agents in batches of 50
+[Runner] Dispatched 3 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '1m', limit: 120 }
+Menu
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '5m', limit: 100 }
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=28/28 (100.0%)
+[Agent BNT] HOLD on OPGUSDT — Insufficient trend direction, recent candles show mixed signals and the price is
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=29/29 (100.0%)
+[Agent SeanBuild4] HOLD on OPGUSDT — Awaiting clearer direction and volume confirmation after initial listing volatil
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=30/30 (100.0%)
+[Agent BTPredict] HOLD on OPGUSDT — Insufficient momentum indicators and volume confirmation to enter a trade. Recen
