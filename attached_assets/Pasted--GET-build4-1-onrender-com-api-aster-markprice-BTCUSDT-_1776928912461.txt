@@ -1,0 +1,61 @@
+[GET]
+build4-1.onrender.com/api/aster/markprice/BTCUSDT clientIP="2.51.180.232" requestID="a3673e41-a2f0-4f69" responseTimeMS=85 responseBytes=341 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/aster/positions clientIP="2.51.180.232" requestID="80348850-e7fb-4a20" responseTimeMS=650 responseBytes=179 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="2.51.180.232" requestID="844ffe7b-767e-42b8" responseTimeMS=1254 responseBytes=180 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[Aster] signed /fapi/v3/balance failed for 0x7f2D91Cc0258C4963425D79013656E45cc64Fc76 → 400 { code: -1000, msg: 'No agent found' } — falling back to JSON-RPC
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash actions=anthropic:err,xai:err,hyperbolic:LONG,akash:err noQuorumRate=7/7 (100.0%)
+[Agent SeanBuild4] Tick completed in 11335ms
+[GET]
+build4-1.onrender.com/api/me/positions clientIP="2.51.180.232" requestID="d2426d7d-079e-4ae8" responseTimeMS=559 responseBytes=747 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/predictions/latest clientIP="2.51.180.232" requestID="c420bf4e-e1f0-4bc1" responseTimeMS=555 responseBytes=3302 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '5m', limit: 100 }
+[POST]
+build4-1.onrender.com/api/webhook clientIP="91.108.5.66" requestID="b5211f0c-9d56-468c" responseTimeMS=953 responseBytes=270 userAgent=""
+[Aster] klines fetch (cache miss): { symbol: '1000WOJAKUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: '1000WOJAKUSDT', interval: '5m', limit: 100 }
+[GET]
+build4-1.onrender.com/api/aster/markprice/BTCUSDT clientIP="2.51.180.232" requestID="4963ad14-7e72-4f6a" responseTimeMS=80 responseBytes=346 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash actions=anthropic:err,xai:err,hyperbolic:HOLD,akash:err noQuorumRate=8/8 (100.0%)
+[Agent SeanBuild4] HOLD on 1000WOJAKUSDT — Lack of clear directional momentum, waiting for a breakout or a sign of exhausti
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash actions=anthropic:err,xai:err,hyperbolic:LONG,akash:err noQuorumRate=9/9 (100.0%)
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash actions=anthropic:err,xai:err,hyperbolic:LONG,akash:err noQuorumRate=10/10 (100.0%)
+[Agent BTPredict] Tick completed in 20917ms
+[Agent BNT] Tick completed in 21122ms
+[POST]
+build4-1.onrender.com/api/webhook clientIP="91.108.5.66" requestID="c4a91807-2bc0-443c" responseTimeMS=1270 responseBytes=270 userAgent=""
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash actions=anthropic:err,xai:err,hyperbolic:HOLD,akash:err noQuorumRate=11/11 (100.0%)
+[Agent BTPredict] HOLD on 1000WOJAKUSDT — Insufficient price discovery and unclear direction, waiting for a more favorable
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash actions=anthropic:err,xai:err,hyperbolic:HOLD,akash:err noQuorumRate=12/12 (100.0%)
+[Agent BNT] HOLD on 1000WOJAKUSDT — Insufficient data to determine a clear direction, recent candles are too short t
+[POST]
+build4-1.onrender.com/api/webhook clientIP="91.108.5.66" requestID="a5d1a715-5ef4-4384" responseTimeMS=1304 responseBytes=270 userAgent=""
+[Runner] Ticking 3 agents in batches of 50
+[Runner] Dispatched 3 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'EDUUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'EDUUSDT', interval: '5m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '5m', limit: 100 }
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash actions=anthropic:err,xai:err,hyperbolic:LONG,akash:err noQuorumRate=13/13 (100.0%)
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash actions=anthropic:err,xai:err,hyperbolic:LONG,akash:err noQuorumRate=14/14 (100.0%)
+[Agent SeanBuild4] Tick completed in 9657ms
+[Agent BNT] Tick completed in 9909ms
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '5m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: '1000WOJAKUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: '1000WOJAKUSDT', interval: '5m', limit: 100 }
+[GET]
+build4-1.onrender.com/api/predictions/latest clientIP="2.51.180.232" requestID="50c609cb-87f3-4fdd" responseTimeMS=710 responseBytes=3306 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/me/positions clientIP="2.51.180.232" requestID="e7ea88f5-131d-42cd" responseTimeMS=559 responseBytes=747 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash actions=anthropic:err,xai:err,hyperbolic:LONG,akash:err noQuorumRate=15/15 (100.0%)
+[Agent BTPredict] Tick completed in 13035ms
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash actions=anthropic:err,xai:err,hyperbolic:HOLD,akash:err noQuorumRate=16/16 (100.0%)
+[Agent SeanBuild4] HOLD on 1000WOJAKUSDT — Insufficient price action and volume confirmation to determine a clear direction
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash actions=anthropic:err,xai:err,hyperbolic:HOLD,akash:err noQuorumRate=17/17 (100.0%)
+[Agent BTPredict] HOLD on 1000WOJAKUSDT — Recent candles show no clear direction, and the regime is still in the early sta
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash actions=anthropic:err,xai:err,hyperbolic:HOLD,akash:err noQuorumRate=18/18 (100.0%)
+[Agent BNT] HOLD on 1000WOJAKUSDT — Insufficient data to form a strong trading decision. The listing is still in its

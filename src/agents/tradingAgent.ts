@@ -674,9 +674,23 @@ export async function runDecisionLLM(
       _swarmNoQuorum += 1
       const totalSwarm = _swarmQuorumReached + _swarmNoQuorum
       const noQuorumRate = totalSwarm > 0 ? (_swarmNoQuorum / totalSwarm) : 0
+      // Build a per-provider status string. For failed providers, prefer the
+      // actual error message (truncated) over the generic "err" tag — without
+      // it we can't tell credit-exhausted vs rate-limited vs parse-failed
+      // vs timeout, which means we can't fix anything. The SwarmCall carries
+      // the error string even though ProviderTelemetry drops it for DB
+      // storage, so pull it directly from swarm.decisions here.
+      const status = swarm.decisions.map((c) => {
+        if (c.ok && c.decision) {
+          const action = (c.decision as AgentDecision).action ?? 'parsed-no-action'
+          return `${c.provider}:${action}`
+        }
+        const errMsg = (c.error ?? 'err').slice(0, 80).replace(/\s+/g, ' ')
+        return `${c.provider}:ERR(${errMsg})`
+      })
       console.warn(
         `[swarm] no-quorum fallback — providers=${liveProviders.join(',')} ` +
-        `actions=${providersTelemetry.map((p) => `${p.provider}:${p.action ?? 'err'}`).join(',')} ` +
+        `status=${status.join(' | ')} ` +
         `noQuorumRate=${(_swarmNoQuorum)}/${totalSwarm} (${(noQuorumRate * 100).toFixed(1)}%)`
       )
 
