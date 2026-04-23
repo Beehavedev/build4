@@ -1255,7 +1255,54 @@ export async function claimUserResolvedForMarket(
   }
   const txHash = receiptHash(receipt);
 
+  // Reverted / dropped tx safety net.
+  //
+  // ethers v6 throws on a confirmed revert, but `tx.wait()` returns null when
+  // the tx is dropped/replaced and an empty-status receipt is technically
+  // possible on some BSC RPCs during reorgs. Either way: don't lie to the
+  // user that the position is claimed if the chain didn't pay out. We keep
+  // status='resolved_win' so they (or the agent) can retry.
+  //
+  // Skip this check for paper-trade dry-run receipts (they carry dryRun:true).
+  const r = receipt as any;
+  const isDryRun = r && r.dryRun === true;
+  const isLiveSuccess = r && typeof r.status === 'number' && r.status === 1;
+  if (!isDryRun && !isLiveSuccess) {
+    console.warn(
+      `[fortyTwo] claimAllResolved tx not confirmed for market=${marketAddress} ` +
+      `userId=${userId} hash=${txHash ?? '<none>'} status=${r?.status ?? '<null>'}`,
+    );
+    return {
+      ok: false,
+      reason: txHash
+        ? `claim transaction did not confirm on-chain (hash ${txHash}). Try again in a moment.`
+        : 'claim transaction was dropped before confirmation. Try again in a moment.',
+    };
+  }
+
+  // Sanity log: compare DB-estimated payout (1:1 token→USDT) to the actual
+  // amount the contract paid. If these diverge significantly on the user's
+  // first real claim it points at a settle-time accounting bug we want to
+  // catch fast. Cheap to compute — receipt logs are already in memory.
   const payoutUsdt = wins.reduce((s, p) => s + (p.payoutUsdt ?? 0), 0);
+  if (!isDryRun) {
+    try {
+      const onchainPayout = parseClaimPayoutFromReceipt(r, marketAddress);
+      if (onchainPayout !== null) {
+        const drift = Math.abs(onchainPayout - payoutUsdt);
+        const log = drift > Math.max(0.01, payoutUsdt * 0.02) ? console.warn : console.log;
+        log(
+          `[fortyTwo] claim payout market=${marketAddress} userId=${userId} ` +
+          `dbEstimate=${payoutUsdt.toFixed(4)} onchain=${onchainPayout.toFixed(4)} ` +
+          `drift=${drift.toFixed(4)} hash=${txHash}`,
+        );
+      }
+    } catch (e) {
+      // best-effort logging only — never fail the claim because the log parse threw
+      console.warn('[fortyTwo] claim payout parse failed:', (e as Error)?.message);
+    }
+  }
+
   await db.$executeRawUnsafe(
     `UPDATE "OutcomePosition"
      SET status='claimed', "txHashClose"=COALESCE("txHashClose", $1), "closedAt"=NOW()
@@ -1265,6 +1312,35 @@ export async function claimUserResolvedForMarket(
     marketAddress,
   );
   return { ok: true, claimedPositions: wins.length, payoutUsdt, txHash };
+}
+
+// USDT (BSC) ERC-20 Transfer event topic. Used to recover the actual claim
+// payout from the receipt logs by summing every Transfer log whose `to` is
+// the user's wallet — which on a successful `claimSimple` is the receiver
+// argument we passed (=== signer.address).
+const USDT_BSC_ADDRESS = '0x55d398326f99059fF775485246999027B3197955';
+const ERC20_TRANSFER_TOPIC =
+  '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
+
+function parseClaimPayoutFromReceipt(
+  receipt: any,
+  _marketAddress: string,
+): number | null {
+  if (!receipt?.logs || !Array.isArray(receipt.logs)) return null;
+  let totalRaw = 0n;
+  for (const log of receipt.logs) {
+    if (!log?.address || !log?.topics || log.topics.length < 3) continue;
+    if (log.address.toLowerCase() !== USDT_BSC_ADDRESS.toLowerCase()) continue;
+    if (log.topics[0] !== ERC20_TRANSFER_TOPIC) continue;
+    // topics[2] = `to` padded to 32 bytes; receiver is the user wallet, which
+    // is the only Transfer destination we care about. We don't filter further
+    // because the only USDT inflow on a claimSimple tx is the payout itself.
+    try {
+      totalRaw += BigInt(log.data);
+    } catch { /* malformed log, skip */ }
+  }
+  if (totalRaw === 0n) return null;
+  return Number(totalRaw) / 1e18; // USDT BSC has 18 decimals
 }
 
 /**
