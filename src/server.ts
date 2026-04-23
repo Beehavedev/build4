@@ -1061,6 +1061,87 @@ app.get('/api/hyperliquid/markprice/:coin', async (req, res) => {
   }
 })
 
+// POST /api/hyperliquid/approve
+//
+// One-click HL onboarding. Decrypts the user's master wallet PK, generates
+// a fresh per-user agent keypair, asks HL to authorise that agent via
+// EIP-712 ApproveAgent (signed by master), encrypts the agent PK with the
+// same scheme as user wallets, and persists. After this returns success
+// the agent loop and /api/hyperliquid/order can sign for the user without
+// ever touching the master key again.
+//
+// Idempotent: if the user is already onboarded with a working agent we
+// short-circuit and return success without re-approving (HL would reject
+// with "agent already exists" otherwise).
+app.post('/api/hyperliquid/approve', requireTgUser, async (req, res) => {
+  try {
+    const user = (req as any).user
+
+    // ── Short-circuit if already onboarded with an agent we can decrypt.
+    if (user.hyperliquidOnboarded && user.hyperliquidAgentAddress && user.hyperliquidAgentEncryptedPK) {
+      return res.json({
+        success:      true,
+        agentAddress: user.hyperliquidAgentAddress,
+        alreadyOnboarded: true,
+      })
+    }
+
+    const wallet = await db.wallet.findFirst({ where: { userId: user.id, isActive: true } })
+    if (!wallet) return res.status(404).json({ success: false, error: 'No active wallet' })
+
+    // ── 1) Decrypt the user's master PK. Mirrors the candidate-id loop
+    //    used by /aster/approve so historical encryption keys still work.
+    const { decryptPrivateKey, encryptPrivateKey } = await import('./services/wallet')
+    const idCandidates = [user.id, user.telegramId?.toString()].filter(Boolean) as string[]
+    let userPk: string | null = null
+    let lastErr: any = null
+    for (const candidate of idCandidates) {
+      try {
+        const out = decryptPrivateKey(wallet.encryptedPK, candidate)
+        if (out?.startsWith('0x')) { userPk = out; break }
+      } catch (e) { lastErr = e }
+    }
+    if (!userPk) {
+      console.error(
+        `[/hyperliquid/approve] decrypt wallet PK failed user=${user.id} tg=${user.telegramId} ` +
+        `wallet=${wallet.address} err=${lastErr?.message ?? 'unknown'}`,
+      )
+      return res.status(500).json({ success: false, error: 'Could not decrypt wallet' })
+    }
+
+    // ── 2) Fresh agent keypair (per-user — HL also forbids reusing one
+    //    agent address across multiple master accounts).
+    const { ethers } = await import('ethers')
+    const agentWallet = ethers.Wallet.createRandom()
+    const agentAddress = agentWallet.address
+    const agentEncryptedPK = encryptPrivateKey(agentWallet.privateKey, user.id)
+
+    // ── 3) Ask HL to authorise the agent. Master signs EIP-712 ApproveAgent.
+    const { approveAgent } = await import('./services/hyperliquid')
+    const result = await approveAgent(userPk, agentAddress)
+    if (!result.success) {
+      return res.status(400).json({ success: false, error: result.error ?? 'approveAgent failed' })
+    }
+
+    // ── 4) Persist. Only flip onboarded=true after on-chain success so a
+    //    failed approve doesn't lock the user out of future retries.
+    await db.user.update({
+      where: { id: user.id },
+      data: {
+        hyperliquidAgentAddress:    agentAddress,
+        hyperliquidAgentEncryptedPK: agentEncryptedPK,
+        hyperliquidOnboarded:        true,
+      },
+    })
+
+    console.log(`[/hyperliquid/approve] user=${user.id} tg=${user.telegramId} agent=${agentAddress} OK`)
+    return res.json({ success: true, agentAddress })
+  } catch (err: any) {
+    console.error('[API] /hyperliquid/approve failed:', err?.message ?? err)
+    res.status(500).json({ success: false, error: err?.message ?? 'Internal error' })
+  }
+})
+
 app.get('/api/hyperliquid/account', requireTgUser, async (req, res) => {
   try {
     const user = (req as any).user

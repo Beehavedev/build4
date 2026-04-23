@@ -30,6 +30,29 @@ export default function Hyperliquid() {
   const [mids, setMids] = useState<Record<string, number>>({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [activating, setActivating] = useState(false)
+  const [activateMsg, setActivateMsg] = useState<string | null>(null)
+
+  const activate = async () => {
+    setActivating(true)
+    setActivateMsg(null)
+    try {
+      const r = await apiFetch<{ success: boolean; agentAddress?: string; error?: string }>(
+        '/api/hyperliquid/approve',
+        { method: 'POST' },
+      )
+      if (r.success) {
+        setActivateMsg('Activated! You can now trade Hyperliquid from BUILD4.')
+        await load()
+      } else {
+        setActivateMsg(r.error ?? 'Activation failed')
+      }
+    } catch (e: any) {
+      setActivateMsg(e?.message ?? 'Activation failed')
+    } finally {
+      setActivating(false)
+    }
+  }
 
   const load = async () => {
     setError(null)
@@ -87,18 +110,41 @@ export default function Hyperliquid() {
               </span>
             </div>
             {!account.onboarded && (
-              <div style={{
-                marginTop: 10, padding: 10, borderRadius: 8, fontSize: 11,
-                background: '#1e293b', border: '1px solid #334155', color: '#9ca3af',
-              }} data-testid="text-hl-onboard-cta">
-                Trading from BUILD4 needs a one-time agent approval (signed with
-                your wallet). In-app onboarding lands in the next update —
-                until then, your HL balance shown above is read-only.
-                Deposit USDC via{' '}
-                <a href="https://app.hyperliquid.xyz/trade" target="_blank" rel="noreferrer"
-                   style={{ color: '#a78bfa', textDecoration: 'underline' }}>
-                  hyperliquid.xyz
-                </a>{' '}using wallet <code>{account.walletAddress.slice(0, 6)}…{account.walletAddress.slice(-4)}</code>.
+              <div style={{ marginTop: 12 }} data-testid="card-hl-onboard">
+                <button
+                  onClick={activate}
+                  disabled={activating}
+                  data-testid="button-hl-activate"
+                  style={{
+                    width: '100%', padding: '12px 16px', borderRadius: 10,
+                    background: activating ? '#4c1d95' : 'linear-gradient(90deg,#7c3aed,#a78bfa)',
+                    color: '#fff', border: 'none', fontSize: 14, fontWeight: 600,
+                    cursor: activating ? 'wait' : 'pointer',
+                  }}
+                >
+                  {activating ? 'Activating…' : 'Activate Hyperliquid Trading'}
+                </button>
+                <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 8, lineHeight: 1.4 }}>
+                  One tap authorises a BUILD4 agent wallet to place orders for you on
+                  Hyperliquid. Your master key never leaves the server, never signs an
+                  order. Deposit USDC anytime via{' '}
+                  <a href="https://app.hyperliquid.xyz/trade" target="_blank" rel="noreferrer"
+                     style={{ color: '#a78bfa', textDecoration: 'underline' }}>
+                    hyperliquid.xyz
+                  </a>{' '}using wallet <code>{account.walletAddress.slice(0, 6)}…{account.walletAddress.slice(-4)}</code>.
+                </div>
+                {activateMsg && (
+                  <div
+                    style={{
+                      marginTop: 8, padding: 8, borderRadius: 6, fontSize: 11,
+                      background: activateMsg.startsWith('Activated') ? '#064e3b' : '#7f1d1d',
+                      color: activateMsg.startsWith('Activated') ? '#a7f3d0' : '#fecaca',
+                    }}
+                    data-testid="text-hl-activate-msg"
+                  >
+                    {activateMsg}
+                  </div>
+                )}
               </div>
             )}
           </div>
