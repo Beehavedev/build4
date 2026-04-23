@@ -1163,7 +1163,9 @@ function OutcomeBars({ outcomes }: { outcomes: MarketDetailOutcome[] }) {
 }
 
 function SwarmHero({ swarm }: { swarm: SwarmCard }) {
-  const consensusColor = swarm.consensus === 'YES' ? '#10b981' : '#ef4444'
+  const isFavorite = swarm.consensus === 'YES'
+  const consensusColor = isFavorite ? '#10b981' : '#f59e0b'
+  const consensusLabel = isFavorite ? 'FAVORITE' : 'LONG-SHOT'
   const pct = (swarm.impliedProbability * 100).toFixed(1)
   const confColor =
     swarm.confidenceScore > 0.6 ? '#10b981'
@@ -1193,12 +1195,12 @@ function SwarmHero({ swarm }: { swarm: SwarmCard }) {
       }}>
         <div>
           <div style={{ fontSize: 10, color: '#64748b', letterSpacing: 0.4, marginBottom: 4 }}>CONSENSUS</div>
-          <div style={{ fontSize: 36, fontWeight: 800, color: consensusColor, lineHeight: 1 }}
+          <div style={{ fontSize: 28, fontWeight: 800, color: consensusColor, lineHeight: 1 }}
                data-testid="text-swarm-consensus">
-            {swarm.consensus}
+            {consensusLabel}
           </div>
-          <div style={{ fontSize: 20, fontWeight: 600, color: '#94a3b8', marginTop: 2 }}>
-            {pct}%
+          <div style={{ fontSize: 20, fontWeight: 600, color: '#94a3b8', marginTop: 6 }}>
+            {pct}% implied
           </div>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: 4 }}>
