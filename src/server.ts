@@ -1117,10 +1117,23 @@ app.post('/api/hyperliquid/approve', requireTgUser, async (req, res) => {
     const agentEncryptedPK = encryptPrivateKey(agentWallet.privateKey, user.id)
 
     // ── 3) Ask HL to authorise the agent. Master signs EIP-712 ApproveAgent.
-    const { approveAgent } = await import('./services/hyperliquid')
+    const { approveAgent, approveBuilderFee } = await import('./services/hyperliquid')
     const result = await approveAgent(userPk, agentAddress)
     if (!result.success) {
       return res.status(400).json({ success: false, error: result.error ?? 'approveAgent failed' })
+    }
+
+    // ── 3b) Authorise BUILD4's builder address to charge per-order kickback.
+    //   Same one-tap flow — master signs ApproveBuilderFee right after the
+    //   agent approval. Failure here is non-fatal: the user is still onboarded
+    //   for trading, we just don't earn revenue on their orders. Logged so
+    //   we can sweep up missed approvals later if it becomes common.
+    const builderResult = await approveBuilderFee(userPk)
+    if (!builderResult.success) {
+      console.warn(
+        `[/hyperliquid/approve] approveBuilderFee failed (non-fatal) user=${user.id} ` +
+        `tg=${user.telegramId} err=${builderResult.error ?? 'unknown'}`,
+      )
     }
 
     // ── 4) Persist. Only flip onboarded=true after on-chain success so a

@@ -26,6 +26,32 @@ import * as hl from '@nktkas/hyperliquid'
 const HL_API_URL  = process.env.HYPERLIQUID_API_URL ?? 'https://api.hyperliquid.xyz'
 const AGENT_NAME  = process.env.HYPERLIQUID_AGENT_NAME ?? 'build4-agent'
 
+// Builder-fee config — how BUILD4 actually monetises HL trades.
+//
+// Hyperliquid lets a "builder" capture a kickback on every order they route,
+// once the user signs ApproveBuilderFee authorising up to a maximum rate.
+// The cut is paid by the user on top of HL's protocol fee and lands in
+// the builder address every fill (paid in USDC on HL L1 — withdrawable to
+// Arbitrum and bridge from there to BSC if you want it back on chain).
+//
+// We default the treasury to the same address Aster routes its builder fees
+// to (ASTER_BUILDER_ADDRESS) so all venue revenue accrues to one wallet.
+// The address is just a public key — both venues credit it independently
+// using the relevant chain's accounting. Override with HYPERLIQUID_BUILDER_ADDRESS
+// if you ever want HL revenue to land in a separate treasury.
+//
+//   HYPERLIQUID_BUILDER_ADDRESS    optional override; defaults to ASTER_BUILDER_ADDRESS
+//   HYPERLIQUID_BUILDER_MAX_RATE   ceiling user signs, e.g. '0.1%' (HL max allowed)
+//   HYPERLIQUID_BUILDER_FEE_TENTHS per-order fee in tenths of a basis point
+//                                  (10 bps = 100, which is HL's hard cap)
+//
+// If neither builder address is set we skip the builder approval and place
+// orders without a builder field — zero revenue but no breakage.
+const BUILDER_ADDRESS    =
+  (process.env.HYPERLIQUID_BUILDER_ADDRESS ?? process.env.ASTER_BUILDER_ADDRESS ?? '').toLowerCase()
+const BUILDER_MAX_RATE   = process.env.HYPERLIQUID_BUILDER_MAX_RATE ?? '0.1%'
+const BUILDER_FEE_TENTHS = Number(process.env.HYPERLIQUID_BUILDER_FEE_TENTHS ?? '100')
+
 // Single shared transport — re-used across calls for connection pooling.
 const transport = new hl.HttpTransport(HL_API_URL !== 'https://api.hyperliquid.xyz' ? ({ url: HL_API_URL } as any) : {})
 const infoClient = new hl.InfoClient({ transport })
@@ -175,6 +201,34 @@ export async function approveAgent(
 }
 
 /**
+ * Authorise the BUILD4 builder address to charge a per-order kickback on
+ * every fill on the user's account. Signed by the user's master key (NOT
+ * the agent), same as approveAgent. The user can revoke at any time on
+ * hyperliquid.xyz.
+ *
+ * Returns { skipped: true } if no builder address is configured — caller
+ * should treat that as a soft success (zero revenue but trades still work).
+ */
+export async function approveBuilderFee(
+  userPrivateKey: string,
+): Promise<{ success: boolean; error?: string; skipped?: boolean }> {
+  if (!BUILDER_ADDRESS) return { success: true, skipped: true }
+  try {
+    const userWallet = new ethers.Wallet(userPrivateKey)
+    const client = new hl.ExchangeClient({ transport, wallet: userWallet as any })
+    await client.approveBuilderFee({
+      builder:     BUILDER_ADDRESS as `0x${string}`,
+      maxFeeRate:  BUILDER_MAX_RATE as `${string}%`,
+    })
+    return { success: true }
+  } catch (err: any) {
+    const msg = err?.response?.data ?? err?.message ?? 'approveBuilderFee failed'
+    console.error('[HL] approveBuilderFee failed:', BUILDER_ADDRESS, '→', msg)
+    return { success: false, error: typeof msg === 'string' ? msg : JSON.stringify(msg) }
+  }
+}
+
+/**
  * Place a perp order on Hyperliquid. Uses the agent wallet to sign.
  *   coin:     'BTC' | 'ETH' | … (HL uses bare ticker, no quote suffix)
  *   side:     'LONG' | 'SHORT' — translated to the SDK's isBuy boolean
@@ -218,7 +272,12 @@ export async function placeOrder(
       }
     }
 
-    const res = await client.order({
+    // Attach builder fee if a builder address is configured. HL routes the
+    // configured kickback (BUILDER_FEE_TENTHS) to BUILDER_ADDRESS on every
+    // fill, provided the user previously signed approveBuilderFee for at
+    // least this rate. If they didn't, HL will reject — caller should
+    // re-run /api/hyperliquid/approve.
+    const orderPayload: any = {
       orders: [{
         a: assetIdx,
         b: isBuy,
@@ -230,7 +289,11 @@ export async function placeOrder(
           : { limit: { tif: 'Gtc' } },
       }],
       grouping: 'na',
-    })
+    }
+    if (BUILDER_ADDRESS && BUILDER_FEE_TENTHS > 0) {
+      orderPayload.builder = { b: BUILDER_ADDRESS, f: BUILDER_FEE_TENTHS }
+    }
+    const res = await client.order(orderPayload)
 
     const status = (res as any)?.response?.data?.statuses?.[0]
     if (status?.error) return { success: false, error: status.error }
