@@ -24,6 +24,13 @@ model User {
   asterApiSecret    String?
   asterAgentAddress String?   // agent/signer address approved for this user
   asterOnboarded    Boolean   @default(false)
+  // ── Hyperliquid (added 2026-04-23) ────────────────────────────────────────
+  // Same wallet address as Aster (BSC wallet works on HL since both are EVM
+  // and use the same secp256k1 derivation). Agent is a separate keypair the
+  // user authorises via approveAgent so server-side trades don't need master.
+  hyperliquidAgentAddress     String?
+  hyperliquidAgentEncryptedPK String?
+  hyperliquidOnboarded        Boolean @default(false)
   pinHash           String?   // PBKDF2 hash of user's wallet PIN (optional security layer)
   pinSalt           String?
   // 42.space prediction-market live trading opt-in. Default true — all

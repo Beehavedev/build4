@@ -25,6 +25,12 @@ The **primary production app** runs on Render from `Beehavedev/build4` repo.
 - **AI**: Anthropic SDK (Claude)
 - **Blockchain**: ethers.js v6 (BSC/EVM wallets)
 - **DEX**: Aster DEX Pro API V3 (EIP-712 signed, fapi3.asterdex.com)
+- **DEX (perps, NEW)**: Hyperliquid L1 via `@nktkas/hyperliquid` SDK
+  (api.hyperliquid.xyz). Same EVM wallet address as BSC; agent-wallet
+  approval lets the server sign orders without holding the master PK.
+  See `src/services/hyperliquid.ts`. First-pass exposes mark prices
+  and account state; order placement and approveAgent onboarding flow
+  land in a follow-up.
 - **Server**: Express.js
 - **Cron**: node-cron for agent runner
 - **Mini App**: Vite + React 18

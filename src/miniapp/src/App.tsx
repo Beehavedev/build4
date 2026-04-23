@@ -6,6 +6,7 @@ import Portfolio from './pages/Portfolio'
 import Wallet from './pages/Wallet'
 import Predictions, { CrosshairIcon } from './pages/Predictions'
 import { Trade } from './pages/Trade'
+import Hyperliquid from './pages/Hyperliquid'
 import Admin from './pages/Admin'
 import { apiFetch } from './api'
 
@@ -15,7 +16,7 @@ declare global {
   }
 }
 
-type Page = 'dashboard' | 'agents' | 'wallet' | 'trade' | 'copy' | 'portfolio' | 'predictions' | 'admin'
+type Page = 'dashboard' | 'agents' | 'wallet' | 'trade' | 'copy' | 'portfolio' | 'predictions' | 'hyperliquid' | 'admin'
 
 export default function App() {
   const [page, setPage] = useState<Page>('dashboard')
@@ -60,6 +61,7 @@ export default function App() {
         {page === 'copy' && <CopyTrade />}
         {page === 'portfolio' && <Portfolio userId={userId} />}
         {page === 'predictions' && <Predictions />}
+        {page === 'hyperliquid' && <Hyperliquid />}
         {page === 'admin' && <Admin />}
       </div>
 

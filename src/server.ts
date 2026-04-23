@@ -1040,6 +1040,46 @@ app.post('/api/aster/close', requireTgUser, async (req, res) => {
   }
 })
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Hyperliquid (foundation, added 2026-04-23)
+//
+// First-pass endpoints so the miniapp Hyperliquid tab and bot can show market
+// data + account state. Order placement and onboarding (approveAgent) flow
+// will land in a follow-up — for now this exposes:
+//   GET  /api/hyperliquid/markprice/:coin   public mid for a perp coin
+//   GET  /api/hyperliquid/account           caller's HL clearinghouse state
+// ─────────────────────────────────────────────────────────────────────────────
+
+app.get('/api/hyperliquid/markprice/:coin', async (req, res) => {
+  try {
+    const { getMarkPrice } = await import('./services/hyperliquid')
+    const data = await getMarkPrice(req.params.coin)
+    res.json(data)
+  } catch (err: any) {
+    console.error('[API] /hyperliquid/markprice failed:', err?.message)
+    res.status(500).json({ error: err?.message ?? 'Internal error' })
+  }
+})
+
+app.get('/api/hyperliquid/account', requireTgUser, async (req, res) => {
+  try {
+    const user = (req as any).user
+    const wallet = await db.wallet.findFirst({ where: { userId: user.id, isActive: true } })
+    if (!wallet) return res.status(404).json({ error: 'No active wallet' })
+
+    const { getAccountState } = await import('./services/hyperliquid')
+    const state = await getAccountState(wallet.address)
+    res.json({
+      walletAddress: wallet.address,
+      onboarded:     Boolean((user as any).hyperliquidOnboarded),
+      ...state,
+    })
+  } catch (err: any) {
+    console.error('[API] /hyperliquid/account failed:', err?.message)
+    res.status(500).json({ error: err?.message ?? 'Internal error' })
+  }
+})
+
 // Per-user mutex for withdrawals — prevents double-spend if a client
 // fires concurrent requests before the first tx is broadcast.
 const withdrawLocks = new Map<string, Promise<unknown>>()

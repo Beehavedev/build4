@@ -3,7 +3,7 @@ import { apiFetch } from '../api'
 
 interface DashboardProps {
   userId: string | null
-  onNavigate?: (page: 'dashboard' | 'agents' | 'wallet' | 'copy' | 'portfolio' | 'predictions' | 'admin') => void
+  onNavigate?: (page: 'dashboard' | 'agents' | 'wallet' | 'copy' | 'portfolio' | 'predictions' | 'hyperliquid' | 'admin') => void
 }
 
 interface WalletInfo {
@@ -103,10 +103,9 @@ export default function Dashboard({ userId, onNavigate }: DashboardProps) {
     },
     {
       label: 'Hyperliquid',
-      sub: 'soon',
+      sub: 'Perps',
       testId: 'button-venue-hyperliquid',
-      onClick: () => {},
-      disabled: true,
+      onClick: () => onNavigate?.('hyperliquid'),
     },
   ]
 

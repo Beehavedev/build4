@@ -25,6 +25,14 @@ model User {
   asterAgentAddress    String?   // agent/signer address approved for this user (UNIQUE per user)
   asterAgentEncryptedPK String?  // AES-encrypted private key for above agent (server-side trade signing)
   asterOnboarded    Boolean   @default(false)
+  // ── Hyperliquid (added 2026-04-23) ────────────────────────────────────────
+  // Same wallet address as the user's BSC wallet (HL is EVM, addresses derive
+  // from the same secp256k1 PK). Agent is a separate keypair the user
+  // authorises via approveAgent so the server can sign orders without holding
+  // the master PK in memory. Mirrors the asterAgent* pattern above.
+  hyperliquidAgentAddress     String?
+  hyperliquidAgentEncryptedPK String?
+  hyperliquidOnboarded        Boolean @default(false)
   pinHash           String?   // PBKDF2 hash of user's wallet PIN (optional security layer)
   pinSalt           String?
   // Multi-provider swarm decision-making opt-in (Task #18). Default false →
