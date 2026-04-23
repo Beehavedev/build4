@@ -20,7 +20,7 @@ export async function explainTrade(context: {
   try {
     const ai = getClient();
     const response = await ai.messages.create({
-      model: "claude-sonnet-4-5-20250514",
+      model: "claude-sonnet-4-5",
       max_tokens: 300,
       messages: [
         {
@@ -52,7 +52,7 @@ export async function generateLossLesson(trade: {
   try {
     const ai = getClient();
     const response = await ai.messages.create({
-      model: "claude-sonnet-4-5-20250514",
+      model: "claude-sonnet-4-5",
       max_tokens: 200,
       messages: [
         {

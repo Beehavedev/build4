@@ -55,7 +55,7 @@ const PROVIDERS: Record<Provider, ProviderConfig> = {
   anthropic: {
     apiKeyEnv: 'ANTHROPIC_API_KEY',
     baseUrl: 'https://api.anthropic.com',
-    defaultModel: 'claude-sonnet-4-5-20250514',
+    defaultModel: 'claude-sonnet-4-5',
   },
   xai: {
     apiKeyEnv: 'XAI_API_KEY',

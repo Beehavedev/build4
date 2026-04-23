@@ -138,7 +138,7 @@ test('anthropic routes through SDK with correct shape', async () => {
           create: async (params: any) => {
             captured = params
             return {
-              model: 'claude-sonnet-4-5-20250514',
+              model: 'claude-sonnet-4-5',
               content: [{ type: 'text', text: 'hi from claude' }],
               usage: { input_tokens: 10, output_tokens: 7 },
             }
@@ -156,7 +156,7 @@ test('anthropic routes through SDK with correct shape', async () => {
       temperature: 0.1,
     })
     assert.equal(receivedKey, 'anthropic-key')
-    assert.equal(captured.model, 'claude-sonnet-4-5-20250514')
+    assert.equal(captured.model, 'claude-sonnet-4-5')
     assert.equal(captured.max_tokens, 50)
     assert.equal(captured.temperature, 0.1)
     assert.equal(captured.system, 'be brief')
