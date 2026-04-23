@@ -229,6 +229,8 @@ function AsterSecondaryCard({ w, onReactivated }: { w: WalletInfo; onReactivated
   const reactivate = async () => {
     if (reactivating) return
     setReactivating(true); setReactivateMsg(null)
+    const fmtDebug = (d: any): string =>
+      d ? ` [fmt=${d.fmt} len=${d.totalLen} parts=${d.partLens} head=${d.head} tried=${d.tried}${d.reason ? ' reason=' + d.reason : ''}]` : ''
     try {
       const r = await apiFetch<{
         success: boolean
@@ -242,14 +244,16 @@ function AsterSecondaryCard({ w, onReactivated }: { w: WalletInfo; onReactivated
         setReactivateMsg('Re-activated. Refreshing balance…')
         setTimeout(() => onReactivated?.(), 600)
       } else {
-        const base = r.error ?? 'Re-activation failed'
-        const dbg = r.debug
-          ? ` [fmt=${r.debug.fmt} len=${r.debug.totalLen} parts=${r.debug.partLens} head=${r.debug.head} tried=${r.debug.tried}]`
-          : ''
-        setReactivateMsg(base + dbg)
+        setReactivateMsg((r.error ?? 'Re-activation failed') + fmtDebug(r.debug))
       }
     } catch (e: any) {
-      setReactivateMsg(e?.message ?? 'Re-activation failed')
+      // apiFetch throws ApiError with body attached on non-2xx responses.
+      // The /api/aster/approve handler returns rich diagnostics in `debug`
+      // when wallet decryption fails — surface them so the user (and we)
+      // can triage why their wallet PK can't be decrypted.
+      const base = e?.message ?? 'Re-activation failed'
+      const dbg  = fmtDebug(e?.body?.debug)
+      setReactivateMsg(base + dbg)
     } finally {
       setReactivating(false)
     }

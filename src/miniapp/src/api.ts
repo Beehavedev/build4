@@ -68,6 +68,21 @@ function getInitData(): string {
   return (window as any).Telegram?.WebApp?.initData ?? '';
 }
 
+// ApiError preserves the response body and status so callers can surface
+// rich diagnostics (e.g. /api/aster/approve returns a `debug` object with
+// the wallet-PK encryption format when decryption fails — without this
+// the UI just sees "Could not decrypt wallet" with no way to triage).
+export class ApiError extends Error {
+  status: number;
+  body: any;
+  constructor(message: string, status: number, body: any) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.body = body;
+  }
+}
+
 export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
   const initData = getInitData();
@@ -75,11 +90,12 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
   const res = await fetch(`${BASE}${path}`, { ...init, headers });
   if (!res.ok) {
     let msg = `API error: ${res.status}`;
+    let body: any = null;
     try {
-      const body = await res.json();
+      body = await res.json();
       if (body?.error) msg = body.error;
     } catch {}
-    throw new Error(msg);
+    throw new ApiError(msg, res.status, body);
   }
   return res.json();
 }

@@ -353,6 +353,21 @@ body {
   font-size: 16px;
   outline: none;
   font-family: inherit;
+  width: 100%;
+  /* iOS Safari / Telegram WebApp render native picker chrome on <select>
+     and pill chrome on <button> by default. Without these resets, the
+     Pair dropdown shows as a white iOS pill that floats over the label
+     and the Long/Short toggle loses its background entirely. */
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+select.input-field {
+  /* Custom caret since we removed native chevron */
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path fill='%239ca3af' d='M6 8L0 0h12z'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+  padding-right: 36px;
 }
 
 .input-field:focus {
@@ -364,6 +379,8 @@ body {
   border-radius: 10px;
   overflow: hidden;
   border: 1px solid var(--border);
+  gap: 1px;
+  background: var(--border);
 }
 
 .toggle-btn {
@@ -377,6 +394,10 @@ body {
   color: var(--text-muted);
   border: none;
   transition: all 0.2s;
+  /* See input-field comment — same iOS chrome reset. */
+  -webkit-appearance: none;
+  appearance: none;
+  font-family: inherit;
 }
 
 .toggle-btn.active-long {
