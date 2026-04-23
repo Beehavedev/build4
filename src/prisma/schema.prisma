@@ -39,6 +39,10 @@ model User {
   // single-provider Anthropic. When true, every trading tick is run across
   // all configured providers and the quorum verdict wins.
   swarmEnabled      Boolean   @default(false)
+  // Set true when Telegram returns 403 (user blocked bot or deactivated chat).
+  // Broadcast endpoint skips these so we don't burn rate-limit budget on
+  // unreachable chats.
+  botBlocked        Boolean   @default(false)
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @default(now()) @updatedAt
 

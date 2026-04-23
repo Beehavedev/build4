@@ -1666,6 +1666,197 @@ app.get('/api/me/admin', requireTgUser, async (req, res) => {
   res.json({ isAdmin: isAdminTelegramId(user.telegramId) })
 })
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Broadcast — POST /api/admin/broadcast + GET /api/admin/broadcast/status
+//
+// Fan-out a single message to every reachable Telegram user. Used for
+// product announcements (X Layer win, new features, etc).
+//
+// Why we don't just use grammy's bot.api here: a 17k-user broadcast at the
+// safe ~25 msg/sec pace takes ~11 minutes, far longer than any single HTTP
+// request can hold open on Render. So we kick the job off in the background
+// and expose a status endpoint the admin UI polls.
+//
+// Only ONE broadcast can run at a time (broadcastJob singleton). Calling
+// POST while a job is in-flight returns 409.
+//
+// Telegram errors we handle:
+//   403 "bot was blocked"  / "chat not found" / "user is deactivated"
+//     → set user.botBlocked = true, never message them again
+//   429 "Too Many Requests" → respect retry_after, sleep, retry once
+//   anything else → log, count as failed, move on
+type BroadcastJob = {
+  id:            string
+  startedAt:     number
+  finishedAt:    number | null
+  total:         number
+  sent:          number
+  blocked:       number
+  failed:        number
+  dryRun:        boolean
+  message:       string
+  buttonText:    string | null
+  buttonUrl:     string | null
+  parseMode:     'Markdown' | 'HTML' | null
+  lastError:     string | null
+  cancelled:     boolean
+}
+let broadcastJob: BroadcastJob | null = null
+
+async function tgSendMessage(
+  token:     string,
+  chatId:    string,
+  text:      string,
+  parseMode: 'Markdown' | 'HTML' | null,
+  button:    { text: string; url: string } | null,
+): Promise<{ ok: boolean; status: number; description?: string; retryAfter?: number }> {
+  const body: any = { chat_id: chatId, text, disable_web_page_preview: false }
+  if (parseMode) body.parse_mode = parseMode
+  if (button) body.reply_markup = { inline_keyboard: [[{ text: button.text, url: button.url }]] }
+  const resp = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify(body),
+  })
+  const json: any = await resp.json().catch(() => ({}))
+  if (resp.ok && json?.ok) return { ok: true, status: 200 }
+  return {
+    ok:          false,
+    status:      resp.status,
+    description: json?.description ?? `HTTP ${resp.status}`,
+    retryAfter:  json?.parameters?.retry_after,
+  }
+}
+
+async function runBroadcastJob(job: BroadcastJob) {
+  const token = process.env.TELEGRAM_BOT_TOKEN
+  if (!token) {
+    job.lastError = 'TELEGRAM_BOT_TOKEN missing'
+    job.finishedAt = Date.now()
+    return
+  }
+  // Pull only what we need. Skip botBlocked=true so we don't waste rate budget.
+  const users = await db.user.findMany({
+    where:  { botBlocked: false },
+    select: { id: true, telegramId: true },
+  })
+  job.total = users.length
+
+  const button = job.buttonText && job.buttonUrl ? { text: job.buttonText, url: job.buttonUrl } : null
+  // ~25 msg/sec is comfortably below Telegram's 30/sec global cap.
+  const minIntervalMs = 40
+
+  for (const u of users) {
+    if (job.cancelled) break
+    const tgId = u.telegramId.toString()
+
+    if (job.dryRun) {
+      job.sent++
+      continue
+    }
+
+    const startedAt = Date.now()
+    let r = await tgSendMessage(token, tgId, job.message, job.parseMode, button)
+
+    // 429 — Telegram tells us how long to wait. Respect it and retry once.
+    if (!r.ok && r.status === 429 && r.retryAfter) {
+      await new Promise((res) => setTimeout(res, (r.retryAfter! + 1) * 1000))
+      r = await tgSendMessage(token, tgId, job.message, job.parseMode, button)
+    }
+
+    if (r.ok) {
+      job.sent++
+    } else if (
+      r.status === 403 ||
+      /blocked|deactivated|chat not found|user is deactivated/i.test(r.description ?? '')
+    ) {
+      job.blocked++
+      try {
+        await db.user.update({ where: { id: u.id }, data: { botBlocked: true } })
+      } catch (e) {
+        // Non-fatal — keep broadcasting.
+      }
+    } else {
+      job.failed++
+      job.lastError = `${r.status} ${r.description ?? ''}`.trim()
+      console.warn(`[broadcast] tg=${tgId} failed: ${job.lastError}`)
+    }
+
+    const elapsed = Date.now() - startedAt
+    if (elapsed < minIntervalMs) {
+      await new Promise((res) => setTimeout(res, minIntervalMs - elapsed))
+    }
+  }
+  job.finishedAt = Date.now()
+  console.log(
+    `[broadcast] job=${job.id} done sent=${job.sent} blocked=${job.blocked} failed=${job.failed} total=${job.total} dryRun=${job.dryRun}`,
+  )
+}
+
+app.post('/api/admin/broadcast', requireAdmin, async (req, res) => {
+  try {
+    if (broadcastJob && !broadcastJob.finishedAt) {
+      return res.status(409).json({
+        success: false,
+        error:   'A broadcast is already running',
+        job:     broadcastJob,
+      })
+    }
+    const { message, parseMode, buttonText, buttonUrl, dryRun } = req.body ?? {}
+    if (typeof message !== 'string' || message.trim().length === 0) {
+      return res.status(400).json({ success: false, error: 'message required' })
+    }
+    if (message.length > 4000) {
+      return res.status(400).json({ success: false, error: 'message exceeds 4000 chars' })
+    }
+    if ((buttonText && !buttonUrl) || (!buttonText && buttonUrl)) {
+      return res.status(400).json({ success: false, error: 'buttonText and buttonUrl must both be set or both empty' })
+    }
+    const pm = parseMode === 'Markdown' || parseMode === 'HTML' ? parseMode : null
+
+    broadcastJob = {
+      id:         `bc_${Date.now()}`,
+      startedAt:  Date.now(),
+      finishedAt: null,
+      total:      0,
+      sent:       0,
+      blocked:    0,
+      failed:     0,
+      dryRun:     !!dryRun,
+      message,
+      buttonText: buttonText ?? null,
+      buttonUrl:  buttonUrl  ?? null,
+      parseMode:  pm,
+      lastError:  null,
+      cancelled:  false,
+    }
+    // Fire-and-forget. Status endpoint is the source of truth for progress.
+    runBroadcastJob(broadcastJob).catch((e) => {
+      console.error('[broadcast] job crashed:', e)
+      if (broadcastJob) {
+        broadcastJob.lastError = e?.message ?? String(e)
+        broadcastJob.finishedAt = Date.now()
+      }
+    })
+    res.json({ success: true, job: broadcastJob })
+  } catch (err: any) {
+    console.error('[API] /admin/broadcast failed:', err)
+    res.status(500).json({ success: false, error: err?.message ?? 'Internal error' })
+  }
+})
+
+app.get('/api/admin/broadcast/status', requireAdmin, async (_req, res) => {
+  res.json({ job: broadcastJob })
+})
+
+app.post('/api/admin/broadcast/cancel', requireAdmin, async (_req, res) => {
+  if (broadcastJob && !broadcastJob.finishedAt) {
+    broadcastJob.cancelled = true
+    return res.json({ success: true, job: broadcastJob })
+  }
+  res.json({ success: false, error: 'No running broadcast' })
+})
+
 app.get('/api/admin/cost-rates', requireAdmin, async (_req, res) => {
   try {
     const { listCostRates } = await import('./services/costRates')

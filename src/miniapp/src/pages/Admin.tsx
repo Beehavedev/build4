@@ -10,6 +10,268 @@ interface CostRate {
   defaultUsdPer1MTokens: number | null
 }
 
+interface BroadcastJobStatus {
+  id:         string
+  startedAt:  number
+  finishedAt: number | null
+  total:      number
+  sent:       number
+  blocked:    number
+  failed:     number
+  dryRun:     boolean
+  message:    string
+  buttonText: string | null
+  buttonUrl:  string | null
+  parseMode:  'Markdown' | 'HTML' | null
+  lastError:  string | null
+  cancelled:  boolean
+}
+
+function BroadcastPanel() {
+  const [message, setMessage]       = useState('')
+  const [parseMode, setParseMode]   = useState<'none' | 'Markdown' | 'HTML'>('Markdown')
+  const [buttonText, setButtonText] = useState('')
+  const [buttonUrl, setButtonUrl]   = useState('')
+  const [dryRun, setDryRun]         = useState(true)
+  const [job, setJob]               = useState<BroadcastJobStatus | null>(null)
+  const [err, setErr]               = useState<string | null>(null)
+  const [busy, setBusy]             = useState(false)
+
+  const refresh = async () => {
+    try {
+      const r = await apiFetch<{ job: BroadcastJobStatus | null }>('/api/admin/broadcast/status')
+      setJob(r.job)
+    } catch {}
+  }
+  useEffect(() => {
+    refresh()
+    const t = setInterval(refresh, 2000)
+    return () => clearInterval(t)
+  }, [])
+
+  const send = async () => {
+    setErr(null)
+    if (!message.trim()) return setErr('Message is required')
+    if ((buttonText && !buttonUrl) || (!buttonText && buttonUrl)) {
+      return setErr('Button text and URL must both be set, or both empty')
+    }
+    if (!dryRun && !confirm(`Send to ALL users (live)? This cannot be undone.`)) return
+    setBusy(true)
+    try {
+      const r = await apiFetch<{ success: boolean; error?: string; job?: BroadcastJobStatus }>(
+        '/api/admin/broadcast',
+        {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message,
+            parseMode:  parseMode === 'none' ? null : parseMode,
+            buttonText: buttonText || null,
+            buttonUrl:  buttonUrl  || null,
+            dryRun,
+          }),
+        },
+      )
+      if (!r.success) {
+        setErr(r.error ?? 'Broadcast failed')
+      } else if (r.job) {
+        setJob(r.job)
+      }
+    } catch (e: any) {
+      setErr(e?.message ?? 'Broadcast failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const cancel = async () => {
+    try {
+      await apiFetch('/api/admin/broadcast/cancel', { method: 'POST' })
+      await refresh()
+    } catch {}
+  }
+
+  const running = job && !job.finishedAt
+  const pct = job && job.total > 0
+    ? Math.round(((job.sent + job.blocked + job.failed) / job.total) * 100)
+    : 0
+
+  return (
+    <div
+      data-testid="card-broadcast"
+      style={{
+        background: '#12121a', border: '1px solid #1e1e2e', borderRadius: 10,
+        padding: 14, marginBottom: 20,
+      }}
+    >
+      <h2 style={{ color: '#fff', margin: '0 0 4px', fontSize: 18 }}>📣 Broadcast</h2>
+      <p style={{ color: '#94a3b8', fontSize: 12, margin: '0 0 12px' }}>
+        Send a Telegram message to every user. Paced ~25/sec — full fan-out takes
+        ~10 min. Blocked users are auto-skipped on future sends.
+      </p>
+
+      {err && (
+        <div
+          data-testid="text-broadcast-error"
+          style={{
+            background: '#3b1818', color: '#fca5a5',
+            padding: '8px 12px', borderRadius: 6, marginBottom: 10, fontSize: 12,
+          }}
+        >
+          {err}
+        </div>
+      )}
+
+      <textarea
+        data-testid="textarea-broadcast-message"
+        placeholder="Your message — supports Markdown by default"
+        value={message}
+        onChange={(e) => setMessage(e.target.value)}
+        rows={6}
+        style={{
+          width: '100%', padding: 10, background: '#0a0a12',
+          border: '1px solid #1e1e2e', color: '#fff', borderRadius: 6,
+          fontSize: 13, fontFamily: 'inherit', resize: 'vertical',
+          boxSizing: 'border-box', marginBottom: 8,
+        }}
+      />
+
+      <div style={{ display: 'flex', gap: 8, marginBottom: 8, alignItems: 'center' }}>
+        <span style={{ fontSize: 11, color: '#94a3b8' }}>Format:</span>
+        {(['Markdown', 'HTML', 'none'] as const).map(m => (
+          <button
+            key={m}
+            onClick={() => setParseMode(m)}
+            data-testid={`button-parsemode-${m}`}
+            style={{
+              padding: '4px 10px', borderRadius: 4, fontSize: 11, cursor: 'pointer',
+              background: parseMode === m ? '#7c3aed' : '#0a0a12',
+              border: `1px solid ${parseMode === m ? '#7c3aed' : '#1e1e2e'}`,
+              color: '#fff',
+            }}
+          >
+            {m}
+          </button>
+        ))}
+      </div>
+
+      <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+        <input
+          data-testid="input-broadcast-button-text"
+          placeholder="Button text (optional)"
+          value={buttonText}
+          onChange={(e) => setButtonText(e.target.value)}
+          style={{
+            flex: 1, padding: '8px 10px', background: '#0a0a12',
+            border: '1px solid #1e1e2e', color: '#fff', borderRadius: 6, fontSize: 13,
+            boxSizing: 'border-box',
+          }}
+        />
+        <input
+          data-testid="input-broadcast-button-url"
+          placeholder="Button URL (https://…)"
+          value={buttonUrl}
+          onChange={(e) => setButtonUrl(e.target.value)}
+          style={{
+            flex: 2, padding: '8px 10px', background: '#0a0a12',
+            border: '1px solid #1e1e2e', color: '#fff', borderRadius: 6, fontSize: 13,
+            boxSizing: 'border-box',
+          }}
+        />
+      </div>
+
+      <label
+        style={{
+          display: 'flex', alignItems: 'center', gap: 8, fontSize: 12,
+          color: dryRun ? '#94a3b8' : '#ef4444', marginBottom: 12, cursor: 'pointer',
+        }}
+        data-testid="label-broadcast-dryrun"
+      >
+        <input
+          type="checkbox"
+          checked={dryRun}
+          onChange={(e) => setDryRun(e.target.checked)}
+          data-testid="checkbox-broadcast-dryrun"
+        />
+        {dryRun
+          ? 'Dry run — counts users only, sends nothing'
+          : '⚠ LIVE — will message every user'}
+      </label>
+
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button
+          data-testid="button-broadcast-send"
+          onClick={send}
+          disabled={busy || !!running}
+          style={{
+            flex: 1, padding: '10px', borderRadius: 6, fontSize: 13, fontWeight: 600,
+            background: running ? '#1e1e2e' : dryRun ? '#3b82f6' : '#dc2626',
+            border: 'none', color: '#fff',
+            cursor: busy || running ? 'not-allowed' : 'pointer',
+          }}
+        >
+          {busy ? 'Starting…' : running ? 'In progress' : dryRun ? 'Run dry count' : 'SEND LIVE'}
+        </button>
+        {running && (
+          <button
+            data-testid="button-broadcast-cancel"
+            onClick={cancel}
+            style={{
+              padding: '10px 16px', borderRadius: 6, fontSize: 13, cursor: 'pointer',
+              background: '#1e1e2e', border: '1px solid #ef4444', color: '#ef4444',
+            }}
+          >
+            Cancel
+          </button>
+        )}
+      </div>
+
+      {job && (
+        <div
+          data-testid="card-broadcast-status"
+          style={{
+            marginTop: 12, padding: 10, background: '#0a0a12',
+            border: '1px solid #1e1e2e', borderRadius: 6, fontSize: 12,
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+            <span style={{ color: '#94a3b8' }}>
+              {running ? '▶ Running' : '✓ Finished'}
+              {job.dryRun && ' (dry run)'}
+              {job.cancelled && ' (cancelled)'}
+            </span>
+            <span style={{ color: '#64748b', fontFamily: 'ui-monospace, monospace' }}>
+              {job.id}
+            </span>
+          </div>
+          <div style={{ height: 6, background: '#1e1e2e', borderRadius: 3, overflow: 'hidden', marginBottom: 8 }}>
+            <div style={{
+              width: `${pct}%`, height: '100%',
+              background: running ? '#3b82f6' : '#10b981',
+              transition: 'width 0.3s',
+            }} />
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', color: '#e2e8f0' }}>
+            <span data-testid="text-broadcast-sent">✓ {job.sent} sent</span>
+            <span data-testid="text-broadcast-blocked" style={{ color: '#94a3b8' }}>
+              ⊘ {job.blocked} blocked
+            </span>
+            <span data-testid="text-broadcast-failed" style={{ color: job.failed > 0 ? '#ef4444' : '#94a3b8' }}>
+              ✗ {job.failed} failed
+            </span>
+            <span style={{ color: '#64748b' }}>{job.total} total</span>
+          </div>
+          {job.lastError && (
+            <div style={{ marginTop: 6, color: '#ef4444', fontSize: 11 }}>
+              Last error: {job.lastError}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function Admin() {
   const [rates, setRates] = useState<CostRate[]>([])
   const [loading, setLoading] = useState(true)
@@ -101,6 +363,8 @@ export default function Admin() {
 
   return (
     <div style={{ padding: '16px 0' }} data-testid="page-admin">
+      <BroadcastPanel />
+
       <h2 style={{ color: '#fff', margin: '0 0 8px' }}>AI Cost Rates</h2>
       <p style={{ color: '#94a3b8', fontSize: 13, margin: '0 0 16px' }}>
         USD per 1M tokens used to estimate spend in /swarmstats. Defaults are baked
