@@ -1,0 +1,438 @@
+[Aster] klines fetch (cache miss): { symbol: 'BBUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'BBUSDT', interval: '5m', limit: 100 }
+[Runner] Ticking 4 agents in batches of 50
+[Runner] Dispatched 4 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'LINKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'MERLUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: '1000WOJAKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'TACUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'TACUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'VELVETUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'VELVETUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BBUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'HUMAUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'HUMAUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'LINKUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'MERLUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: '1000WOJAKUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'MERLUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'MERLUSDT', interval: '5m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: '1000WOJAKUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: '1000WOJAKUSDT', interval: '5m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'TACUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'TACUSDT', interval: '5m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'VELVETUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'VELVETUSDT', interval: '5m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BBUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'BBUSDT', interval: '5m', limit: 100 }
+[GET]
+build4-1.onrender.com/api/agents/0xDe0c904E0f79827b345B16CCa1C0fCf1b4Ff94dD/metadata.json clientIP="52.26.28.47" requestID="ce15b9fb-3d85-433f" responseTimeMS=558 responseBytes=1355 userAgent="8004scan/0.4.162 (+https://www.8004scan.io; bot)"
+[GET]
+build4-1.onrender.com/api/agents/0x548d53131f9eF135e67ed4F72c1ef06CAfb84Ec6/metadata.json clientIP="54.244.31.35" requestID="c5a823e1-01da-4e12" responseTimeMS=558 responseBytes=1358 userAgent="8004scan/0.4.162 (+https://www.8004scan.io; bot)"
+[GET]
+build4-1.onrender.com/api/agents/0xDe0c904E0f79827b345B16CCa1C0fCf1b4Ff94dD/metadata.json clientIP="52.26.28.47" requestID="ce15b9fb-3d85-433f" responseTimeMS=558 responseBytes=1355 userAgent="8004scan/0.4.162 (+https://www.8004scan.io; bot)"
+[GET]
+build4-1.onrender.com/api/agents/0x548d53131f9eF135e67ed4F72c1ef06CAfb84Ec6/metadata.json clientIP="54.244.31.35" requestID="c5a823e1-01da-4e12" responseTimeMS=558 responseBytes=1358 userAgent="8004scan/0.4.162 (+https://www.8004scan.io; bot)"
+[GET]
+build4-1.onrender.com/api/agents/0xDe0c904E0f79827b345B16CCa1C0fCf1b4Ff94dD/metadata.json clientIP="52.26.28.47" requestID="ce15b9fb-3d85-433f" responseTimeMS=558 responseBytes=1355 userAgent="8004scan/0.4.162 (+https://www.8004scan.io; bot)"
+[GET]
+build4-1.onrender.com/api/agents/0x548d53131f9eF135e67ed4F72c1ef06CAfb84Ec6/metadata.json clientIP="54.244.31.35" requestID="c5a823e1-01da-4e12" responseTimeMS=558 responseBytes=1358 userAgent="8004scan/0.4.162 (+https://www.8004scan.io; bot)"
+[GET]
+build4-1.onrender.com/api/agents/0xDe0c904E0f79827b345B16CCa1C0fCf1b4Ff94dD/metadata.json clientIP="52.26.28.47" requestID="ce15b9fb-3d85-433f" responseTimeMS=558 responseBytes=1355 userAgent="8004scan/0.4.162 (+https://www.8004scan.io; bot)"
+[GET]
+build4-1.onrender.com/api/agents/0x548d53131f9eF135e67ed4F72c1ef06CAfb84Ec6/metadata.json clientIP="54.244.31.35" requestID="c5a823e1-01da-4e12" responseTimeMS=558 responseBytes=1358 userAgent="8004scan/0.4.162 (+https://www.8004scan.io; bot)"
+[GET]
+build4-1.onrender.com/api/agents/0xDe0c904E0f79827b345B16CCa1C0fCf1b4Ff94dD/metadata.json clientIP="52.26.28.47" requestID="ce15b9fb-3d85-433f" responseTimeMS=558 responseBytes=1355 userAgent="8004scan/0.4.162 (+https://www.8004scan.io; bot)"
+[GET]
+build4-1.onrender.com/api/agents/0x548d53131f9eF135e67ed4F72c1ef06CAfb84Ec6/metadata.json clientIP="54.244.31.35" requestID="c5a823e1-01da-4e12" responseTimeMS=558 responseBytes=1358 userAgent="8004scan/0.4.162 (+https://www.8004scan.io; bot)"
+[GET]
+build4-1.onrender.com/api/agents/0xDe0c904E0f79827b345B16CCa1C0fCf1b4Ff94dD/metadata.json clientIP="52.26.28.47" requestID="ce15b9fb-3d85-433f" responseTimeMS=558 responseBytes=1355 userAgent="8004scan/0.4.162 (+https://www.8004scan.io; bot)"
+[GET]
+build4-1.onrender.com/api/agents/0x548d53131f9eF135e67ed4F72c1ef06CAfb84Ec6/metadata.json clientIP="54.244.31.35" requestID="c5a823e1-01da-4e12" responseTimeMS=558 responseBytes=1358 userAgent="8004scan/0.4.162 (+https://www.8004scan.io; bot)"
+[GET]
+build4-1.onrender.com/api/agents/0xDe0c904E0f79827b345B16CCa1C0fCf1b4Ff94dD/metadata.json clientIP="52.26.28.47" requestID="ce15b9fb-3d85-433f" responseTimeMS=558 responseBytes=1355 userAgent="8004scan/0.4.162 (+https://www.8004scan.io; bot)"
+[GET]
+build4-1.onrender.com/api/agents/0x548d53131f9eF135e67ed4F72c1ef06CAfb84Ec6/metadata.json clientIP="54.244.31.35" requestID="c5a823e1-01da-4e12" responseTimeMS=558 responseBytes=1358 userAgent="8004scan/0.4.162 (+https://www.8004scan.io; bot)"
+[GET]
+build4-1.onrender.com/api/agents/0xDe0c904E0f79827b345B16CCa1C0fCf1b4Ff94dD/metadata.json clientIP="52.26.28.47" requestID="ce15b9fb-3d85-433f" responseTimeMS=558 responseBytes=1355 userAgent="8004scan/0.4.162 (+https://www.8004scan.io; bot)"
+[GET]
+build4-1.onrender.com/api/agents/0x548d53131f9eF135e67ed4F72c1ef06CAfb84Ec6/metadata.json clientIP="54.244.31.35" requestID="c5a823e1-01da-4e12" responseTimeMS=558 responseBytes=1358 userAgent="8004scan/0.4.162 (+https://www.8004scan.io; bot)"
+[GET]
+build4-1.onrender.com/api/agents/0xDe0c904E0f79827b345B16CCa1C0fCf1b4Ff94dD/metadata.json clientIP="52.26.28.47" requestID="ce15b9fb-3d85-433f" responseTimeMS=558 responseBytes=1355 userAgent="8004scan/0.4.162 (+https://www.8004scan.io; bot)"
+[GET]
+build4-1.onrender.com/api/agents/0x548d53131f9eF135e67ed4F72c1ef06CAfb84Ec6/metadata.json clientIP="54.244.31.35" requestID="c5a823e1-01da-4e12" responseTimeMS=558 responseBytes=1358 userAgent="8004scan/0.4.162 (+https://www.8004scan.io; bot)"
+[GET]
+build4-1.onrender.com/api/agents/0xDe0c904E0f79827b345B16CCa1C0fCf1b4Ff94dD/metadata.json clientIP="52.26.28.47" requestID="ce15b9fb-3d85-433f" responseTimeMS=558 responseBytes=1355 userAgent="8004scan/0.4.162 (+https://www.8004scan.io; bot)"
+[GET]
+build4-1.onrender.com/api/agents/0x548d53131f9eF135e67ed4F72c1ef06CAfb84Ec6/metadata.json clientIP="54.244.31.35" requestID="c5a823e1-01da-4e12" responseTimeMS=558 responseBytes=1358 userAgent="8004scan/0.4.162 (+https://www.8004scan.io; bot)"
+[GET]
+build4-1.onrender.com/api/agents/0xDe0c904E0f79827b345B16CCa1C0fCf1b4Ff94dD/metadata.json clientIP="52.26.28.47" requestID="ce15b9fb-3d85-433f" responseTimeMS=558 responseBytes=1355 userAgent="8004scan/0.4.162 (+https://www.8004scan.io; bot)"
+[GET]
+build4-1.onrender.com/api/agents/0x548d53131f9eF135e67ed4F72c1ef06CAfb84Ec6/metadata.json clientIP="54.244.31.35" requestID="c5a823e1-01da-4e12" responseTimeMS=558 responseBytes=1358 userAgent="8004scan/0.4.162 (+https://www.8004scan.io; bot)"
+[GET]
+build4-1.onrender.com/api/agents/0xDe0c904E0f79827b345B16CCa1C0fCf1b4Ff94dD/metadata.json clientIP="52.26.28.47" requestID="ce15b9fb-3d85-433f" responseTimeMS=558 responseBytes=1355 userAgent="8004scan/0.4.162 (+https://www.8004scan.io; bot)"
+[GET]
+build4-1.onrender.com/api/agents/0x548d53131f9eF135e67ed4F72c1ef06CAfb84Ec6/metadata.json clientIP="54.244.31.35" requestID="c5a823e1-01da-4e12" responseTimeMS=558 responseBytes=1358 userAgent="8004scan/0.4.162 (+https://www.8004scan.io; bot)"
+[GET]
+build4-1.onrender.com/api/agents/0xDe0c904E0f79827b345B16CCa1C0fCf1b4Ff94dD/metadata.json clientIP="52.26.28.47" requestID="ce15b9fb-3d85-433f" responseTimeMS=558 responseBytes=1355 userAgent="8004scan/0.4.162 (+https://www.8004scan.io; bot)"
+[GET]
+build4-1.onrender.com/api/agents/0x548d53131f9eF135e67ed4F72c1ef06CAfb84Ec6/metadata.json clientIP="54.244.31.35" requestID="c5a823e1-01da-4e12" responseTimeMS=558 responseBytes=1358 userAgent="8004scan/0.4.162 (+https://www.8004scan.io; bot)"
+[GET]
+build4-1.onrender.com/api/agents/0xDe0c904E0f79827b345B16CCa1C0fCf1b4Ff94dD/metadata.json clientIP="52.26.28.47" requestID="ce15b9fb-3d85-433f" responseTimeMS=558 responseBytes=1355 userAgent="8004scan/0.4.162 (+https://www.8004scan.io; bot)"
+[GET]
+build4-1.onrender.com/api/agents/0x548d53131f9eF135e67ed4F72c1ef06CAfb84Ec6/metadata.json clientIP="54.244.31.35" requestID="c5a823e1-01da-4e12" responseTimeMS=558 responseBytes=1358 userAgent="8004scan/0.4.162 (+https://www.8004scan.io; bot)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BTC clientIP="78.177.162.15" requestID="bcbacc67-23b7-40f5" responseTimeMS=78 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BNB clientIP="78.177.162.15" requestID="612a5f05-0e1d-4ea9" responseTimeMS=77 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/SOL clientIP="78.177.162.15" requestID="580b00cd-2d2c-4d9d" responseTimeMS=159 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BNB clientIP="78.177.162.15" requestID="2416f7ca-835d-481d" responseTimeMS=230 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BNB clientIP="78.177.162.15" requestID="eca26c4f-5b51-450c" responseTimeMS=79 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BNB clientIP="78.177.162.15" requestID="9779ec13-a4e6-425f" responseTimeMS=77 responseBytes=295 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[Aster] /fapi/v3/balance USDT for 0x9751EB70C3042b4b2a228f8E67dfE356CB2d3026 → marginBalance= 50.7449 crossWallet= 50.7353 crossUnPnl= 0.0096 available= 49.4561
+[HL] placeOrder failed: 0x9751EB70C3042b4b2a228f8E67dfE356CB2d3026 → Order 0: Builder fee has not been approved.
+[/hyperliquid/order] builder-rejection detected user=cmo1okwe80000y25un4uec8b0 — auto-approving and retrying
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/SOL clientIP="78.177.162.15" requestID="f87f3ac9-3ade-47cf" responseTimeMS=85 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BTC clientIP="78.177.162.15" requestID="bbc864c6-c544-4441" responseTimeMS=100 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BNB clientIP="78.177.162.15" requestID="4f5ef9b8-50b3-41bd" responseTimeMS=76 responseBytes=295 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="78.177.162.15" requestID="24838e81-e454-4ce9" responseTimeMS=1278 responseBytes=1893 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BNB clientIP="78.177.162.15" requestID="9766e37a-e1d2-4091" responseTimeMS=81 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/account clientIP="78.177.162.15" requestID="66951979-b9e1-48d2" responseTimeMS=696 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BNB clientIP="78.177.162.15" requestID="33ccc65e-6af6-46da" responseTimeMS=75 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/HYPE clientIP="78.177.162.15" requestID="4ff38cb7-b6c3-4189" responseTimeMS=82 responseBytes=295 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/ETH clientIP="78.177.162.15" requestID="061bcbe5-faf6-42a5" responseTimeMS=84 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/DOGE clientIP="78.177.162.15" requestID="46325fce-dcd5-4908" responseTimeMS=81 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[HL] approveBuilderFee failed: 0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4 → Builder has insufficient balance to be approved.
+[/hyperliquid/order] auto-approveBuilderFee failed user=cmo1okwe80000y25un4uec8b0 err=Builder has insufficient balance to be approved.
+[POST]
+build4-1.onrender.com/api/hyperliquid/order clientIP="78.177.162.15" requestID="09370ef9-ac0a-4bd3" responseTimeMS=2528 responseBytes=357 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BNB clientIP="78.177.162.15" requestID="4dcd5493-aca0-4cf0" responseTimeMS=80 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BNB clientIP="78.177.162.15" requestID="3c540a5a-9aac-4546" responseTimeMS=120 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BNB clientIP="78.177.162.15" requestID="607cf914-0342-49fd" responseTimeMS=76 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BNB clientIP="78.177.162.15" requestID="bd40f142-a3d2-44fd" responseTimeMS=77 responseBytes=294 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BNB clientIP="78.177.162.15" requestID="5c812599-a39c-480e" responseTimeMS=78 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BNB clientIP="78.177.162.15" requestID="fef6304f-ffd2-4178" responseTimeMS=76 responseBytes=295 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BNB clientIP="78.177.162.15" requestID="8783a36a-c014-44c4" responseTimeMS=77 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/account clientIP="78.177.162.15" requestID="ded386b0-2fa9-4ab8" responseTimeMS=468 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[Aster] /fapi/v3/balance USDT for 0x9751EB70C3042b4b2a228f8E67dfE356CB2d3026 → marginBalance= 50.7449 crossWallet= 50.7353 crossUnPnl= 0.0096 available= 49.4561
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="78.177.162.15" requestID="211ee387-53ff-4cc0" responseTimeMS=1186 responseBytes=180 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/SOL clientIP="78.177.162.15" requestID="8ebcdf55-e441-4c57" responseTimeMS=87 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/DOGE clientIP="78.177.162.15" requestID="575e6116-8825-45dc" responseTimeMS=89 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BTC clientIP="78.177.162.15" requestID="db24d5b0-1090-4a4e" responseTimeMS=89 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BNB clientIP="78.177.162.15" requestID="6fd46e13-b6fd-445d" responseTimeMS=143 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/HYPE clientIP="78.177.162.15" requestID="d795a890-6173-4a6e" responseTimeMS=97 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BNB clientIP="78.177.162.15" requestID="a9df4962-a20b-45e6" responseTimeMS=88 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BNB clientIP="78.177.162.15" requestID="cc665063-4868-4d0e" responseTimeMS=204 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/ETH clientIP="78.177.162.15" requestID="b2131fe4-e9f3-4cfa" responseTimeMS=81 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BNB clientIP="78.177.162.15" requestID="e165d7c1-3e70-420d" responseTimeMS=77 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BNB clientIP="78.177.162.15" requestID="5c130045-dda3-410b" responseTimeMS=78 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BNB clientIP="78.177.162.15" requestID="65bb2590-5035-47f0" responseTimeMS=81 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BNB clientIP="78.177.162.15" requestID="2139c3e4-9d77-4f82" responseTimeMS=77 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[Aster] /fapi/v3/balance USDT for 0x9751EB70C3042b4b2a228f8E67dfE356CB2d3026 → marginBalance= 50.7449 crossWallet= 50.7353 crossUnPnl= 0.0096 available= 49.4561
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/SOL clientIP="78.177.162.15" requestID="94dd540e-5afa-4c3e" responseTimeMS=97 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="78.177.162.15" requestID="27922948-e684-452f" responseTimeMS=1251 responseBytes=180 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BNB clientIP="78.177.162.15" requestID="75f1c8d7-eec8-4ddf" responseTimeMS=82 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/HYPE clientIP="78.177.162.15" requestID="bb9338eb-7f5e-4216" responseTimeMS=76 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/ETH clientIP="78.177.162.15" requestID="88133081-0de9-452d" responseTimeMS=82 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BNB clientIP="78.177.162.15" requestID="03cf77d3-f726-4430" responseTimeMS=93 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/account clientIP="78.177.162.15" requestID="7483148c-489b-4621" responseTimeMS=667 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/DOGE clientIP="78.177.162.15" requestID="81f99d02-b233-492d" responseTimeMS=78 responseBytes=297 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BTC clientIP="78.177.162.15" requestID="e027e613-b200-4fe4" responseTimeMS=116 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BNB clientIP="78.177.162.15" requestID="59a34d60-f69f-45bd" responseTimeMS=108 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BNB clientIP="78.177.162.15" requestID="cd44bfa6-4c2f-4934" responseTimeMS=84 responseBytes=295 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BNB clientIP="78.177.162.15" requestID="e5625e02-f41b-4385" responseTimeMS=103 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[Aster] /fapi/v3/balance USDT for 0x9751EB70C3042b4b2a228f8E67dfE356CB2d3026 → marginBalance= 50.7448 crossWallet= 50.7353 crossUnPnl= 0.0095 available= 49.4555
+[GET]
+build4-1.onrender.com/api/hyperliquid/account clientIP="78.177.162.15" requestID="de29e50c-be7d-4154" responseTimeMS=467 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BTC clientIP="78.177.162.15" requestID="c326049b-cbdd-4e5b" responseTimeMS=86 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BNB clientIP="78.177.162.15" requestID="316c129f-dc80-4fb5" responseTimeMS=83 responseBytes=294 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BNB clientIP="78.177.162.15" requestID="e0bcd369-c6fe-41b2" responseTimeMS=336 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/SOL clientIP="78.177.162.15" requestID="7b5d9035-cea6-422b" responseTimeMS=84 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="78.177.162.15" requestID="8b27ca0a-eba9-413f" responseTimeMS=1270 responseBytes=1893 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/DOGE clientIP="78.177.162.15" requestID="d8e26b11-1a01-4810" responseTimeMS=83 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/ETH clientIP="78.177.162.15" requestID="abebf04b-c782-428f" responseTimeMS=80 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/HYPE clientIP="78.177.162.15" requestID="07ce54b7-a64a-4ae9" responseTimeMS=83 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BNB clientIP="78.177.162.15" requestID="585966b9-bacf-4b60" responseTimeMS=76 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BNB clientIP="78.177.162.15" requestID="02949d3c-20f5-43fb" responseTimeMS=129 responseBytes=295 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/account clientIP="78.177.162.15" requestID="2e96cc87-e5ed-44f4" responseTimeMS=472 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BNB clientIP="78.177.162.15" requestID="c676ff0e-90b7-416c" responseTimeMS=165 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="78.177.162.15" requestID="33aff535-37f8-4a44" responseTimeMS=1182 responseBytes=1897 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[Runner] Ticking 4 agents in batches of 50
+[Runner] Dispatched 4 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'LINKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'MERLUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: '1000WOJAKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'TACUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'VELVETUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'HUMAUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'MERLUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'MERLUSDT', interval: '5m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: '1000WOJAKUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: '1000WOJAKUSDT', interval: '5m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'TACUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'TACUSDT', interval: '5m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'VELVETUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'VELVETUSDT', interval: '5m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BBUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'BBUSDT', interval: '5m', limit: 100 }
+[Aster] /fapi/v3/balance USDT for 0x9751EB70C3042b4b2a228f8E67dfE356CB2d3026 → marginBalance= 50.7434 crossWallet= 50.7353 crossUnPnl= 0.0081 available= 49.4549
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BNB clientIP="78.177.162.15" requestID="e12da0cd-0144-4650" responseTimeMS=304 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/DOGE clientIP="78.177.162.15" requestID="f1bf03cf-00e6-4fd6" responseTimeMS=90 responseBytes=297 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/ETH clientIP="78.177.162.15" requestID="2be484db-d169-4b30" responseTimeMS=129 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BTC clientIP="78.177.162.15" requestID="8ea12b33-fff2-4ae9" responseTimeMS=166 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/SOL clientIP="78.177.162.15" requestID="782e5637-e0a5-454b" responseTimeMS=77 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/HYPE clientIP="78.177.162.15" requestID="857565d3-3e5d-4e17" responseTimeMS=175 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BNB clientIP="78.177.162.15" requestID="d7d565d3-228a-43f1" responseTimeMS=81 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BNB clientIP="78.177.162.15" requestID="736ba9c2-206b-4ce5" responseTimeMS=79 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[Aster] /fapi/v3/balance USDT for 0x9751EB70C3042b4b2a228f8E67dfE356CB2d3026 → marginBalance= 50.7434 crossWallet= 50.7353 crossUnPnl= 0.0080 available= 49.4548
+[GET]
+build4-1.onrender.com/api/portfolio/7383875080 clientIP="78.177.162.15" requestID="deb75f85-b645-470c" responseTimeMS=630 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BNB clientIP="78.177.162.15" requestID="86fe4667-af2e-4065" responseTimeMS=138 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="78.177.162.15" requestID="052fa8bf-8b1b-4721" responseTimeMS=1303 responseBytes=1897 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[Aster] /fapi/v3/balance USDT for 0x9751EB70C3042b4b2a228f8E67dfE356CB2d3026 → marginBalance= 50.7434 crossWallet= 50.7353 crossUnPnl= 0.0080 available= 49.4548
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="78.177.162.15" requestID="e4af1512-fcfe-4de5" responseTimeMS=1327 responseBytes=1897 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/me/link-wallet clientIP="78.177.162.15" requestID="a615c44a-954a-4738" responseTimeMS=191 responseBytes=403 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[Runner] Ticking 4 agents in batches of 50
+[Runner] Dispatched 4 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'LINKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'MERLUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: '1000WOJAKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'TACUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'VELVETUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'HUMAUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'MERLUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'MERLUSDT', interval: '5m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: '1000WOJAKUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: '1000WOJAKUSDT', interval: '5m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'TACUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'TACUSDT', interval: '5m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'VELVETUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'VELVETUSDT', interval: '5m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BBUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'BBUSDT', interval: '5m', limit: 100 }
+[GET]
+build4-1.onrender.com/api/user/7383875080 clientIP="78.177.162.15" requestID="c786a5b1-734e-4eb8" responseTimeMS=769 responseBytes=180 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/agents/7383875080 clientIP="78.177.162.15" requestID="6a66b034-4e67-46bf" responseTimeMS=910 responseBytes=1397 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="78.177.162.15" requestID="f696a2ef-7d36-4a86" responseTimeMS=1385 responseBytes=1896 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/buybacks clientIP="78.177.162.15" requestID="d0813220-ef41-480d" responseTimeMS=726 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[Aster] /fapi/v3/balance USDT for 0x9751EB70C3042b4b2a228f8E67dfE356CB2d3026 → marginBalance= 50.7445 crossWallet= 50.7353 crossUnPnl= 0.0092 available= 49.4558
+[Runner] Ticking 4 agents in batches of 50
+[Runner] Dispatched 4 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'LINKUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'MERLUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: '1000WOJAKUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'TACUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'VELVETUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BBUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'HUMAUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'LINKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'MERLUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: '1000WOJAKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'TACUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'VELVETUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'HUMAUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '4h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'MERLUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'MERLUSDT', interval: '5m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: '1000WOJAKUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: '1000WOJAKUSDT', interval: '5m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'TACUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'TACUSDT', interval: '5m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'VELVETUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'VELVETUSDT', interval: '5m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BBUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'BBUSDT', interval: '5m', limit: 100 }
+[Runner] Ticking 4 agents in batches of 50
+[Runner] Dispatched 4 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'MERLUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'MERLUSDT', interval: '5m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: '1000WOJAKUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: '1000WOJAKUSDT', interval: '5m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'TACUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'TACUSDT', interval: '5m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'VELVETUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'VELVETUSDT', interval: '5m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BBUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'BBUSDT', interval: '5m', limit: 100 }
+[Runner] Ticking 4 agents in batches of 50
+[Runner] Dispatched 4 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'LINKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'MERLUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: '1000WOJAKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'TACUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'VELVETUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'HUMAUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '4h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '4h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'MERLUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'MERLUSDT', interval: '5m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: '1000WOJAKUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: '1000WOJAKUSDT', interval: '5m', limit: 100 }
+Menu
+[Aster] klines fetch (cache miss): { symbol: 'TACUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'TACUSDT', interval: '5m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'VELVETUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'VELVETUSDT', interval: '5m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BBUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'BBUSDT', interval: '5m', limit: 100 }
