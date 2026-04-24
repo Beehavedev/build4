@@ -683,6 +683,31 @@ export interface OrderResult {
   clientOrderId: string
 }
 
+// Internal helper — returns API-ready (qty, price) strings rounded to the
+// symbol's exchangeInfo grid. If filters can't be fetched (network/CF), falls
+// back to safer-than-default truncation (toFixed) so we don't BLOCK orders
+// just because the public endpoint hiccupped. Every order placement path
+// MUST go through this — without it Aster rejects with "Precision is over
+// the maximum defined for this asset", a confusing error users hit on every
+// small-notional ($5–25) order against a tight-stepSize symbol like BTCUSDT.
+async function formatOrderParams(
+  symbol:    string,
+  quantity:  number,
+  price?:    number,
+): Promise<{ qty: string; px?: string }> {
+  const filters = await getSymbolFilters(symbol)
+  const qty = filters
+    ? roundDownToStep(quantity, filters.stepSize, filters.quantityPrecision)
+    : quantity.toFixed(6).replace(/\.?0+$/, '') || '0'
+  let px: string | undefined
+  if (price !== undefined && price > 0) {
+    px = filters
+      ? roundDownToStep(price, filters.tickSize, filters.pricePrecision)
+      : price.toString()
+  }
+  return { qty, px }
+}
+
 export async function placeOrder(params: {
   symbol:        string
   side:          'BUY' | 'SELL'
@@ -701,15 +726,16 @@ export async function placeOrder(params: {
     await setLeverage(symbol, leverage, creds)
   }
 
+  const { qty, px } = await formatOrderParams(symbol, rest.quantity, rest.price)
   const body: Record<string, any> = {
     symbol,
     side:         rest.side,
     type:         rest.type,
-    quantity:     rest.quantity.toString(),
+    quantity:     qty,
     positionSide: rest.positionSide ?? 'BOTH'
   }
-  if (rest.type === 'LIMIT' && rest.price) {
-    body.price       = rest.price.toString()
+  if (rest.type === 'LIMIT' && px) {
+    body.price       = px
     body.timeInForce = 'GTC'
   }
   if (rest.reduceOnly) body.reduceOnly = 'true'
@@ -745,16 +771,17 @@ export async function placeOrderWithBuilderCode(params: {
   const { creds, builderAddress, feeRate, ...rest } = params
   const symbol = rest.symbol.replace('/', '')
 
+  const { qty, px } = await formatOrderParams(symbol, rest.quantity, rest.price)
   const body: Record<string, any> = {
     symbol,
     side:    rest.side,
     type:    rest.type,
-    quantity: rest.quantity.toString(),
+    quantity: qty,
     builder: builderAddress,
     feeRate
   }
-  if (rest.type === 'LIMIT' && rest.price) {
-    body.price       = rest.price.toString()
+  if (rest.type === 'LIMIT' && px) {
+    body.price       = px
     body.timeInForce = 'GTC'
   }
 
@@ -806,13 +833,20 @@ export async function placeBracketOrders(params: {
   const closeSide = params.side === 'LONG' ? 'SELL' : 'BUY'
   const symbol    = params.symbol.replace('/', '')
 
+  // Round both stopPrices to the symbol's tickSize. closePosition='true'
+  // means we don't need a quantity, but stopPrice MUST still match the
+  // tickSize grid or Aster rejects with the same precision error.
+  const filters = await getSymbolFilters(symbol)
+  const fmtPx = (p: number): string =>
+    filters ? roundDownToStep(p, filters.tickSize, filters.pricePrecision) : p.toString()
+
   // Stop loss
   try {
     await signedPOST('/fapi/v3/order', {
       symbol,
       side:          closeSide,
       type:          'STOP_MARKET',
-      stopPrice:     params.stopLoss.toString(),
+      stopPrice:     fmtPx(params.stopLoss),
       closePosition: 'true',
       workingType:   'MARK_PRICE'
     }, params.creds)
@@ -826,7 +860,7 @@ export async function placeBracketOrders(params: {
       symbol,
       side:          closeSide,
       type:          'TAKE_PROFIT_MARKET',
-      stopPrice:     params.takeProfit.toString(),
+      stopPrice:     fmtPx(params.takeProfit),
       closePosition: 'true',
       workingType:   'MARK_PRICE'
     }, params.creds)
