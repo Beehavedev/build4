@@ -9,6 +9,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { useEffect, useState } from 'react'
 import { apiFetch } from '../api'
+import { TradingChart } from '../components/TradingChart'
+import { MarketTicker } from '../components/MarketTicker'
 
 const COINS = ['BTC', 'ETH', 'SOL', 'BNB', 'HYPE', 'DOGE']
 
@@ -176,6 +178,13 @@ export default function Hyperliquid() {
           {error}
         </div>
       )}
+
+      {/* Terminal block — 24h ticker + chart for the order-ticket coin.
+          Lives at the top so the chart is the dominant visual the
+          moment you land on the page, just like a serious perp UI.
+          Re-renders when `orderCoin` changes via the chip row below. */}
+      <MarketTicker symbol={orderCoin} testIdPrefix="hl-ticker" />
+      <TradingChart symbol={orderCoin} defaultInterval="15" height={300} testIdPrefix="hl-chart" />
 
       {/* Account state */}
       <div style={cardStyle} data-testid="card-hl-account">

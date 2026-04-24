@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { apiFetch } from '../api'
+import { TradingChart } from '../components/TradingChart'
+import { MarketTicker } from '../components/MarketTicker'
 
 const PAIRS = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'DOGEUSDT', 'XRPUSDT', 'ASTERUSDT']
 
@@ -203,6 +205,13 @@ export function Trade() {
           >Hyperliquid · USDC →</a>
         </div>
       </div>
+
+      {/* Terminal block — 24h ticker + live TradingView chart for the
+          selected pair. Lives at the very top so users see the market
+          context before any wallet/order UI, which is what serious perp
+          terminals do. Both react to the `pair` selector below. */}
+      <MarketTicker symbol={pair} testIdPrefix="aster-ticker" />
+      <TradingChart symbol={pair} defaultInterval="15" height={300} testIdPrefix="aster-chart" />
 
       {walletErr && (
         <div className="card" style={{ borderLeft: '3px solid #ef4444' }} data-testid="text-wallet-error">

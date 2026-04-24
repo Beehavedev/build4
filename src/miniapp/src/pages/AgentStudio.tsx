@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react'
 import { apiFetch, getMyFeed, type FeedEntry } from '../api'
+import { TradingChart } from '../components/TradingChart'
+import { MarketTicker } from '../components/MarketTicker'
 
 interface AgentStudioProps {
   userId: string | null
@@ -28,6 +30,14 @@ export default function AgentStudio(_props: AgentStudioProps) {
   const [loading, setLoading] = useState(true)
   const [feed, setFeed] = useState<FeedEntry[]>([])
   const [feedError, setFeedError] = useState(false)
+  // Per-agent expand state: which agent's full chart is currently shown.
+  // Only one chart visible at a time so we don't mount many TradingView
+  // iframes for users with lots of agents (memory + scroll cost).
+  const [openChartAgentId, setOpenChartAgentId] = useState<string | null>(null)
+  // Per-agent currently-selected pair for the in-card ticker/chart. Defaults
+  // to the first pair the agent watches; user can flip between the agent's
+  // watched pairs via chips.
+  const [agentPairSel, setAgentPairSel] = useState<Record<string, string>>({})
 
   const fetchAgents = () => {
     apiFetch<any[]>('/api/me/agents')
@@ -141,6 +151,67 @@ export default function AgentStudio(_props: AgentStudioProps) {
             }}>
               {agent.isActive ? '● Active — next tick in ~60s' : '○ Inactive'}
             </div>
+
+            {/* Live market block — terminal-style 24h ticker for the
+                pair the agent is currently watching, plus a one-tap
+                "Open chart" toggle that reveals a full TradingView chart
+                inline. Pairs come from agent.pairs; user can flip
+                between them via chips when the agent watches more
+                than one. We only mount the chart iframe when this card
+                is the currently-expanded one to keep memory bounded. */}
+            {Array.isArray(agent.pairs) && agent.pairs.length > 0 && (() => {
+              const watched: string[] = agent.pairs
+              const selected = agentPairSel[agent.id] ?? watched[0]
+              const isOpen = openChartAgentId === agent.id
+              return (
+                <div style={{ marginTop: 12 }}>
+                  {watched.length > 1 && (
+                    <div style={{ display: 'flex', gap: 4, marginBottom: 8, flexWrap: 'wrap' }}>
+                      {watched.map(p => (
+                        <button
+                          key={p}
+                          onClick={() => setAgentPairSel(s => ({ ...s, [agent.id]: p }))}
+                          data-testid={`button-agent-${agent.id}-pair-${p}`}
+                          style={{
+                            padding: '4px 8px', fontSize: 11, fontWeight: 600,
+                            borderRadius: 6, border: 'none', cursor: 'pointer',
+                            background: selected === p ? '#7c3aed' : '#1f2937',
+                            color: selected === p ? '#fff' : '#9ca3af',
+                          }}
+                        >{p}</button>
+                      ))}
+                    </div>
+                  )}
+                  <MarketTicker
+                    symbol={selected}
+                    testIdPrefix={`agent-${agent.id}-ticker`}
+                    pollMs={8000}
+                  />
+                  <button
+                    onClick={() => setOpenChartAgentId(isOpen ? null : agent.id)}
+                    data-testid={`button-agent-${agent.id}-toggle-chart`}
+                    style={{
+                      width: '100%', padding: '8px 10px', borderRadius: 8,
+                      background: isOpen ? '#1f2937' : '#0f1117',
+                      border: '1px solid #2a2a3e', color: '#a78bfa',
+                      fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                    }}
+                  >
+                    {isOpen ? '▴ Hide chart' : `▾ Open chart · ${selected}`}
+                  </button>
+                  {isOpen && (
+                    <div style={{ marginTop: 8 }}>
+                      <TradingChart
+                        symbol={selected}
+                        defaultInterval="15"
+                        height={280}
+                        testIdPrefix={`agent-${agent.id}-chart`}
+                      />
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
           </div>
         ))
       )}
