@@ -4026,6 +4026,113 @@ app.post('/api/admin/wallet/diagnose-decrypt', express.json(), async (req, res) 
   }
 })
 
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/admin/wallet/reencrypt
+//
+// Recovery tool for wallets whose encryptedPK can no longer be decrypted by
+// any of the candidate keys (env rotation gap, externally-encrypted import,
+// historical default drift). Operator pastes the raw private key once; we
+// validate it actually corresponds to the wallet's address, then re-encrypt
+// with the CURRENT MASTER_ENCRYPTION_KEY scheme and update the row.
+//
+// Body: { walletAddress: string, privateKey: string, telegramId?: string|number }
+//   - telegramId is optional but recommended when multiple users share an
+//     address (defensive disambiguation; rare in practice).
+//
+// Auth: ADMIN_TOKEN via x-admin-token header or ?token= query param.
+//
+// CRITICAL: this endpoint accepts a raw private key in the request body.
+// Only call over HTTPS, never log the body, and rotate ADMIN_TOKEN if you
+// suspect any leakage of a curl invocation.
+// ─────────────────────────────────────────────────────────────────────────────
+app.post('/api/admin/wallet/reencrypt', express.json(), async (req, res) => {
+  const adminToken = process.env.ADMIN_TOKEN
+  if (adminToken) {
+    const supplied = (req.headers['x-admin-token'] as string | undefined)
+      ?? (typeof req.query.token === 'string' ? req.query.token : undefined)
+    if (supplied !== adminToken) return res.status(401).json({ error: 'Unauthorized' })
+  }
+  try {
+    const { walletAddress, privateKey, telegramId } = (req.body ?? {}) as {
+      walletAddress?: string; privateKey?: string; telegramId?: string | number
+    }
+    if (!walletAddress || typeof walletAddress !== 'string') {
+      return res.status(400).json({ error: 'walletAddress required' })
+    }
+    if (!privateKey || typeof privateKey !== 'string') {
+      return res.status(400).json({ error: 'privateKey required' })
+    }
+    const pkNormalized = privateKey.startsWith('0x') ? privateKey : `0x${privateKey}`
+
+    // Validate the PK actually controls the address before touching the DB.
+    // Prevents the operator from accidentally bricking a wallet by pasting
+    // the wrong key.
+    const { ethers } = await import('ethers')
+    let derivedAddress: string
+    try {
+      derivedAddress = new ethers.Wallet(pkNormalized).address
+    } catch {
+      return res.status(400).json({ error: 'Invalid private key (failed to parse)' })
+    }
+    if (derivedAddress.toLowerCase() !== walletAddress.toLowerCase()) {
+      return res.status(400).json({
+        error: 'Private key does not match the supplied wallet address',
+        derivedAddress,
+        suppliedAddress: walletAddress,
+      })
+    }
+
+    // Locate the row. If telegramId supplied, scope by user too.
+    const where: any = { address: { equals: walletAddress, mode: 'insensitive' } }
+    if (telegramId !== undefined && telegramId !== null && telegramId !== '') {
+      const u = await db.user.findFirst({
+        where: { telegramId: BigInt(telegramId as any) },
+      })
+      if (!u) return res.status(404).json({ error: `No user with telegramId=${telegramId}` })
+      where.userId = u.id
+    }
+    const wallet = await db.wallet.findFirst({ where })
+    if (!wallet) return res.status(404).json({ error: 'Wallet not found' })
+
+    // Re-encrypt with the CURRENT scheme (encryptPrivateKey reads MASTER_KEY
+    // at module load). The decrypt path will reach this blob via the primary
+    // MASTER_KEY candidate from now on.
+    const { encryptPrivateKey, decryptPrivateKey } = await import('./services/wallet')
+    const newEncrypted = encryptPrivateKey(pkNormalized, wallet.userId)
+
+    // Sanity check: round-trip the new blob before persisting.
+    let roundTrip: string
+    try {
+      roundTrip = decryptPrivateKey(newEncrypted, wallet.userId)
+    } catch (e: any) {
+      return res.status(500).json({ error: `Re-encryption sanity check failed: ${e?.message}` })
+    }
+    if (roundTrip !== pkNormalized) {
+      return res.status(500).json({ error: 'Re-encryption sanity check returned mismatched PK' })
+    }
+
+    await db.wallet.update({
+      where: { id: wallet.id },
+      data:  { encryptedPK: newEncrypted },
+    })
+
+    console.log(
+      `[admin/wallet/reencrypt] success user=${wallet.userId} wallet=${wallet.address} ` +
+      `chain=${wallet.chain} oldBlobLen=${wallet.encryptedPK?.length ?? 0} newBlobLen=${newEncrypted.length}`
+    )
+    return res.json({
+      success: true,
+      walletId: wallet.id,
+      userId: wallet.userId,
+      address: wallet.address,
+      chain: wallet.chain,
+    })
+  } catch (e: any) {
+    console.error('[admin/wallet/reencrypt] failed:', e?.message ?? e)
+    return res.status(500).json({ error: e?.message ?? 'internal' })
+  }
+})
+
 // Drill-down companion to /api/admin/swarm-divergence: returns recent
 // AgentLog rows (with each provider's vote) so operators can see *which*
 // ticks disagreed for a given pair/provider, not just the aggregate %.
