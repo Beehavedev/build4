@@ -59,16 +59,23 @@ export async function requireTgUser(req: Request, res: Response, next: NextFunct
 
 /**
  * Returns the set of telegramIds (as strings) allowed to access admin
- * endpoints. Configured via the comma-separated ADMIN_TELEGRAM_IDS env var.
+ * endpoints. Configured via either ADMIN_TELEGRAM_IDS (preferred,
+ * comma-separated) or ADMIN_CHAT_ID (legacy single-id alias). Both env
+ * vars are merged so deployments using the older name keep working.
  */
 export function getAdminTelegramIds(): Set<string> {
-  const raw = process.env.ADMIN_TELEGRAM_IDS ?? ''
-  return new Set(
-    raw
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean),
-  )
+  const sources = [
+    process.env.ADMIN_TELEGRAM_IDS ?? '',
+    process.env.ADMIN_CHAT_ID ?? '',
+  ]
+  const ids = new Set<string>()
+  for (const raw of sources) {
+    for (const part of raw.split(',')) {
+      const id = part.trim()
+      if (id) ids.add(id)
+    }
+  }
+  return ids
 }
 
 export function isAdminTelegramId(telegramId: bigint | string | number): boolean {
