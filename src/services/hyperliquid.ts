@@ -164,6 +164,7 @@ export async function resolveAgentCreds(
 export async function getAccountState(userAddress: string): Promise<{
   withdrawableUsdc: number
   accountValue:     number
+  onboarded:        boolean
   positions:        Array<{ coin: string; szi: number; entryPx: number; unrealizedPnl: number }>
 }> {
   try {
@@ -174,14 +175,23 @@ export async function getAccountState(userAddress: string): Promise<{
       entryPx:       parseFloat(ap.position?.entryPx ?? '0'),
       unrealizedPnl: parseFloat(ap.position?.unrealizedPnl ?? '0'),
     }))
+    const accountValue = parseFloat((state as any).marginSummary?.accountValue ?? '0')
+    // A user is "onboarded" on HL the moment a clearinghouse account exists
+    // for their address — which is exactly when HL returns a marginSummary
+    // (even with zero equity right after first deposit). We use accountValue
+    // > 0 OR the existence of a marginSummary as the signal. Without this,
+    // the wallet card was hiding a real $58.77 balance behind a "Not
+    // activated yet" empty state because we never set this flag.
+    const onboarded = accountValue > 0 || !!(state as any).marginSummary
     return {
       withdrawableUsdc: parseFloat((state as any).withdrawable ?? '0'),
-      accountValue:     parseFloat((state as any).marginSummary?.accountValue ?? '0'),
+      accountValue,
+      onboarded,
       positions,
     }
   } catch (err: any) {
     console.error('[HL] getAccountState failed:', userAddress, err?.message)
-    return { withdrawableUsdc: 0, accountValue: 0, positions: [] }
+    return { withdrawableUsdc: 0, accountValue: 0, onboarded: false, positions: [] }
   }
 }
 

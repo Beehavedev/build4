@@ -585,7 +585,13 @@ function HyperliquidCard({ w }: { w: WalletInfo }) {
   const hl = w.hyperliquid
   if (!hl) return null
   const isError = hl.error && hl.error !== 'not_onboarded'
-  const notOnboarded = hl.error === 'not_onboarded' || !hl.onboarded
+  // Defense-in-depth: if the user has a non-zero account value, they are
+  // demonstrably onboarded — never hide a real balance behind the empty
+  // state regardless of what the onboarded flag says. (We hit a bug where
+  // the server returned onboarded=undefined → treated as false → wallet
+  // showed "Not activated" with $58.77 sitting in the HL clearinghouse.)
+  const hasFunds = (hl.accountValue ?? 0) > 0 || (hl.usdc ?? 0) > 0
+  const notOnboarded = !hasFunds && (hl.error === 'not_onboarded' || !hl.onboarded)
   return (
     <div className="card" style={{
       marginBottom: 10,
