@@ -1139,9 +1139,41 @@ app.post('/api/aster/order', requireTgUser, async (req, res) => {
     if (!Number.isFinite(refPrice) || refPrice <= 0) {
       return res.status(503).json({ error: 'Could not resolve mark price' })
     }
-    const qty = parseFloat((notional / refPrice).toFixed(6))
+
+    // ── Round qty/price to per-symbol filter granularity. Without this,
+    //    Aster rejects with "Precision is over the maximum defined for this
+    //    asset" — most commonly when a small notional (e.g. $10 BTC) yields
+    //    a 7-decimal qty but the symbol only allows stepSize=0.001.
+    const filters = await aster.getSymbolFilters(sym)
+    const rawQty = notional / refPrice
+    const qtyStr = filters
+      ? aster.roundDownToStep(rawQty, filters.stepSize, filters.quantityPrecision)
+      : rawQty.toFixed(6)
+    const qty = parseFloat(qtyStr)
     if (qty <= 0) {
-      return res.status(400).json({ error: 'Order size too small for current price' })
+      const hint = filters
+        ? ` (min step ${filters.stepSize} ${sym.replace(/USDT?$/, '')})`
+        : ''
+      return res.status(400).json({ error: `Order size too small for current price${hint}` })
+    }
+    if (filters && filters.minQty > 0 && qty < filters.minQty) {
+      return res.status(400).json({
+        error: `Below minimum size: need ≥ ${filters.minQty} ${sym.replace(/USDT?$/, '')}, got ${qty}`,
+      })
+    }
+    if (filters && filters.minNotional > 0 && qty * refPrice < filters.minNotional) {
+      return res.status(400).json({
+        error: `Below minimum notional: need ≥ ${filters.minNotional} USDT, got ${(qty * refPrice).toFixed(2)}`,
+      })
+    }
+    let limitRounded = limit
+    if (type === 'LIMIT' && filters) {
+      limitRounded = parseFloat(aster.roundDownToStep(limit, filters.tickSize, filters.pricePrecision))
+      if (!Number.isFinite(limitRounded) || limitRounded <= 0) {
+        return res.status(400).json({
+          error: `Limit price too low for tick size ${filters.tickSize}`,
+        })
+      }
     }
 
     // Margin pre-check — prevent obvious "insufficient margin" rejects.
@@ -1176,7 +1208,7 @@ app.post('/api/aster/order', requireTgUser, async (req, res) => {
     } else {
       result = await aster.placeOrder({
         symbol: sym, side: buySell, type, quantity: qty,
-        price: type === 'LIMIT' ? limit : undefined,
+        price: type === 'LIMIT' ? limitRounded : undefined,
         leverage: lev, creds
       })
     }
@@ -1427,6 +1459,55 @@ app.post('/api/hyperliquid/approve', requireTgUser, async (req, res) => {
   }
 })
 
+// POST /api/hyperliquid/approve-builder
+//
+// Manual builder-fee approval. Used when /api/hyperliquid/order's auto-heal
+// can't decrypt the master PK and surfaces { needsBuilderApproval: true } —
+// the UI offers a button that calls this endpoint, after which the user can
+// retry the order. Idempotent: HL silently no-ops a re-approval.
+app.post('/api/hyperliquid/approve-builder', requireTgUser, async (req, res) => {
+  try {
+    const user = (req as any).user
+    if (!user.hyperliquidOnboarded) {
+      return res.status(400).json({ success: false, error: 'Activate Hyperliquid first' })
+    }
+    const wallet = await db.wallet.findFirst({ where: { userId: user.id, isActive: true } })
+    if (!wallet) return res.status(404).json({ success: false, error: 'No active wallet' })
+
+    const { decryptPrivateKey } = await import('./services/wallet')
+    const idCandidates = Array.from(new Set([
+      user.id,
+      user.telegramId?.toString(),
+      wallet.userId,
+    ].filter((v): v is string => Boolean(v))))
+    let userPk: string | null = null
+    let lastErr: any = null
+    for (const candidate of idCandidates) {
+      try {
+        const out = decryptPrivateKey(wallet.encryptedPK, candidate)
+        if (out?.startsWith('0x')) { userPk = out; break }
+      } catch (e) { lastErr = e }
+    }
+    if (!userPk) {
+      console.error(
+        `[/hyperliquid/approve-builder] decrypt wallet PK failed user=${user.id} ` +
+        `wallet=${wallet.address} err=${lastErr?.message ?? 'unknown'}`,
+      )
+      return res.status(500).json({ success: false, error: 'Could not decrypt wallet' })
+    }
+
+    const { approveBuilderFee } = await import('./services/hyperliquid')
+    const r = await approveBuilderFee(userPk)
+    if (!r.success) {
+      return res.status(400).json({ success: false, error: r.error ?? 'Builder approval failed' })
+    }
+    return res.json({ success: true, skipped: r.skipped ?? false })
+  } catch (err: any) {
+    console.error('[API] /hyperliquid/approve-builder failed:', err?.message ?? err)
+    res.status(500).json({ success: false, error: err?.message ?? 'Internal error' })
+  }
+})
+
 // POST /api/hyperliquid/order
 //
 // Place a perp order on Hyperliquid using the user's agent wallet.
@@ -1518,7 +1599,16 @@ app.post('/api/hyperliquid/order', requireTgUser, async (req, res) => {
       )
       try {
         const { decryptPrivateKey } = await import('./services/wallet')
-        const idCandidates = [user.id, user.telegramId?.toString()].filter(Boolean) as string[]
+        // Mirror the broader candidate-id set used by /aster/approve so legacy
+        // wallets (encrypted under wallet.userId rather than the new user.id)
+        // still decrypt here. Without this, users onboarded before the userId
+        // migration would silently fall through to the bare "Builder fee
+        // not approved" reject with no path to recover.
+        const idCandidates = Array.from(new Set([
+          user.id,
+          user.telegramId?.toString(),
+          wallet.userId,
+        ].filter((v): v is string => Boolean(v))))
         let userPk: string | null = null
         for (const candidate of idCandidates) {
           try {
@@ -1530,7 +1620,22 @@ app.post('/api/hyperliquid/order', requireTgUser, async (req, res) => {
           const { approveBuilderFee } = await import('./services/hyperliquid')
           const br = await approveBuilderFee(userPk)
           if (br.success) {
-            result = await placeOrder(creds, orderArgs)
+            // HL needs a beat for the approval to propagate to the
+            // exchange's order-validation layer before the retry will see
+            // it. Propagation latency is variable, so retry with backoff
+            // (1.5s, 3s, 5s) before giving up — total ≤ ~10s, well under
+            // the Render gateway timeout.
+            const backoffsMs = [1500, 3000, 5000]
+            for (let attempt = 0; attempt < backoffsMs.length; attempt++) {
+              await new Promise(r => setTimeout(r, backoffsMs[attempt]))
+              result = await placeOrder(creds, orderArgs)
+              const stillBuilder = !result.success
+                && /(builder|must approve)/i.test(result.error ?? '')
+              if (!stillBuilder) break
+              console.log(
+                `[/hyperliquid/order] retry ${attempt + 1} still builder-rejected — backing off again`,
+              )
+            }
           } else {
             console.warn(
               `[/hyperliquid/order] auto-approveBuilderFee failed user=${user.id} err=${br.error}`,
@@ -1547,7 +1652,16 @@ app.post('/api/hyperliquid/order', requireTgUser, async (req, res) => {
     }
 
     if (!result.success) {
-      return res.status(400).json(result)
+      // If self-heal couldn't fix the builder reject, surface a flag so the
+      // UI can prompt a manual "Approve builder fee" button (which calls
+      // /api/hyperliquid/approve-builder). Match the same pattern used in
+      // the auto-heal detector — `builder` OR `must approve` — so a slightly
+      // worded HL reject doesn't suppress the UI button.
+      const stillBuilder = /(builder|must approve)/i.test(result.error ?? '')
+      return res.status(400).json({
+        ...result,
+        ...(stillBuilder ? { needsBuilderApproval: true } : {}),
+      })
     }
     return res.json({
       ...result,

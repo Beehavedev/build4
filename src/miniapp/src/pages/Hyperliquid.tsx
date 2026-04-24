@@ -45,10 +45,15 @@ export default function Hyperliquid() {
   const [orderLimitPx, setOrderLimitPx]   = useState('')
   const [placing, setPlacing]             = useState(false)
   const [orderMsg, setOrderMsg]           = useState<string | null>(null)
+  // Set when the backend's order endpoint reports a builder-fee rejection
+  // it couldn't auto-heal. Surfaces a manual "Approve builder fee" button.
+  const [needsBuilderApproval, setNeedsBuilderApproval] = useState(false)
+  const [approvingBuilder, setApprovingBuilder]         = useState(false)
 
   const placeOrder = async () => {
     setPlacing(true)
     setOrderMsg(null)
+    setNeedsBuilderApproval(false)
     try {
       const body: any = {
         coin:         orderCoin,
@@ -66,7 +71,10 @@ export default function Hyperliquid() {
         }
         body.limitPx = px
       }
-      const r = await apiFetch<{ success: boolean; error?: string; sz?: number; markPrice?: number }>(
+      const r = await apiFetch<{
+        success: boolean; error?: string; sz?: number; markPrice?: number;
+        needsBuilderApproval?: boolean
+      }>(
         '/api/hyperliquid/order',
         { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) },
       )
@@ -80,11 +88,33 @@ export default function Hyperliquid() {
         await load()
       } else {
         setOrderMsg(r.error ?? 'Order failed')
+        if (r.needsBuilderApproval) setNeedsBuilderApproval(true)
       }
     } catch (e: any) {
       setOrderMsg(e?.message ?? 'Order failed')
     } finally {
       setPlacing(false)
+    }
+  }
+
+  const approveBuilder = async () => {
+    setApprovingBuilder(true)
+    try {
+      const r = await apiFetch<{ success: boolean; error?: string }>(
+        '/api/hyperliquid/approve-builder',
+        { method: 'POST' },
+      )
+      if (r.success) {
+        setNeedsBuilderApproval(false)
+        setOrderMsg('Builder fee approved — placing order...')
+        await placeOrder()
+      } else {
+        setOrderMsg(r.error ?? 'Builder approval failed')
+      }
+    } catch (e: any) {
+      setOrderMsg(e?.message ?? 'Builder approval failed')
+    } finally {
+      setApprovingBuilder(false)
     }
   }
 
@@ -484,13 +514,29 @@ export default function Hyperliquid() {
             <div
               style={{
                 marginTop: 8, padding: 8, borderRadius: 6, fontSize: 11,
-                background: /placed|filled/i.test(orderMsg) ? '#064e3b' : '#7f1d1d',
-                color: /placed|filled/i.test(orderMsg) ? '#a7f3d0' : '#fecaca',
+                background: /placed|filled|approved/i.test(orderMsg) ? '#064e3b' : '#7f1d1d',
+                color: /placed|filled|approved/i.test(orderMsg) ? '#a7f3d0' : '#fecaca',
               }}
               data-testid="text-hl-order-msg"
             >
               {orderMsg}
             </div>
+          )}
+
+          {needsBuilderApproval && (
+            <button
+              onClick={approveBuilder}
+              disabled={approvingBuilder}
+              data-testid="button-hl-approve-builder"
+              style={{
+                marginTop: 8, width: '100%', padding: '10px', borderRadius: 8,
+                fontSize: 13, fontWeight: 600,
+                background: approvingBuilder ? '#4c1d95' : 'linear-gradient(90deg,#7c3aed,#a78bfa)',
+                color: '#fff', border: 'none', cursor: approvingBuilder ? 'wait' : 'pointer',
+              }}
+            >
+              {approvingBuilder ? 'Approving…' : 'Approve builder fee & retry'}
+            </button>
           )}
 
           <div style={{ fontSize: 10, color: '#64748b', marginTop: 10, lineHeight: 1.4 }}>

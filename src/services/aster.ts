@@ -234,6 +234,86 @@ export async function getMarkPrice(pair: string): Promise<{
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Symbol filters — tickSize / stepSize / precisions used to round price + qty
+// before submitting orders. Aster rejects any order whose decimals exceed the
+// per-symbol filter ("Precision is over the maximum defined for this asset"),
+// so we MUST snap values down to the allowed grid before signing.
+//
+// Cached in-process for 5 minutes; exchangeInfo rarely changes intraday.
+// ─────────────────────────────────────────────────────────────────────────────
+export interface SymbolFilters {
+  symbol:             string
+  tickSize:           number   // PRICE_FILTER.tickSize  — price granularity
+  stepSize:           number   // LOT_SIZE.stepSize       — qty granularity
+  minQty:             number   // LOT_SIZE.minQty
+  minNotional:        number   // MIN_NOTIONAL.notional   — minimum order value
+  pricePrecision:     number   // decimals for price string
+  quantityPrecision:  number   // decimals for qty string
+}
+
+let _symbolFiltersCache: { fetchedAt: number; map: Map<string, SymbolFilters> } | null = null
+const SYMBOL_FILTERS_TTL_MS = 5 * 60 * 1000
+
+async function loadAllSymbolFilters(): Promise<Map<string, SymbolFilters>> {
+  const now = Date.now()
+  if (_symbolFiltersCache && now - _symbolFiltersCache.fetchedAt < SYMBOL_FILTERS_TTL_MS) {
+    return _symbolFiltersCache.map
+  }
+  // Use the shared client wrapper — it sets a Mozilla UA so Cloudflare on
+  // fapi.asterdex.com doesn't HTML-403 us. Raw axios.get() is intermittently
+  // blocked at the edge with the default node UA.
+  const res = await client(BASE_PUBLIC).get('/fapi/v1/exchangeInfo', { timeout: 8000 })
+  const map = new Map<string, SymbolFilters>()
+  for (const s of res.data?.symbols ?? []) {
+    const filters = s.filters ?? []
+    const priceFilter   = filters.find((f: any) => f.filterType === 'PRICE_FILTER')
+    const lotFilter     = filters.find((f: any) => f.filterType === 'LOT_SIZE')
+    const notionalFilt  = filters.find((f: any) => f.filterType === 'MIN_NOTIONAL')
+    map.set(s.symbol, {
+      symbol:            s.symbol,
+      tickSize:          parseFloat(priceFilter?.tickSize ?? '0.01'),
+      stepSize:          parseFloat(lotFilter?.stepSize  ?? '0.001'),
+      minQty:            parseFloat(lotFilter?.minQty    ?? '0'),
+      minNotional:       parseFloat(notionalFilt?.notional ?? '0'),
+      pricePrecision:    Number.isFinite(s.pricePrecision)    ? s.pricePrecision    : 2,
+      quantityPrecision: Number.isFinite(s.quantityPrecision) ? s.quantityPrecision : 3,
+    })
+  }
+  _symbolFiltersCache = { fetchedAt: now, map }
+  return map
+}
+
+export async function getSymbolFilters(symbol: string): Promise<SymbolFilters | null> {
+  const sym = symbol.replace(/[\/\s]/g, '').toUpperCase()
+  try {
+    const map = await loadAllSymbolFilters()
+    return map.get(sym) ?? null
+  } catch (err: any) {
+    console.warn('[Aster] getSymbolFilters fetch failed:', err?.message ?? err)
+    return null
+  }
+}
+
+// Floor `value` to the nearest multiple of `step`, then format with at most
+// `precision` decimals. Trailing zeros are trimmed so the API receives the
+// canonical representation Aster expects (e.g. 0.001 not 0.00100).
+//   roundDownToStep(0.0001284, 0.001, 3)  → "0"            // too small to fill
+//   roundDownToStep(0.000128, 0.00001, 5) → "0.00012"
+//   roundDownToStep(77930.18,  0.1,    1) → "77930.1"
+export function roundDownToStep(value: number, step: number, precision: number): string {
+  if (!Number.isFinite(value) || value <= 0) return '0'
+  if (!Number.isFinite(step) || step <= 0)   return value.toFixed(Math.min(precision, 12))
+  const snapped = Math.floor(value / step) * step
+  // Use precision derived from step itself so we never emit MORE decimals
+  // than the step grid supports (e.g. step=0.1 → 1 decimal, never 0.10000).
+  const stepDecimals = (step.toString().split('.')[1] ?? '').length
+  const decimals = Math.min(precision, stepDecimals || precision)
+  const out = snapped.toFixed(decimals)
+  // Trim trailing zeros after the decimal point but keep integers intact.
+  return out.includes('.') ? out.replace(/\.?0+$/, '') || '0' : out
+}
+
 // Aster perps fund every 8h. Returns the funding payments (rate + time) that
 // settled inside [startTime, endTime]. Empty array on failure (callers treat
 // missing funding as zero — same conservative default as midpoint fills).
