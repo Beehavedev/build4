@@ -5,6 +5,19 @@ import { MarketTicker } from '../components/MarketTicker'
 
 const PAIRS = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'DOGEUSDT', 'XRPUSDT', 'ASTERUSDT']
 
+// Format a USD price with decimal precision that scales with magnitude.
+// Users complained that .toFixed(2) was hiding meaningful precision on
+// mid-priced assets (BNB at $637.84 hides the cents-of-cents that PnL
+// pivots on at 5x leverage). Graduated decimals show 4-5 places where it
+// matters without inventing fake digits on BTC at $78k.
+function fmtPrice(p: number): string {
+  if (!Number.isFinite(p) || p <= 0) return '0'
+  if (p >= 10000) return p.toFixed(2) // BTC: $78290.84
+  if (p >= 1000)  return p.toFixed(3) // ETH: $3457.123
+  if (p >= 1)     return p.toFixed(4) // SOL/BNB: $86.0712 / $637.8412
+  return p.toFixed(6)                  // micro-cap tokens: $0.001234
+}
+
 // Inline styles bypass any cached CSS rules and any iOS native chrome
 // that might be applied to <button>/<select>/<input> in the Telegram
 // WebApp. The previous CSS-class approach was being defeated by aggressive
@@ -62,6 +75,10 @@ export function Trade() {
   const [leverage, setLeverage]   = useState(5)
   const [mark, setMark]           = useState<MarkPrice | null>(null)
   const [positions, setPositions] = useState<AsterPosition[]>([])
+  // Live mark prices for OPEN POSITIONS, polled separately from the
+  // selected-pair mark above. Keyed by symbol so closing a position
+  // automatically drops it from the polling set on the next tick.
+  const [livePrices, setLivePrices] = useState<Record<string, number>>({})
   const [submitting, setSubmitting] = useState(false)
   const [activating, setActivating] = useState(false)
   const [msg, setMsg]             = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
@@ -96,6 +113,36 @@ export function Trade() {
     const id = setInterval(() => loadMark(pair), 1000)
     return () => clearInterval(id)
   }, [pair])
+
+  // Live mark-price polling for OPEN POSITIONS so PnL ticks every second
+  // instead of only on user-triggered refresh. Without this the user sees
+  // stale PnL/mark for as long as the page is open and has to manually
+  // close+reopen the tab to know if a position moved against them. We
+  // also re-pull the full positions snapshot every 8s to catch margin/
+  // liquidation changes the markprice endpoint doesn't surface.
+  useEffect(() => {
+    if (positions.length === 0) return
+    const symbols = Array.from(new Set(positions.map(p => p.symbol)))
+    let cancelled = false
+    const tick = async () => {
+      const updates = await Promise.all(symbols.map(async (s) => {
+        try {
+          const m = await apiFetch<MarkPrice>(`/api/aster/markprice/${s}`)
+          return [s, m.markPrice] as const
+        } catch { return null }
+      }))
+      if (cancelled) return
+      setLivePrices(prev => {
+        const next = { ...prev }
+        for (const u of updates) if (u) next[u[0]] = u[1]
+        return next
+      })
+    }
+    tick()
+    const id = setInterval(tick, 1000)
+    const refreshId = setInterval(loadPositions, 8000)
+    return () => { cancelled = true; clearInterval(id); clearInterval(refreshId) }
+  }, [positions.map(p => p.symbol).join(',')])
 
   const onboarded = wallet?.aster.onboarded === true
   const availableMargin = wallet?.aster.availableMargin ?? 0
@@ -389,7 +436,15 @@ export function Trade() {
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
             {positions.map((p) => {
-              const pnlColor = p.unrealizedPnl >= 0 ? '#10b981' : '#ef4444'
+              // Use the live-polled mark when available, otherwise fall back
+              // to the snapshot value from the last /positions call. PnL is
+              // recomputed on the fly so the number ticks every second along
+              // with the mark, instead of staying stuck at whatever value the
+              // backend returned at the last full positions refresh.
+              const liveMark = livePrices[p.symbol] ?? p.markPrice
+              const dir = p.side === 'LONG' ? 1 : -1
+              const livePnl = (liveMark - p.entryPrice) * p.size * dir
+              const pnlColor = livePnl >= 0 ? '#10b981' : '#ef4444'
               return (
                 <div
                   key={`${p.symbol}-${p.side}`}
@@ -406,12 +461,12 @@ export function Trade() {
                     </span>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--text-secondary)' }}>
-                    <span>{p.size} @ ${p.entryPrice.toFixed(2)}</span>
-                    <span>mark ${p.markPrice.toFixed(2)}</span>
+                    <span>{p.size} @ ${fmtPrice(p.entryPrice)}</span>
+                    <span>mark ${fmtPrice(liveMark)}</span>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
                     <span style={{ color: pnlColor, fontWeight: 600 }} data-testid={`text-pnl-${p.symbol}`}>
-                      {p.unrealizedPnl >= 0 ? '+' : ''}{p.unrealizedPnl.toFixed(2)} USDT
+                      {livePnl >= 0 ? '+' : ''}{livePnl.toFixed(4)} USDT
                     </span>
                     <button
                       className="btn btn-red"

@@ -1642,6 +1642,17 @@ app.post('/api/hyperliquid/order', requireTgUser, async (req, res) => {
             for (let attempt = 0; attempt < backoffsMs.length; attempt++) {
               await new Promise(r => setTimeout(r, backoffsMs[attempt]))
               result = await placeOrder(creds, orderArgs)
+              // If HL starts rate-limiting us mid-retry, STOP. Continuing
+              // to hammer just deepens the 429 backoff window and surfaces
+              // a confusing "429 Too Many Requests - null" to the user
+              // instead of the actionable "Builder fee not approved" they
+              // can recover from with the manual approve button.
+              if (!result.success && /429|too many requests/i.test(result.error ?? '')) {
+                console.warn(
+                  `[/hyperliquid/order] HL rate-limited mid-retry user=${user.id} — bailing out of auto-heal loop`,
+                )
+                break
+              }
               const stillBuilder = !result.success
                 && /(builder|must approve)/i.test(result.error ?? '')
               if (!stillBuilder) break
