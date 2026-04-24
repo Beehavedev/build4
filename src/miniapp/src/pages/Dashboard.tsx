@@ -10,6 +10,7 @@ interface WalletInfo {
   address: string
   balances: { usdt: number; bnb: number; error: string | null }
   aster: { usdt: number; availableMargin: number; onboarded: boolean; error: string | null }
+  hyperliquid?: { usdc: number; accountValue: number; onboarded: boolean; error: string | null }
 }
 
 interface RecentTrade {
@@ -75,12 +76,17 @@ export default function Dashboard({ userId, onNavigate }: DashboardProps) {
   const asterUsdt = wallet?.aster?.usdt ?? 0
   const asterOnboarded = !!wallet?.aster?.onboarded
   const bscUsdt = wallet?.balances?.usdt ?? 0
+  // Hyperliquid clearinghouse equity (USDC). Falls through to 0 if the
+  // server didn't return the hyperliquid block (older clients) or if HL
+  // is temporarily unreachable — better than hiding the venue entirely.
+  const hlValue = wallet?.hyperliquid?.accountValue ?? 0
+  const hlOnboarded = !!wallet?.hyperliquid?.onboarded
   // 42.space "value" — for now we surface BSC USDT here since 42.space
   // positions live on BSC and the mini-app's open-position MTM lives in
   // the Predictions tab. This card is the user's BSC pocket / dry powder
   // available for prediction trades.
   const predValue = bscUsdt
-  const totalValue = asterUsdt + bscUsdt
+  const totalValue = asterUsdt + bscUsdt + hlValue
   const todayPnl = portfolio?.dayPnl ?? 0
   const todayPct = totalValue > 0 ? (todayPnl / totalValue) * 100 : 0
 
@@ -151,20 +157,23 @@ export default function Dashboard({ userId, onNavigate }: DashboardProps) {
         </div>
       </div>
 
-      {/* System split — Aster + 42.space */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
-        <div className="card" data-testid="card-aster" style={{ padding: 14 }}>
+      {/* System split — Aster + Hyperliquid + 42.space.
+          Three venues now that Hyperliquid is live; using a 3-col grid so
+          users see all balances at a glance. Cards are slightly tighter
+          padding than before to fit comfortably on a mobile width. */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 16 }}>
+        <div className="card" data-testid="card-aster" style={{ padding: 12 }}>
           <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', fontWeight: 600, letterSpacing: 0.4 }}>
             ASTER
           </div>
-          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8 }}>Futures</div>
-          <div style={{ fontSize: 'var(--text-lg)', fontWeight: 700 }} data-testid="text-aster-balance">
+          <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 6 }}>Futures · BSC</div>
+          <div style={{ fontSize: 'var(--text-md)', fontWeight: 700 }} data-testid="text-aster-balance">
             {fmtUsd(asterUsdt)}
           </div>
-          <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 4 }}>
+          <div style={{ fontSize: 10, color: 'var(--text-secondary)', marginTop: 4 }}>
             {agents.length} agent{agents.length === 1 ? '' : 's'}
           </div>
-          <div style={{ marginTop: 8 }}>
+          <div style={{ marginTop: 6 }}>
             <span className={`pill ${activeAgents > 0 ? 'pill-live' : asterOnboarded ? 'pill-muted' : 'pill-amber'}`}>
               <span className={activeAgents > 0 ? 'dot-live' : 'dot-muted'} />
               {activeAgents > 0 ? 'LIVE' : asterOnboarded ? 'idle' : 'not funded'}
@@ -172,18 +181,37 @@ export default function Dashboard({ userId, onNavigate }: DashboardProps) {
           </div>
         </div>
 
-        <div className="card" data-testid="card-predictions" style={{ padding: 14 }}>
+        <div className="card" data-testid="card-hyperliquid" style={{ padding: 12 }}>
+          <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', fontWeight: 600, letterSpacing: 0.4 }}>
+            HYPERLIQUID
+          </div>
+          <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 6 }}>Perps · USDC</div>
+          <div style={{ fontSize: 'var(--text-md)', fontWeight: 700 }} data-testid="text-hl-balance">
+            {fmtUsd(hlValue)}
+          </div>
+          <div style={{ fontSize: 10, color: 'var(--text-secondary)', marginTop: 4 }}>
+            {hlOnboarded ? 'manual & AI' : 'not activated'}
+          </div>
+          <div style={{ marginTop: 6 }}>
+            <span className={`pill ${hlValue > 0 ? 'pill-live' : hlOnboarded ? 'pill-muted' : 'pill-amber'}`}>
+              <span className={hlValue > 0 ? 'dot-live' : 'dot-muted'} />
+              {hlValue > 0 ? 'LIVE' : hlOnboarded ? 'idle' : 'fund to start'}
+            </span>
+          </div>
+        </div>
+
+        <div className="card" data-testid="card-predictions" style={{ padding: 12 }}>
           <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', fontWeight: 600, letterSpacing: 0.4 }}>
             42.SPACE
           </div>
-          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8 }}>Predictions</div>
-          <div style={{ fontSize: 'var(--text-lg)', fontWeight: 700 }} data-testid="text-predictions-balance">
+          <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 6 }}>Predict · BSC</div>
+          <div style={{ fontSize: 'var(--text-md)', fontWeight: 700 }} data-testid="text-predictions-balance">
             {fmtUsd(predValue)}
           </div>
-          <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 4 }}>
-            on BSC, ready to trade
+          <div style={{ fontSize: 10, color: 'var(--text-secondary)', marginTop: 4 }}>
+            BSC dry powder
           </div>
-          <div style={{ marginTop: 8 }}>
+          <div style={{ marginTop: 6 }}>
             <span className={`pill ${predValue > 0 ? 'pill-live' : 'pill-muted'}`}>
               <span className={predValue > 0 ? 'dot-live' : 'dot-muted'} />
               {predValue > 0 ? 'watching' : 'fund to start'}

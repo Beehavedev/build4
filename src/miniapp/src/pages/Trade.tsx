@@ -86,9 +86,12 @@ export function Trade() {
   }
 
   useEffect(() => { loadWallet(); loadPositions() }, [])
+  // Refresh mark price every second so the limit-price input has a live
+  // reference to anchor against. Aster's markprice endpoint is cheap and
+  // we're only polling one symbol at a time — well within rate limits.
   useEffect(() => {
     loadMark(pair)
-    const id = setInterval(() => loadMark(pair), 5000)
+    const id = setInterval(() => loadMark(pair), 1000)
     return () => clearInterval(id)
   }, [pair])
 

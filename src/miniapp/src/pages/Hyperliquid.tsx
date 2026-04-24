@@ -37,8 +37,10 @@ export default function Hyperliquid() {
   // Order ticket state
   const [orderCoin, setOrderCoin]         = useState('BTC')
   const [orderSide, setOrderSide]         = useState<'LONG' | 'SHORT'>('LONG')
+  const [orderType, setOrderType]         = useState<'MARKET' | 'LIMIT'>('MARKET')
   const [orderNotional, setOrderNotional] = useState('25')
   const [orderLeverage, setOrderLeverage] = useState('5')
+  const [orderLimitPx, setOrderLimitPx]   = useState('')
   const [placing, setPlacing]             = useState(false)
   const [orderMsg, setOrderMsg]           = useState<string | null>(null)
 
@@ -46,23 +48,32 @@ export default function Hyperliquid() {
     setPlacing(true)
     setOrderMsg(null)
     try {
+      const body: any = {
+        coin:         orderCoin,
+        side:         orderSide,
+        type:         orderType,
+        notionalUsdc: Number(orderNotional),
+        leverage:     Number(orderLeverage),
+      }
+      if (orderType === 'LIMIT') {
+        const px = Number(orderLimitPx)
+        if (!Number.isFinite(px) || px <= 0) {
+          setOrderMsg('Enter a valid limit price.')
+          setPlacing(false)
+          return
+        }
+        body.limitPx = px
+      }
       const r = await apiFetch<{ success: boolean; error?: string; sz?: number; markPrice?: number }>(
         '/api/hyperliquid/order',
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            coin:         orderCoin,
-            side:         orderSide,
-            type:         'MARKET',
-            notionalUsdc: Number(orderNotional),
-            leverage:     Number(orderLeverage),
-          }),
-        },
+        { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) },
       )
       if (r.success) {
+        const px = orderType === 'LIMIT' ? Number(orderLimitPx) : (r.markPrice ?? 0)
         setOrderMsg(
-          `${orderSide} ${r.sz?.toFixed(4) ?? '?'} ${orderCoin} @ ~$${r.markPrice?.toFixed(2) ?? '?'} placed.`,
+          `${orderSide} ${r.sz?.toFixed(4) ?? '?'} ${orderCoin} ${orderType} @ $${px.toFixed(2)} ${
+            orderType === 'LIMIT' ? 'resting' : 'placed'
+          }.`,
         )
         await load()
       } else {
@@ -74,6 +85,15 @@ export default function Hyperliquid() {
       setPlacing(false)
     }
   }
+
+  // When the user flips MARKET → LIMIT for the first time, prefill with the
+  // live mark so they can nudge from a sensible starting point. We only
+  // prefill if the field is empty — never clobber a price they already typed.
+  useEffect(() => {
+    if (orderType === 'LIMIT' && !orderLimitPx && mids[orderCoin] > 0) {
+      setOrderLimitPx(mids[orderCoin].toString())
+    }
+  }, [orderType, orderCoin, mids, orderLimitPx])
 
   const activate = async () => {
     setActivating(true)
@@ -321,6 +341,68 @@ export default function Hyperliquid() {
             </button>
           </div>
 
+          {/* MARKET / LIMIT order type */}
+          <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+            <button
+              onClick={() => setOrderType('MARKET')}
+              data-testid="button-hl-type-market"
+              style={{
+                flex: 1, padding: '8px', borderRadius: 8, fontSize: 12, fontWeight: 600,
+                background: orderType === 'MARKET' ? '#8b5cf6' : '#1f2937',
+                color: '#fff', border: 'none', cursor: 'pointer',
+              }}
+            >
+              MARKET
+            </button>
+            <button
+              onClick={() => setOrderType('LIMIT')}
+              data-testid="button-hl-type-limit"
+              style={{
+                flex: 1, padding: '8px', borderRadius: 8, fontSize: 12, fontWeight: 600,
+                background: orderType === 'LIMIT' ? '#8b5cf6' : '#1f2937',
+                color: '#fff', border: 'none', cursor: 'pointer',
+              }}
+            >
+              LIMIT
+            </button>
+          </div>
+
+          {/* Limit price — only when LIMIT. Lives above size so the user
+              can see it ticks as the live mark moves (next to the LIVE
+              header readout above). One-tap "Use mark" snaps it to the
+              current mid in case they nudged off and want to reset. */}
+          {orderType === 'LIMIT' && (
+            <div style={{ marginBottom: 10 }}>
+              <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 4, display: 'flex', justifyContent: 'space-between' }}>
+                <span>Limit price (USDC)</span>
+                {mids[orderCoin] > 0 && (
+                  <button
+                    onClick={() => setOrderLimitPx(mids[orderCoin].toString())}
+                    data-testid="button-hl-limit-use-mark"
+                    style={{
+                      padding: '0 6px', fontSize: 10, color: '#a78bfa',
+                      background: 'transparent', border: 'none', cursor: 'pointer',
+                    }}
+                  >
+                    use mark ${mids[orderCoin].toLocaleString(undefined, { maximumFractionDigits: mids[orderCoin] < 1 ? 5 : 2 })}
+                  </button>
+                )}
+              </div>
+              <input
+                type="number"
+                value={orderLimitPx}
+                onChange={(e) => setOrderLimitPx(e.target.value)}
+                placeholder={mids[orderCoin] > 0 ? mids[orderCoin].toString() : '0.00'}
+                data-testid="input-hl-limit-px"
+                style={{
+                  width: '100%', padding: '10px', borderRadius: 8, fontSize: 14,
+                  background: '#0f172a', border: '1px solid #334155', color: '#fff',
+                  boxSizing: 'border-box',
+                }}
+              />
+            </div>
+          )}
+
           {/* Notional + leverage */}
           <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
             <div style={{ flex: 2 }}>
@@ -386,7 +468,7 @@ export default function Hyperliquid() {
           >
             {placing
               ? 'Placing…'
-              : `${orderSide} $${orderNotional || '0'} ${orderCoin} @ ${orderLeverage}x`}
+              : `${orderSide} $${orderNotional || '0'} ${orderCoin} ${orderType} @ ${orderLeverage}x`}
           </button>
 
           {orderMsg && (
@@ -403,7 +485,10 @@ export default function Hyperliquid() {
           )}
 
           <div style={{ fontSize: 10, color: '#64748b', marginTop: 10, lineHeight: 1.4 }}>
-            Market orders execute immediately at best available price (5% slippage cap). BUILD4 takes a 0.1% builder fee on every fill.
+            {orderType === 'MARKET'
+              ? 'Market orders execute immediately at best available price (5% slippage cap).'
+              : 'Limit orders rest on the orderbook (GTC) until filled or cancelled.'}{' '}
+            BUILD4 takes a 0.1% builder fee on every fill.
           </div>
         </div>
       )}
