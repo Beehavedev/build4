@@ -1,0 +1,69 @@
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="78.177.162.15" requestID="92ef17bd-22ae-4948" responseTimeMS=1685 responseBytes=180 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[Aster] /fapi/v3/balance USDT for 0x9751EB70C3042b4b2a228f8E67dfE356CB2d3026 → marginBalance= 50.8000 crossWallet= 50.8000 crossUnPnl= 0.0000 available= 50.7898
+[GET]
+build4-1.onrender.com/api/me/link-wallet clientIP="78.177.162.15" requestID="5b0af2fe-0ccb-49f5" responseTimeMS=187 responseBytes=402 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/portfolio/7383875080 clientIP="78.177.162.15" requestID="059285ea-eafa-4c63" responseTimeMS=744 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[Aster] /fapi/v3/balance USDT for 0x9751EB70C3042b4b2a228f8E67dfE356CB2d3026 → marginBalance= 50.8000 crossWallet= 50.8000 crossUnPnl= 0.0000 available= 50.7898
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="78.177.162.15" requestID="f1c21fe8-8527-4f50" responseTimeMS=1302 responseBytes=180 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[Runner] Ticking 4 agents in batches of 50
+[Runner] Dispatched 4 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'LINKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'MERLUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: '1000WOJAKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'TACUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'VELVETUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'HUMAUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'MERLUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'MERLUSDT', interval: '5m', limit: 100 }
+[GET]
+build4-1.onrender.com/api/agents/7383875080 clientIP="78.177.162.15" requestID="f1122126-16d0-4421" responseTimeMS=568 responseBytes=1392 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="78.177.162.15" requestID="e1debf18-d860-4636" responseTimeMS=1749 responseBytes=180 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/user/7383875080 clientIP="78.177.162.15" requestID="c807c519-1dd7-4833" responseTimeMS=1119 responseBytes=180 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[Aster] /fapi/v3/balance USDT for 0x9751EB70C3042b4b2a228f8E67dfE356CB2d3026 → marginBalance= 50.8000 crossWallet= 50.8000 crossUnPnl= 0.0000 available= 50.7898
+[GET]
+build4-1.onrender.com/api/buybacks clientIP="78.177.162.15" requestID="025c6441-b0aa-4d48" responseTimeMS=728 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=5/5 (100.0%)
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=6/6 (100.0%)
+[Agent BNT] HOLD on AVAXUSDT — Waiting for clearer breakout signals and volume confirmation.
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=7/7 (100.0%)
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=8/8 (100.0%)
+[Agent Xander] HOLD on AVAXUSDT — Waiting for clearer momentum and volume confirmation at key levels.
+[Agent BTPredict] HOLD on AVAXUSDT — Waiting for a confirmed breakout with sufficient volume follow-through.
+[Agent SeanBuild4] HOLD on AVAXUSDT — Lack of strong momentum indicators and volume confirmation, as well as overlever
+[POST]
+build4-1.onrender.com/api/webhook clientIP="91.108.5.66" requestID="6d63ebc9-c0bf-494c" responseTimeMS=941 responseBytes=270 userAgent=""
+[GET]
+build4-1.onrender.com/app/ clientIP="78.177.162.15" requestID="f5526abf-e300-4a21" responseTimeMS=6 responseBytes=655 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/me/admin clientIP="78.177.162.15" requestID="5da3f4ed-e74b-431b" responseTimeMS=365 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/app clientIP="78.177.162.15" requestID="d16324e4-27d4-4fcf" responseTimeMS=4 responseBytes=414 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/user/7383875080 clientIP="78.177.162.15" requestID="cce27c36-ffdd-4a38" responseTimeMS=1092 responseBytes=180 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/buybacks clientIP="78.177.162.15" requestID="030fa878-7068-45bf" responseTimeMS=546 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="78.177.162.15" requestID="a070f963-b41c-488c" responseTimeMS=1369 responseBytes=1901 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+Menu
+[GET]
+build4-1.onrender.com/api/agents/7383875080 clientIP="78.177.162.15" requestID="2ef99dd0-f175-49b3" responseTimeMS=553 responseBytes=1385 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[Aster] /fapi/v3/balance USDT for 0x9751EB70C3042b4b2a228f8E67dfE356CB2d3026 → marginBalance= 50.8000 crossWallet= 50.8000 crossUnPnl= 0.0000 available= 50.7898
+[GET]
+build4-1.onrender.com/api/me/agents clientIP="78.177.162.15" requestID="a0d35f52-f0b3-46c7" responseTimeMS=563 responseBytes=1385 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/me/feed?limit=20 clientIP="78.177.162.15" requestID="fdbc721a-23bb-435a" responseTimeMS=1445 responseBytes=1350 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
