@@ -45,6 +45,12 @@ export default function Hyperliquid() {
   const [orderLimitPx, setOrderLimitPx]   = useState('')
   const [placing, setPlacing]             = useState(false)
   const [orderMsg, setOrderMsg]           = useState<string | null>(null)
+  // Explicit success/error tag for orderMsg styling. Using regex on the
+  // message text was fragile — HL's "Builder has insufficient balance to
+  // be approved." error contains the word "approved" and was being styled
+  // as a success (green box). Tagging at the call site removes that class
+  // of bug entirely. Default true (most setOrderMsg calls are errors).
+  const [orderMsgIsErr, setOrderMsgIsErr] = useState<boolean>(true)
   // Set when the backend's order endpoint reports a builder-fee rejection
   // it couldn't auto-heal. Surfaces a manual "Approve builder fee" button.
   const [needsBuilderApproval, setNeedsBuilderApproval] = useState(false)
@@ -53,6 +59,7 @@ export default function Hyperliquid() {
   const placeOrder = async () => {
     setPlacing(true)
     setOrderMsg(null)
+    setOrderMsgIsErr(true)
     setNeedsBuilderApproval(false)
     try {
       const body: any = {
@@ -66,6 +73,7 @@ export default function Hyperliquid() {
         const px = Number(orderLimitPx)
         if (!Number.isFinite(px) || px <= 0) {
           setOrderMsg('Enter a valid limit price.')
+          setOrderMsgIsErr(true)
           setPlacing(false)
           return
         }
@@ -85,9 +93,11 @@ export default function Hyperliquid() {
             orderType === 'LIMIT' ? 'resting' : 'placed'
           }.`,
         )
+        setOrderMsgIsErr(false)
         await load()
       } else {
         setOrderMsg(r.error ?? 'Order failed')
+        setOrderMsgIsErr(true)
         // Defense in depth: surface the manual approve button whenever the
         // backend flag OR the raw error text indicates a builder rejection.
         // The flag should always be set by the server, but if a future code
@@ -113,6 +123,7 @@ export default function Hyperliquid() {
       // fixes being in production.
       const msg = e?.message ?? 'Order failed'
       setOrderMsg(msg)
+      setOrderMsgIsErr(true)
       const body = e?.body
       const isBuilderReject =
         body?.needsBuilderApproval ||
@@ -134,12 +145,15 @@ export default function Hyperliquid() {
       if (r.success) {
         setNeedsBuilderApproval(false)
         setOrderMsg('Builder fee approved — placing order...')
+        setOrderMsgIsErr(false)
         await placeOrder()
       } else {
         setOrderMsg(r.error ?? 'Builder approval failed')
+        setOrderMsgIsErr(true)
       }
     } catch (e: any) {
       setOrderMsg(e?.message ?? 'Builder approval failed')
+      setOrderMsgIsErr(true)
     } finally {
       setApprovingBuilder(false)
     }
@@ -541,8 +555,8 @@ export default function Hyperliquid() {
             <div
               style={{
                 marginTop: 8, padding: 8, borderRadius: 6, fontSize: 11,
-                background: /placed|filled|approved/i.test(orderMsg) ? '#064e3b' : '#7f1d1d',
-                color: /placed|filled|approved/i.test(orderMsg) ? '#a7f3d0' : '#fecaca',
+                background: orderMsgIsErr ? '#7f1d1d' : '#064e3b',
+                color: orderMsgIsErr ? '#fecaca' : '#a7f3d0',
               }}
               data-testid="text-hl-order-msg"
             >
