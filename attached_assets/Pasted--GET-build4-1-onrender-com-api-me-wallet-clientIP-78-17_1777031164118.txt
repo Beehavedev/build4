@@ -1,0 +1,864 @@
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="78.177.162.15" requestID="92ef17bd-22ae-4948" responseTimeMS=1685 responseBytes=180 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[Aster] /fapi/v3/balance USDT for 0x9751EB70C3042b4b2a228f8E67dfE356CB2d3026 → marginBalance= 50.8000 crossWallet= 50.8000 crossUnPnl= 0.0000 available= 50.7898
+[GET]
+build4-1.onrender.com/api/me/link-wallet clientIP="78.177.162.15" requestID="5b0af2fe-0ccb-49f5" responseTimeMS=187 responseBytes=402 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/portfolio/7383875080 clientIP="78.177.162.15" requestID="059285ea-eafa-4c63" responseTimeMS=744 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[Aster] /fapi/v3/balance USDT for 0x9751EB70C3042b4b2a228f8E67dfE356CB2d3026 → marginBalance= 50.8000 crossWallet= 50.8000 crossUnPnl= 0.0000 available= 50.7898
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="78.177.162.15" requestID="f1c21fe8-8527-4f50" responseTimeMS=1302 responseBytes=180 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[Runner] Ticking 4 agents in batches of 50
+[Runner] Dispatched 4 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'LINKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'MERLUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: '1000WOJAKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'TACUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'VELVETUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'HUMAUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'MERLUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'MERLUSDT', interval: '5m', limit: 100 }
+[GET]
+build4-1.onrender.com/api/agents/7383875080 clientIP="78.177.162.15" requestID="f1122126-16d0-4421" responseTimeMS=568 responseBytes=1392 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="78.177.162.15" requestID="e1debf18-d860-4636" responseTimeMS=1749 responseBytes=180 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/user/7383875080 clientIP="78.177.162.15" requestID="c807c519-1dd7-4833" responseTimeMS=1119 responseBytes=180 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[Aster] /fapi/v3/balance USDT for 0x9751EB70C3042b4b2a228f8E67dfE356CB2d3026 → marginBalance= 50.8000 crossWallet= 50.8000 crossUnPnl= 0.0000 available= 50.7898
+[GET]
+build4-1.onrender.com/api/buybacks clientIP="78.177.162.15" requestID="025c6441-b0aa-4d48" responseTimeMS=728 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=5/5 (100.0%)
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=6/6 (100.0%)
+[Agent BNT] HOLD on AVAXUSDT — Waiting for clearer breakout signals and volume confirmation.
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=7/7 (100.0%)
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=8/8 (100.0%)
+[Agent Xander] HOLD on AVAXUSDT — Waiting for clearer momentum and volume confirmation at key levels.
+[Agent BTPredict] HOLD on AVAXUSDT — Waiting for a confirmed breakout with sufficient volume follow-through.
+[Agent SeanBuild4] HOLD on AVAXUSDT — Lack of strong momentum indicators and volume confirmation, as well as overlever
+[POST]
+build4-1.onrender.com/api/webhook clientIP="91.108.5.66" requestID="6d63ebc9-c0bf-494c" responseTimeMS=941 responseBytes=270 userAgent=""
+[GET]
+build4-1.onrender.com/app/ clientIP="78.177.162.15" requestID="f5526abf-e300-4a21" responseTimeMS=6 responseBytes=655 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/me/admin clientIP="78.177.162.15" requestID="5da3f4ed-e74b-431b" responseTimeMS=365 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/app clientIP="78.177.162.15" requestID="d16324e4-27d4-4fcf" responseTimeMS=4 responseBytes=414 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/user/7383875080 clientIP="78.177.162.15" requestID="cce27c36-ffdd-4a38" responseTimeMS=1092 responseBytes=180 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/buybacks clientIP="78.177.162.15" requestID="030fa878-7068-45bf" responseTimeMS=546 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="78.177.162.15" requestID="a070f963-b41c-488c" responseTimeMS=1369 responseBytes=1901 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/agents/7383875080 clientIP="78.177.162.15" requestID="2ef99dd0-f175-49b3" responseTimeMS=553 responseBytes=1385 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[Aster] /fapi/v3/balance USDT for 0x9751EB70C3042b4b2a228f8E67dfE356CB2d3026 → marginBalance= 50.8000 crossWallet= 50.8000 crossUnPnl= 0.0000 available= 50.7898
+[GET]
+build4-1.onrender.com/api/me/agents clientIP="78.177.162.15" requestID="a0d35f52-f0b3-46c7" responseTimeMS=563 responseBytes=1385 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/me/feed?limit=20 clientIP="78.177.162.15" requestID="fdbc721a-23bb-435a" responseTimeMS=1445 responseBytes=1350 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[Runner] Ticking 4 agents in batches of 50
+[Runner] Dispatched 4 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/DOGE clientIP="78.177.162.15" requestID="9b5fe80e-1eee-408c" responseTimeMS=203 responseBytes=297 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="78.177.162.15" requestID="4f4e6c63-9d84-4eab" responseTimeMS=1622 responseBytes=1901 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BNB clientIP="78.177.162.15" requestID="8f4aa77a-4468-444c" responseTimeMS=94 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/HYPE clientIP="78.177.162.15" requestID="d4d36081-13fd-41d7" responseTimeMS=213 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/ETH clientIP="78.177.162.15" requestID="73c33325-a3d5-4456" responseTimeMS=188 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BTC clientIP="78.177.162.15" requestID="422d6397-3f24-42d4" responseTimeMS=183 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/DOGE clientIP="78.177.162.15" requestID="9b5fe80e-1eee-408c" responseTimeMS=203 responseBytes=297 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="78.177.162.15" requestID="4f4e6c63-9d84-4eab" responseTimeMS=1622 responseBytes=1901 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BNB clientIP="78.177.162.15" requestID="8f4aa77a-4468-444c" responseTimeMS=94 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/HYPE clientIP="78.177.162.15" requestID="d4d36081-13fd-41d7" responseTimeMS=213 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/ETH clientIP="78.177.162.15" requestID="73c33325-a3d5-4456" responseTimeMS=188 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BTC clientIP="78.177.162.15" requestID="422d6397-3f24-42d4" responseTimeMS=183 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/DOGE clientIP="78.177.162.15" requestID="9b5fe80e-1eee-408c" responseTimeMS=203 responseBytes=297 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="78.177.162.15" requestID="4f4e6c63-9d84-4eab" responseTimeMS=1622 responseBytes=1901 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BNB clientIP="78.177.162.15" requestID="8f4aa77a-4468-444c" responseTimeMS=94 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/HYPE clientIP="78.177.162.15" requestID="d4d36081-13fd-41d7" responseTimeMS=213 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/ETH clientIP="78.177.162.15" requestID="73c33325-a3d5-4456" responseTimeMS=188 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BTC clientIP="78.177.162.15" requestID="422d6397-3f24-42d4" responseTimeMS=183 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/DOGE clientIP="78.177.162.15" requestID="9b5fe80e-1eee-408c" responseTimeMS=203 responseBytes=297 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="78.177.162.15" requestID="4f4e6c63-9d84-4eab" responseTimeMS=1622 responseBytes=1901 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BNB clientIP="78.177.162.15" requestID="8f4aa77a-4468-444c" responseTimeMS=94 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/HYPE clientIP="78.177.162.15" requestID="d4d36081-13fd-41d7" responseTimeMS=213 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/ETH clientIP="78.177.162.15" requestID="73c33325-a3d5-4456" responseTimeMS=188 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BTC clientIP="78.177.162.15" requestID="422d6397-3f24-42d4" responseTimeMS=183 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/DOGE clientIP="78.177.162.15" requestID="9b5fe80e-1eee-408c" responseTimeMS=203 responseBytes=297 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="78.177.162.15" requestID="4f4e6c63-9d84-4eab" responseTimeMS=1622 responseBytes=1901 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BNB clientIP="78.177.162.15" requestID="8f4aa77a-4468-444c" responseTimeMS=94 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/HYPE clientIP="78.177.162.15" requestID="d4d36081-13fd-41d7" responseTimeMS=213 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/ETH clientIP="78.177.162.15" requestID="73c33325-a3d5-4456" responseTimeMS=188 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BTC clientIP="78.177.162.15" requestID="422d6397-3f24-42d4" responseTimeMS=183 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/DOGE clientIP="78.177.162.15" requestID="9b5fe80e-1eee-408c" responseTimeMS=203 responseBytes=297 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="78.177.162.15" requestID="4f4e6c63-9d84-4eab" responseTimeMS=1622 responseBytes=1901 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BNB clientIP="78.177.162.15" requestID="8f4aa77a-4468-444c" responseTimeMS=94 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/HYPE clientIP="78.177.162.15" requestID="d4d36081-13fd-41d7" responseTimeMS=213 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/ETH clientIP="78.177.162.15" requestID="73c33325-a3d5-4456" responseTimeMS=188 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BTC clientIP="78.177.162.15" requestID="422d6397-3f24-42d4" responseTimeMS=183 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/DOGE clientIP="78.177.162.15" requestID="9b5fe80e-1eee-408c" responseTimeMS=203 responseBytes=297 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="78.177.162.15" requestID="4f4e6c63-9d84-4eab" responseTimeMS=1622 responseBytes=1901 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BNB clientIP="78.177.162.15" requestID="8f4aa77a-4468-444c" responseTimeMS=94 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/HYPE clientIP="78.177.162.15" requestID="d4d36081-13fd-41d7" responseTimeMS=213 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/ETH clientIP="78.177.162.15" requestID="73c33325-a3d5-4456" responseTimeMS=188 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BTC clientIP="78.177.162.15" requestID="422d6397-3f24-42d4" responseTimeMS=183 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/DOGE clientIP="78.177.162.15" requestID="9b5fe80e-1eee-408c" responseTimeMS=203 responseBytes=297 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="78.177.162.15" requestID="4f4e6c63-9d84-4eab" responseTimeMS=1622 responseBytes=1901 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BNB clientIP="78.177.162.15" requestID="8f4aa77a-4468-444c" responseTimeMS=94 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/HYPE clientIP="78.177.162.15" requestID="d4d36081-13fd-41d7" responseTimeMS=213 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/ETH clientIP="78.177.162.15" requestID="73c33325-a3d5-4456" responseTimeMS=188 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BTC clientIP="78.177.162.15" requestID="422d6397-3f24-42d4" responseTimeMS=183 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/DOGE clientIP="78.177.162.15" requestID="9b5fe80e-1eee-408c" responseTimeMS=203 responseBytes=297 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="78.177.162.15" requestID="4f4e6c63-9d84-4eab" responseTimeMS=1622 responseBytes=1901 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BNB clientIP="78.177.162.15" requestID="8f4aa77a-4468-444c" responseTimeMS=94 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/HYPE clientIP="78.177.162.15" requestID="d4d36081-13fd-41d7" responseTimeMS=213 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/ETH clientIP="78.177.162.15" requestID="73c33325-a3d5-4456" responseTimeMS=188 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BTC clientIP="78.177.162.15" requestID="422d6397-3f24-42d4" responseTimeMS=183 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/DOGE clientIP="78.177.162.15" requestID="9b5fe80e-1eee-408c" responseTimeMS=203 responseBytes=297 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="78.177.162.15" requestID="4f4e6c63-9d84-4eab" responseTimeMS=1622 responseBytes=1901 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BNB clientIP="78.177.162.15" requestID="8f4aa77a-4468-444c" responseTimeMS=94 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/HYPE clientIP="78.177.162.15" requestID="d4d36081-13fd-41d7" responseTimeMS=213 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/ETH clientIP="78.177.162.15" requestID="73c33325-a3d5-4456" responseTimeMS=188 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BTC clientIP="78.177.162.15" requestID="422d6397-3f24-42d4" responseTimeMS=183 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/DOGE clientIP="78.177.162.15" requestID="9b5fe80e-1eee-408c" responseTimeMS=203 responseBytes=297 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="78.177.162.15" requestID="4f4e6c63-9d84-4eab" responseTimeMS=1622 responseBytes=1901 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BNB clientIP="78.177.162.15" requestID="8f4aa77a-4468-444c" responseTimeMS=94 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/HYPE clientIP="78.177.162.15" requestID="d4d36081-13fd-41d7" responseTimeMS=213 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/ETH clientIP="78.177.162.15" requestID="73c33325-a3d5-4456" responseTimeMS=188 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BTC clientIP="78.177.162.15" requestID="422d6397-3f24-42d4" responseTimeMS=183 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/DOGE clientIP="78.177.162.15" requestID="9b5fe80e-1eee-408c" responseTimeMS=203 responseBytes=297 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="78.177.162.15" requestID="4f4e6c63-9d84-4eab" responseTimeMS=1622 responseBytes=1901 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BNB clientIP="78.177.162.15" requestID="8f4aa77a-4468-444c" responseTimeMS=94 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/HYPE clientIP="78.177.162.15" requestID="d4d36081-13fd-41d7" responseTimeMS=213 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/ETH clientIP="78.177.162.15" requestID="73c33325-a3d5-4456" responseTimeMS=188 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BTC clientIP="78.177.162.15" requestID="422d6397-3f24-42d4" responseTimeMS=183 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/DOGE clientIP="78.177.162.15" requestID="9b5fe80e-1eee-408c" responseTimeMS=203 responseBytes=297 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="78.177.162.15" requestID="4f4e6c63-9d84-4eab" responseTimeMS=1622 responseBytes=1901 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BNB clientIP="78.177.162.15" requestID="8f4aa77a-4468-444c" responseTimeMS=94 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/HYPE clientIP="78.177.162.15" requestID="d4d36081-13fd-41d7" responseTimeMS=213 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/ETH clientIP="78.177.162.15" requestID="73c33325-a3d5-4456" responseTimeMS=188 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BTC clientIP="78.177.162.15" requestID="422d6397-3f24-42d4" responseTimeMS=183 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/DOGE clientIP="78.177.162.15" requestID="9b5fe80e-1eee-408c" responseTimeMS=203 responseBytes=297 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="78.177.162.15" requestID="4f4e6c63-9d84-4eab" responseTimeMS=1622 responseBytes=1901 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BNB clientIP="78.177.162.15" requestID="8f4aa77a-4468-444c" responseTimeMS=94 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/HYPE clientIP="78.177.162.15" requestID="d4d36081-13fd-41d7" responseTimeMS=213 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/ETH clientIP="78.177.162.15" requestID="73c33325-a3d5-4456" responseTimeMS=188 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BTC clientIP="78.177.162.15" requestID="422d6397-3f24-42d4" responseTimeMS=183 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/DOGE clientIP="78.177.162.15" requestID="9b5fe80e-1eee-408c" responseTimeMS=203 responseBytes=297 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="78.177.162.15" requestID="4f4e6c63-9d84-4eab" responseTimeMS=1622 responseBytes=1901 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BNB clientIP="78.177.162.15" requestID="8f4aa77a-4468-444c" responseTimeMS=94 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/HYPE clientIP="78.177.162.15" requestID="d4d36081-13fd-41d7" responseTimeMS=213 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/ETH clientIP="78.177.162.15" requestID="73c33325-a3d5-4456" responseTimeMS=188 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BTC clientIP="78.177.162.15" requestID="422d6397-3f24-42d4" responseTimeMS=183 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/DOGE clientIP="78.177.162.15" requestID="9b5fe80e-1eee-408c" responseTimeMS=203 responseBytes=297 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="78.177.162.15" requestID="4f4e6c63-9d84-4eab" responseTimeMS=1622 responseBytes=1901 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BNB clientIP="78.177.162.15" requestID="8f4aa77a-4468-444c" responseTimeMS=94 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/HYPE clientIP="78.177.162.15" requestID="d4d36081-13fd-41d7" responseTimeMS=213 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/ETH clientIP="78.177.162.15" requestID="73c33325-a3d5-4456" responseTimeMS=188 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BTC clientIP="78.177.162.15" requestID="422d6397-3f24-42d4" responseTimeMS=183 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/DOGE clientIP="78.177.162.15" requestID="9b5fe80e-1eee-408c" responseTimeMS=203 responseBytes=297 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="78.177.162.15" requestID="4f4e6c63-9d84-4eab" responseTimeMS=1622 responseBytes=1901 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BNB clientIP="78.177.162.15" requestID="8f4aa77a-4468-444c" responseTimeMS=94 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/HYPE clientIP="78.177.162.15" requestID="d4d36081-13fd-41d7" responseTimeMS=213 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/ETH clientIP="78.177.162.15" requestID="73c33325-a3d5-4456" responseTimeMS=188 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BTC clientIP="78.177.162.15" requestID="422d6397-3f24-42d4" responseTimeMS=183 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/DOGE clientIP="78.177.162.15" requestID="9b5fe80e-1eee-408c" responseTimeMS=203 responseBytes=297 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="78.177.162.15" requestID="4f4e6c63-9d84-4eab" responseTimeMS=1622 responseBytes=1901 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BNB clientIP="78.177.162.15" requestID="8f4aa77a-4468-444c" responseTimeMS=94 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/HYPE clientIP="78.177.162.15" requestID="d4d36081-13fd-41d7" responseTimeMS=213 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/ETH clientIP="78.177.162.15" requestID="73c33325-a3d5-4456" responseTimeMS=188 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BTC clientIP="78.177.162.15" requestID="422d6397-3f24-42d4" responseTimeMS=183 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/DOGE clientIP="78.177.162.15" requestID="9b5fe80e-1eee-408c" responseTimeMS=203 responseBytes=297 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="78.177.162.15" requestID="4f4e6c63-9d84-4eab" responseTimeMS=1622 responseBytes=1901 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BNB clientIP="78.177.162.15" requestID="8f4aa77a-4468-444c" responseTimeMS=94 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/HYPE clientIP="78.177.162.15" requestID="d4d36081-13fd-41d7" responseTimeMS=213 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/ETH clientIP="78.177.162.15" requestID="73c33325-a3d5-4456" responseTimeMS=188 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BTC clientIP="78.177.162.15" requestID="422d6397-3f24-42d4" responseTimeMS=183 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/DOGE clientIP="78.177.162.15" requestID="9b5fe80e-1eee-408c" responseTimeMS=203 responseBytes=297 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="78.177.162.15" requestID="4f4e6c63-9d84-4eab" responseTimeMS=1622 responseBytes=1901 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BNB clientIP="78.177.162.15" requestID="8f4aa77a-4468-444c" responseTimeMS=94 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/HYPE clientIP="78.177.162.15" requestID="d4d36081-13fd-41d7" responseTimeMS=213 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/ETH clientIP="78.177.162.15" requestID="73c33325-a3d5-4456" responseTimeMS=188 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BTC clientIP="78.177.162.15" requestID="422d6397-3f24-42d4" responseTimeMS=183 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/DOGE clientIP="78.177.162.15" requestID="9b5fe80e-1eee-408c" responseTimeMS=203 responseBytes=297 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="78.177.162.15" requestID="4f4e6c63-9d84-4eab" responseTimeMS=1622 responseBytes=1901 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BNB clientIP="78.177.162.15" requestID="8f4aa77a-4468-444c" responseTimeMS=94 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/HYPE clientIP="78.177.162.15" requestID="d4d36081-13fd-41d7" responseTimeMS=213 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/ETH clientIP="78.177.162.15" requestID="73c33325-a3d5-4456" responseTimeMS=188 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BTC clientIP="78.177.162.15" requestID="422d6397-3f24-42d4" responseTimeMS=183 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/DOGE clientIP="78.177.162.15" requestID="9b5fe80e-1eee-408c" responseTimeMS=203 responseBytes=297 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="78.177.162.15" requestID="4f4e6c63-9d84-4eab" responseTimeMS=1622 responseBytes=1901 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BNB clientIP="78.177.162.15" requestID="8f4aa77a-4468-444c" responseTimeMS=94 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/HYPE clientIP="78.177.162.15" requestID="d4d36081-13fd-41d7" responseTimeMS=213 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/ETH clientIP="78.177.162.15" requestID="73c33325-a3d5-4456" responseTimeMS=188 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BTC clientIP="78.177.162.15" requestID="422d6397-3f24-42d4" responseTimeMS=183 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/DOGE clientIP="78.177.162.15" requestID="9b5fe80e-1eee-408c" responseTimeMS=203 responseBytes=297 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="78.177.162.15" requestID="4f4e6c63-9d84-4eab" responseTimeMS=1622 responseBytes=1901 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BNB clientIP="78.177.162.15" requestID="8f4aa77a-4468-444c" responseTimeMS=94 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/HYPE clientIP="78.177.162.15" requestID="d4d36081-13fd-41d7" responseTimeMS=213 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/ETH clientIP="78.177.162.15" requestID="73c33325-a3d5-4456" responseTimeMS=188 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BTC clientIP="78.177.162.15" requestID="422d6397-3f24-42d4" responseTimeMS=183 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/DOGE clientIP="78.177.162.15" requestID="9b5fe80e-1eee-408c" responseTimeMS=203 responseBytes=297 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="78.177.162.15" requestID="4f4e6c63-9d84-4eab" responseTimeMS=1622 responseBytes=1901 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BNB clientIP="78.177.162.15" requestID="8f4aa77a-4468-444c" responseTimeMS=94 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/HYPE clientIP="78.177.162.15" requestID="d4d36081-13fd-41d7" responseTimeMS=213 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/ETH clientIP="78.177.162.15" requestID="73c33325-a3d5-4456" responseTimeMS=188 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BTC clientIP="78.177.162.15" requestID="422d6397-3f24-42d4" responseTimeMS=183 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BNB clientIP="78.177.162.15" requestID="8f4aa77a-4468-444c" responseTimeMS=94 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/HYPE clientIP="78.177.162.15" requestID="d4d36081-13fd-41d7" responseTimeMS=213 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/ETH clientIP="78.177.162.15" requestID="73c33325-a3d5-4456" responseTimeMS=188 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BTC clientIP="78.177.162.15" requestID="422d6397-3f24-42d4" responseTimeMS=183 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/ETH clientIP="78.177.162.15" requestID="73c33325-a3d5-4456" responseTimeMS=188 responseBytes=296 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BTC clientIP="78.177.162.15" requestID="422d6397-3f24-42d4" responseTimeMS=183 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'LINKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'MERLUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: '1000WOJAKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'TACUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'VELVETUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'HUMAUSDT', interval: '15m', limit: 100 }
+[GET]
+build4-1.onrender.com/api/aster/markprice/SOLUSDT clientIP="78.177.162.15" requestID="29d31d4e-4fbd-4200" responseTimeMS=85 responseBytes=342 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[Aster] klines fetch (cache miss): { symbol: 'MERLUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'MERLUSDT', interval: '5m', limit: 100 }
+[GET]
+build4-1.onrender.com/api/aster/markprice/SOLUSDT clientIP="78.177.162.15" requestID="b9299abb-21ad-4b1b" responseTimeMS=105 responseBytes=341 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/SOLUSDT clientIP="78.177.162.15" requestID="d2d75a6f-1c7d-4850" responseTimeMS=89 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '1h', limit: 200 }
+[GET]
+build4-1.onrender.com/api/aster/markprice/SOLUSDT clientIP="78.177.162.15" requestID="970804cd-47a7-409e" responseTimeMS=83 responseBytes=342 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/SOLUSDT clientIP="78.177.162.15" requestID="b981db66-cf2a-4856" responseTimeMS=127 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/SOLUSDT clientIP="78.177.162.15" requestID="3e02df26-1b46-4f6b" responseTimeMS=83 responseBytes=341 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/SOLUSDT clientIP="78.177.162.15" requestID="1c74a3cc-5341-44c4" responseTimeMS=85 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/SOLUSDT clientIP="78.177.162.15" requestID="e81e8e78-22ea-4ae4" responseTimeMS=96 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/SOLUSDT clientIP="78.177.162.15" requestID="a4c82e33-b5cf-400d" responseTimeMS=91 responseBytes=340 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/SOLUSDT clientIP="78.177.162.15" requestID="3d164fc6-fc3e-4d1e" responseTimeMS=91 responseBytes=341 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/SOLUSDT clientIP="78.177.162.15" requestID="6691d741-6226-4d03" responseTimeMS=84 responseBytes=341 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+==> Detected service running on port 500
+[GET]
+build4-1.onrender.com/api/aster/markprice/SOLUSDT clientIP="78.177.162.15" requestID="0be0408a-1cd3-46d8" responseTimeMS=81 responseBytes=341 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+==> Docs on specifying a port: https://render.com/docs/web-services#port-binding
+[GET]
+build4-1.onrender.com/api/aster/markprice/SOLUSDT clientIP="78.177.162.15" requestID="d6c5b8c3-ceb9-4694" responseTimeMS=85 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/SOLUSDT clientIP="78.177.162.15" requestID="ce725845-8bcd-486d" responseTimeMS=83 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/SOLUSDT clientIP="78.177.162.15" requestID="d49e44ff-60d2-4a70" responseTimeMS=85 responseBytes=341 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/SOLUSDT clientIP="78.177.162.15" requestID="9d61d4a5-7ed7-4638" responseTimeMS=89 responseBytes=341 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/SOLUSDT clientIP="78.177.162.15" requestID="b347e85a-8256-48e5" responseTimeMS=83 responseBytes=341 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/SOLUSDT clientIP="78.177.162.15" requestID="b38345d0-e50b-4f5e" responseTimeMS=84 responseBytes=341 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/SOLUSDT clientIP="78.177.162.15" requestID="06480553-8418-4053" responseTimeMS=100 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/SOLUSDT clientIP="78.177.162.15" requestID="9f447b3e-f47d-4699" responseTimeMS=82 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/SOLUSDT clientIP="78.177.162.15" requestID="7afbf4ee-25b8-43d9" responseTimeMS=84 responseBytes=342 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/SOLUSDT clientIP="78.177.162.15" requestID="d1798b13-5485-497f" responseTimeMS=83 responseBytes=340 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/SOLUSDT clientIP="78.177.162.15" requestID="681fd51a-d56d-4bed" responseTimeMS=255 responseBytes=341 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/SOLUSDT clientIP="78.177.162.15" requestID="e65ec4bf-26ae-42f9" responseTimeMS=79 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=17/17 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=18/18 (100.0%)
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=19/19 (100.0%)
+[Agent Xander] HOLD on AVAXUSDT — Waiting for clear momentum and volume confirmation at key levels.
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=20/20 (100.0%)
+[Agent BNT] HOLD on AVAXUSDT — Waiting for clearer signals and volume confirmation.
+[Agent BTPredict] HOLD on AVAXUSDT — Waiting for a confirmed breakout with sufficient volume follow-through and a hig
+[GET]
+build4-1.onrender.com/api/aster/markprice/SOLUSDT clientIP="78.177.162.15" requestID="cf34ce59-c6d9-42fd" responseTimeMS=84 responseBytes=341 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/SOLUSDT clientIP="78.177.162.15" requestID="5f19fe8d-b8d4-40ad" responseTimeMS=80 responseBytes=341 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/SOLUSDT clientIP="78.177.162.15" requestID="06c12754-f7ed-44ee" responseTimeMS=82 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/SOLUSDT clientIP="78.177.162.15" requestID="eac6ee45-013f-46ec" responseTimeMS=82 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/SOLUSDT clientIP="78.177.162.15" requestID="c1b8b3c5-0f04-4d62" responseTimeMS=86 responseBytes=341 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/SOLUSDT clientIP="78.177.162.15" requestID="f7b3566c-0523-41a7" responseTimeMS=86 responseBytes=342 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/SOLUSDT clientIP="78.177.162.15" requestID="9de8b2ed-89ba-4c9b" responseTimeMS=83 responseBytes=341 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/SOLUSDT clientIP="78.177.162.15" requestID="8bec13e6-0963-4fca" responseTimeMS=91 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/SOLUSDT clientIP="78.177.162.15" requestID="651dc01b-0e0c-4778" responseTimeMS=118 responseBytes=341 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/SOLUSDT clientIP="78.177.162.15" requestID="5f191e8e-6a23-47e8" responseTimeMS=134 responseBytes=341 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/SOLUSDT clientIP="78.177.162.15" requestID="1c98c273-de8f-4295" responseTimeMS=87 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/SOLUSDT clientIP="78.177.162.15" requestID="d2bef02a-09ff-424d" responseTimeMS=84 responseBytes=341 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/SOLUSDT clientIP="78.177.162.15" requestID="4e05a608-eeba-4714" responseTimeMS=96 responseBytes=341 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/SOLUSDT clientIP="78.177.162.15" requestID="acc9a005-3157-4ee6" responseTimeMS=82 responseBytes=342 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/SOLUSDT clientIP="78.177.162.15" requestID="ace02aaf-9f6d-4148" responseTimeMS=82 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/SOLUSDT clientIP="78.177.162.15" requestID="ba298315-fdb2-43b5" responseTimeMS=83 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/SOLUSDT clientIP="78.177.162.15" requestID="5911769a-e2dd-4200" responseTimeMS=85 responseBytes=342 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[Runner] Ticking 4 agents in batches of 50
+[Runner] Dispatched 4 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'LINKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'MERLUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: '1000WOJAKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'TACUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'VELVETUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'HUMAUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'MERLUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'MERLUSDT', interval: '5m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '4h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '4h', limit: 200 }
+[GET]
+build4-1.onrender.com/api/aster/markprice/ETHUSDT clientIP="78.177.162.15" requestID="2a76a762-3963-4a52" responseTimeMS=79 responseBytes=340 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/ETHUSDT clientIP="78.177.162.15" requestID="44fea80b-ad43-414b" responseTimeMS=94 responseBytes=344 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/SOLUSDT clientIP="78.177.162.15" requestID="33744a74-c7d3-467f" responseTimeMS=83 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/ETHUSDT clientIP="78.177.162.15" requestID="d49535a5-c059-4d63" responseTimeMS=82 responseBytes=344 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/BNBUSDT clientIP="78.177.162.15" requestID="693ef583-182e-4423" responseTimeMS=81 responseBytes=339 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/BNBUSDT clientIP="78.177.162.15" requestID="2525bd18-f962-471a" responseTimeMS=85 responseBytes=339 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/BNBUSDT clientIP="78.177.162.15" requestID="b043d4bd-5fbb-4e51" responseTimeMS=81 responseBytes=343 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/BNBUSDT clientIP="78.177.162.15" requestID="54102df7-6b86-4a72" responseTimeMS=77 responseBytes=339 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/BNBUSDT clientIP="78.177.162.15" requestID="ef706970-a6d9-4a5e" responseTimeMS=84 responseBytes=339 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/BNBUSDT clientIP="78.177.162.15" requestID="800ef3ce-202f-4a21" responseTimeMS=85 responseBytes=338 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=21/21 (100.0%)
+[Agent BNT] HOLD on AVAXUSDT — Waiting for a clear breakout signal with volume confirmation and a more favorabl
+[GET]
+build4-1.onrender.com/api/aster/markprice/BNBUSDT clientIP="78.177.162.15" requestID="e049cf0f-394d-4841" responseTimeMS=84 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/BNBUSDT clientIP="78.177.162.15" requestID="df3208f0-0b33-4179" responseTimeMS=79 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/BNBUSDT clientIP="78.177.162.15" requestID="5cd749b6-06a0-478e" responseTimeMS=84 responseBytes=343 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/BNBUSDT clientIP="78.177.162.15" requestID="40af3521-dfdd-45f5" responseTimeMS=83 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/BNBUSDT clientIP="78.177.162.15" requestID="4ed015ac-7182-4ce1" responseTimeMS=80 responseBytes=338 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=22/22 (100.0%)
+[Agent BTPredict] HOLD on AVAXUSDT — Waiting for more confirmed breakout signal with sufficient volume follow-through
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=23/23 (100.0%)
+[GET]
+build4-1.onrender.com/api/aster/markprice/BNBUSDT clientIP="78.177.162.15" requestID="21e68c37-4cdc-4a4b" responseTimeMS=81 responseBytes=338 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation before entering
+[GET]
+build4-1.onrender.com/api/aster/markprice/BNBUSDT clientIP="78.177.162.15" requestID="00d42a99-51a0-4a9c" responseTimeMS=83 responseBytes=338 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/BNBUSDT clientIP="78.177.162.15" requestID="cde60699-da01-4d4e" responseTimeMS=82 responseBytes=338 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/BNBUSDT clientIP="78.177.162.15" requestID="89c20ea7-7f9f-49c7" responseTimeMS=81 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=24/24 (100.0%)
+[Agent Xander] HOLD on AVAXUSDT — Waiting for clearer momentum and volume confirmation at key levels.
+[GET]
+build4-1.onrender.com/api/aster/markprice/BNBUSDT clientIP="78.177.162.15" requestID="9201d375-80e2-4af1" responseTimeMS=87 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/BNBUSDT clientIP="78.177.162.15" requestID="7be7743c-22f1-441f" responseTimeMS=83 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/BNBUSDT clientIP="78.177.162.15" requestID="5c9781a7-b5a9-4482" responseTimeMS=83 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/BNBUSDT clientIP="78.177.162.15" requestID="0bf0160c-17f1-4221" responseTimeMS=81 responseBytes=338 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/BNBUSDT clientIP="78.177.162.15" requestID="a763a04d-1f09-44e7" responseTimeMS=85 responseBytes=338 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/BNBUSDT clientIP="78.177.162.15" requestID="2edfb11f-2b5d-4b1f" responseTimeMS=82 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/BNBUSDT clientIP="78.177.162.15" requestID="2a8d2004-b1b3-456d" responseTimeMS=81 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/BNBUSDT clientIP="78.177.162.15" requestID="7e162561-1713-4607" responseTimeMS=83 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/BNBUSDT clientIP="78.177.162.15" requestID="368d3b07-a5a5-4a2e" responseTimeMS=95 responseBytes=338 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/BNBUSDT clientIP="78.177.162.15" requestID="3f11075b-8a19-4c74" responseTimeMS=81 responseBytes=338 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/BNBUSDT clientIP="78.177.162.15" requestID="f69a49a7-a00e-45c8" responseTimeMS=83 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/BNBUSDT clientIP="78.177.162.15" requestID="7d93a5ea-ed70-4cdb" responseTimeMS=82 responseBytes=338 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/BNBUSDT clientIP="78.177.162.15" requestID="0189d1f9-bc8e-47aa" responseTimeMS=84 responseBytes=341 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/BNBUSDT clientIP="78.177.162.15" requestID="4bfa9404-8003-4d30" responseTimeMS=87 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/BNBUSDT clientIP="78.177.162.15" requestID="3cbdc76f-79ca-4f34" responseTimeMS=83 responseBytes=338 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/BNBUSDT clientIP="78.177.162.15" requestID="ddef2d57-8b21-47f7" responseTimeMS=94 responseBytes=338 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/BNBUSDT clientIP="78.177.162.15" requestID="28b868a6-8a1c-4822" responseTimeMS=86 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/BNBUSDT clientIP="78.177.162.15" requestID="cfb56c1e-3f3e-4266" responseTimeMS=135 responseBytes=341 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[POST]
+build4-1.onrender.com/api/aster/order clientIP="78.177.162.15" requestID="4f4ecde7-1dfa-45c7" responseTimeMS=1707 responseBytes=456 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/BNBUSDT clientIP="78.177.162.15" requestID="16c7e0bb-f774-4b94" responseTimeMS=85 responseBytes=341 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/BNBUSDT clientIP="78.177.162.15" requestID="6fa3c4d7-3906-47ba" responseTimeMS=83 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/positions clientIP="78.177.162.15" requestID="cc3c7b27-db40-4ee4" responseTimeMS=459 responseBytes=431 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/BNBUSDT clientIP="78.177.162.15" requestID="e926709d-cc46-4489" responseTimeMS=90 responseBytes=338 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="78.177.162.15" requestID="a96f21e6-efb2-43b1" responseTimeMS=1812 responseBytes=1898 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/BNBUSDT clientIP="78.177.162.15" requestID="34d1f93e-ba68-4012" responseTimeMS=83 responseBytes=338 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[Aster] /fapi/v3/balance USDT for 0x9751EB70C3042b4b2a228f8E67dfE356CB2d3026 → marginBalance= 50.7926 crossWallet= 50.7953 crossUnPnl= -0.0027 available= 48.8868
+[Aster] /fapi/v3/balance USDT for 0x9751EB70C3042b4b2a228f8E67dfE356CB2d3026 → marginBalance= 50.7926 crossWallet= 50.7953 crossUnPnl= -0.0027 available= 47.6100
+[GET]
+build4-1.onrender.com/api/aster/markprice/BNBUSDT clientIP="78.177.162.15" requestID="954057b4-cba5-47be" responseTimeMS=84 responseBytes=338 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/BNBUSDT clientIP="78.177.162.15" requestID="c421d4c6-ee47-4d11" responseTimeMS=82 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/BNBUSDT clientIP="78.177.162.15" requestID="0c83d535-656b-4a57" responseTimeMS=81 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/BNBUSDT clientIP="78.177.162.15" requestID="73f832cd-c873-47d5" responseTimeMS=83 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/BNBUSDT clientIP="78.177.162.15" requestID="2c5f9053-4f5d-485b" responseTimeMS=90 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/BNBUSDT clientIP="78.177.162.15" requestID="69453c53-dafe-4e93" responseTimeMS=80 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/BNBUSDT clientIP="78.177.162.15" requestID="e94d2852-74e2-4231" responseTimeMS=87 responseBytes=341 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/BNBUSDT clientIP="78.177.162.15" requestID="9c22449d-2fda-429c" responseTimeMS=81 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/BNBUSDT clientIP="78.177.162.15" requestID="c281bd07-02df-4c63" responseTimeMS=89 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/BNBUSDT clientIP="78.177.162.15" requestID="4b0fdf67-bb98-4322" responseTimeMS=81 responseBytes=338 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/BNBUSDT clientIP="78.177.162.15" requestID="4ce68c59-5726-44bd" responseTimeMS=90 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/BNBUSDT clientIP="78.177.162.15" requestID="5a53a1ef-66e8-4f36" responseTimeMS=86 responseBytes=342 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/BNBUSDT clientIP="78.177.162.15" requestID="88e076a8-c6b3-4204" responseTimeMS=88 responseBytes=341 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/BNBUSDT clientIP="78.177.162.15" requestID="3dc47e06-832d-4068" responseTimeMS=81 responseBytes=341 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[Runner] Ticking 4 agents in batches of 50
+[Runner] Dispatched 4 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'LINKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'MERLUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: '1000WOJAKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'TACUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'VELVETUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'HUMAUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'MERLUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'MERLUSDT', interval: '5m', limit: 100 }
+[GET]
+build4-1.onrender.com/api/aster/markprice/BNBUSDT clientIP="78.177.162.15" requestID="9cce6733-236e-4246" responseTimeMS=79 responseBytes=341 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[News] Analysis failed: 400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."},"request_id":"req_011CaNY9ckkS5Sub7Ebwae3p"}
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '15m', limit: 200 }
+[GET]
+build4-1.onrender.com/api/aster/markprice/BNBUSDT clientIP="78.177.162.15" requestID="6fa6648f-0dae-4f3b" responseTimeMS=82 responseBytes=341 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=25/25 (100.0%)
+[Agent BTPredict] HOLD on AVAXUSDT — Waiting for confirmed breakout with sufficient volume follow-through and a more 
+[GET]
+build4-1.onrender.com/api/aster/markprice/BNBUSDT clientIP="78.177.162.15" requestID="6b26d774-db02-469f" responseTimeMS=92 responseBytes=341 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/aster/markprice/BNBUSDT clientIP="78.177.162.15" requestID="97d1436a-27ee-49e5" responseTimeMS=84 responseBytes=338 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=26/26 (100.0%)
+[Agent BNT] HOLD on AVAXUSDT — Waiting for a clear breakout signal with volume confirmation and a more favorabl
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=27/27 (100.0%)
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation to justify ente
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=28/28 (100.0%)
+[Agent Xander] HOLD on AVAXUSDT — Waiting for clearer signals of momentum and volume confirmation.
+[Runner] Ticking 4 agents in batches of 50
+[Runner] Dispatched 4 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'LINKUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: '1000WOJAKUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'TACUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'VELVETUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'MERLUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'MERLUSDT', interval: '5m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'LINKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'MERLUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'MERLUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: '1000WOJAKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'TACUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'VELVETUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BBUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'HUMAUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'HUMAUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '1h', limit: 200 }
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=29/29 (100.0%)
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=30/30 (100.0%)
+Menu
+[Agent BNT] HOLD on AVAXUSDT — Waiting for clearer breakout signals with volume confirmation.
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=31/31 (100.0%)
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=32/32 (100.0%)
+[Agent BTPredict] HOLD on AVAXUSDT — Waiting for a confirmed breakout with sufficient volume follow-through and a hig
+[Agent Xander] HOLD on AVAXUSDT — Waiting for clear momentum and volume confirmation at key levels.
+[Agent SeanBuild4] HOLD on AVAXUSDT — Waiting for stronger momentum indicators and volume confirmation.

@@ -88,7 +88,16 @@ export default function Hyperliquid() {
         await load()
       } else {
         setOrderMsg(r.error ?? 'Order failed')
-        if (r.needsBuilderApproval) setNeedsBuilderApproval(true)
+        // Defense in depth: surface the manual approve button whenever the
+        // backend flag OR the raw error text indicates a builder rejection.
+        // The flag should always be set by the server, but if a future code
+        // path forgets to set it (or HL changes its error wording slightly),
+        // matching the message text directly keeps users from getting stuck
+        // staring at "Builder fee has not been approved" with no way out.
+        const isBuilderReject =
+          r.needsBuilderApproval ||
+          /(builder|must approve)/i.test(r.error ?? '')
+        if (isBuilderReject) setNeedsBuilderApproval(true)
       }
     } catch (e: any) {
       setOrderMsg(e?.message ?? 'Order failed')

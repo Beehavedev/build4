@@ -1151,10 +1151,23 @@ app.post('/api/aster/order', requireTgUser, async (req, res) => {
       : rawQty.toFixed(6)
     const qty = parseFloat(qtyStr)
     if (qty <= 0) {
-      const hint = filters
-        ? ` (min step ${filters.stepSize} ${sym.replace(/USDT?$/, '')})`
-        : ''
-      return res.status(400).json({ error: `Order size too small for current price${hint}` })
+      // Compute the equivalent USDT minimum so users don't have to do
+      // mental math (e.g. for BTC at $78k, stepSize=0.001 → $78 USDT min).
+      // Without this, users see "min step 0.001 BTC" and have no idea what
+      // notional that maps to, then keep submitting failing orders.
+      if (filters && filters.stepSize > 0) {
+        const minNotional = Math.max(
+          filters.stepSize * refPrice,
+          filters.minNotional || 0,
+        )
+        const base = sym.replace(/USDT?$/, '')
+        return res.status(400).json({
+          error:
+            `Order too small — need at least ~$${minNotional.toFixed(2)} USDT for ${sym} ` +
+            `(1 step = ${filters.stepSize} ${base} at $${refPrice.toFixed(2)}). You sent $${notional}.`,
+        })
+      }
+      return res.status(400).json({ error: 'Order size too small for current price' })
     }
     if (filters && filters.minQty > 0 && qty < filters.minQty) {
       return res.status(400).json({
