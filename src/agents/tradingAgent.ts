@@ -1706,7 +1706,22 @@ If you would not put real money in this trade right now, action = HOLD.`
               })
             }
           } catch (execErr: any) {
-            const execMsg = String(execErr?.message ?? '')
+            // Aster's signedPOST uses axios; on a 4xx the actual rejection
+            // reason (e.g. "Account has insufficient balance", "Filter failure:
+            // MIN_NOTIONAL", "Order would immediately liquidate") lives in
+            // err.response.data — NOT in err.message (which is just the
+            // generic "Request failed with status code 400"). Without
+            // unwrapping it, every order failure looks identical in logs and
+            // diagnosis is impossible. Hoist the body into execMsg so the
+            // existing log line + memory note + auto-heal regex all see the
+            // real Aster error string.
+            const respBody = execErr?.response?.data
+            const respDetail = respBody
+              ? (typeof respBody === 'string' ? respBody : JSON.stringify(respBody))
+              : ''
+            const execMsg = respDetail
+              ? `${execErr?.message ?? 'request failed'} — Aster: ${respDetail}`
+              : String(execErr?.message ?? '')
             // Self-heal: when Aster returns -1000 "No agent found", the
             // user's on-file agent address isn't recognised by Aster
             // anymore (broker rotation, partial earlier flow, etc).
