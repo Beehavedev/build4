@@ -4048,21 +4048,91 @@ app.post('/api/admin/wallet/diagnose-decrypt', express.json(), async (req, res) 
 // in memory and the request body is discarded after the DB write.
 // ─────────────────────────────────────────────────────────────────────────────
 app.post('/api/admin/wallet/reencrypt', requireAdmin, express.json(), async (req, res) => {
+  // Identify the admin actor for the audit log. requireAdmin attaches
+  // req.user when the caller authenticated via Telegram initData; for the
+  // ADMIN_TOKEN path req.user is undefined and we record "token-auth".
+  const actor = (req as any).user
+    ? `tg=${(req as any).user.telegramId} userId=${(req as any).user.id}`
+    : 'token-auth'
+
   try {
-    const { walletAddress, privateKey, telegramId } = (req.body ?? {}) as {
-      walletAddress?: string; privateKey?: string; telegramId?: string | number
+    const { walletAddress, privateKey, telegramId, chain, walletId } =
+      (req.body ?? {}) as {
+        walletAddress?: string
+        privateKey?: string
+        telegramId?: string | number
+        chain?: string
+        walletId?: string
+      }
+
+    if (!walletAddress || typeof walletAddress !== 'string'
+        || !/^0x[0-9a-fA-F]{40}$/.test(walletAddress.trim())) {
+      return res.status(400).json({ error: 'walletAddress must be a 0x-prefixed 40-hex string' })
     }
-    if (!walletAddress || typeof walletAddress !== 'string') {
-      return res.status(400).json({ error: 'walletAddress required' })
+    if (!privateKey || typeof privateKey !== 'string'
+        || !/^(0x)?[0-9a-fA-F]{64}$/.test(privateKey.trim())) {
+      return res.status(400).json({ error: 'privateKey must be 64 hex chars (0x prefix optional)' })
     }
-    if (!privateKey || typeof privateKey !== 'string') {
-      return res.status(400).json({ error: 'privateKey required' })
+    const addrNormalized = walletAddress.trim()
+    const pkRaw = privateKey.trim()
+    const pkNormalized = pkRaw.startsWith('0x') ? pkRaw : `0x${pkRaw}`
+
+    // Disambiguation contract (architect review):
+    //   - walletId, when provided, is the strongest selector and short-circuits.
+    //   - Otherwise telegramId is required so we can scope to that user's
+    //     wallets. We refuse to operate on walletAddress alone because the
+    //     Wallet table has no uniqueness constraint on `address` and the same
+    //     EVM address can legitimately appear under multiple users (e.g.
+    //     re-imported wallet) or multiple chains for one user.
+    //   - If the resulting query matches !=1 row we abort and report the count
+    //     so the operator can supply walletId or chain explicitly.
+    let candidates: any[]
+
+    if (walletId) {
+      const w = await db.wallet.findUnique({ where: { id: walletId } })
+      candidates = w ? [w] : []
+    } else {
+      if (telegramId === undefined || telegramId === null || telegramId === '') {
+        return res.status(400).json({
+          error: 'telegramId is required (or supply walletId) — refusing to disambiguate by address alone',
+        })
+      }
+      const tgStr = String(telegramId).trim()
+      if (!/^\d{1,20}$/.test(tgStr)) {
+        return res.status(400).json({ error: 'telegramId must be a numeric Telegram user id' })
+      }
+      const u = await db.user.findFirst({ where: { telegramId: BigInt(tgStr) } })
+      if (!u) return res.status(404).json({ error: `No user with telegramId=${tgStr}` })
+
+      const where: any = {
+        userId:  u.id,
+        address: { equals: addrNormalized, mode: 'insensitive' },
+      }
+      if (chain && typeof chain === 'string' && chain.trim()) where.chain = chain.trim()
+
+      candidates = await db.wallet.findMany({ where })
     }
-    const pkNormalized = privateKey.startsWith('0x') ? privateKey : `0x${privateKey}`
+
+    if (candidates.length === 0) {
+      console.warn(`[admin/wallet/reencrypt] not_found actor=${actor} addr=${addrNormalized}`)
+      return res.status(404).json({ error: 'Wallet not found' })
+    }
+    if (candidates.length > 1) {
+      console.warn(
+        `[admin/wallet/reencrypt] ambiguous actor=${actor} addr=${addrNormalized} ` +
+        `count=${candidates.length} chains=${candidates.map((w) => w.chain).join(',')}`
+      )
+      return res.status(409).json({
+        error: 'Multiple wallets matched — supply chain or walletId to disambiguate',
+        matchCount: candidates.length,
+        chains: candidates.map((w: any) => w.chain),
+        walletIds: candidates.map((w: any) => w.id),
+      })
+    }
+    const wallet = candidates[0]
 
     // Validate the PK actually controls the address before touching the DB.
-    // Prevents the operator from accidentally bricking a wallet by pasting
-    // the wrong key.
+    // Prevents the operator from bricking a wallet by pasting the wrong key.
     const { ethers } = await import('ethers')
     let derivedAddress: string
     try {
@@ -4070,25 +4140,13 @@ app.post('/api/admin/wallet/reencrypt', requireAdmin, express.json(), async (req
     } catch {
       return res.status(400).json({ error: 'Invalid private key (failed to parse)' })
     }
-    if (derivedAddress.toLowerCase() !== walletAddress.toLowerCase()) {
+    if (derivedAddress.toLowerCase() !== wallet.address.toLowerCase()) {
       return res.status(400).json({
-        error: 'Private key does not match the supplied wallet address',
+        error: 'Private key does not match the resolved wallet address',
         derivedAddress,
-        suppliedAddress: walletAddress,
+        resolvedAddress: wallet.address,
       })
     }
-
-    // Locate the row. If telegramId supplied, scope by user too.
-    const where: any = { address: { equals: walletAddress, mode: 'insensitive' } }
-    if (telegramId !== undefined && telegramId !== null && telegramId !== '') {
-      const u = await db.user.findFirst({
-        where: { telegramId: BigInt(telegramId as any) },
-      })
-      if (!u) return res.status(404).json({ error: `No user with telegramId=${telegramId}` })
-      where.userId = u.id
-    }
-    const wallet = await db.wallet.findFirst({ where })
-    if (!wallet) return res.status(404).json({ error: 'Wallet not found' })
 
     // Re-encrypt with the CURRENT scheme (encryptPrivateKey reads MASTER_KEY
     // at module load). The decrypt path will reach this blob via the primary
@@ -4096,7 +4154,8 @@ app.post('/api/admin/wallet/reencrypt', requireAdmin, express.json(), async (req
     const { encryptPrivateKey, decryptPrivateKey } = await import('./services/wallet')
     const newEncrypted = encryptPrivateKey(pkNormalized, wallet.userId)
 
-    // Sanity check: round-trip the new blob before persisting.
+    // Sanity check: round-trip the new blob before persisting. Catches any
+    // env/scheme drift between encrypt and decrypt (defense in depth).
     let roundTrip: string
     try {
       roundTrip = decryptPrivateKey(newEncrypted, wallet.userId)
@@ -4113,18 +4172,19 @@ app.post('/api/admin/wallet/reencrypt', requireAdmin, express.json(), async (req
     })
 
     console.log(
-      `[admin/wallet/reencrypt] success user=${wallet.userId} wallet=${wallet.address} ` +
-      `chain=${wallet.chain} oldBlobLen=${wallet.encryptedPK?.length ?? 0} newBlobLen=${newEncrypted.length}`
+      `[admin/wallet/reencrypt] success actor=${actor} target_user=${wallet.userId} ` +
+      `walletId=${wallet.id} address=${wallet.address} chain=${wallet.chain} ` +
+      `oldBlobLen=${wallet.encryptedPK?.length ?? 0} newBlobLen=${newEncrypted.length}`
     )
     return res.json({
-      success: true,
+      success:  true,
       walletId: wallet.id,
-      userId: wallet.userId,
-      address: wallet.address,
-      chain: wallet.chain,
+      userId:   wallet.userId,
+      address:  wallet.address,
+      chain:    wallet.chain,
     })
   } catch (e: any) {
-    console.error('[admin/wallet/reencrypt] failed:', e?.message ?? e)
+    console.error(`[admin/wallet/reencrypt] failed actor=${actor} err=${e?.message ?? e}`)
     return res.status(500).json({ error: e?.message ?? 'internal' })
   }
 })

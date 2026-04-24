@@ -802,14 +802,16 @@ function BuybackAdminPanel() {
 function WalletRecoveryPanel() {
   const [walletAddress, setWalletAddress] = useState('0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4')
   const [telegramId, setTelegramId]       = useState('1551641467')
+  const [chain, setChain]                 = useState('')
   const [privateKey, setPrivateKey]       = useState('')
   const [busy, setBusy]                   = useState(false)
   const [err, setErr]                     = useState<string | null>(null)
   const [ok,  setOk]                      = useState<string | null>(null)
   const [reveal, setReveal]               = useState(false)
+  const [ambiguous, setAmbiguous]         = useState<{ chains: string[] } | null>(null)
 
   const submit = async () => {
-    setErr(null); setOk(null)
+    setErr(null); setOk(null); setAmbiguous(null)
     if (!/^0x[0-9a-fA-F]{40}$/.test(walletAddress.trim())) {
       return setErr('walletAddress must be 0x-prefixed 40-hex')
     }
@@ -817,26 +819,37 @@ function WalletRecoveryPanel() {
     if (!/^(0x)?[0-9a-fA-F]{64}$/.test(pk)) {
       return setErr('privateKey must be 64 hex characters (0x-prefix optional)')
     }
+    if (!telegramId.trim()) {
+      return setErr('telegramId is required so we target the right user')
+    }
     setBusy(true)
     try {
       const r = await apiFetch<{
         success: boolean; walletId?: string; userId?: string;
         address?: string; chain?: string; error?: string;
-        derivedAddress?: string; suppliedAddress?: string;
+        derivedAddress?: string; resolvedAddress?: string;
+        matchCount?: number; chains?: string[];
       }>('/api/admin/wallet/reencrypt', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           walletAddress: walletAddress.trim(),
           privateKey:    pk,
-          telegramId:    telegramId.trim() || undefined,
+          telegramId:    telegramId.trim(),
+          chain:         chain.trim() || undefined,
         }),
       })
       if (!r.success) {
-        setErr(r.error ?? 'Re-encryption failed')
+        if (r.matchCount && r.matchCount > 1 && r.chains?.length) {
+          setAmbiguous({ chains: r.chains })
+          setErr(`Multiple wallets matched (${r.chains.join(', ')}) — pick a chain below and resubmit.`)
+        } else {
+          setErr(r.error ?? 'Re-encryption failed')
+        }
       } else {
         setOk(`Re-encrypted wallet ${r.address} (chain=${r.chain}). Reopen the Hyperliquid tab and tap Activate.`)
         setPrivateKey('')
+        setAmbiguous(null)
       }
     } catch (e: any) {
       setErr(e?.message ?? 'Request failed')
@@ -883,7 +896,7 @@ function WalletRecoveryPanel() {
           }}
         />
 
-        <label style={{ color: '#94a3b8', fontSize: 12 }}>Telegram ID (optional, for disambiguation)</label>
+        <label style={{ color: '#94a3b8', fontSize: 12 }}>Telegram ID (required)</label>
         <input
           data-testid="input-recovery-telegram-id"
           placeholder="e.g. 1551641467"
@@ -894,6 +907,24 @@ function WalletRecoveryPanel() {
             color: '#fff', borderRadius: 6, fontSize: 13, fontFamily: 'ui-monospace, Menlo, monospace',
           }}
         />
+
+        <label style={{ color: '#94a3b8', fontSize: 12 }}>
+          Chain (optional — only needed if multiple wallets share this address)
+        </label>
+        <select
+          data-testid="select-recovery-chain"
+          value={chain}
+          onChange={(e) => setChain(e.target.value)}
+          style={{
+            padding: '6px 8px', background: '#0a0a12', border: '1px solid #1e1e2e',
+            color: '#fff', borderRadius: 6, fontSize: 13,
+          }}
+        >
+          <option value="">Auto (only one match expected)</option>
+          {(ambiguous?.chains ?? ['BSC', 'XLAYER', 'ARBITRUM', 'HYPERLIQUID']).map((c) => (
+            <option key={c} value={c}>{c}</option>
+          ))}
+        </select>
 
         <label style={{ color: '#94a3b8', fontSize: 12 }}>
           Private key (kept in memory, never logged)
