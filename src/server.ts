@@ -4039,19 +4039,15 @@ app.post('/api/admin/wallet/diagnose-decrypt', express.json(), async (req, res) 
 //   - telegramId is optional but recommended when multiple users share an
 //     address (defensive disambiguation; rare in practice).
 //
-// Auth: ADMIN_TOKEN via x-admin-token header or ?token= query param.
+// Auth: requireAdmin (Telegram-id allowlist OR ADMIN_TOKEN header), same
+// pattern as /api/admin/buybacks. The mini-app's Admin tab calls this via
+// the standard apiFetch path so no token plumbing is needed in the UI.
 //
 // CRITICAL: this endpoint accepts a raw private key in the request body.
-// Only call over HTTPS, never log the body, and rotate ADMIN_TOKEN if you
-// suspect any leakage of a curl invocation.
+// Only call over HTTPS and never log the body. The PK is round-tripped
+// in memory and the request body is discarded after the DB write.
 // ─────────────────────────────────────────────────────────────────────────────
-app.post('/api/admin/wallet/reencrypt', express.json(), async (req, res) => {
-  const adminToken = process.env.ADMIN_TOKEN
-  if (adminToken) {
-    const supplied = (req.headers['x-admin-token'] as string | undefined)
-      ?? (typeof req.query.token === 'string' ? req.query.token : undefined)
-    if (supplied !== adminToken) return res.status(401).json({ error: 'Unauthorized' })
-  }
+app.post('/api/admin/wallet/reencrypt', requireAdmin, express.json(), async (req, res) => {
   try {
     const { walletAddress, privateKey, telegramId } = (req.body ?? {}) as {
       walletAddress?: string; privateKey?: string; telegramId?: string | number

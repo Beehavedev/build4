@@ -365,6 +365,8 @@ export default function Admin() {
     <div style={{ padding: '16px 0' }} data-testid="page-admin">
       <BroadcastPanel />
 
+      <WalletRecoveryPanel />
+
       <BuybackAdminPanel />
 
       <h2 style={{ color: '#fff', margin: '0 0 8px' }}>AI Cost Rates</h2>
@@ -783,6 +785,158 @@ function BuybackAdminPanel() {
           ))}
         </div>
       )}
+    </div>
+  )
+}
+
+// ─── Wallet recovery panel ────────────────────────────────────────────────
+// One-shot recovery for wallets whose stored encrypted private key can't
+// be decrypted by any of the candidate keys (rotated MASTER_KEY, externally
+// imported wallets, historical default drift). The operator pastes the raw
+// private key once; the server validates it actually controls the address,
+// re-encrypts with the current MASTER_KEY scheme, round-trips before
+// persisting, and updates the wallet row in place.
+//
+// Pre-fills the builder/test wallet for convenience.
+
+function WalletRecoveryPanel() {
+  const [walletAddress, setWalletAddress] = useState('0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4')
+  const [telegramId, setTelegramId]       = useState('1551641467')
+  const [privateKey, setPrivateKey]       = useState('')
+  const [busy, setBusy]                   = useState(false)
+  const [err, setErr]                     = useState<string | null>(null)
+  const [ok,  setOk]                      = useState<string | null>(null)
+  const [reveal, setReveal]               = useState(false)
+
+  const submit = async () => {
+    setErr(null); setOk(null)
+    if (!/^0x[0-9a-fA-F]{40}$/.test(walletAddress.trim())) {
+      return setErr('walletAddress must be 0x-prefixed 40-hex')
+    }
+    const pk = privateKey.trim()
+    if (!/^(0x)?[0-9a-fA-F]{64}$/.test(pk)) {
+      return setErr('privateKey must be 64 hex characters (0x-prefix optional)')
+    }
+    setBusy(true)
+    try {
+      const r = await apiFetch<{
+        success: boolean; walletId?: string; userId?: string;
+        address?: string; chain?: string; error?: string;
+        derivedAddress?: string; suppliedAddress?: string;
+      }>('/api/admin/wallet/reencrypt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          walletAddress: walletAddress.trim(),
+          privateKey:    pk,
+          telegramId:    telegramId.trim() || undefined,
+        }),
+      })
+      if (!r.success) {
+        setErr(r.error ?? 'Re-encryption failed')
+      } else {
+        setOk(`Re-encrypted wallet ${r.address} (chain=${r.chain}). Reopen the Hyperliquid tab and tap Activate.`)
+        setPrivateKey('')
+      }
+    } catch (e: any) {
+      setErr(e?.message ?? 'Request failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div data-testid="panel-wallet-recovery" style={{ marginBottom: 24 }}>
+      <h2 style={{ color: '#fff', margin: '0 0 8px' }}>Wallet recovery (re-encrypt)</h2>
+      <p style={{ color: '#94a3b8', fontSize: 13, margin: '0 0 12px' }}>
+        Use this only when the server logs report <code style={{ color: '#fca5a5' }}>decrypt wallet PK failed</code>.
+        Paste the raw private key for the wallet — we validate it matches the address before
+        writing anything to the database.
+      </p>
+
+      {err && (
+        <div data-testid="text-recovery-error" style={{
+          background: '#3b1818', color: '#fca5a5',
+          padding: '8px 12px', borderRadius: 8, marginBottom: 12, fontSize: 13,
+        }}>{err}</div>
+      )}
+      {ok && (
+        <div data-testid="text-recovery-success" style={{
+          background: '#0f2e1f', color: '#86efac',
+          padding: '8px 12px', borderRadius: 8, marginBottom: 12, fontSize: 13,
+        }}>{ok}</div>
+      )}
+
+      <div style={{
+        background: '#12121a', border: '1px solid #1e1e2e', borderRadius: 10,
+        padding: 12, display: 'flex', flexDirection: 'column', gap: 8,
+      }}>
+        <label style={{ color: '#94a3b8', fontSize: 12 }}>Wallet address</label>
+        <input
+          data-testid="input-recovery-address"
+          placeholder="0x…"
+          value={walletAddress}
+          onChange={(e) => setWalletAddress(e.target.value)}
+          style={{
+            padding: '6px 8px', background: '#0a0a12', border: '1px solid #1e1e2e',
+            color: '#fff', borderRadius: 6, fontSize: 13, fontFamily: 'ui-monospace, Menlo, monospace',
+          }}
+        />
+
+        <label style={{ color: '#94a3b8', fontSize: 12 }}>Telegram ID (optional, for disambiguation)</label>
+        <input
+          data-testid="input-recovery-telegram-id"
+          placeholder="e.g. 1551641467"
+          value={telegramId}
+          onChange={(e) => setTelegramId(e.target.value)}
+          style={{
+            padding: '6px 8px', background: '#0a0a12', border: '1px solid #1e1e2e',
+            color: '#fff', borderRadius: 6, fontSize: 13, fontFamily: 'ui-monospace, Menlo, monospace',
+          }}
+        />
+
+        <label style={{ color: '#94a3b8', fontSize: 12 }}>
+          Private key (kept in memory, never logged)
+        </label>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <input
+            data-testid="input-recovery-private-key"
+            type={reveal ? 'text' : 'password'}
+            placeholder="0x… (64 hex)"
+            autoComplete="off"
+            spellCheck={false}
+            value={privateKey}
+            onChange={(e) => setPrivateKey(e.target.value)}
+            style={{
+              flex: 1, padding: '6px 8px', background: '#0a0a12', border: '1px solid #1e1e2e',
+              color: '#fff', borderRadius: 6, fontSize: 13, fontFamily: 'ui-monospace, Menlo, monospace',
+            }}
+          />
+          <button
+            data-testid="button-recovery-toggle-reveal"
+            onClick={() => setReveal((v) => !v)}
+            type="button"
+            style={{
+              padding: '6px 10px', background: 'transparent', border: '1px solid #1e1e2e',
+              color: '#94a3b8', borderRadius: 6, fontSize: 12, cursor: 'pointer',
+            }}
+          >
+            {reveal ? 'Hide' : 'Show'}
+          </button>
+        </div>
+
+        <button
+          data-testid="button-recovery-submit"
+          onClick={submit}
+          disabled={busy}
+          style={{
+            marginTop: 4, padding: '8px 12px', background: '#7c3aed', border: 'none',
+            color: '#fff', borderRadius: 6, fontSize: 13, cursor: busy ? 'wait' : 'pointer',
+          }}
+        >
+          {busy ? 'Re-encrypting…' : 'Re-encrypt wallet'}
+        </button>
+      </div>
     </div>
   )
 }
