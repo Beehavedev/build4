@@ -55,6 +55,13 @@ export default function Hyperliquid() {
   // it couldn't auto-heal. Surfaces a manual "Approve builder fee" button.
   const [needsBuilderApproval, setNeedsBuilderApproval] = useState(false)
   const [approvingBuilder, setApprovingBuilder]         = useState(false)
+  // Set when the backend says the user isn't onboarded but our cached
+  // account state still says they are (server reboot, DB reset, agent
+  // creds invalidated, etc). When true, we override the gating so the
+  // purple "Activate Hyperliquid Trading" button shows even though
+  // account.onboarded === true. Without this, users get permanently
+  // stuck staring at an order form that always rejects with no way out.
+  const [forceActivateUi, setForceActivateUi] = useState(false)
 
   const placeOrder = async () => {
     setPlacing(true)
@@ -81,7 +88,7 @@ export default function Hyperliquid() {
       }
       const r = await apiFetch<{
         success: boolean; error?: string; sz?: number; markPrice?: number;
-        needsBuilderApproval?: boolean
+        needsBuilderApproval?: boolean; needsApprove?: boolean
       }>(
         '/api/hyperliquid/order',
         { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) },
@@ -108,6 +115,16 @@ export default function Hyperliquid() {
           r.needsBuilderApproval ||
           /(builder|must approve)/i.test(r.error ?? '')
         if (isBuilderReject) setNeedsBuilderApproval(true)
+        // Server says we're not onboarded but our cached account.onboarded
+        // is true — force the activate UI to show so the user has a path
+        // forward instead of an order form that always rejects.
+        const needsActivation =
+          r.needsApprove ||
+          /activate hyperliquid|re-activate/i.test(r.error ?? '')
+        if (needsActivation) {
+          setForceActivateUi(true)
+          load() // re-sync account state from the server
+        }
       }
     } catch (e: any) {
       // CRITICAL: the backend returns HTTP 400 for builder rejections (so
@@ -130,6 +147,18 @@ export default function Hyperliquid() {
         /(builder|must approve)/i.test(msg) ||
         /(builder|must approve)/i.test(body?.error ?? '')
       if (isBuilderReject) setNeedsBuilderApproval(true)
+      // Same self-heal as the success branch: server says we're not
+      // onboarded → flip to activate UI even if cached account says we
+      // are. The server returns HTTP 400 for this so we land here, not
+      // in the success branch above.
+      const needsActivation =
+        body?.needsApprove ||
+        /activate hyperliquid|re-activate/i.test(msg) ||
+        /activate hyperliquid|re-activate/i.test(body?.error ?? '')
+      if (needsActivation) {
+        setForceActivateUi(true)
+        load()
+      }
     } finally {
       setPlacing(false)
     }
@@ -178,6 +207,7 @@ export default function Hyperliquid() {
       )
       if (r.success) {
         setActivateMsg('Activated! You can now trade Hyperliquid from BUILD4.')
+        setForceActivateUi(false) // clear self-heal flag — server should now agree
         await load()
       } else {
         setActivateMsg(r.error ?? 'Activation failed')
@@ -276,7 +306,7 @@ export default function Hyperliquid() {
                 ${account.accountValue.toFixed(2)}
               </span>
             </div>
-            {!account.onboarded && (
+            {(!account.onboarded || forceActivateUi) && (
               <div style={{ marginTop: 12 }} data-testid="card-hl-onboard">
                 <button
                   onClick={activate}
@@ -359,8 +389,9 @@ export default function Hyperliquid() {
         </div>
       )}
 
-      {/* Order ticket — only when onboarded */}
-      {account?.onboarded && (
+      {/* Order ticket — only when onboarded AND we haven't been told
+          by the server that activation is needed (forceActivateUi). */}
+      {account?.onboarded && !forceActivateUi && (
         <div style={cardStyle} data-testid="card-hl-order">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
             <div style={{ fontSize: 13, fontWeight: 600 }}>Place order</div>
