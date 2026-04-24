@@ -3,6 +3,16 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+    <!-- Telegram WebView caches HTML aggressively and sometimes ignores the
+         HTTP Cache-Control: no-store header set server-side. These meta tags
+         are belt-and-suspenders so the WebView actually re-fetches index.html
+         on every open, picking up the latest hashed JS bundle filename
+         instead of pinning users to a stale build. Without this, a user can
+         be stuck on yesterday's bundle with a missing button (e.g. the
+         purple "Approve builder fee" prompt) for hours. -->
+    <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
     <title>BUILD4 Trading</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
   </head>
