@@ -100,7 +100,25 @@ export default function Hyperliquid() {
         if (isBuilderReject) setNeedsBuilderApproval(true)
       }
     } catch (e: any) {
-      setOrderMsg(e?.message ?? 'Order failed')
+      // CRITICAL: the backend returns HTTP 400 for builder rejections (so
+      // the success branch above NEVER runs for this case). apiFetch then
+      // throws an ApiError, dropping us here. Without inspecting the error
+      // for the builder pattern in this catch block, the purple "Approve
+      // builder fee" button can never appear — users stare at "Builder fee
+      // has not been approved" with no recovery path. We check both the
+      // structured body (preferred — it carries the explicit
+      // needsBuilderApproval flag) AND the message text (fallback for any
+      // future error-shape drift). This was the actual bug behind multiple
+      // user reports of the button never showing despite all upstream
+      // fixes being in production.
+      const msg = e?.message ?? 'Order failed'
+      setOrderMsg(msg)
+      const body = e?.body
+      const isBuilderReject =
+        body?.needsBuilderApproval ||
+        /(builder|must approve)/i.test(msg) ||
+        /(builder|must approve)/i.test(body?.error ?? '')
+      if (isBuilderReject) setNeedsBuilderApproval(true)
     } finally {
       setPlacing(false)
     }
