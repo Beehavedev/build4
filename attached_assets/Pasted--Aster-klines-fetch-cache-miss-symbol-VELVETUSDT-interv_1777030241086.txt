@@ -1,0 +1,50 @@
+[Aster] klines fetch (cache miss): { symbol: 'VELVETUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'MERLUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'MERLUSDT', interval: '5m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '15m', limit: 200 }
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:OPEN_LONG | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=33/33 (100.0%)
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:OPEN_LONG | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=34/34 (100.0%)
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:OPEN_LONG | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=35/35 (100.0%)
+[Aster] /fapi/v3/balance USDT for 0x7f2D91Cc0258C4963425D79013656E45cc64Fc76 → marginBalance= 5.0000 crossWallet= 5.0000 crossUnPnl= 0.0000 available= 4.9990
+[Aster] /fapi/v3/balance USDT for 0xB5d0605F35F5ee264B72D78E72A81ab5f889931a → marginBalance= 20.0000 crossWallet= 20.0000 crossUnPnl= 0.0000 available= 19.9960
+[Agent BNT] Order execution failed: Request failed with status code 400
+[Agent SeanBuild4] Order execution failed: Request failed with status code 400
+[Aster] /fapi/v3/balance USDT for 0x9751EB70C3042b4b2a228f8E67dfE356CB2d3026 → marginBalance= 50.8000 crossWallet= 50.8000 crossUnPnl= 0.0000 available= 50.7898
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:OPEN_LONG | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=36/36 (100.0%)
+[Agent Xander] Order execution failed: Request failed with status code 400
+[Aster] /fapi/v3/balance USDT for 0x7f2D91Cc0258C4963425D79013656E45cc64Fc76 → marginBalance= 5.0000 crossWallet= 5.0000 crossUnPnl= 0.0000 available= 4.9990
+[Agent BTPredict] Order execution failed: Request failed with status code 400
+[Runner] Ticking 4 agents in batches of 50
+[Runner] Dispatched 4 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'MERLUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'TACUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'HUMAUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: '1000WOJAKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'VELVETUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'MERLUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'MERLUSDT', interval: '5m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'LINKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '4h', limit: 200 }
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=37/37 (100.0%)
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=38/38 (100.0%)
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=39/39 (100.0%)
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:OPEN_LONG | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=40/40 (100.0%)
+[Agent Xander] HOLD on AVAXUSDT — Waiting for more convincing signs of a breakout or a pullback to a key support l
+[Agent BTPredict] HOLD on AVAXUSDT — Waiting for clearer signals, including volume confirmation and a more favorable 
+[Agent BNT] HOLD on AVAXUSDT — Waiting for clear breakout signals and volume confirmation to enter a long posit
+[Aster] /fapi/v3/balance USDT for 0xB5d0605F35F5ee264B72D78E72A81ab5f889931a → marginBalance= 20.0000 crossWallet= 20.0000 crossUnPnl= 0.0000 available= 19.9960
+[Agent SeanBuild4] Order execution failed: Request failed with status code 400
