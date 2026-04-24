@@ -157,6 +157,328 @@ export default function Wallet() {
       {state === 'B' && <ActivateFlow onActivated={load} />}
       {state === 'C' && <TransferFlow w={w} onDone={load} initialDirection="to_aster" />}
       {state === 'D' && <TradingReadyFlow w={w} onDone={load} copy={copy} copied={copied} />}
+
+      {/* $B4 holder wallet link — proves you own an external EOA holding
+          $B4 so the airdrop snapshot includes you. */}
+      <LinkB4HolderCard copy={copy} />
+
+      {/* Cross-chain bridges — pure deeplinks; no custody. Pre-fills the
+          user's BUILD4 address as the destination. */}
+      <BridgeCard recipient={w.address} />
+    </div>
+  )
+}
+
+// ─── $B4 holder wallet link ─────────────────────────────────────────────────
+// Telegram WebApp doesn't inject window.ethereum, so we run a manual
+// copy-message → sign in external wallet → paste signature flow. The
+// backend (already wired) verifies the signature, reads the user's $B4
+// balance from BSC, and stores it on the User row. Airdrop allocations
+// are computed against that linked address.
+
+interface LinkWalletState {
+  linked: boolean
+  address: string | null
+  balance: number
+  linkedAt: string | null
+  challenge: { issuedAt: string; tokenAddress: string }
+}
+
+declare global {
+  interface Window {
+    Telegram?: { WebApp: any }
+  }
+}
+
+function buildLinkChallengeText(opts: { telegramId: string; address: string; issuedAt: string }): string {
+  return [
+    'Sign to link your wallet to BUILD4.',
+    '',
+    `Telegram ID: ${opts.telegramId}`,
+    `Wallet: ${opts.address.toLowerCase()}`,
+    `Issued: ${opts.issuedAt}`,
+    '',
+    'Only sign this if you initiated this action in @Build4ai_bot.',
+  ].join('\n')
+}
+
+function LinkB4HolderCard({ copy }: { copy: (s: string) => Promise<void> }) {
+  const [state, setState]   = useState<LinkWalletState | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [addr, setAddr]     = useState('')
+  const [sig, setSig]       = useState('')
+  const [busy, setBusy]     = useState(false)
+  const [err, setErr]       = useState<string | null>(null)
+  const [refreshing, setRefreshing] = useState(false)
+
+  const load = async () => {
+    setLoading(true)
+    try {
+      const r = await apiFetch<LinkWalletState>('/api/me/link-wallet')
+      setState(r)
+    } catch (e: any) {
+      setErr(e?.message ?? 'Failed to load link state')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { load() }, [])
+
+  const telegramId = (window as any).Telegram?.WebApp?.initDataUnsafe?.user?.id?.toString?.() ?? ''
+  // No telegramId = no auth context = the BE can't tie the signature to
+  // a user. Block the flow here with a clear message rather than letting
+  // the user sign a message that the server will reject after the fact.
+  const hasTelegramCtx = telegramId.length > 0
+  const challengeText = state && hasTelegramCtx && addr.match(/^0x[0-9a-fA-F]{40}$/)
+    ? buildLinkChallengeText({ telegramId, address: addr, issuedAt: state.challenge.issuedAt })
+    : null
+
+  const submit = async () => {
+    setErr(null)
+    if (!hasTelegramCtx) {
+      setErr('This page must be opened from inside Telegram so we can verify your account.')
+      return
+    }
+    if (!/^0x[0-9a-fA-F]{40}$/.test(addr)) {
+      setErr('Address must be a 0x-prefixed 40-hex EVM address.')
+      return
+    }
+    if (!sig.trim().startsWith('0x')) {
+      setErr('Signature must be the 0x-prefixed hex blob from your wallet.')
+      return
+    }
+    if (!state) return
+    setBusy(true)
+    try {
+      const r = await apiFetch<{ success: boolean; error?: string; address?: string; balance?: number }>(
+        '/api/me/link-wallet',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ address: addr, signature: sig.trim(), issuedAt: state.challenge.issuedAt }),
+        },
+      )
+      if (!r.success) {
+        setErr(r.error ?? 'Link failed.')
+      } else {
+        setAddr(''); setSig('')
+        await load()
+      }
+    } catch (e: any) {
+      setErr(e?.message ?? 'Link failed.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const refresh = async () => {
+    setRefreshing(true); setErr(null)
+    try {
+      await apiFetch<{ success: boolean; balance?: number; error?: string }>(
+        '/api/me/link-wallet/refresh', { method: 'POST' },
+      )
+      await load()
+    } catch (e: any) {
+      setErr(e?.message ?? 'Refresh failed.')
+    } finally {
+      setRefreshing(false)
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="card" style={{ marginTop: 14, padding: 14 }} data-testid="card-link-b4-loading">
+        <div style={{ fontSize: 11, color: 'var(--b4-muted)', marginBottom: 6 }}>$B4 HOLDER LINK</div>
+        <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Loading…</div>
+      </div>
+    )
+  }
+
+  if (state?.linked && state.address) {
+    return (
+      <div className="card" style={{ marginTop: 14, padding: 14 }} data-testid="card-link-b4-linked">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+          <div style={{ fontSize: 11, color: 'var(--b4-muted)' }}>$B4 HOLDER WALLET ✓</div>
+          <button
+            onClick={refresh}
+            disabled={refreshing}
+            data-testid="button-refresh-b4-balance"
+            style={{
+              padding: '4px 10px', borderRadius: 6, border: '1px solid var(--border)',
+              background: 'var(--bg-elevated)', color: 'var(--text-primary)',
+              fontSize: 11, fontWeight: 600, cursor: refreshing ? 'wait' : 'pointer',
+            }}
+          >
+            {refreshing ? '…' : '↻ Refresh'}
+          </button>
+        </div>
+        <div style={{
+          fontSize: 13, fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
+          color: 'var(--text-primary)', wordBreak: 'break-all', marginBottom: 6,
+        }} data-testid="text-linked-b4-address">
+          {state.address}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+          <div style={{ fontSize: 22, fontWeight: 700 }} data-testid="text-linked-b4-balance">
+            {(state.balance ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--b4-muted)' }}>$B4 (BSC)</div>
+        </div>
+        {state.linkedAt && (
+          <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 6 }}>
+            Verified {new Date(state.linkedAt).toLocaleString()}
+          </div>
+        )}
+        {err && <div style={{ color: 'var(--b4-red)', fontSize: 12, marginTop: 8 }}>{err}</div>}
+      </div>
+    )
+  }
+
+  // Unlinked — manual paste flow.
+  return (
+    <div className="card" style={{ marginTop: 14, padding: 14 }} data-testid="card-link-b4-unlinked">
+      <div style={{ fontSize: 11, color: 'var(--b4-muted)', marginBottom: 6 }}>$B4 HOLDER LINK</div>
+      <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12, lineHeight: 1.5 }}>
+        Prove you own an external wallet that holds $B4 to be included in the
+        snapshot + airdrop. No tokens move.
+      </div>
+
+      <label style={{ fontSize: 11, color: 'var(--b4-muted)', display: 'block', marginBottom: 4 }}>
+        1. Your wallet address
+      </label>
+      <input
+        type="text"
+        placeholder="0x…"
+        value={addr}
+        onChange={(e) => setAddr(e.target.value.trim())}
+        data-testid="input-link-b4-address"
+        spellCheck={false}
+        autoCapitalize="off"
+        style={{
+          width: '100%', padding: '8px 10px', borderRadius: 6,
+          border: '1px solid var(--border)', background: 'var(--bg-elevated)',
+          color: 'var(--text-primary)', fontSize: 13,
+          fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace', marginBottom: 10,
+        }}
+      />
+
+      {challengeText && (
+        <>
+          <label style={{ fontSize: 11, color: 'var(--b4-muted)', display: 'block', marginBottom: 4 }}>
+            2. Sign this exact message in your wallet
+          </label>
+          <div style={{
+            padding: 10, borderRadius: 6, background: 'var(--bg-elevated)',
+            border: '1px solid var(--border)', fontSize: 11,
+            fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
+            color: 'var(--text-secondary)', whiteSpace: 'pre-wrap',
+            marginBottom: 6, maxHeight: 140, overflow: 'auto',
+          }}>{challengeText}</div>
+          <button
+            onClick={() => copy(challengeText)}
+            data-testid="button-copy-link-challenge"
+            style={{
+              padding: '6px 12px', borderRadius: 6, border: '1px solid var(--border)',
+              background: 'var(--bg-elevated)', color: 'var(--text-primary)',
+              fontSize: 11, fontWeight: 600, cursor: 'pointer', marginBottom: 12,
+            }}
+          >
+            📋 Copy message
+          </button>
+        </>
+      )}
+
+      <label style={{ fontSize: 11, color: 'var(--b4-muted)', display: 'block', marginBottom: 4 }}>
+        3. Paste the signature
+      </label>
+      <textarea
+        placeholder="0x…"
+        value={sig}
+        onChange={(e) => setSig(e.target.value)}
+        data-testid="input-link-b4-signature"
+        spellCheck={false}
+        autoCapitalize="off"
+        rows={3}
+        style={{
+          width: '100%', padding: '8px 10px', borderRadius: 6,
+          border: '1px solid var(--border)', background: 'var(--bg-elevated)',
+          color: 'var(--text-primary)', fontSize: 12,
+          fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
+          marginBottom: 10, resize: 'vertical',
+        }}
+      />
+
+      {err && <div style={{ color: 'var(--b4-red)', fontSize: 12, marginBottom: 8 }} data-testid="text-link-b4-error">{err}</div>}
+
+      <button
+        className="btn-primary"
+        disabled={busy || !addr || !sig || !challengeText}
+        onClick={submit}
+        data-testid="button-link-b4-submit"
+        style={{ width: '100%' }}
+      >
+        {busy ? 'Verifying…' : 'Link wallet'}
+      </button>
+    </div>
+  )
+}
+
+// ─── Cross-chain bridges ────────────────────────────────────────────────────
+// Pure deeplinks — opens the partner's bridge UI in a new tab with the
+// destination chain + recipient prefilled. No custody, no contract.
+
+function BridgeCard({ recipient }: { recipient: string }) {
+  const links: Array<{ id: string; label: string; sub: string; href: string }> = [
+    {
+      id:    'okx-bsc-xlayer',
+      label: 'BNB Smart Chain → XLayer',
+      sub:   'OKX Bridge · OKB gas',
+      href:  `https://www.okx.com/web3/bridge?fromChainId=56&toChainId=196&toAddress=${recipient}`,
+    },
+    {
+      id:    'stargate-bsc-arb',
+      label: 'BNB Smart Chain → Arbitrum',
+      sub:   'Stargate · USDC/USDT',
+      href:  `https://stargate.finance/bridge?srcChain=bnb&dstChain=arbitrum&dstAddress=${recipient}`,
+    },
+    {
+      id:    'okx-arb-xlayer',
+      label: 'Arbitrum → XLayer',
+      sub:   'OKX Bridge · USDC',
+      href:  `https://www.okx.com/web3/bridge?fromChainId=42161&toChainId=196&toAddress=${recipient}`,
+    },
+  ]
+
+  return (
+    <div className="card" style={{ marginTop: 14, padding: 14 }} data-testid="card-bridge">
+      <div style={{ fontSize: 11, color: 'var(--b4-muted)', marginBottom: 8 }}>BRIDGE</div>
+      <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 12, lineHeight: 1.5 }}>
+        Move funds between chains. Destination is pre-filled with your BUILD4 wallet.
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {links.map((l) => (
+          <a
+            key={l.id}
+            href={l.href}
+            target="_blank"
+            rel="noopener noreferrer"
+            data-testid={`link-bridge-${l.id}`}
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '10px 12px', borderRadius: 8,
+              border: '1px solid var(--border)', background: 'var(--bg-elevated)',
+              textDecoration: 'none', color: 'var(--text-primary)',
+            }}
+          >
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>{l.label}</div>
+              <div style={{ fontSize: 11, color: 'var(--b4-muted)', marginTop: 2 }}>{l.sub}</div>
+            </div>
+            <div style={{ fontSize: 14, color: 'var(--text-secondary)' }}>↗</div>
+          </a>
+        ))}
+      </div>
     </div>
   )
 }

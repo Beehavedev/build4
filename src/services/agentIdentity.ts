@@ -56,6 +56,16 @@ export function computeLearningRoot(items: string[]): string {
   return layer[0]
 }
 
+// Display labels per chain — used in metadata JSON so off-chain scanners
+// (NFAScan, 8004scan, etc.) render the right venue name. Stored on the
+// AgentIdentity itself so any code path that builds metadata gets the
+// chain label without re-deriving it.
+export type AgentChain = 'bsc' | 'xlayer'
+export const CHAIN_LABEL: Record<AgentChain, string> = {
+  bsc: 'BSC',
+  xlayer: 'XLayer',
+}
+
 export interface AgentIdentity {
   name: string
   agent: string         // agent wallet (EOA) address
@@ -66,6 +76,7 @@ export interface AgentIdentity {
   metadataUri: string
   standard: string
   version: string
+  chain: AgentChain     // which chain this identity is registered on
   createdAt: string
 }
 
@@ -76,6 +87,9 @@ export function buildAgentIdentity(opts: {
   publicBaseUrl: string
   model?: string
   seed?: string[]
+  // Defaults to 'bsc' so every existing call site keeps its current
+  // behaviour. The /newagent flow passes 'xlayer' during the campaign.
+  chain?: AgentChain
 }): AgentIdentity {
   const seed = opts.seed ?? defaultLearningSeed()
   const learningRoot = computeLearningRoot(seed)
@@ -92,6 +106,7 @@ export function buildAgentIdentity(opts: {
     metadataUri,
     standard: AGENT_STANDARD,
     version: AGENT_STANDARD_VERSION,
+    chain: opts.chain ?? 'bsc',
     createdAt: new Date().toISOString()
   }
 }
@@ -122,7 +137,7 @@ export function buildMetadataJson(id: AgentIdentity, registrationTxHash?: string
     description: `BUILD4 autonomous trading agent. Trades Aster DEX perps via EIP-712. Owned by ${id.owner}.`,
     agent: {
       address: id.agent,
-      chain: 'BSC',
+      chain: CHAIN_LABEL[id.chain],
       type: 'EOA',
       registrationTx: registrationTxHash ?? null
     },

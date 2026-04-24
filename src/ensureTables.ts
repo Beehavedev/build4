@@ -332,6 +332,32 @@ export async function ensureNewTables() {
   await run(`CREATE INDEX IF NOT EXISTS "MarketProposal_status_idx" ON "MarketProposal"("status")`)
   await run(`CREATE INDEX IF NOT EXISTS "MarketProposal_createdAt_idx" ON "MarketProposal"("createdAt" DESC)`)
 
+  // ─── $B4 holder linking (Task #6) ──────────────────────────────────────
+  // External wallet a user has proven ownership of via signed message.
+  // The address column is nullable because a user is unlinked by default.
+  // Balance is the cached on-chain $B4 balance at the time of link/refresh.
+  await run(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "linkedB4WalletAddress" TEXT`)
+  await run(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "linkedB4Balance" DOUBLE PRECISION`)
+  await run(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "linkedB4At" TIMESTAMP(3)`)
+
+  // ─── $B4 buybacks (Task #9) ────────────────────────────────────────────
+  // Manual append-only ledger the team writes to as buybacks happen.
+  // Mini-app reads it via a public GET endpoint to surface a running
+  // total + recent activity. txHash is unique so accidentally posting
+  // the same buyback twice is a no-op (idempotent admin flow).
+  await run(`CREATE TABLE IF NOT EXISTS "BuybackTx" (
+    "id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
+    "txHash" TEXT NOT NULL,
+    "chain" TEXT NOT NULL DEFAULT 'BSC',
+    "amountB4" DOUBLE PRECISION NOT NULL,
+    "amountUsdt" DOUBLE PRECISION NOT NULL,
+    "note" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "BuybackTx_pkey" PRIMARY KEY ("id")
+  )`)
+  await run(`CREATE UNIQUE INDEX IF NOT EXISTS "BuybackTx_txHash_key" ON "BuybackTx"("txHash")`)
+  await run(`CREATE INDEX IF NOT EXISTS "BuybackTx_createdAt_idx" ON "BuybackTx"("createdAt" DESC)`)
+
   // ─── One-shot data migrations ──────────────────────────────────────────
   // Tracks one-off data backfills so each only runs once per DB, even when
   // ensureNewTables() executes on every boot.

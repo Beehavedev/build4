@@ -250,6 +250,10 @@ export default function Dashboard({ userId, onNavigate }: DashboardProps) {
         ))}
       </div>
 
+      {/* $B4 Buybacks — public, no auth. Lazy-mounted so a slow buyback
+          query never blocks the rest of the dashboard. */}
+      <BuybackSection />
+
       {/* Recent Activity */}
       <div className="section-label">Recent Activity</div>
       <div className="card" style={{ padding: 0 }} data-testid="card-recent-activity">
@@ -297,5 +301,120 @@ export default function Dashboard({ userId, onNavigate }: DashboardProps) {
         )}
       </div>
     </div>
+  )
+}
+
+// ─── $B4 Buybacks (Task #9) ────────────────────────────────────────────────
+// Public read-only card. Reads /api/buybacks once on mount and renders
+// running totals + the most recent transactions.
+
+interface BuybackTx {
+  id: string
+  txHash: string
+  chain: string
+  amountB4: number
+  amountUsdt: number
+  note: string | null
+  createdAt: string
+}
+
+interface BuybackResponse {
+  totals: { count: number; amountB4: number; amountUsdt: number }
+  recent: BuybackTx[]
+}
+
+function buybackTxUrl(chain: string, txHash: string): string {
+  const c = (chain ?? '').toUpperCase()
+  if (c === 'XLAYER')   return `https://www.oklink.com/xlayer/tx/${txHash}`
+  if (c === 'ARBITRUM') return `https://arbiscan.io/tx/${txHash}`
+  return `https://bscscan.com/tx/${txHash}`
+}
+
+function fmtNum(n: number, digits = 2): string {
+  return (n ?? 0).toLocaleString(undefined, { maximumFractionDigits: digits })
+}
+
+function BuybackSection() {
+  const [data, setData] = useState<BuybackResponse | null>(null)
+  const [err, setErr]   = useState<string | null>(null)
+
+  useEffect(() => {
+    fetch('/api/buybacks')
+      .then((r) => r.json())
+      .then((j: BuybackResponse) => setData(j))
+      .catch((e) => setErr(e?.message ?? 'failed'))
+  }, [])
+
+  if (err) return null  // Silent failure — never break the dashboard.
+  if (!data) {
+    return (
+      <>
+        <div className="section-label">$B4 Buybacks</div>
+        <div className="card" style={{ padding: 14, marginBottom: 16 }} data-testid="card-buybacks-loading">
+          <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Loading…</div>
+        </div>
+      </>
+    )
+  }
+
+  return (
+    <>
+      <div className="section-label">$B4 Buybacks</div>
+      <div className="card" style={{ padding: 0, marginBottom: 16 }} data-testid="card-buybacks">
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0 }}>
+          <div style={{ padding: 14, borderRight: '1px solid var(--border)' }}>
+            <div style={{ fontSize: 11, color: 'var(--text-secondary)', letterSpacing: 0.4, fontWeight: 600 }}>
+              $B4 BOUGHT BACK
+            </div>
+            <div style={{ fontSize: 22, fontWeight: 800, marginTop: 4 }} data-testid="text-buyback-total-b4">
+              {fmtNum(data.totals.amountB4)}
+            </div>
+          </div>
+          <div style={{ padding: 14 }}>
+            <div style={{ fontSize: 11, color: 'var(--text-secondary)', letterSpacing: 0.4, fontWeight: 600 }}>
+              USDT SPENT
+            </div>
+            <div style={{ fontSize: 22, fontWeight: 800, marginTop: 4 }} data-testid="text-buyback-total-usdt">
+              ${fmtNum(data.totals.amountUsdt)}
+            </div>
+          </div>
+        </div>
+        {data.recent.length > 0 && (
+          <div style={{ borderTop: '1px solid var(--border)' }}>
+            {data.recent.slice(0, 5).map((b, i, arr) => (
+              <a
+                key={b.id}
+                href={buybackTxUrl(b.chain, b.txHash)}
+                target="_blank"
+                rel="noopener noreferrer"
+                data-testid={`row-buyback-${b.id}`}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  padding: '10px 14px',
+                  borderBottom: i < arr.length - 1 ? '1px solid var(--border)' : 'none',
+                  textDecoration: 'none', color: 'var(--text-primary)', fontSize: 13,
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                  <span style={{ fontSize: 14 }}>🔥</span>
+                  <span style={{ fontWeight: 600 }}>{fmtNum(b.amountB4)}</span>
+                  <span style={{ color: 'var(--text-secondary)' }}>$B4</span>
+                  <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>· {b.chain}</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ color: 'var(--text-secondary)' }}>${fmtNum(b.amountUsdt)}</span>
+                  <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{timeAgo(b.createdAt)}</span>
+                </div>
+              </a>
+            ))}
+          </div>
+        )}
+        {data.recent.length === 0 && (
+          <div style={{ padding: 14, fontSize: 12, color: 'var(--text-secondary)', textAlign: 'center', borderTop: '1px solid var(--border)' }}>
+            First buyback coming soon.
+          </div>
+        )}
+      </div>
+    </>
   )
 }

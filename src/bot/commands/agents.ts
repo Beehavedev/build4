@@ -3,13 +3,30 @@ import { ethers } from 'ethers'
 import { db, setAgentOnchainFields } from '../../db'
 import { generateEVMWallet, encryptPrivateKey, decryptPrivateKey, truncateAddress } from '../../services/wallet'
 import { verifyPin, checkPinFailLimit, logSecurityEvent } from '../../services/security'
-import { buildAgentIdentity, buildMetadataJson } from '../../services/agentIdentity'
+import { buildAgentIdentity, buildMetadataJson, type AgentChain, CHAIN_LABEL } from '../../services/agentIdentity'
 import {
   mintBap578Agent, getBnbBalance,
   bap578TokenUrl, nfaScanUrl, bscscanTxUrl, bscscanAddressUrl,
   TOTAL_USER_FEE_BNB, BAP578_CONTRACT, recoverBap578TokenId, getBap578LogicAddress
 } from '../../services/bap578'
-import { registerAgentOnchain, erc8004ScanUrl, erc8004RegistryScanUrl, recoverErc8004AgentId } from '../../services/erc8004'
+import {
+  registerAgentOnchain, erc8004ScanUrl, erc8004RegistryScanUrl, recoverErc8004AgentId,
+  XLAYER_ERC8004_REGISTRY, getScanTxUrl, getScanRegistryUrl, type RegistryChain,
+} from '../../services/erc8004'
+
+// Per-agent scan-URL helper. Falls back to the BSC helpers for any agent
+// whose `onchainChain` is null/'BSC' so historic agents render exactly as
+// before. XLayer agents get oklink links via getScanRegistryUrl/getScanTxUrl.
+function dbChainToRegistryChain(c: string | null | undefined): RegistryChain {
+  return (c ?? '').toUpperCase() === 'XLAYER' ? 'xlayer' : 'bsc'
+}
+function agentScanRegistryUrl(agent: { onchainChain?: string | null; erc8004AgentId: string }): string {
+  const chain = dbChainToRegistryChain(agent.onchainChain)
+  return chain === 'bsc' ? erc8004ScanUrl(agent.erc8004AgentId) : getScanRegistryUrl(chain, agent.erc8004AgentId)
+}
+function agentScanTxUrl(agent: { onchainChain?: string | null }, txHash: string): string {
+  return getScanTxUrl(dbChainToRegistryChain(agent.onchainChain), txHash)
+}
 
 const BSC_RPC = process.env.BSC_RPC_URL ?? 'https://bsc-dataseed.binance.org'
 const BAP578_EVENT_ABI = [
@@ -42,14 +59,22 @@ const BAP578_NEEDED_WEI = ethers.parseEther(TOTAL_USER_FEE_BNB) + ethers.parseEt
 const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL ?? 'https://build4-1.onrender.com'
 
 interface AgentSession {
-  step: 'name' | 'pin' | 'upgrade_pin'
+  step: 'name' | 'chain' | 'pin' | 'upgrade_pin'
   name?: string
+  chain?: AgentChain    // chosen via callback in the 'chain' step
   upgradeAgentId?: string
 }
 
 const sessions = new Map<string, AgentSession>()
 
 const NAME_REGEX = /^[a-zA-Z0-9_]{3,24}$/
+
+// Whether XLayer is offered in the chain picker. False if no XLayer registry
+// has been deployed yet — in that case we silently skip the picker and
+// register on BSC like before, so the bot never offers a broken option.
+function xlayerAvailable(): boolean {
+  return !!XLAYER_ERC8004_REGISTRY
+}
 
 async function startAgentCreation(ctx: Context) {
   const user = (ctx as any).dbUser
@@ -89,10 +114,13 @@ async function performMintAndCreate(opts: {
   user: any
   name: string
   userAddress: string
+  chain: AgentChain
 }) {
-  const { ctx, user, name, userAddress } = opts
+  const { ctx, user, name, userAddress, chain } = opts
+  const chainLabel = CHAIN_LABEL[chain]
+  const dbChain = chain === 'xlayer' ? 'XLAYER' : 'BSC'
 
-  await ctx.reply(`⏳ Registering *${name}* on ERC-8004 IdentityRegistry…`, { parse_mode: 'Markdown' })
+  await ctx.reply(`⏳ Registering *${name}* on ERC-8004 IdentityRegistry (${chainLabel})…`, { parse_mode: 'Markdown' })
 
   const { address, privateKey } = generateEVMWallet()
   const encryptedPK = encryptPrivateKey(privateKey, user.id, undefined)
@@ -101,7 +129,8 @@ async function performMintAndCreate(opts: {
     name,
     agentAddress: address,
     ownerAddress: userAddress,
-    publicBaseUrl: PUBLIC_BASE_URL
+    publicBaseUrl: PUBLIC_BASE_URL,
+    chain,
   })
 
   // Create the agent row first so we have an id to attach tx hashes to.
@@ -111,7 +140,7 @@ async function performMintAndCreate(opts: {
       name,
       walletAddress: address,
       encryptedPK,
-      onchainChain: 'BSC',
+      onchainChain: dbChain,
       learningModel: identity.model,
       learningRoot: identity.learningRoot,
       metadataUri: identity.metadataUri,
@@ -128,6 +157,7 @@ async function performMintAndCreate(opts: {
   })
 
   const reg = await registerAgentOnchain({
+    chain,
     agentWalletPK: privateKey,
     agentAddress: address,
     metadataURI: identity.metadataUri,
@@ -158,23 +188,34 @@ async function performMintAndCreate(opts: {
     erc8004Verified: true
   })
 
+  // Per-chain links: BSC keeps its existing BSCScan helpers; XLayer agents
+  // point at oklink. BAP-578 NFA upgrade is BSC-only (the contract lives
+  // on BSC), so we hide the upgrade button for XLayer agents.
+  const registryLinkUrl = chain === 'bsc' ? erc8004ScanUrl(reg.agentId) : getScanRegistryUrl(chain, reg.agentId)
+  const txLinkUrl       = getScanTxUrl(chain, reg.txHash!)
+
   const upgradeKb = new InlineKeyboard()
-    .text(`💎 Upgrade to BAP-578 NFA (${TOTAL_USER_FEE_BNB} BNB)`, `upgrade_bap578_${agent.id}`)
+  if (chain === 'bsc') {
+    upgradeKb.text(`💎 Upgrade to BAP-578 NFA (${TOTAL_USER_FEE_BNB} BNB)`, `upgrade_bap578_${agent.id}`)
+  }
 
   await ctx.reply(
     `🚀 *${name} is LIVE & on-chain!*
 
 🆔 *ERC-8004 Agent ID:* #${reg.agentId}
+🌐 *Chain:* ${chainLabel}
 🔐 On-chain identity: \`${address}\`
 
-[View agent NFT on BSCScan](${erc8004ScanUrl(reg.agentId)})
-[Registration tx](${bscscanTxUrl(reg.txHash!)})
+[View agent on registry](${registryLinkUrl})
+[Registration tx](${txLinkUrl})
 
 ━━━━━━━━━━━━━━
 
 Your agent trades *all perp pairs on Aster DEX* — finding the best opportunities across the market. Tune position sizes, risk limits, and pairs anytime in the *mini-app*.
 
-*Optional upgrade:* mint a BAP-578 Non-Fungible Agent NFT (verifiable on NFAScan) for ${TOTAL_USER_FEE_BNB} BNB.
+${chain === 'bsc'
+  ? `*Optional upgrade:* mint a BAP-578 Non-Fungible Agent NFT (verifiable on NFAScan) for ${TOTAL_USER_FEE_BNB} BNB.`
+  : `_NFA upgrade is BSC-only and unavailable for XLayer agents._`}
 
 /myagents — manage agents
 /tradestatus — monitor positions`,
@@ -280,6 +321,50 @@ export function registerAgents(bot: Bot) {
     await startAgentCreation(ctx)
   })
 
+  // Chain picker callbacks — fired from the inline keyboard rendered after
+  // the user passes name validation. Both buttons resolve the same way:
+  // pop the session, look up the user's owner wallet, and run the mint.
+  bot.callbackQuery(/^chain_pick_(xlayer|bsc)$/, async (ctx) => {
+    await ctx.answerCallbackQuery()
+    const user = (ctx as any).dbUser
+    if (!user) return
+    const session = sessions.get(user.id)
+    if (!session || session.step !== 'chain' || !session.name) {
+      await ctx.reply('Session expired — run /newagent again.')
+      return
+    }
+    const chain: AgentChain = ctx.match![1] === 'xlayer' ? 'xlayer' : 'bsc'
+    const name = session.name
+    sessions.delete(user.id)
+
+    // Strip the inline keyboard so the user can't double-click.
+    try { await ctx.editMessageReplyMarkup({ reply_markup: undefined }) } catch {}
+
+    const wallets = await db.wallet.findMany({ where: { userId: user.id }, take: 1 })
+    if (!wallets[0]) {
+      await ctx.reply('❌ No main wallet found. Run /start to initialize, then try again.')
+      return
+    }
+    try {
+      await performMintAndCreate({ ctx, user, name, userAddress: wallets[0].address, chain })
+    } catch (err: any) {
+      console.error('[Agent] Create flow threw (chain pick):', err)
+      const recent = await db.agent.findFirst({
+        where: {
+          userId: user.id,
+          name,
+          createdAt: { gt: new Date(Date.now() - 60_000) }
+        }
+      })
+      if (recent) {
+        console.error(`[Agent] Suppressed false-failure UI: agent "${name}" exists (id=${recent.id}).`)
+        await ctx.reply(`✅ *${name}* was created. Run /myagents to see it.`, { parse_mode: 'Markdown' })
+      } else {
+        await ctx.reply(`❌ Failed to create agent: ${err.message}\n\nTry /newagent again.`)
+      }
+    }
+  })
+
   bot.command('cancelagent', async (ctx) => {
     const user = (ctx as any).dbUser
     if (user) sessions.delete(user.id)
@@ -325,9 +410,24 @@ export function registerAgents(bot: Bot) {
 
       // ERC-8004 register is sponsored by BUILD4's registry wallet — user
       // pays nothing, signs nothing, no PIN needed.
+      //
+      // Chain selection: if XLayer is configured we let the user choose. If
+      // not, fall straight through to BSC so the bot never offers a broken
+      // option (XLayer registry needs to be deployed first, see scripts/).
+      if (xlayerAvailable()) {
+        sessions.set(user.id, { step: 'chain', name })
+        const kb = new InlineKeyboard()
+          .text('🟣 XLayer (default)', `chain_pick_xlayer`).row()
+          .text('🟡 BNB Smart Chain',  `chain_pick_bsc`)
+        await ctx.reply(
+          `🌐 *Pick a chain for ${name}*\n\nERC-8004 IdentityRegistry is live on both. XLayer is the default for the campaign.`,
+          { parse_mode: 'Markdown', reply_markup: kb }
+        )
+        return
+      }
       sessions.delete(user.id)
       try {
-        await performMintAndCreate({ ctx, user, name, userAddress: wallets[0].address })
+        await performMintAndCreate({ ctx, user, name, userAddress: wallets[0].address, chain: 'bsc' })
       } catch (err: any) {
         console.error('[Agent] Create flow threw:', err)
         // The agent row may already exist with on-chain identity registered —
@@ -365,7 +465,11 @@ export function registerAgents(bot: Bot) {
       const name = session.name
       sessions.delete(user.id)
       try {
-        await performMintAndCreate({ ctx, user, name, userAddress: wallets[0]?.address ?? '' })
+        await performMintAndCreate({
+          ctx, user, name,
+          userAddress: wallets[0]?.address ?? '',
+          chain: xlayerAvailable() ? 'xlayer' : 'bsc',
+        })
       } catch (err: any) {
         console.error('[Agent] mint failed:', err)
         await ctx.reply(`❌ Failed to create agent: ${err.message}\n\nTry /newagent again.`)
@@ -497,29 +601,34 @@ export function registerAgents(bot: Bot) {
       return
     }
 
-    let text = `🤖 *Your On-Chain Agents*\n\n_Every agent below is registered on the ERC-8004 IdentityRegistry on BNB Smart Chain._\n\n`
+    let text = `🤖 *Your On-Chain Agents*\n\n_Every agent below is registered on the ERC-8004 IdentityRegistry. Chain shown per agent._\n\n`
     agents.forEach((a) => {
-      const status = a.isActive ? '🟢 Active' : a.isPaused ? '🔴 Paused' : '⚪ Inactive'
-      text += `━━━━━━━━━━━━━━\n*${a.name}* — ${status}\n`
+      const status   = a.isActive ? '🟢 Active' : a.isPaused ? '🔴 Paused' : '⚪ Inactive'
+      const chainTag = (a.onchainChain ?? 'BSC').toUpperCase() === 'XLAYER' ? '🟣 XLayer' : '🟡 BSC'
+      text += `━━━━━━━━━━━━━━\n*${a.name}* — ${status} · ${chainTag}\n`
 
       if (a.erc8004Verified && a.erc8004AgentId) {
         text += `🆔 *ERC-8004 Agent ID:* #${a.erc8004AgentId} ✓\n`
-        text += `🔎 [View on BSCScan](${erc8004ScanUrl(a.erc8004AgentId)})\n`
+        text += `🔎 [View on chain](${agentScanRegistryUrl(a as any)})\n`
       } else if (a.erc8004TxHash) {
         text += `🟡 *ERC-8004 register:* awaiting confirmation\n`
-        text += `📜 [Check tx](${bscscanTxUrl(a.erc8004TxHash)})\n`
+        text += `📜 [Check tx](${agentScanTxUrl(a as any, a.erc8004TxHash)})\n`
       }
-      if (a.bap578Verified && a.bap578TokenId) {
-        text += `💎 *BAP-578 NFA:* #${a.bap578TokenId} ✓\n`
-        text += `🌐 [View on NFAScan](${nfaScanUrl(a.name, a.bap578TokenId!)})\n`
-      } else if (a.bap578TxHash) {
-        text += `🟡 *BAP-578 mint:* awaiting confirmation\n`
-        text += `📜 [Check tx](${bscscanTxUrl(a.bap578TxHash)})\n`
+      // BAP-578 NFA is BSC-only — only render the section for BSC agents.
+      if (dbChainToRegistryChain(a.onchainChain) === 'bsc') {
+        if (a.bap578Verified && a.bap578TokenId) {
+          text += `💎 *BAP-578 NFA:* #${a.bap578TokenId} ✓\n`
+          text += `🌐 [View on NFAScan](${nfaScanUrl(a.name, a.bap578TokenId!)})\n`
+        } else if (a.bap578TxHash) {
+          text += `🟡 *BAP-578 mint:* awaiting confirmation\n`
+          text += `📜 [Check tx](${bscscanTxUrl(a.bap578TxHash)})\n`
+        }
       }
       if (a.learningModel) {
         text += `🧠 *Model:* ${a.learningModel}\n`
       }
-      if (a.erc8004AgentId) {
+      // 8004scan aggregator is currently BSC-only — only show for BSC agents.
+      if (a.erc8004AgentId && dbChainToRegistryChain(a.onchainChain) === 'bsc') {
         text += `📊 [View on 8004scan](${erc8004RegistryScanUrl(a.erc8004AgentId)})\n`
       }
       text += `📊 PnL: ${a.totalPnl >= 0 ? '+' : ''}$${a.totalPnl.toFixed(2)} | WR: ${a.winRate.toFixed(0)}% (${a.totalTrades} trades)\n\n`

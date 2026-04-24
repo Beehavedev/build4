@@ -628,15 +628,19 @@ test('openPredictionPosition INSERT writes all columns with providers cast to js
     const n = norm(insert.sql)
     assert.match(n, /INSERT\s+INTO\s+"OutcomePosition"/i)
     // Column list must match our positional binding contract exactly.
+    // "id" is generated server-side via gen_random_uuid()::text in the
+    // VALUES slot, not user-bound, so it appears in the column list but
+    // not in the param contract below.
     assert.match(
       n,
-      /\(\s*"userId"\s*,\s*"agentId"\s*,\s*"marketAddress"\s*,\s*"marketTitle"\s*,\s*"tokenId"\s*,\s*"outcomeLabel"\s*,\s*"usdtIn"\s*,\s*"entryPrice"\s*,\s*"status"\s*,\s*"paperTrade"\s*,\s*"txHashOpen"\s*,\s*"reasoning"\s*,\s*"outcomeTokenAmount"\s*,\s*"providers"\s*\)/i,
+      /\(\s*"id"\s*,\s*"userId"\s*,\s*"agentId"\s*,\s*"marketAddress"\s*,\s*"marketTitle"\s*,\s*"tokenId"\s*,\s*"outcomeLabel"\s*,\s*"usdtIn"\s*,\s*"entryPrice"\s*,\s*"status"\s*,\s*"paperTrade"\s*,\s*"txHashOpen"\s*,\s*"reasoning"\s*,\s*"outcomeTokenAmount"\s*,\s*"providers"\s*\)/i,
       'column list locked',
     )
     // status is hard-coded to 'open' in the VALUES clause (slot for status is
     // a literal, not a placeholder) — protects against accidentally inserting
-    // an unintended status when adding new columns.
-    assert.match(n, /VALUES\s*\(\s*\$1\s*,\s*\$2\s*,\s*\$3\s*,\s*\$4\s*,\s*\$5\s*,\s*\$6\s*,\s*\$7\s*,\s*\$8\s*,\s*'open'\s*,\s*\$9\s*,\s*\$10\s*,\s*\$11\s*,\s*\$12\s*,\s*\$13::jsonb\s*\)/i)
+    // an unintended status when adding new columns. id slot is a
+    // gen_random_uuid()::text literal for the same reason.
+    assert.match(n, /VALUES\s*\(\s*gen_random_uuid\(\)::text\s*,\s*\$1\s*,\s*\$2\s*,\s*\$3\s*,\s*\$4\s*,\s*\$5\s*,\s*\$6\s*,\s*\$7\s*,\s*\$8\s*,\s*'open'\s*,\s*\$9\s*,\s*\$10\s*,\s*\$11\s*,\s*\$12\s*,\s*\$13::jsonb\s*\)/i)
     assert.match(n, /RETURNING\s+id/i)
 
     // Param binding contract — 13 values in this exact order.

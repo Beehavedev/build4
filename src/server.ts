@@ -56,12 +56,18 @@ app.get('/api/agents/:address/metadata.json', async (req, res) => {
 
     const ownerAddress = agent.user.wallets[0]?.address ?? '0x0000000000000000000000000000000000000000'
     const baseUrl = `${req.protocol}://${req.get('host')}`
+    // Map the DB chain tag (XLAYER/BSC/null) to the AgentIdentity chain
+    // discriminator. Without this, XLayer-registered agents publish
+    // metadata that incorrectly claims chain="BSC" — a correctness bug
+    // for any off-chain scanner that trusts the metadata JSON.
+    const chainForMetadata = (agent.onchainChain ?? 'BSC').toUpperCase() === 'XLAYER' ? 'xlayer' : 'bsc'
     const identity = buildAgentIdentity({
       name: agent.name,
       agentAddress: agent.walletAddress,
       ownerAddress,
       publicBaseUrl: baseUrl,
-      model: agent.learningModel ?? undefined
+      model: agent.learningModel ?? undefined,
+      chain: chainForMetadata as 'bsc' | 'xlayer',
     })
     const json = buildMetadataJson(identity, agent.onchainTxHash)
     res.setHeader('Cache-Control', 'public, max-age=300')
@@ -2161,6 +2167,119 @@ app.delete('/api/admin/cost-rates/:provider', requireAdmin, async (req, res) => 
   } catch (err) {
     console.error('[API] /admin/cost-rates DELETE failed:', err)
     res.status(500).json({ error: 'Internal error' })
+  }
+})
+
+// ──────────────────────────────────────────────────────────────────────────
+// $B4 buybacks (Task #9). The team performs buybacks manually for now and
+// posts each tx through the admin form. The mini-app's Home tab reads the
+// public stats endpoint to show "$B4 bought back to date" + recent activity.
+// txHash is unique so reposting the same tx is idempotent.
+// ──────────────────────────────────────────────────────────────────────────
+app.post('/api/admin/buybacks', requireAdmin, async (req, res) => {
+  try {
+    // Lower-case the txHash so two posts of the same hash with different
+    // casing collapse to one row. Without this, the check-then-insert
+    // duplicate guard could be bypassed by mixed casing.
+    const txHash    = String(req.body?.txHash    ?? '').trim().toLowerCase()
+    const chain     = String(req.body?.chain     ?? 'BSC').trim().toUpperCase()
+    const amountB4  = Number(req.body?.amountB4)
+    const amountUsdt = Number(req.body?.amountUsdt)
+    const note      = req.body?.note ? String(req.body.note).slice(0, 280) : null
+
+    if (!/^0x[0-9a-f]{64}$/.test(txHash)) {
+      return res.status(400).json({ success: false, error: 'txHash must be a 0x-prefixed 32-byte hex string' })
+    }
+    if (!Number.isFinite(amountB4) || amountB4 <= 0) {
+      return res.status(400).json({ success: false, error: 'amountB4 must be a positive number' })
+    }
+    if (!Number.isFinite(amountUsdt) || amountUsdt <= 0) {
+      return res.status(400).json({ success: false, error: 'amountUsdt must be a positive number' })
+    }
+    if (!['BSC', 'XLAYER', 'ARBITRUM'].includes(chain)) {
+      return res.status(400).json({ success: false, error: 'chain must be BSC, XLAYER, or ARBITRUM' })
+    }
+
+    // Idempotent: if the same txHash was already posted we surface the
+    // existing row instead of erroring, so admin retries are safe.
+    const existing = await db.$queryRawUnsafe<Array<any>>(
+      `SELECT * FROM "BuybackTx" WHERE "txHash" = $1 LIMIT 1`,
+      txHash,
+    )
+    if (existing.length > 0) {
+      return res.json({ success: true, alreadyExists: true, buyback: existing[0] })
+    }
+
+    try {
+      await db.$executeRawUnsafe(
+        `INSERT INTO "BuybackTx" ("id","txHash","chain","amountB4","amountUsdt","note")
+         VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5)`,
+        txHash, chain, amountB4, amountUsdt, note,
+      )
+      res.json({ success: true })
+    } catch (insertErr: any) {
+      // 23505 = unique_violation. Two admins posted the same tx
+      // concurrently — both passed the SELECT, only one INSERT wins. We
+      // turn the loser into an idempotent success so neither caller sees
+      // a 500.
+      const code = insertErr?.code ?? insertErr?.meta?.code
+      const isDup =
+        code === '23505' ||
+        /unique constraint|duplicate key/i.test(String(insertErr?.message ?? ''))
+      if (isDup) {
+        const existingNow = await db.$queryRawUnsafe<Array<any>>(
+          `SELECT * FROM "BuybackTx" WHERE "txHash" = $1 LIMIT 1`,
+          txHash,
+        )
+        return res.json({ success: true, alreadyExists: true, buyback: existingNow[0] ?? null })
+      }
+      throw insertErr
+    }
+  } catch (err: any) {
+    console.error('[API] /admin/buybacks POST failed:', err)
+    res.status(500).json({ success: false, error: err?.message ?? 'Internal error' })
+  }
+})
+
+app.delete('/api/admin/buybacks/:id', requireAdmin, async (req, res) => {
+  try {
+    const id = String(req.params.id ?? '')
+    await db.$executeRawUnsafe(`DELETE FROM "BuybackTx" WHERE "id" = $1`, id)
+    res.json({ success: true })
+  } catch (err: any) {
+    console.error('[API] /admin/buybacks DELETE failed:', err)
+    res.status(500).json({ success: false, error: err?.message ?? 'Internal error' })
+  }
+})
+
+// Public — no auth. Powers the Home-tab buyback card. Bounded result set
+// so a long history can't blow up the response.
+app.get('/api/buybacks', async (_req, res) => {
+  try {
+    const recent = await db.$queryRawUnsafe<Array<any>>(
+      `SELECT "id","txHash","chain","amountB4","amountUsdt","note","createdAt"
+         FROM "BuybackTx"
+         ORDER BY "createdAt" DESC
+         LIMIT 25`,
+    )
+    const totals = await db.$queryRawUnsafe<Array<{ count: bigint; b4: number | null; usdt: number | null }>>(
+      `SELECT COUNT(*)::bigint AS count,
+              COALESCE(SUM("amountB4"), 0)::float AS b4,
+              COALESCE(SUM("amountUsdt"), 0)::float AS usdt
+         FROM "BuybackTx"`,
+    )
+    const t = totals[0] ?? { count: 0n, b4: 0, usdt: 0 }
+    res.json({
+      totals: {
+        count:      Number(t.count ?? 0),
+        amountB4:   Number(t.b4   ?? 0),
+        amountUsdt: Number(t.usdt ?? 0),
+      },
+      recent,
+    })
+  } catch (err: any) {
+    console.error('[API] /buybacks failed:', err)
+    res.status(500).json({ totals: { count: 0, amountB4: 0, amountUsdt: 0 }, recent: [], error: err?.message ?? 'Internal error' })
   }
 })
 

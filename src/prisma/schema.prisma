@@ -43,6 +43,13 @@ model User {
   // Broadcast endpoint skips these so we don't burn rate-limit budget on
   // unreachable chats.
   botBlocked        Boolean   @default(false)
+  // ── $B4 holder linking (Task #6) ──────────────────────────────────────
+  // External wallet the user proved ownership of via signed message; the
+  // cached balance is read from the BSC $B4 contract at link/refresh time.
+  // Nullable because a user is unlinked by default.
+  linkedB4WalletAddress String?
+  linkedB4Balance       Float?
+  linkedB4At            DateTime?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @default(now()) @updatedAt
 

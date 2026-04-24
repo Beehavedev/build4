@@ -365,6 +365,8 @@ export default function Admin() {
     <div style={{ padding: '16px 0' }} data-testid="page-admin">
       <BroadcastPanel />
 
+      <BuybackAdminPanel />
+
       <h2 style={{ color: '#fff', margin: '0 0 8px' }}>AI Cost Rates</h2>
       <p style={{ color: '#94a3b8', fontSize: 13, margin: '0 0 16px' }}>
         USD per 1M tokens used to estimate spend in /swarmstats. Defaults are baked
@@ -551,6 +553,234 @@ export default function Admin() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Buyback admin panel (Task #9) ─────────────────────────────────────────
+// Append-only ledger of $B4 buybacks the team performs manually. Posting
+// the same txHash twice is a no-op (server returns alreadyExists=true).
+// Populates the public buyback card on the Home tab.
+
+interface BuybackRow {
+  id: string
+  txHash: string
+  chain: string
+  amountB4: number
+  amountUsdt: number
+  note: string | null
+  createdAt: string
+}
+
+interface BuybackList {
+  totals: { count: number; amountB4: number; amountUsdt: number }
+  recent: BuybackRow[]
+}
+
+function BuybackAdminPanel() {
+  const [data, setData]   = useState<BuybackList | null>(null)
+  const [err, setErr]     = useState<string | null>(null)
+  const [busy, setBusy]   = useState(false)
+  const [txHash, setTxHash]       = useState('')
+  const [chain, setChain]         = useState<'BSC' | 'XLAYER' | 'ARBITRUM'>('BSC')
+  const [amountB4, setAmountB4]   = useState('')
+  const [amountUsdt, setAmountUsdt] = useState('')
+  const [note, setNote]           = useState('')
+
+  const reload = async () => {
+    try {
+      const r = await fetch('/api/buybacks').then((r) => r.json()) as BuybackList
+      setData(r)
+    } catch (e: any) {
+      setErr(e?.message ?? 'load failed')
+    }
+  }
+  useEffect(() => { reload() }, [])
+
+  const submit = async () => {
+    setErr(null)
+    if (!/^0x[0-9a-fA-F]{64}$/.test(txHash.trim())) return setErr('txHash must be 0x-prefixed 64-hex')
+    const b4 = Number(amountB4)
+    const usdt = Number(amountUsdt)
+    if (!Number.isFinite(b4) || b4 <= 0)     return setErr('amountB4 must be a positive number')
+    if (!Number.isFinite(usdt) || usdt <= 0) return setErr('amountUsdt must be a positive number')
+    setBusy(true)
+    try {
+      const r = await apiFetch<{ success: boolean; alreadyExists?: boolean; error?: string }>(
+        '/api/admin/buybacks',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ txHash: txHash.trim(), chain, amountB4: b4, amountUsdt: usdt, note: note || null }),
+        },
+      )
+      if (!r.success) {
+        setErr(r.error ?? 'Save failed')
+      } else {
+        if (!r.alreadyExists) {
+          setTxHash(''); setAmountB4(''); setAmountUsdt(''); setNote('')
+        } else {
+          setErr('That txHash was already posted — surfacing existing row.')
+        }
+        await reload()
+      }
+    } catch (e: any) {
+      setErr(e?.message ?? 'Save failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const remove = async (id: string) => {
+    if (!confirm('Delete this buyback record?')) return
+    setBusy(true)
+    try {
+      await apiFetch(`/api/admin/buybacks/${encodeURIComponent(id)}`, { method: 'DELETE' })
+      await reload()
+    } catch (e: any) {
+      setErr(e?.message ?? 'Delete failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div data-testid="panel-buyback-admin" style={{ marginBottom: 24 }}>
+      <h2 style={{ color: '#fff', margin: '0 0 8px' }}>$B4 Buybacks</h2>
+      <p style={{ color: '#94a3b8', fontSize: 13, margin: '0 0 12px' }}>
+        Append a manual buyback. The Home tab updates within seconds. Reposting the same tx is a no-op.
+      </p>
+
+      {data && (
+        <div style={{ display: 'flex', gap: 8, marginBottom: 12, fontSize: 13 }} data-testid="text-buyback-totals">
+          <span style={{ color: '#94a3b8' }}>Total bought back:</span>
+          <strong style={{ color: '#fff' }}>{data.totals.amountB4.toLocaleString(undefined, { maximumFractionDigits: 2 })} $B4</strong>
+          <span style={{ color: '#94a3b8' }}>·</span>
+          <strong style={{ color: '#fff' }}>${data.totals.amountUsdt.toLocaleString(undefined, { maximumFractionDigits: 2 })}</strong>
+          <span style={{ color: '#64748b' }}>({data.totals.count} txs)</span>
+        </div>
+      )}
+
+      {err && (
+        <div data-testid="text-buyback-error" style={{
+          background: '#3b1818', color: '#fca5a5',
+          padding: '8px 12px', borderRadius: 8, marginBottom: 12, fontSize: 13,
+        }}>{err}</div>
+      )}
+
+      <div style={{
+        background: '#12121a', border: '1px solid #1e1e2e', borderRadius: 10,
+        padding: 12, marginBottom: 12, display: 'flex', flexDirection: 'column', gap: 8,
+      }}>
+        <input
+          data-testid="input-buyback-txhash"
+          placeholder="txHash (0x… 64-hex)"
+          value={txHash}
+          onChange={(e) => setTxHash(e.target.value)}
+          style={{
+            padding: '6px 8px', background: '#0a0a12', border: '1px solid #1e1e2e',
+            color: '#fff', borderRadius: 6, fontSize: 13, fontFamily: 'ui-monospace, Menlo, monospace',
+          }}
+        />
+        <div style={{ display: 'flex', gap: 8 }}>
+          <select
+            data-testid="select-buyback-chain"
+            value={chain}
+            onChange={(e) => setChain(e.target.value as any)}
+            style={{
+              padding: '6px 8px', background: '#0a0a12', border: '1px solid #1e1e2e',
+              color: '#fff', borderRadius: 6, fontSize: 13,
+            }}
+          >
+            <option value="BSC">BSC</option>
+            <option value="XLAYER">XLayer</option>
+            <option value="ARBITRUM">Arbitrum</option>
+          </select>
+          <input
+            data-testid="input-buyback-amount-b4"
+            type="number" inputMode="decimal" min="0" step="0.01" placeholder="amount $B4"
+            value={amountB4}
+            onChange={(e) => setAmountB4(e.target.value)}
+            style={{
+              flex: 1, padding: '6px 8px', background: '#0a0a12', border: '1px solid #1e1e2e',
+              color: '#fff', borderRadius: 6, fontSize: 13,
+            }}
+          />
+          <input
+            data-testid="input-buyback-amount-usdt"
+            type="number" inputMode="decimal" min="0" step="0.01" placeholder="USDT spent"
+            value={amountUsdt}
+            onChange={(e) => setAmountUsdt(e.target.value)}
+            style={{
+              flex: 1, padding: '6px 8px', background: '#0a0a12', border: '1px solid #1e1e2e',
+              color: '#fff', borderRadius: 6, fontSize: 13,
+            }}
+          />
+        </div>
+        <input
+          data-testid="input-buyback-note"
+          placeholder="note (optional)"
+          maxLength={280}
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          style={{
+            padding: '6px 8px', background: '#0a0a12', border: '1px solid #1e1e2e',
+            color: '#fff', borderRadius: 6, fontSize: 13,
+          }}
+        />
+        <button
+          data-testid="button-buyback-submit"
+          onClick={submit}
+          disabled={busy}
+          style={{
+            padding: '8px 12px', background: '#7c3aed', border: 'none',
+            color: '#fff', borderRadius: 6, fontSize: 13, cursor: busy ? 'wait' : 'pointer',
+          }}
+        >
+          {busy ? 'Saving…' : 'Append buyback'}
+        </button>
+      </div>
+
+      {data?.recent && data.recent.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {data.recent.map((b) => (
+            <div
+              key={b.id}
+              data-testid={`row-admin-buyback-${b.id}`}
+              style={{
+                background: '#12121a', border: '1px solid #1e1e2e', borderRadius: 8,
+                padding: '8px 12px', display: 'flex', justifyContent: 'space-between',
+                alignItems: 'center', gap: 8, fontSize: 12,
+              }}
+            >
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0, flex: 1 }}>
+                <div style={{ color: '#fff', fontWeight: 600 }}>
+                  {b.amountB4.toLocaleString(undefined, { maximumFractionDigits: 2 })} $B4
+                  <span style={{ color: '#94a3b8', fontWeight: 400 }}> · ${b.amountUsdt.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+                  <span style={{ color: '#64748b', fontSize: 11, marginLeft: 6 }}>{b.chain}</span>
+                </div>
+                <div style={{
+                  color: '#64748b', fontFamily: 'ui-monospace, Menlo, monospace',
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                }}>{b.txHash}</div>
+                {b.note && <div style={{ color: '#94a3b8' }}>{b.note}</div>}
+              </div>
+              <button
+                data-testid={`button-buyback-delete-${b.id}`}
+                onClick={() => remove(b.id)}
+                disabled={busy}
+                style={{
+                  padding: '4px 10px', background: 'transparent',
+                  border: '1px solid #1e1e2e', color: '#fca5a5', borderRadius: 6,
+                  fontSize: 11, cursor: busy ? 'wait' : 'pointer',
+                }}
+              >
+                Delete
+              </button>
+            </div>
+          ))}
         </div>
       )}
     </div>
