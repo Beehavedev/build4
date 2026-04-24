@@ -799,6 +799,14 @@ function BuybackAdminPanel() {
 //
 // Pre-fills the builder/test wallet for convenience.
 
+interface UserWallet {
+  walletId: string
+  address: string
+  chain: string
+  decryptable: boolean
+  createdAt: string
+}
+
 function WalletRecoveryPanel() {
   const [walletAddress, setWalletAddress] = useState('0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4')
   const [telegramId, setTelegramId]       = useState('1551641467')
@@ -809,6 +817,25 @@ function WalletRecoveryPanel() {
   const [ok,  setOk]                      = useState<string | null>(null)
   const [reveal, setReveal]               = useState(false)
   const [ambiguous, setAmbiguous]         = useState<{ chains: string[] } | null>(null)
+  const [listing, setListing]             = useState(false)
+  const [wallets, setWallets]             = useState<UserWallet[] | null>(null)
+
+  const listWallets = async () => {
+    setErr(null); setOk(null); setWallets(null)
+    if (!telegramId.trim()) return setErr('Telegram ID is required to list wallets')
+    setListing(true)
+    try {
+      const r = await apiFetch<{ wallets: UserWallet[]; error?: string }>(
+        `/api/admin/wallet/list?telegramId=${encodeURIComponent(telegramId.trim())}`
+      )
+      if (r.wallets) setWallets(r.wallets)
+      else setErr(r.error ?? 'List failed')
+    } catch (e: any) {
+      setErr(e?.message ?? 'List failed')
+    } finally {
+      setListing(false)
+    }
+  }
 
   const submit = async () => {
     setErr(null); setOk(null); setAmbiguous(null)
@@ -897,16 +924,64 @@ function WalletRecoveryPanel() {
         />
 
         <label style={{ color: '#94a3b8', fontSize: 12 }}>Telegram ID (required)</label>
-        <input
-          data-testid="input-recovery-telegram-id"
-          placeholder="e.g. 1551641467"
-          value={telegramId}
-          onChange={(e) => setTelegramId(e.target.value)}
-          style={{
-            padding: '6px 8px', background: '#0a0a12', border: '1px solid #1e1e2e',
-            color: '#fff', borderRadius: 6, fontSize: 13, fontFamily: 'ui-monospace, Menlo, monospace',
-          }}
-        />
+        <div style={{ display: 'flex', gap: 6 }}>
+          <input
+            data-testid="input-recovery-telegram-id"
+            placeholder="e.g. 1551641467"
+            value={telegramId}
+            onChange={(e) => setTelegramId(e.target.value)}
+            style={{
+              flex: 1, padding: '6px 8px', background: '#0a0a12', border: '1px solid #1e1e2e',
+              color: '#fff', borderRadius: 6, fontSize: 13, fontFamily: 'ui-monospace, Menlo, monospace',
+            }}
+          />
+          <button
+            data-testid="button-recovery-list-wallets"
+            onClick={listWallets}
+            disabled={listing}
+            type="button"
+            style={{
+              padding: '6px 10px', background: 'transparent', border: '1px solid #1e1e2e',
+              color: '#a78bfa', borderRadius: 6, fontSize: 12, cursor: listing ? 'wait' : 'pointer',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {listing ? 'Loading…' : 'List wallets'}
+          </button>
+        </div>
+
+        {wallets && (
+          <div data-testid="list-recovery-wallets" style={{
+            background: '#0a0a12', border: '1px solid #1e1e2e', borderRadius: 6,
+            padding: 8, display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12,
+          }}>
+            {wallets.length === 0 && (
+              <div style={{ color: '#94a3b8' }}>No wallets found for this user.</div>
+            )}
+            {wallets.map((w) => (
+              <button
+                key={w.walletId}
+                data-testid={`button-recovery-pick-${w.walletId}`}
+                type="button"
+                onClick={() => { setWalletAddress(w.address); setChain(w.chain) }}
+                style={{
+                  textAlign: 'left', padding: '6px 8px', background: '#12121a',
+                  border: '1px solid #1e1e2e', color: '#fff', borderRadius: 4,
+                  cursor: 'pointer', fontFamily: 'ui-monospace, Menlo, monospace', fontSize: 11,
+                }}
+              >
+                <span style={{ color: w.decryptable ? '#86efac' : '#fca5a5' }}>
+                  {w.decryptable ? 'OK ' : '✗ '}
+                </span>
+                <strong>{w.chain}</strong>
+                <span style={{ color: '#94a3b8' }}> · {w.address}</span>
+              </button>
+            ))}
+            <div style={{ color: '#64748b', fontSize: 11, marginTop: 4 }}>
+              Tap a row to load it into the form. Red ✗ = needs re-encryption.
+            </div>
+          </div>
+        )}
 
         <label style={{ color: '#94a3b8', fontSize: 12 }}>
           Chain (optional — only needed if multiple wallets share this address)

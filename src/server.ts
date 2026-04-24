@@ -4047,6 +4047,47 @@ app.post('/api/admin/wallet/diagnose-decrypt', express.json(), async (req, res) 
 // Only call over HTTPS and never log the body. The PK is round-tripped
 // in memory and the request body is discarded after the DB write.
 // ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/admin/wallet/list?telegramId=<id>
+//
+// Helper for the Wallet Recovery panel: returns the wallet rows for a given
+// Telegram user (address, chain, walletId, decryptable boolean, age) so the
+// operator can see which wallet they actually need the PK for, instead of
+// guessing the address. Read-only.
+// ─────────────────────────────────────────────────────────────────────────────
+app.get('/api/admin/wallet/list', requireAdmin, async (req, res) => {
+  try {
+    const tgRaw = typeof req.query.telegramId === 'string' ? req.query.telegramId.trim() : ''
+    if (!/^\d{1,20}$/.test(tgRaw)) {
+      return res.status(400).json({ error: 'telegramId query param required (digits)' })
+    }
+    const u = await db.user.findFirst({ where: { telegramId: BigInt(tgRaw) } })
+    if (!u) return res.status(404).json({ error: `No user with telegramId=${tgRaw}` })
+
+    const rows = await db.wallet.findMany({
+      where: { userId: u.id },
+      select: { id: true, address: true, chain: true, encryptedPK: true, createdAt: true },
+    })
+
+    const { decryptPrivateKey } = await import('./services/wallet')
+    const wallets = rows.map((w) => {
+      let decryptable = false
+      try { decryptPrivateKey(w.encryptedPK, u.id); decryptable = true } catch {}
+      return {
+        walletId:    w.id,
+        address:     w.address,
+        chain:       w.chain,
+        decryptable,
+        createdAt:   w.createdAt,
+      }
+    })
+    return res.json({ userId: u.id, telegramId: tgRaw, wallets })
+  } catch (e: any) {
+    console.error('[admin/wallet/list] failed:', e?.message ?? e)
+    return res.status(500).json({ error: e?.message ?? 'internal' })
+  }
+})
+
 app.post('/api/admin/wallet/reencrypt', requireAdmin, express.json(), async (req, res) => {
   // Identify the admin actor for the audit log. requireAdmin attaches
   // req.user when the caller authenticated via Telegram initData; for the
