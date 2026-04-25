@@ -1744,19 +1744,45 @@ app.get('/api/hyperliquid/account', requireTgUser, async (req, res) => {
     // Fetch perps state + spot USDC in parallel — both are independent
     // public reads. We surface spotUsdc so the UI can prompt the user to
     // do a spot→perps transfer when funds landed on the wrong sub-account.
+    // getAccountState now also queries HL's userAbstraction endpoint in
+    // parallel so we can detect Unified Account mode without waiting for
+    // the user to tap Move and hit a 502.
     const [state, spotUsdc] = await Promise.all([
       getAccountState(wallet.address),
       getSpotUsdcBalance(wallet.address),
     ])
+
+    // Source-of-truth resolution for the unified flag:
+    //   1. Live HL response is authoritative when present (catches users
+    //      who toggled abstraction on hyperliquid.xyz between sessions).
+    //   2. Persisted DB flag is the fallback when HL is unreachable —
+    //      protects the UI from regressing to "show CTAs" during HL
+    //      outages.
+    //   3. If HL says unified and DB doesn't yet know, persist async so
+    //      future requests (and background workers that read straight
+    //      from the DB) see it. Fire-and-forget — don't block the
+    //      response on a write to fix a UI flag.
+    const dbFlag   = Boolean((user as any).hyperliquidUnified)
+    const liveFlag = state.abstraction === 'unifiedAccount'
+    const unifiedAccount = state.abstraction === null ? dbFlag : liveFlag
+    if (liveFlag && !dbFlag) {
+      db.user.update({ where: { id: user.id }, data: { hyperliquidUnified: true } })
+        .catch((e: any) => console.warn(`[/hyperliquid/account] persist unified flag failed user=${user.id}: ${e?.message}`))
+    } else if (!liveFlag && state.abstraction !== null && dbFlag) {
+      // User flipped OUT of unified mode (e.g. on hyperliquid.xyz). Clear
+      // the cached flag so we stop hiding the move CTAs they now need.
+      db.user.update({ where: { id: user.id }, data: { hyperliquidUnified: false } })
+        .catch((e: any) => console.warn(`[/hyperliquid/account] clear unified flag failed user=${user.id}: ${e?.message}`))
+    }
+
     res.json({
       walletAddress:  wallet.address,
       onboarded:      Boolean((user as any).hyperliquidOnboarded),
-      // True when this user has HL Unified Account enabled. Once detected
-      // (via a failed usdClassTransfer) we persist on the User row so the
-      // /account read is the single source of truth and the UI can suppress
-      // the move-to-perps / move-to-spot CTAs from the very first render
-      // instead of waiting for the user to tap and see the error.
-      unifiedAccount: Boolean((user as any).hyperliquidUnified),
+      // True when this user has HL Unified Account enabled. The mini-app
+      // suppresses spot↔perps move CTAs and shows a combined-balance hint
+      // when this is true. Resolved live from HL each request, with the
+      // persisted DB flag as a fallback for HL outages.
+      unifiedAccount,
       spotUsdc,
       ...state,
     })
