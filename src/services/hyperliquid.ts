@@ -371,3 +371,83 @@ export async function placeOrder(
     return { success: false, error: typeof msg === 'string' ? msg : JSON.stringify(msg) }
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Spot ↔ Perp internal transfer
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Hyperliquid splits each address into two independent sub-accounts: SPOT
+// (the wallet you bridge USDC into) and PERPS (the wallet you trade futures
+// from). Funds bridged in via the official HL bridge land on SPOT. They
+// don't show up in the perps clearinghouse — and therefore in our
+// `getAccountState` — until the user moves them across with `usdClassTransfer`.
+//
+// This was the #1 cause of "I deposited $X but the app shows $0" reports.
+// We expose two helpers so the mini-app can both *show* the spot balance
+// (to explain the gap) and *do* the transfer one-tap (so users never have
+// to leave for app.hyperliquid.xyz).
+//
+// HL requires this action to be signed by the master key, NOT the agent —
+// so callers must decrypt the user's wallet PK exactly the same way as
+// `approveAgent` / `approveBuilderFee` already do.
+
+/**
+ * Read-only: returns the user's spot USDC balance on Hyperliquid.
+ * Returns 0 on any failure rather than throwing — same defensive pattern
+ * as `getAccountState`, so the UI never crashes on a transient HL hiccup.
+ */
+export async function getSpotUsdcBalance(userAddress: string): Promise<number> {
+  try {
+    const state: any = await infoClient.spotClearinghouseState({ user: userAddress as `0x${string}` })
+    // HL returns balances as `{ coin: 'USDC', token: 0, total: '105.0', hold: '0.0' }`.
+    // Find the USDC row and parse `total` (which already accounts for any
+    // open spot orders via `hold` — but for spot→perps eligibility the
+    // user can only move what's *not* on hold, so we report total - hold).
+    const balances: Array<any> = Array.isArray(state?.balances) ? state.balances : []
+    const usdc = balances.find((b) => (b.coin ?? '').toUpperCase() === 'USDC')
+    if (!usdc) return 0
+    const total = parseFloat(usdc.total ?? '0')
+    const hold  = parseFloat(usdc.hold ?? '0')
+    return Math.max(0, total - hold)
+  } catch (err: any) {
+    console.error('[HL] getSpotUsdcBalance failed:', userAddress, err?.message)
+    return 0
+  }
+}
+
+/**
+ * Move USDC between the user's SPOT and PERPS sub-accounts on Hyperliquid.
+ * Signed by the master wallet (NOT the agent). Caller is responsible for
+ * decrypting the master PK first — same pattern as `approveAgent`.
+ *
+ *   amountUsd:  dollar amount to move (e.g. 100 = $100). HL accepts up to
+ *               6 decimals; we let the SDK serialise it.
+ *   toPerp:     true = spot → perps (the common case after a fresh deposit)
+ *               false = perps → spot (e.g. before withdrawing back to Arb)
+ *
+ * Returns { success: true } on a 200 response, { success: false, error }
+ * otherwise. Never throws.
+ */
+export async function transferSpotPerp(
+  userPrivateKey: string,
+  amountUsd:      number,
+  toPerp:         boolean,
+): Promise<{ success: boolean; error?: string }> {
+  if (!Number.isFinite(amountUsd) || amountUsd <= 0) {
+    return { success: false, error: 'Amount must be > 0' }
+  }
+  try {
+    const userWallet = new ethers.Wallet(userPrivateKey)
+    const client = new hl.ExchangeClient({ transport, wallet: userWallet as any })
+    // HL caps at 6 decimal places on the amount string. Round down so we
+    // never try to move more than the user actually has.
+    const amountStr = (Math.floor(amountUsd * 1_000_000) / 1_000_000).toString()
+    await client.usdClassTransfer({ amount: amountStr, toPerp })
+    return { success: true }
+  } catch (err: any) {
+    const raw = err?.response?.data ?? err?.message ?? 'usdClassTransfer failed'
+    const msg = typeof raw === 'string' ? raw : JSON.stringify(raw)
+    console.error('[HL] transferSpotPerp failed:', toPerp ? 'spot→perp' : 'perp→spot', amountUsd, '→', msg)
+    return { success: false, error: msg }
+  }
+}

@@ -19,6 +19,11 @@ interface AccountState {
   onboarded:        boolean
   withdrawableUsdc: number
   accountValue:     number
+  // USDC sitting on the user's HL *spot* sub-account. Funds bridged into HL
+  // land here first; perps trading needs them moved to the perps wallet via
+  // usdClassTransfer. Surfaced so we can show a one-tap "Move to perps"
+  // button instead of telling users to leave for app.hyperliquid.xyz.
+  spotUsdc:         number
   positions:        Array<{ coin: string; szi: number; entryPx: number; unrealizedPnl: number }>
 }
 
@@ -35,6 +40,11 @@ export default function Hyperliquid() {
   const [error, setError] = useState<string | null>(null)
   const [activating, setActivating] = useState(false)
   const [activateMsg, setActivateMsg] = useState<string | null>(null)
+  // Spot → perps in-app transfer state. See moveSpotToPerps below — keeps
+  // users from having to leave for app.hyperliquid.xyz when their bridged
+  // USDC landed on the spot sub-account instead of perps.
+  const [movingSpot, setMovingSpot] = useState(false)
+  const [spotMsg, setSpotMsg]       = useState<string | null>(null)
 
   // Order ticket state
   const [orderCoin, setOrderCoin]         = useState('BTC')
@@ -219,6 +229,35 @@ export default function Hyperliquid() {
     }
   }
 
+  // Spot → perps internal transfer. POSTs to /api/hyperliquid/spot-to-perps
+  // which signs a usdClassTransfer EIP-712 with the user's master key (NOT
+  // the agent — HL forbids agents from moving funds across sub-accounts).
+  // Empty body = move full available balance, which is what the user wants
+  // 99% of the time after a fresh deposit.
+  const moveSpotToPerps = async () => {
+    setMovingSpot(true)
+    setSpotMsg(null)
+    try {
+      const r = await apiFetch<{ success: boolean; amount?: number; error?: string }>(
+        '/api/hyperliquid/spot-to-perps',
+        { method: 'POST', body: JSON.stringify({}) },
+      )
+      if (r.success) {
+        setSpotMsg(`Moved $${(r.amount ?? 0).toFixed(2)} to perps. Reloading…`)
+        // Give HL a beat to settle then refresh — the perps clearinghouse
+        // sometimes lags the transfer ack by a second or two.
+        await new Promise((res) => setTimeout(res, 1500))
+        await load()
+      } else {
+        setSpotMsg(r.error ?? 'Transfer failed')
+      }
+    } catch (e: any) {
+      setSpotMsg(e?.message ?? 'Transfer failed')
+    } finally {
+      setMovingSpot(false)
+    }
+  }
+
   const load = async () => {
     setError(null)
     try {
@@ -342,10 +381,61 @@ export default function Hyperliquid() {
                 View on HL ↗
               </a>
             </div>
-            {/* Helpful hint when HL is empty but Arbitrum has USDC — the
-                most common confusion (USDC on Arbitrum ≠ USDC on HL until
-                bridged). */}
-            {account.accountValue === 0 && (arb?.usdc ?? 0) > 0 && (
+            {/* Helpful hint when perps balance is empty.
+                Two distinct cases, two distinct fixes:
+
+                A) Funds already on HL but parked on the SPOT sub-account
+                   (the most common confusion: bridges land on spot, perps
+                   shows $0). One-tap fix in-app via /spot-to-perps. We
+                   keep the user inside the mini-app — no detour to
+                   app.hyperliquid.xyz.
+
+                B) No funds on HL at all but USDC on Arbitrum — handled
+                   by the existing Activate flow further down. */}
+            {account.accountValue === 0 && account.spotUsdc > 0 && (
+              <div
+                data-testid="card-hl-spot-hint"
+                style={{
+                  marginBottom: 8, padding: 10, borderRadius: 8,
+                  background: '#1e1b4b', color: '#ddd6fe', fontSize: 12,
+                  lineHeight: 1.45,
+                }}
+              >
+                <div style={{ marginBottom: 8 }}>
+                  You have <b>${account.spotUsdc.toFixed(2)} USDC on your HL spot account</b>{' '}
+                  but $0 on perps. HL keeps spot and perps as separate sub-accounts —
+                  move it across to start trading.
+                </div>
+                <button
+                  onClick={moveSpotToPerps}
+                  disabled={movingSpot}
+                  data-testid="button-hl-spot-to-perps"
+                  style={{
+                    width: '100%', padding: '10px 14px', borderRadius: 8,
+                    background: movingSpot ? '#4c1d95' : 'linear-gradient(90deg,#7c3aed,#a78bfa)',
+                    color: '#fff', border: 'none', fontSize: 13, fontWeight: 600,
+                    cursor: movingSpot ? 'wait' : 'pointer',
+                  }}
+                >
+                  {movingSpot
+                    ? 'Moving…'
+                    : `Move $${account.spotUsdc.toFixed(2)} to Perps`}
+                </button>
+                {spotMsg && (
+                  <div
+                    data-testid="text-hl-spot-msg"
+                    style={{
+                      marginTop: 8, padding: 6, borderRadius: 4, fontSize: 11,
+                      background: spotMsg.startsWith('Moved') ? '#064e3b' : '#7f1d1d',
+                      color: spotMsg.startsWith('Moved') ? '#a7f3d0' : '#fecaca',
+                    }}
+                  >
+                    {spotMsg}
+                  </div>
+                )}
+              </div>
+            )}
+            {account.accountValue === 0 && account.spotUsdc === 0 && (arb?.usdc ?? 0) > 0 && (
               <div
                 data-testid="text-hl-bridge-hint"
                 style={{
