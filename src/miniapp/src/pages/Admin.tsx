@@ -819,6 +819,13 @@ function WalletRecoveryPanel() {
   const [ambiguous, setAmbiguous]         = useState<{ chains: string[] } | null>(null)
   const [listing, setListing]             = useState(false)
   const [wallets, setWallets]             = useState<UserWallet[] | null>(null)
+  // Set when the backend rejects with "PK doesn't match address" so we can
+  // show what the pasted PK *actually* derives to side-by-side with the
+  // wallet on file. Without this, the user only sees the generic error
+  // string and can't tell whether they pasted the wrong wallet's PK
+  // entirely (most common cause) or hit a typo. The address fields don't
+  // contain the PK and are safe to show.
+  const [mismatch, setMismatch]           = useState<{ derived: string; resolved: string } | null>(null)
 
   const listWallets = async () => {
     setErr(null); setOk(null); setWallets(null)
@@ -838,7 +845,7 @@ function WalletRecoveryPanel() {
   }
 
   const submit = async () => {
-    setErr(null); setOk(null); setAmbiguous(null)
+    setErr(null); setOk(null); setAmbiguous(null); setMismatch(null)
     if (!/^0x[0-9a-fA-F]{40}$/.test(walletAddress.trim())) {
       return setErr('walletAddress must be 0x-prefixed 40-hex')
     }
@@ -872,6 +879,15 @@ function WalletRecoveryPanel() {
           setErr(`Multiple wallets matched (${r.chains.join(', ')}) — pick a chain below and resubmit.`)
         } else {
           setErr(r.error ?? 'Re-encryption failed')
+          // Surface the derived-vs-resolved address pair so the operator
+          // can see what their PK actually controls. The single biggest
+          // cause of "PK doesn't match" is pasting a different wallet's
+          // PK by mistake (MetaMask vs the bot-generated wallet, or the
+          // agent PK vs the master PK). Showing both addresses turns a
+          // mystery into a one-glance diagnosis.
+          if (r.derivedAddress && r.resolvedAddress) {
+            setMismatch({ derived: r.derivedAddress, resolved: r.resolvedAddress })
+          }
         }
       } else {
         setOk(`Re-encrypted wallet ${r.address} (chain=${r.chain}). Reopen the Hyperliquid tab and tap Activate.`)
@@ -899,6 +915,30 @@ function WalletRecoveryPanel() {
           background: '#3b1818', color: '#fca5a5',
           padding: '8px 12px', borderRadius: 8, marginBottom: 12, fontSize: 13,
         }}>{err}</div>
+      )}
+      {mismatch && (
+        <div
+          data-testid="text-recovery-mismatch"
+          style={{
+            background: '#1f1530', border: '1px solid #4c1d95',
+            padding: '10px 12px', borderRadius: 8, marginBottom: 12,
+            fontSize: 12, color: '#ddd6fe', lineHeight: 1.5,
+          }}
+        >
+          <div style={{ marginBottom: 6, fontWeight: 600, color: '#fff' }}>
+            The pasted PK controls a different address.
+          </div>
+          <div style={{ fontFamily: 'ui-monospace, Menlo, monospace', fontSize: 11 }}>
+            <div>PK derives to:&nbsp;<span style={{ color: '#fca5a5' }}>{mismatch.derived}</span></div>
+            <div>Wallet on file:&nbsp;<span style={{ color: '#86efac' }}>{mismatch.resolved}</span></div>
+          </div>
+          <div style={{ marginTop: 8, color: '#c4b5fd' }}>
+            Most common cause: pasting the PK from MetaMask / a hardware wallet
+            instead of the bot-generated wallet, or pasting the per-venue agent
+            PK instead of the master PK. Use <b>List wallets</b> above to see
+            what addresses are on file for this user.
+          </div>
+        </div>
       )}
       {ok && (
         <div data-testid="text-recovery-success" style={{
