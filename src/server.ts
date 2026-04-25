@@ -1697,9 +1697,16 @@ app.post('/api/hyperliquid/order', requireTgUser, async (req, res) => {
             //    error). We have to thread the approve error through here and fall
             //    back to noBuilder immediately, otherwise users are wedged in an
             //    infinite "Approve builder fee & retry" loop.
+            // Require BOTH "builder" AND one of the unregistered/unfunded
+            //   phrases. Without the "builder" anchor, a stray "insufficient
+            //   balance" wording from an unrelated approve failure (e.g. user's
+            //   own gas/fee balance) could spuriously trigger a noBuilder
+            //   fallback when the right answer is to surface that error.
             const approveErr = (br.error ?? '').toLowerCase()
-            if (/insufficient balance|not registered|not a (registered )?builder/.test(approveErr)) {
-              console.error(
+            const isBuilderUnregistered = /builder/.test(approveErr)
+              && /insufficient balance|not registered|not a (registered )?builder/.test(approveErr)
+            if (isBuilderUnregistered) {
+              console.warn(
                 `[/hyperliquid/order] BUILDER UNREGISTERED via approve path user=${user.id} ` +
                 `approveErr="${br.error}" — placing order WITHOUT builder field (0% fee for this fill)`,
               )
