@@ -154,10 +154,68 @@ export async function resolveAgentCreds(
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
+ * Query HL's user-abstraction state — i.e. which "account mode" the address
+ * is in. Documented only in the official Python SDK
+ * (hyperliquid-dex/hyperliquid-python-sdk → info.py L633): a POST to /info
+ * with { type: "userAbstraction", user } returns a string literal:
+ *   - "unifiedAccount"   → spot + perps share margin; usdClassTransfer is
+ *                          DISABLED (HL rejects with "Action disabled when
+ *                          unified account is active").
+ *   - "portfolioMargin"  → cross-asset risk-based margining; spot↔perps
+ *                          transfers behave normally.
+ *   - "default"          → classic mode (the docs/Python type call this
+ *                          "disabled" but the live HTTP endpoint returns
+ *                          the string "default" — verified against
+ *                          api.hyperliquid.xyz on a fresh address).
+ *                          We accept either spelling for forward-compat.
+ *
+ * We use this to PROACTIVELY hide the spot↔perps move CTAs in the mini-app
+ * for unified accounts, instead of waiting for the user to tap and hit a
+ * 502. The @nktkas/hyperliquid SDK doesn't expose a typed method for this
+ * endpoint, so we drop down to the raw transport.
+ *
+ * Returns null on transport/parse errors so callers can fall back to
+ * whatever flag they have cached (typically the persisted DB flag).
+ */
+export type HlAbstraction = 'unifiedAccount' | 'portfolioMargin' | 'default' | 'disabled'
+
+export async function getUserAbstraction(
+  userAddress: string,
+): Promise<HlAbstraction | null> {
+  try {
+    const res: any = await (transport as any).request('info', {
+      type: 'userAbstraction',
+      user: userAddress as `0x${string}`,
+    })
+    if (
+      res === 'unifiedAccount' ||
+      res === 'portfolioMargin' ||
+      res === 'default' ||
+      res === 'disabled'
+    ) {
+      return res
+    }
+    // HL has historically tweaked these endpoint shapes — log unexpected
+    // payloads so we notice rather than silently treating as classic.
+    console.warn('[HL] getUserAbstraction unexpected payload:', userAddress, JSON.stringify(res).slice(0, 200))
+    return null
+  } catch (err: any) {
+    // Don't spam logs for transient HL 5xx — just return null so caller
+    // falls back to the cached DB flag. /api/hyperliquid/account is on
+    // the page-load critical path; one HL hiccup shouldn't break it.
+    if (process.env.HL_DEBUG_ABSTRACTION) {
+      console.warn('[HL] getUserAbstraction failed:', userAddress, err?.message)
+    }
+    return null
+  }
+}
+
+/**
  * Returns the user's perp account state on Hyperliquid:
  *   - withdrawable USDC (free margin)
  *   - account value (margin + unrealised PnL)
  *   - open positions
+ *   - account abstraction mode (proactive unified-account detection)
  * Read endpoint, no signing required — but takes the user's master address,
  * not the agent address. Public clearinghouse query.
  */
@@ -166,9 +224,16 @@ export async function getAccountState(userAddress: string): Promise<{
   accountValue:     number
   onboarded:        boolean
   positions:        Array<{ coin: string; szi: number; entryPx: number; unrealizedPnl: number }>
+  abstraction:      'unifiedAccount' | 'portfolioMargin' | 'disabled' | null
 }> {
   try {
-    const state = await infoClient.clearinghouseState({ user: userAddress as `0x${string}` })
+    // Fan out the two reads in parallel — abstraction is on the same HL
+    // host so latency overlaps perfectly. We don't fail the whole call if
+    // abstraction errors; null is a valid "unknown" answer.
+    const [state, abstraction] = await Promise.all([
+      infoClient.clearinghouseState({ user: userAddress as `0x${string}` }),
+      getUserAbstraction(userAddress),
+    ])
     const positions = (state.assetPositions ?? []).map((ap: any) => ({
       coin:          ap.position?.coin ?? '',
       szi:           parseFloat(ap.position?.szi ?? '0'),
@@ -188,10 +253,11 @@ export async function getAccountState(userAddress: string): Promise<{
       accountValue,
       onboarded,
       positions,
+      abstraction,
     }
   } catch (err: any) {
     console.error('[HL] getAccountState failed:', userAddress, err?.message)
-    return { withdrawableUsdc: 0, accountValue: 0, onboarded: false, positions: [] }
+    return { withdrawableUsdc: 0, accountValue: 0, onboarded: false, positions: [], abstraction: null }
   }
 }
 
