@@ -1369,13 +1369,28 @@ app.post('/api/hyperliquid/approve', requireTgUser, async (req, res) => {
     //    is empty AND the user has spendable USDC + a sliver of ETH on
     //    Arbitrum, we auto-bridge it through HL's official bridge contract
     //    and wait for the credit before signing approveAgent.
-    const { approveAgent, approveBuilderFee, getAccountState, waitForHlDeposit } =
+    const { approveAgent, approveBuilderFee, getAccountState, getSpotUsdcBalance, waitForHlDeposit } =
       await import('./services/hyperliquid')
     const { getArbitrumBalances, bridgeArbitrumUsdcToHyperliquid } =
       await import('./services/wallet')
 
-    const accountBefore = await getAccountState(wallet.address)
-    if (accountBefore.accountValue < 1) {
+    // Fetch perps state + spot USDC + persisted unified flag in parallel.
+    // For unified-account users HL treats spot USDC as collateral for perps,
+    // so the master account is "funded enough for approveAgent" if EITHER
+    // the perps clearinghouse has equity OR spot has USDC. Without this
+    // gate the auto-bridge path triggers and demands $5 on Arbitrum from a
+    // user who already has $100+ usable on HL — exactly the contradiction
+    // shown in the mini-app ("$105 already usable" vs "needs $5 on Arb").
+    const [accountBefore, spotUsdcBefore] = await Promise.all([
+      getAccountState(wallet.address),
+      getSpotUsdcBalance(wallet.address),
+    ])
+    const isUnified =
+      accountBefore.abstraction === 'unifiedAccount' ||
+      Boolean((user as any).hyperliquidUnified)
+    const fundedForApprove =
+      accountBefore.accountValue >= 1 || (isUnified && spotUsdcBefore >= 1)
+    if (!fundedForApprove) {
       // ── Per-user mutex. The Activate button is async and easy to double-tap
       //    in Telegram's webview; without this guard a quick second tap can
       //    fire a second bridge tx before the first nonce settles. The lock
