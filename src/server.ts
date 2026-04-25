@@ -1858,12 +1858,23 @@ app.post('/api/hyperliquid/close', requireTgUser, async (req, res) => {
 
     let result = await placeOrder(creds, orderArgs)
 
-    // Same noBuilder fallback ladder as /order — see that route for the
-    // detailed reasoning. Critical for closes: an exit must not be wedged
-    // by a misconfigured builder.
-    if (!result.success && /insufficient balance|not registered|not a (registered )?builder/i.test(result.error ?? '')) {
+    // Builder-fallback policy for CLOSES is intentionally more aggressive
+    // than for /order. /order has a multi-stage ladder (auto-approve →
+    // backoff retry → noBuilder fallback only on unregistered errors)
+    // because we want to actually collect the 0.1% fee on entries when
+    // possible. For an EXIT, the priority is the user gets out — losing
+    // the 0.1% kickback on a single fill is trivially acceptable compared
+    // to wedging a user inside a position they're trying to close. So:
+    // ANY builder-related error → immediately retry with noBuilder.
+    //
+    // Covered phrasings (all observed from HL):
+    //   - "Builder fee has not been approved"   (user hasn't signed approval)
+    //   - "Must approve builder fee"            (alt phrasing)
+    //   - "Builder has insufficient balance"    (our builder unregistered)
+    //   - "Not a registered builder"            (our builder unregistered)
+    if (!result.success && /(builder|must approve)/i.test(result.error ?? '')) {
       console.warn(
-        `[/hyperliquid/close] BUILDER UNREGISTERED — falling back to no-builder close ` +
+        `[/hyperliquid/close] builder-related reject — falling back to no-builder close ` +
         `user=${user.id} coin=${sym} err=${result.error}`,
       )
       result = await placeOrder(creds, { ...orderArgs, noBuilder: true })
