@@ -25,8 +25,25 @@ export function toBinanceSymbol(input: string): string {
   return s + 'USDT'
 }
 
+// Per-coin TradingView symbol overrides for assets NOT listed on Binance
+// futures. Binance is the default because Aster + HL majors track it 1:1
+// and TV charts load fast against `BINANCE:*`. But e.g. HYPE (Hyperliquid's
+// native token) isn't listed on Binance at all — TV renders the dreaded
+// "This symbol doesn't exist" empty state. For these, we route to a venue
+// that DOES list the asset: Bybit perps for HYPE (well-supported on TV).
+//
+// Keyed by the canonical Binance-style symbol (post-toBinanceSymbol),
+// because that's what we'd otherwise hand to TradingView.
+const TV_SYMBOL_OVERRIDES: Record<string, string> = {
+  // Hyperliquid's native token — not on Binance. Bybit linear perp is the
+  // closest active venue with a solid TV feed. ".P" suffix selects the
+  // perpetual contract rather than spot.
+  HYPEUSDT: 'BYBIT:HYPEUSDT.P',
+}
+
 export function toTvSymbol(input: string): string {
-  return `BINANCE:${toBinanceSymbol(input)}`
+  const bin = toBinanceSymbol(input)
+  return TV_SYMBOL_OVERRIDES[bin] ?? `BINANCE:${bin}`
 }
 
 const INTERVALS: Array<{ label: string; value: string }> = [

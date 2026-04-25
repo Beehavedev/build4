@@ -1,21 +1,18 @@
 import { useEffect, useMemo, useState } from 'react'
 import { apiFetch } from '../api'
 import { TradingChart } from '../components/TradingChart'
-import { MarketTicker } from '../components/MarketTicker'
+import { MarketTicker, fmtUsdRaw } from '../components/MarketTicker'
 
 const PAIRS = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'DOGEUSDT', 'XRPUSDT', 'ASTERUSDT']
 
 // Format a USD price with decimal precision that scales with magnitude.
-// Users complained that .toFixed(2) was hiding meaningful precision on
-// mid-priced assets (BNB at $637.84 hides the cents-of-cents that PnL
-// pivots on at 5x leverage). Graduated decimals show 4-5 places where it
-// matters without inventing fake digits on BTC at $78k.
+// Delegates to the shared MarketTicker tier so Aster, HL, and the chart
+// header all show the same number of digits for the same asset (HYPE
+// $41.3651 here = HYPE $41.3651 on the HL screen). Single source of
+// truth lives in MarketTicker.tsx.
 function fmtPrice(p: number): string {
   if (!Number.isFinite(p) || p <= 0) return '0'
-  if (p >= 10000) return p.toFixed(2) // BTC: $78290.84
-  if (p >= 1000)  return p.toFixed(3) // ETH: $3457.123
-  if (p >= 1)     return p.toFixed(4) // SOL/BNB: $86.0712 / $637.8412
-  return p.toFixed(6)                  // micro-cap tokens: $0.001234
+  return fmtUsdRaw(p)
 }
 
 // Inline styles bypass any cached CSS rules and any iOS native chrome
@@ -327,7 +324,7 @@ export function Trade() {
             </select>
             {mark && (
               <div style={{ fontSize: 11, color: '#6b7280', marginTop: 2 }} data-testid="text-mark-price">
-                Mark ${mark.markPrice.toFixed(mark.markPrice < 1 ? 5 : 2)}
+                Mark ${fmtPrice(mark.markPrice)}
                 {mark.lastFundingRate ? ` · funding ${(mark.lastFundingRate * 100).toFixed(4)}%` : ''}
               </div>
             )}

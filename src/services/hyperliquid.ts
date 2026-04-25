@@ -257,7 +257,22 @@ export async function getAccountState(userAddress: string): Promise<{
   withdrawableUsdc: number
   accountValue:     number
   onboarded:        boolean
-  positions:        Array<{ coin: string; szi: number; entryPx: number; unrealizedPnl: number }>
+  positions:        Array<{
+    coin:          string
+    szi:           number
+    entryPx:       number
+    unrealizedPnl: number
+    // Extra fields surfaced so the mini-app can render rich position
+    // cards (entry / mark / leverage / liq) instead of just side+pnl.
+    // All come straight from HL's clearinghouseState response.
+    positionValue: number   // signed USDC notional ; markPx = positionValue/szi
+    leverage:      number   // user-set leverage (1..maxLeverage)
+    leverageType:  'cross' | 'isolated'
+    maxLeverage:   number   // venue cap for the asset
+    liquidationPx: number   // 0 when unavailable (e.g. cross at full equity)
+    marginUsed:    number   // initial margin currently locked by this position
+    returnOnEquity: number  // unrealizedPnl / marginUsed (HL-computed)
+  }>
   abstraction:      'unifiedAccount' | 'portfolioMargin' | 'disabled' | null
 }> {
   try {
@@ -268,12 +283,31 @@ export async function getAccountState(userAddress: string): Promise<{
       infoClient.clearinghouseState({ user: userAddress as `0x${string}` }),
       getUserAbstraction(userAddress),
     ])
-    const positions = (state.assetPositions ?? []).map((ap: any) => ({
-      coin:          ap.position?.coin ?? '',
-      szi:           parseFloat(ap.position?.szi ?? '0'),
-      entryPx:       parseFloat(ap.position?.entryPx ?? '0'),
-      unrealizedPnl: parseFloat(ap.position?.unrealizedPnl ?? '0'),
-    }))
+    // parseFloat protects against null/undefined but happily emits NaN on
+    // malformed strings (parseFloat('') === NaN). NaN then leaks into the
+    // mini-app where `szi !== 0` is true for NaN — the row would render
+    // as "open" with NaN PnL and a Close button that submits an invalid
+    // size. Guard once at the parse boundary instead of every consumer.
+    const safeNum = (x: unknown, fallback = 0): number => {
+      const n = typeof x === 'number' ? x : parseFloat(String(x ?? ''))
+      return Number.isFinite(n) ? n : fallback
+    }
+    const positions = (state.assetPositions ?? []).map((ap: any) => {
+      const p = ap.position ?? {}
+      return {
+        coin:           p.coin ?? '',
+        szi:            safeNum(p.szi),
+        entryPx:        safeNum(p.entryPx),
+        unrealizedPnl:  safeNum(p.unrealizedPnl),
+        positionValue:  safeNum(p.positionValue),
+        leverage:       safeNum(p.leverage?.value, 1),
+        leverageType:   (p.leverage?.type === 'isolated' ? 'isolated' : 'cross') as 'cross' | 'isolated',
+        maxLeverage:    safeNum(p.maxLeverage),
+        liquidationPx:  safeNum(p.liquidationPx),
+        marginUsed:     safeNum(p.marginUsed),
+        returnOnEquity: safeNum(p.returnOnEquity),
+      }
+    })
     const accountValue = parseFloat((state as any).marginSummary?.accountValue ?? '0')
     // A user is "onboarded" on HL the moment a clearinghouse account exists
     // for their address — which is exactly when HL returns a marginSummary
