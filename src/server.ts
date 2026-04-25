@@ -2395,14 +2395,125 @@ app.get('/api/portfolio/:userId', async (req, res) => {
       if (!u) return res.json({ portfolio: null, trades: [] })
       internalUserId = u.id
     }
-    const [portfolio, trades] = await Promise.all([
+
+    // Look up the user's active wallet up-front so we can fan out the HL
+    // calls in parallel with the DB reads. If there's no wallet (user
+    // hasn't onboarded), HL fetches are skipped — Portfolio falls back to
+    // the DB-only view exactly as before.
+    const wallet = await db.wallet.findFirst({
+      where: { userId: internalUserId, isActive: true },
+    })
+
+    // Fan out: portfolio row, DB-stored trades (Aster path / agent trades),
+    // HL fills (closes — what shows up in Trade History) and HL open
+    // positions (so users see live positions in history too without
+    // having to switch tabs).
+    const [portfolio, dbTrades, hlFills, hlState] = await Promise.all([
       db.portfolio.findUnique({ where: { userId: internalUserId } }),
       db.trade.findMany({
         where: { userId: internalUserId },
         orderBy: { openedAt: 'desc' },
-        take: 50
-      })
+        take: 50,
+      }),
+      wallet
+        ? import('./services/hyperliquid').then(m => m.getUserFills(wallet.address))
+        : Promise.resolve([] as any[]),
+      wallet
+        ? import('./services/hyperliquid').then(m => m.getAccountState(wallet.address))
+        : Promise.resolve({ positions: [] as any[] } as any),
     ])
+
+    // Map DB trades to the shape Portfolio.tsx expects.
+    const trades: any[] = dbTrades.map(t => ({
+      id: t.id,
+      pair: t.pair,
+      side: t.side,
+      pnl: t.pnl,
+      status: t.status,
+      openedAt: t.openedAt,
+      closedAt: t.closedAt,
+      aiReasoning: t.aiReasoning,
+      exchange: t.exchange,
+    }))
+
+    // ── Hyperliquid CLOSED trades (from userFills)
+    //
+    // HL emits one fill row per match, so a single market order can fan
+    // out into multiple fills with the same `tid`. We only care about
+    // closing fills (closedPnl != 0) and we aggregate by `tid` so each
+    // close shows up as one row in Trade History — not five.
+    const closingByTid = new Map<number, {
+      tid: number
+      coin: string
+      time: number
+      pnlSum: number
+      szSum: number
+      notionalSum: number  // for size-weighted avg price
+      dir: string          // 'Close Long' / 'Close Short'
+    }>()
+    for (const f of hlFills) {
+      if (f.closedPnl === 0) continue  // open fills handled via positions below
+      const cur = closingByTid.get(f.tid)
+      if (cur) {
+        cur.pnlSum     += f.closedPnl
+        cur.szSum      += f.sz
+        cur.notionalSum += f.sz * f.px
+        cur.time = Math.max(cur.time, f.time)
+      } else {
+        closingByTid.set(f.tid, {
+          tid: f.tid,
+          coin: f.coin,
+          time: f.time,
+          pnlSum: f.closedPnl,
+          szSum: f.sz,
+          notionalSum: f.sz * f.px,
+          dir: f.dir,
+        })
+      }
+    }
+    for (const c of closingByTid.values()) {
+      // dir: "Close Long" means we were long → side='LONG'
+      //      "Close Short" means we were short → side='SHORT'
+      const side = /short/i.test(c.dir) ? 'SHORT' : 'LONG'
+      trades.push({
+        id: `hl_${c.tid}`,
+        pair: c.coin,
+        side,
+        pnl: c.pnlSum,
+        status: 'closed',
+        openedAt: new Date(c.time),  // best-effort; we don't have entry time here
+        closedAt: new Date(c.time),
+        exchange: 'hyperliquid',
+      })
+    }
+
+    // ── Hyperliquid OPEN positions
+    //
+    // Surface as "open" rows in Trade History so users can see their live
+    // exposure alongside their closed history without bouncing tabs.
+    for (const p of (hlState.positions ?? [])) {
+      if (!p.szi) continue
+      trades.push({
+        id: `hl_open_${p.coin}`,
+        pair: p.coin,
+        side: p.szi > 0 ? 'LONG' : 'SHORT',
+        pnl: p.unrealizedPnl,
+        status: 'open',
+        openedAt: null,
+        closedAt: null,
+        exchange: 'hyperliquid',
+      })
+    }
+
+    // Newest first overall — the chart math sorts on closedAt itself, so
+    // this only affects the "Trade History" list ordering. Open rows
+    // float to the top (closedAt null sorts as +Infinity here).
+    trades.sort((a, b) => {
+      const ta = a.closedAt ? new Date(a.closedAt).getTime() : Infinity
+      const tb = b.closedAt ? new Date(b.closedAt).getTime() : Infinity
+      return tb - ta
+    })
+
     res.json({ portfolio, trades })
   } catch (err) {
     console.error('[API] /portfolio failed:', err)

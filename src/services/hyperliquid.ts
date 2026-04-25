@@ -296,6 +296,61 @@ export async function getAccountState(userAddress: string): Promise<{
 }
 
 /**
+ * Fetch the user's recent fills from HL. Each fill is one side of a single
+ * trade (open OR close). HL emits a separate fill row for each match — so a
+ * single market order that walks the book can produce N fills with the same
+ * `oid` and `tid`. Caller is responsible for deduping/aggregating if needed.
+ *
+ * Useful fields per fill:
+ *   - coin:        e.g. "BTC"
+ *   - px, sz:      execution price / base size (strings)
+ *   - side:        "B" (buy) or "A" (ask/sell)
+ *   - dir:         "Open Long", "Close Long", "Open Short", "Close Short",
+ *                  also things like "Liquidated Isolated Long" — useful as
+ *                  the canonical "what did this trade do" label.
+ *   - closedPnl:   realized PnL for closing fills (string; "0" for opens)
+ *   - fee:         taker fee in USDC (string)
+ *   - time:        ms epoch
+ *   - hash, oid, tid
+ *
+ * Returns [] on any error so the caller can degrade to "no history yet"
+ * instead of failing the whole portfolio page.
+ */
+export async function getUserFills(userAddress: string): Promise<Array<{
+  coin: string
+  px: number
+  sz: number
+  side: 'B' | 'A'
+  dir: string
+  closedPnl: number
+  fee: number
+  time: number
+  hash: string
+  oid: number
+  tid: number
+}>> {
+  try {
+    const fills = await infoClient.userFills({ user: userAddress as `0x${string}` })
+    return (fills ?? []).map((f: any) => ({
+      coin:      f.coin ?? '',
+      px:        parseFloat(f.px ?? '0'),
+      sz:        parseFloat(f.sz ?? '0'),
+      side:      f.side === 'B' ? 'B' : 'A',
+      dir:       f.dir ?? '',
+      closedPnl: parseFloat(f.closedPnl ?? '0'),
+      fee:       parseFloat(f.fee ?? '0'),
+      time:      Number(f.time ?? 0),
+      hash:      f.hash ?? '',
+      oid:       Number(f.oid ?? 0),
+      tid:       Number(f.tid ?? 0),
+    }))
+  } catch (err: any) {
+    console.warn('[HL] getUserFills failed:', userAddress, err?.message)
+    return []
+  }
+}
+
+/**
  * Poll HL clearinghouse until `address` has at least `minUsdc` of equity,
  * or `timeoutMs` elapses. Used by the auto-bridge flow on /approve to wait
  * for the Arbitrum→HL credit (typically ~30-60s) before calling approveAgent.
