@@ -262,7 +262,11 @@ export default function Hyperliquid() {
     try {
       const r = await apiFetch<{ success: boolean; sz?: number; side?: string; error?: string }>(
         '/api/hyperliquid/close',
-        { method: 'POST', body: JSON.stringify({ coin }) },
+        // Content-Type MUST be explicit — apiFetch does not set it, and
+        // without it express.json() silently drops the body, so the server
+        // sees coin=undefined and returns "coin required". (Same reason
+        // /order sets it explicitly above.)
+        { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ coin }) },
       )
       if (r.success) {
         setCloseMsg(`Closed ${coin} (${r.side ?? ''} ${r.sz ?? ''}). Refreshing…`)
