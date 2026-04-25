@@ -520,11 +520,26 @@ export default function Hyperliquid() {
               </span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-              <span style={{ fontSize: 12, color: '#9ca3af' }}>Account value</span>
+              <span style={{ fontSize: 12, color: '#9ca3af' }}>
+                {account.unifiedAccount ? 'Perps account value' : 'Account value'}
+              </span>
               <span style={{ fontSize: 14, fontWeight: 600 }} data-testid="text-hl-account-value">
                 ${account.accountValue.toFixed(2)}
               </span>
             </div>
+            {/* Unified accounts share collateral between spot and perps. Show
+                the spot USDC explicitly so the $0 / $0 perps rows above don't
+                look contradictory next to the "$X usable" hint. Without this
+                a user with $105 on spot sees three zero rows and thinks the
+                page is broken. */}
+            {account.unifiedAccount && account.spotUsdc > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                <span style={{ fontSize: 12, color: '#9ca3af' }}>Spot USDC (usable for perps)</span>
+                <span style={{ fontSize: 14, fontWeight: 600, color: '#a7f3d0' }} data-testid="text-hl-spot-usdc">
+                  ${account.spotUsdc.toFixed(2)}
+                </span>
+              </div>
+            )}
             {/* Perps → spot move. HL withdrawals to Arbitrum are only
                 possible from the spot sub-account, so users who want to
                 take profits need a one-tap way to sweep free margin
@@ -583,28 +598,50 @@ export default function Hyperliquid() {
                   {activating ? 'Activating…' : 'Activate Hyperliquid Trading'}
                 </button>
                 <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 8, lineHeight: 1.4 }}>
-                  One tap. We bridge your Arbitrum USDC into Hyperliquid automatically
-                  (~1 minute) and authorise a BUILD4 agent wallet to place orders for
-                  you. You stay in custody — your master key never leaves the server.
-                  {(arb?.usdc ?? 0) >= 5 && (
+                  {/* Unified-account users with spot USDC don't need any
+                      bridging — HL already treats their spot funds as perps
+                      collateral. Showing them the "needs $5 on Arbitrum"
+                      warning was the bug ("$105 already usable" vs "$0 on
+                      Arb, needs $5"): the backend used to gate on perps
+                      accountValue alone and would reject the call. Now both
+                      the backend gate and this copy treat spot USDC as
+                      sufficient funding when unified is on. */}
+                  {account.unifiedAccount && account.spotUsdc >= 1 ? (
                     <>
-                      {' '}<b style={{ color: '#a7f3d0' }}>
-                        ${arb!.usdc.toFixed(2)} USDC on Arbitrum will be bridged.
-                      </b>
+                      One tap. We authorise a BUILD4 agent wallet to place orders
+                      on your behalf — no bridging needed, your{' '}
+                      <b style={{ color: '#a7f3d0' }}>
+                        ${account.spotUsdc.toFixed(2)} USDC on HL spot
+                      </b>{' '}
+                      already collateralises perps in unified-account mode. Your
+                      master key never leaves the server.
                     </>
-                  )}
-                  {(arb?.usdc ?? 0) > 0 && (arb?.usdc ?? 0) < 5 && (
+                  ) : (
                     <>
-                      {' '}<b style={{ color: '#fecaca' }}>
-                        You have ${arb!.usdc.toFixed(2)} USDC — Hyperliquid needs at least $5 to start.
-                      </b>
-                    </>
-                  )}
-                  {(arb?.usdc ?? 0) === 0 && (
-                    <>
-                      {' '}<b style={{ color: '#fecaca' }}>
-                        Send native USDC on Arbitrum to your wallet first, then tap Activate.
-                      </b>
+                      One tap. We bridge your Arbitrum USDC into Hyperliquid automatically
+                      (~1 minute) and authorise a BUILD4 agent wallet to place orders for
+                      you. You stay in custody — your master key never leaves the server.
+                      {(arb?.usdc ?? 0) >= 5 && (
+                        <>
+                          {' '}<b style={{ color: '#a7f3d0' }}>
+                            ${arb!.usdc.toFixed(2)} USDC on Arbitrum will be bridged.
+                          </b>
+                        </>
+                      )}
+                      {(arb?.usdc ?? 0) > 0 && (arb?.usdc ?? 0) < 5 && (
+                        <>
+                          {' '}<b style={{ color: '#fecaca' }}>
+                            You have ${arb!.usdc.toFixed(2)} USDC — Hyperliquid needs at least $5 to start.
+                          </b>
+                        </>
+                      )}
+                      {(arb?.usdc ?? 0) === 0 && (
+                        <>
+                          {' '}<b style={{ color: '#fecaca' }}>
+                            Send native USDC on Arbitrum to your wallet first, then tap Activate.
+                          </b>
+                        </>
+                      )}
                     </>
                   )}
                 </div>
