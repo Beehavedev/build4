@@ -32,7 +32,12 @@ export interface SpotToPerpsDeps {
   decryptPrivateKey:    (encrypted: string, candidate: string) => string
   getSpotUsdcBalance:   (address: string) => Promise<number>
   transferSpotPerp:     (pk: string, amountUsd: number, toPerp: boolean)
-                          => Promise<{ success: boolean; error?: string }>
+                          => Promise<{ success: boolean; error?: string; unifiedAccount?: boolean }>
+  // Called once when HL rejects the transfer with "Action disabled when
+  // unified account is active". Best-effort persistence — failures are
+  // swallowed so the user still gets the error response. Optional so
+  // tests don't have to wire it.
+  markUnifiedAccount?:  (userId: string) => Promise<void>
 }
 
 export interface SpotToPerpsResult {
@@ -44,6 +49,10 @@ export interface SpotToPerpsResult {
     // Surfaced to the mini-app so the wallet-recovery banner can light up
     // instead of just toasting a generic error.
     needsRecovery?: boolean
+    // Surfaced to the mini-app so it can immediately suppress the
+    // move-to-perps CTA for the rest of the session without waiting for
+    // the next /account poll to pick up the persisted flag.
+    unifiedAccount?: boolean
   }
 }
 
@@ -142,9 +151,23 @@ export async function runSpotToPerps(args: {
 
     const result = await deps.transferSpotPerp(userPk, amount, true)
     if (!result.success) {
+      // HL refused — was it the unified-account block? If so, persist the
+      // flag so the UI stops offering the CTA on the next /account poll
+      // even if the user never retries the transfer. Best-effort; a DB
+      // hiccup mustn't swallow the user's actual error response.
+      if (result.unifiedAccount && deps.markUnifiedAccount) {
+        try { await deps.markUnifiedAccount(user.id) }
+        catch (e: any) {
+          console.warn(`[/hyperliquid/spot-to-perps] markUnifiedAccount failed user=${user.id}: ${e?.message}`)
+        }
+      }
       return {
         status: 502,
-        body: { success: false, error: result.error ?? 'transfer failed' },
+        body: {
+          success:        false,
+          error:          result.error ?? 'transfer failed',
+          unifiedAccount: result.unifiedAccount || undefined,
+        },
       }
     }
 

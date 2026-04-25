@@ -24,6 +24,16 @@ interface AccountState {
   // usdClassTransfer. Surfaced so we can show a one-tap "Move to perps"
   // button instead of telling users to leave for app.hyperliquid.xyz.
   spotUsdc:         number
+  // True when the user has HL Unified Account enabled. In unified mode the
+  // spot↔perps `usdClassTransfer` is forbidden (HL rejects with "Action
+  // disabled when unified account is active") AND unnecessary, because the
+  // two sub-accounts share margin. We use this flag to:
+  //   1. suppress both move CTAs entirely (the buttons would always fail)
+  //   2. swap the "Account value" row to show the unified equity
+  //      (spot USDC + perps account value) so the displayed balance lines
+  //      up with what the user can actually trade with.
+  // Optional because older deploys won't have the flag set on the User row.
+  unifiedAccount?:  boolean
   positions:        Array<{ coin: string; szi: number; entryPx: number; unrealizedPnl: number }>
 }
 
@@ -424,7 +434,29 @@ export default function Hyperliquid() {
 
                 B) No funds on HL at all but USDC on Arbitrum — handled
                    by the existing Activate flow further down. */}
-            {account.accountValue === 0 && account.spotUsdc > 0 && (
+            {/* Unified-account hint — shown instead of the move-to-perps
+                CTA when HL has merged this user's spot+perps margin. The
+                button would always fail (HL rejects with "Action disabled
+                when unified account is active") AND it's pointless because
+                spot USDC is already usable for perps in unified mode. We
+                simply tell the user that and surface the combined balance. */}
+            {account.unifiedAccount && account.spotUsdc > 0 && (
+              <div
+                data-testid="card-hl-unified-hint"
+                style={{
+                  marginBottom: 8, padding: 10, borderRadius: 8,
+                  background: '#0f1d33', color: '#bfdbfe', fontSize: 12,
+                  lineHeight: 1.45, border: '1px solid #1e3a8a',
+                }}
+              >
+                <b>HL Unified Account active.</b> Your{' '}
+                ${(account.spotUsdc + account.accountValue).toFixed(2)} is
+                already usable for perps trading — no transfer needed. Tap{' '}
+                <b>Activate Hyperliquid Trading</b> below if you haven't yet,
+                then place an order.
+              </div>
+            )}
+            {!account.unifiedAccount && account.accountValue === 0 && account.spotUsdc > 0 && (
               <div
                 data-testid="card-hl-spot-hint"
                 style={{
@@ -500,7 +532,7 @@ export default function Hyperliquid() {
                 surfaces when there's actually free margin to move and
                 the user is onboarded (avoids cluttering empty/onboard
                 states). Mirrors the spot→perps button above. */}
-            {account.onboarded && account.withdrawableUsdc >= 0.01 && (
+            {!account.unifiedAccount && account.onboarded && account.withdrawableUsdc >= 0.01 && (
               <div style={{ marginTop: 10 }} data-testid="card-hl-perps-to-spot">
                 <button
                   onClick={movePerpsToSpot}

@@ -1717,8 +1717,14 @@ app.get('/api/hyperliquid/account', requireTgUser, async (req, res) => {
       getSpotUsdcBalance(wallet.address),
     ])
     res.json({
-      walletAddress: wallet.address,
-      onboarded:     Boolean((user as any).hyperliquidOnboarded),
+      walletAddress:  wallet.address,
+      onboarded:      Boolean((user as any).hyperliquidOnboarded),
+      // True when this user has HL Unified Account enabled. Once detected
+      // (via a failed usdClassTransfer) we persist on the User row so the
+      // /account read is the single source of truth and the UI can suppress
+      // the move-to-perps / move-to-spot CTAs from the very first render
+      // instead of waiting for the user to tap and see the error.
+      unifiedAccount: Boolean((user as any).hyperliquidUnified),
       spotUsdc,
       ...state,
     })
@@ -1756,6 +1762,9 @@ app.post('/api/hyperliquid/spot-to-perps', requireTgUser, async (req, res) => {
         decryptPrivateKey,
         getSpotUsdcBalance,
         transferSpotPerp,
+        markUnifiedAccount: async (userId) => {
+          await db.user.update({ where: { id: userId }, data: { hyperliquidUnified: true } })
+        },
       },
     })
     res.status(result.status).json(result.body)
@@ -1834,7 +1843,21 @@ app.post('/api/hyperliquid/perps-to-spot', requireTgUser, async (req, res) => {
 
       const result = await transferSpotPerp(userPk, amount, false)
       if (!result.success) {
-        return res.status(502).json({ success: false, error: result.error ?? 'transfer failed' })
+        // Same unified-account detection as /spot-to-perps. Persist the
+        // flag so the UI suppresses the move CTA on the next /account
+        // poll, and surface it in the response so the page reacts
+        // instantly without waiting for the poll cycle.
+        if (result.unifiedAccount) {
+          try { await db.user.update({ where: { id: user.id }, data: { hyperliquidUnified: true } }) }
+          catch (e: any) {
+            console.warn(`[/hyperliquid/perps-to-spot] persist unified flag failed user=${user.id}: ${e?.message}`)
+          }
+        }
+        return res.status(502).json({
+          success:        false,
+          error:          result.error ?? 'transfer failed',
+          unifiedAccount: result.unifiedAccount || undefined,
+        })
       }
 
       console.log(

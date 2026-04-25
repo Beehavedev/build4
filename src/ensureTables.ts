@@ -260,6 +260,15 @@ export async function ensureNewTables() {
   await run(`ALTER TABLE "User" ALTER COLUMN "fortyTwoLiveTrade" SET DEFAULT true`)
   // ─── Multi-provider swarm opt-in (Task #18) ───
   await run(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "swarmEnabled" BOOLEAN NOT NULL DEFAULT false`)
+  // ─── HL Unified Account flag (post-Apr-2026) ───
+  // Set true once we've observed HL reject a usdClassTransfer with
+  // "Action disabled when unified account is active" for this user. Lives
+  // on User (not Wallet) because it's an account-mode property of the HL
+  // address, identical for every concurrent session. The mini-app reads
+  // this via /api/hyperliquid/account and uses it to suppress the
+  // spot↔perps move CTAs (which always 502 in unified mode) and to show
+  // the unified equity (spot + perps) as the trading balance.
+  await run(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "hyperliquidUnified" BOOLEAN NOT NULL DEFAULT false`)
   await run(`ALTER TABLE "AgentLog" ADD COLUMN IF NOT EXISTS "providers" JSONB`)
   await run(`CREATE TABLE IF NOT EXISTS "OutcomePosition" (
     "id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
