@@ -294,6 +294,71 @@ export default function Hyperliquid() {
           <div style={{ fontSize: 12, color: '#9ca3af' }}>Loading…</div>
         ) : account ? (
           <div>
+            {/* Surface the wallet address we're querying so the user can
+                verify it matches where they actually deposited. Silent
+                $0.00 + wrong-address mismatch was a real source of
+                confusion. Click-to-copy + open-on-hyperliquid.xyz. */}
+            <div
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8,
+                padding: '6px 8px', background: '#0a0a12',
+                border: '1px solid #1e1e2e', borderRadius: 6,
+              }}
+              data-testid="text-hl-wallet-address"
+            >
+              <span style={{ fontSize: 11, color: '#94a3b8' }}>Address</span>
+              <code
+                style={{
+                  flex: 1, color: '#e5e7eb', fontSize: 11,
+                  fontFamily: 'ui-monospace, Menlo, monospace',
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                }}
+                title={account.walletAddress}
+              >
+                {account.walletAddress}
+              </code>
+              <button
+                data-testid="button-hl-copy-address"
+                onClick={() => navigator.clipboard?.writeText(account.walletAddress)}
+                style={{
+                  padding: '2px 6px', background: 'transparent',
+                  border: '1px solid #1e1e2e', color: '#a78bfa',
+                  borderRadius: 4, fontSize: 10, cursor: 'pointer',
+                }}
+              >
+                Copy
+              </button>
+              <a
+                data-testid="link-hl-explorer"
+                href={`https://app.hyperliquid.xyz/explorer/address/${account.walletAddress}`}
+                target="_blank"
+                rel="noreferrer"
+                style={{
+                  padding: '2px 6px', background: 'transparent',
+                  border: '1px solid #1e1e2e', color: '#a78bfa',
+                  borderRadius: 4, fontSize: 10, textDecoration: 'none',
+                }}
+              >
+                View on HL ↗
+              </a>
+            </div>
+            {/* Helpful hint when HL is empty but Arbitrum has USDC — the
+                most common confusion (USDC on Arbitrum ≠ USDC on HL until
+                bridged). */}
+            {account.accountValue === 0 && (arb?.usdc ?? 0) > 0 && (
+              <div
+                data-testid="text-hl-bridge-hint"
+                style={{
+                  marginBottom: 8, padding: 8, borderRadius: 6,
+                  background: '#1e1b4b', color: '#c4b5fd', fontSize: 11,
+                  lineHeight: 1.4,
+                }}
+              >
+                You have <b>${arb!.usdc.toFixed(2)} USDC on Arbitrum</b> but $0 on Hyperliquid.
+                USDC must be bridged into HL before it can be traded. Tap Activate
+                below to bridge it automatically.
+              </div>
+            )}
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
               <span style={{ fontSize: 12, color: '#9ca3af' }}>Withdrawable USDC</span>
               <span style={{ fontSize: 14, fontWeight: 600 }} data-testid="text-hl-withdrawable">
