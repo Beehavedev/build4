@@ -1687,6 +1687,40 @@ app.post('/api/hyperliquid/order', requireTgUser, async (req, res) => {
             console.warn(
               `[/hyperliquid/order] auto-approveBuilderFee failed user=${user.id} err=${br.error}`,
             )
+            // ── BUILDER UNREGISTERED via approve path
+            //    The order error is "Builder fee has not been approved" (matches the
+            //    auto-heal regex above), but the underlying problem is that HL won't
+            //    LET us approve the configured builder ("Builder has insufficient
+            //    balance to be approved"). The "insufficient balance" string comes
+            //    back on the APPROVE call, NOT on the order — so the L1708 fallback
+            //    below won't fire because it inspects `result.error` (the order
+            //    error). We have to thread the approve error through here and fall
+            //    back to noBuilder immediately, otherwise users are wedged in an
+            //    infinite "Approve builder fee & retry" loop.
+            // Require BOTH "builder" AND one of the unregistered/unfunded
+            //   phrases. Without the "builder" anchor, a stray "insufficient
+            //   balance" wording from an unrelated approve failure (e.g. user's
+            //   own gas/fee balance) could spuriously trigger a noBuilder
+            //   fallback when the right answer is to surface that error.
+            const approveErr = (br.error ?? '').toLowerCase()
+            const isBuilderUnregistered = /builder/.test(approveErr)
+              && /insufficient balance|not registered|not a (registered )?builder/.test(approveErr)
+            if (isBuilderUnregistered) {
+              console.warn(
+                `[/hyperliquid/order] BUILDER UNREGISTERED via approve path user=${user.id} ` +
+                `approveErr="${br.error}" — placing order WITHOUT builder field (0% fee for this fill)`,
+              )
+              result = await placeOrder(creds, { ...orderArgs, noBuilder: true })
+              if (result.success) {
+                console.warn(
+                  `[/hyperliquid/order] no-builder fallback succeeded user=${user.id} — 0.1% fee skipped`,
+                )
+              } else {
+                console.error(
+                  `[/hyperliquid/order] no-builder fallback ALSO failed user=${user.id} → ${result.error}`,
+                )
+              }
+            }
           }
         } else {
           console.warn(
