@@ -1606,7 +1606,15 @@ app.post('/api/hyperliquid/order', requireTgUser, async (req, res) => {
       !result.success &&
       (errStr.includes('builder') || errStr.includes('must approve'))
 
-    if (looksLikeBuilderReject) {
+    // ── Distinct from "user hasn't approved yet": this means the builder
+    //    address itself isn't registered/funded as a builder on HL.
+    //    No amount of user-side approveBuilderFee can fix it. We'll skip
+    //    straight to placing without a builder field below.
+    const builderUnregistered =
+      !result.success &&
+      /insufficient balance|not registered|not a (registered )?builder/i.test(result.error ?? '')
+
+    if (looksLikeBuilderReject && !builderUnregistered) {
       console.log(
         `[/hyperliquid/order] builder-rejection detected user=${user.id} — auto-approving and retrying`,
       )
@@ -1675,13 +1683,37 @@ app.post('/api/hyperliquid/order', requireTgUser, async (req, res) => {
       }
     }
 
+    // ── Last-resort fallback: if HL is still rejecting because OUR builder
+    //   address isn't a registered/funded builder on HL, retry the order
+    //   WITHOUT a builder field. Loses the 0.1% kickback for this fill but
+    //   the user actually gets to trade. This path is OPS-side recoverable
+    //   only — fund BUILDER_ADDRESS on HL and remove this branch's hits
+    //   from logs. Surface the no-builder error to the user as a soft
+    //   warning so they know the order placed but no fee was charged.
+    if (!result.success && /insufficient balance|not registered|not a (registered )?builder/i.test(result.error ?? '')) {
+      console.error(
+        `[/hyperliquid/order] BUILDER UNREGISTERED — fund the builder address on HL. ` +
+        `Falling back to no-builder order user=${user.id} err=${result.error}`,
+      )
+      result = await placeOrder(creds, { ...orderArgs, noBuilder: true })
+      if (result.success) {
+        console.warn(
+          `[/hyperliquid/order] no-builder fallback succeeded user=${user.id} — 0.1% fee skipped`,
+        )
+      }
+    }
+
     if (!result.success) {
       // If self-heal couldn't fix the builder reject, surface a flag so the
       // UI can prompt a manual "Approve builder fee" button (which calls
       // /api/hyperliquid/approve-builder). Match the same pattern used in
       // the auto-heal detector — `builder` OR `must approve` — so a slightly
-      // worded HL reject doesn't suppress the UI button.
-      const stillBuilder = /(builder|must approve)/i.test(result.error ?? '')
+      // worded HL reject doesn't suppress the UI button. EXCEPTION: don't
+      // show the approve button for "insufficient balance" — user-side
+      // approval can't fix that and the prompt would loop forever.
+      const isUnregistered = /insufficient balance|not registered|not a (registered )?builder/i
+        .test(result.error ?? '')
+      const stillBuilder = !isUnregistered && /(builder|must approve)/i.test(result.error ?? '')
       return res.status(400).json({
         ...result,
         ...(stillBuilder ? { needsBuilderApproval: true } : {}),
