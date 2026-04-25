@@ -1,0 +1,73 @@
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'LINKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'MERLUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'TACUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'VELVETUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'HUMAUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AEVOUSDT', interval: '15m', limit: 100 }
+[GET]
+build4-1.onrender.com/api/admin/broadcast/status clientIP="2.51.180.232" requestID="32f217d3-b674-4ca2" responseTimeMS=187 responseBytes=178 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+[Aster] klines fetch (cache miss): { symbol: 'TACUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'TACUSDT', interval: '5m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'VELVETUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'VELVETUSDT', interval: '5m', limit: 100 }
+[GET]
+build4-1.onrender.com/api/admin/broadcast/status clientIP="2.51.180.232" requestID="73f9ad74-c762-4a7e" responseTimeMS=188 responseBytes=178 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '4h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'MERLUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'MERLUSDT', interval: '5m', limit: 100 }
+[GET]
+build4-1.onrender.com/api/admin/broadcast/status clientIP="2.51.180.232" requestID="4ce1a63e-2f57-4021" responseTimeMS=186 responseBytes=178 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+[Aster] klines fetch (cache miss): { symbol: 'BBUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'BBUSDT', interval: '5m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'HUMAUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'HUMAUSDT', interval: '5m', limit: 100 }
+[GET]
+build4-1.onrender.com/api/admin/broadcast/status clientIP="2.51.180.232" requestID="774d10a7-9d99-4df3" responseTimeMS=191 responseBytes=178 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/admin/broadcast/status clientIP="2.51.180.232" requestID="62f4c171-ffbb-4cb1" responseTimeMS=403 responseBytes=178 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/admin/broadcast/status clientIP="2.51.180.232" requestID="fd6011a0-e77a-48e1" responseTimeMS=190 responseBytes=178 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/admin/broadcast/status clientIP="2.51.180.232" requestID="c3c3bc53-5679-4275" responseTimeMS=188 responseBytes=178 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/admin/broadcast/status clientIP="2.51.180.232" requestID="7b98f69c-798f-4c19" responseTimeMS=191 responseBytes=178 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/admin/broadcast/status clientIP="2.51.180.232" requestID="17f4ef8b-19a0-4341" responseTimeMS=219 responseBytes=178 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/admin/broadcast/status clientIP="2.51.180.232" requestID="93c04d45-5f7c-484c" responseTimeMS=376 responseBytes=178 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/admin/broadcast/status clientIP="2.51.180.232" requestID="b9e74c97-41e4-463c" responseTimeMS=191 responseBytes=178 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/admin/broadcast/status clientIP="2.51.180.232" requestID="c8bb90aa-d503-4d37" responseTimeMS=189 responseBytes=178 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/admin/broadcast/status clientIP="2.51.180.232" requestID="cd3a426e-1cea-42a3" responseTimeMS=189 responseBytes=178 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/admin/broadcast/status clientIP="2.51.180.232" requestID="0565a8ba-bae0-4228" responseTimeMS=189 responseBytes=178 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/admin/broadcast/status clientIP="2.51.180.232" requestID="71f8740f-a964-4712" responseTimeMS=190 responseBytes=178 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/admin/broadcast/status clientIP="2.51.180.232" requestID="be16e134-a465-4c9e" responseTimeMS=191 responseBytes=178 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/admin/broadcast/status clientIP="2.51.180.232" requestID="c9cae51b-8a0d-4bd1" responseTimeMS=188 responseBytes=178 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/admin/broadcast/status clientIP="2.51.180.232" requestID="6071db39-1a6e-4e0d" responseTimeMS=377 responseBytes=178 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/admin/broadcast/status clientIP="2.51.180.232" requestID="3a2fd556-24ca-43c8" responseTimeMS=190 responseBytes=178 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/admin/broadcast/status clientIP="2.51.180.232" requestID="d618cfbb-bb09-40ac" responseTimeMS=189 responseBytes=178 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/admin/broadcast/status clientIP="2.51.180.232" requestID="879d5491-187f-41e1" responseTimeMS=189 responseBytes=178 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/admin/broadcast/status clientIP="2.51.180.232" requestID="e3cd097c-f36d-41f6" responseTimeMS=191 responseBytes=178 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/admin/broadcast/status clientIP="2.51.180.232" requestID="a6e8c83e-1d98-4de8" responseTimeMS=192 responseBytes=178 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
