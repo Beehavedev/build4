@@ -294,7 +294,22 @@ export async function approveBuilderFee(
  */
 export async function placeOrder(
   creds: HyperliquidCredentials,
-  args:  { coin: string; side: 'LONG' | 'SHORT'; type: 'MARKET' | 'LIMIT'; sz: number; limitPx?: number; leverage?: number },
+  args:  {
+    coin: string; side: 'LONG' | 'SHORT'; type: 'MARKET' | 'LIMIT';
+    sz: number; limitPx?: number; leverage?: number;
+    /**
+     * Skip the builder field on the order payload. Used as a fallback
+     * when HL rejects with "Builder has insufficient balance to be
+     * approved" — that error means BUILD4's own builder treasury isn't
+     * registered/funded as a builder on HL yet, so EVERY order routed
+     * through it 400s no matter how many times the user re-signs
+     * approveBuilderFee. Placing without a builder loses the 0.1%
+     * kickback for that order but lets the user actually trade — far
+     * better than a hard fail. The /order route logs this loudly so
+     * the operator knows to fund the builder address.
+     */
+    noBuilder?: boolean;
+  },
 ): Promise<{ success: boolean; oid?: number; status?: string; error?: string }> {
   try {
     const client = exchangeClientFor(creds)
@@ -357,7 +372,7 @@ export async function placeOrder(
       }],
       grouping: 'na',
     }
-    if (BUILDER_ADDRESS && BUILDER_FEE_TENTHS > 0) {
+    if (BUILDER_ADDRESS && BUILDER_FEE_TENTHS > 0 && !args.noBuilder) {
       orderPayload.builder = { b: BUILDER_ADDRESS, f: BUILDER_FEE_TENTHS }
     }
     const res = await client.order(orderPayload)
