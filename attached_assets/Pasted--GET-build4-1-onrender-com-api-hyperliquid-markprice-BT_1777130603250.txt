@@ -1,0 +1,77 @@
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BTC clientIP="2.51.180.232" requestID="09fe17c7-4c5f-4906" responseTimeMS=79 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BTC clientIP="2.51.180.232" requestID="ccf8c653-603b-416b" responseTimeMS=75 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BTC clientIP="2.51.180.232" requestID="09b28604-f0f3-478a" responseTimeMS=84 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/hyperliquid/account clientIP="2.51.180.232" requestID="4ddf623f-8a6e-4ed1" responseTimeMS=879 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BTC clientIP="2.51.180.232" requestID="f17d51b9-5b1b-4dd7" responseTimeMS=88 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+[Runner] Ticking 4 agents in batches of 50
+[Runner] Dispatched 4 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] signed /fapi/v3/balance failed for 0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4 → 400 { code: -1000, msg: 'No agent found' } — falling back to JSON-RPC
+[Aster RPC] aster_getBalance multi-asset response for 0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4 : {
+  "perpAssets": [
+    {
+      "asset": "ASTER",
+      "walletBalance": 272.99045944
+    },
+    {
+      "asset": "USDT",
+      "walletBalance": 9.38432251
+    }
+  ],
+  "topLevelKeys": [
+    "address",
+    "accountPrivacy",
+    "perpAssets",
+    "spotAssets"
+  ]
+}
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'LINKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'HUMAUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AEVOUSDT', interval: '15m', limit: 100 }
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/ETH clientIP="2.51.180.232" requestID="58476e64-2c1d-4599" responseTimeMS=115 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/SOL clientIP="2.51.180.232" requestID="0ca86e57-8c98-457a" responseTimeMS=75 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BTC clientIP="2.51.180.232" requestID="99d2e3ef-4b98-4c6d" responseTimeMS=85 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/HYPE clientIP="2.51.180.232" requestID="6e6079d0-dc3b-47d7" responseTimeMS=78 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="2.51.180.232" requestID="952e6e82-83f8-4717" responseTimeMS=1347 responseBytes=180 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/DOGE clientIP="2.51.180.232" requestID="50fdda78-dbb8-42ab" responseTimeMS=156 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BNB clientIP="2.51.180.232" requestID="40241870-75df-49cb" responseTimeMS=77 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BTC clientIP="2.51.180.232" requestID="b775debe-dc52-4348" responseTimeMS=77 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '4h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '4h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '4h', limit: 200 }
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BTC clientIP="2.51.180.232" requestID="735b1799-7ac4-44e4" responseTimeMS=76 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+[Aster] klines fetch (cache miss): { symbol: 'HUMAUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'HUMAUSDT', interval: '5m', limit: 100 }
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BTC clientIP="2.51.180.232" requestID="1a4c1b6f-18a2-4877" responseTimeMS=75 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+[Aster] klines fetch (cache miss): { symbol: 'AEVOUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'AEVOUSDT', interval: '5m', limit: 100 }
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BTC clientIP="2.51.180.232" requestID="c3fa0f16-270b-4caf" responseTimeMS=77 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BTC clientIP="2.51.180.232" requestID="8acdd49f-887a-43b5" responseTimeMS=79 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
