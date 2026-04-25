@@ -432,7 +432,7 @@ export async function transferSpotPerp(
   userPrivateKey: string,
   amountUsd:      number,
   toPerp:         boolean,
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; error?: string; unifiedAccount?: boolean }> {
   if (!Number.isFinite(amountUsd) || amountUsd <= 0) {
     return { success: false, error: 'Amount must be > 0' }
   }
@@ -448,6 +448,13 @@ export async function transferSpotPerp(
     const raw = err?.response?.data ?? err?.message ?? 'usdClassTransfer failed'
     const msg = typeof raw === 'string' ? raw : JSON.stringify(raw)
     console.error('[HL] transferSpotPerp failed:', toPerp ? 'spot→perp' : 'perp→spot', amountUsd, '→', msg)
-    return { success: false, error: msg }
+    // HL rejects spot↔perps `usdClassTransfer` with this exact string when
+    // the user has Unified Account enabled (spot + perps share margin so
+    // the transfer is both impossible and pointless). Tag it so callers
+    // can persist the flag on the user row and stop offering the move
+    // CTAs in the UI. Substring match — HL has been known to suffix the
+    // string with extra context.
+    const unifiedAccount = /unified account/i.test(msg)
+    return { success: false, error: msg, unifiedAccount }
   }
 }

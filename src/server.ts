@@ -1717,8 +1717,14 @@ app.get('/api/hyperliquid/account', requireTgUser, async (req, res) => {
       getSpotUsdcBalance(wallet.address),
     ])
     res.json({
-      walletAddress: wallet.address,
-      onboarded:     Boolean((user as any).hyperliquidOnboarded),
+      walletAddress:  wallet.address,
+      onboarded:      Boolean((user as any).hyperliquidOnboarded),
+      // True when this user has HL Unified Account enabled. Once detected
+      // (via a failed usdClassTransfer) we persist on the User row so the
+      // /account read is the single source of truth and the UI can suppress
+      // the move-to-perps / move-to-spot CTAs from the very first render
+      // instead of waiting for the user to tap and see the error.
+      unifiedAccount: Boolean((user as any).hyperliquidUnified),
       spotUsdc,
       ...state,
     })
@@ -1733,20 +1739,50 @@ app.get('/api/hyperliquid/account', requireTgUser, async (req, res) => {
 // from inside the mini-app — no need to leave for app.hyperliquid.xyz.
 // Body: { amount?: number }  // optional; omit / 0 = move full available balance
 //
-// HL requires this action to be signed by the master wallet (not the agent),
-// so we decrypt the user's PK using the same candidate-id loop as
-// /hyperliquid/approve. The decrypt failure surface is therefore the same
-// — if a user's wallet is in the broken-encryption set, they need the
-// Admin → Wallet recovery flow before this will work.
-// Per-user mutex for spot↔perp moves. The "Move to Perps" button is
-// async and easy to double-tap in Telegram's webview; without this guard
-// a quick second tap would read the same `available` balance and fire
-// a second transfer with a different nonce — burning gas/time and
-// sometimes causing HL to reject the second one mid-flight. Same
-// pattern as HL_ACTIVATE_LOCKS above.
-const HL_SPOT_TRANSFER_LOCKS = new Set<string>()
-
+// All branchy logic (per-user mutex, decrypt-candidate loop, amount
+// resolution) lives in `runSpotToPerps`. This handler is just an Express
+// adapter so we can unit-test the logic without booting the server. See
+// src/services/hyperliquid.spot-perps.test.ts.
 app.post('/api/hyperliquid/spot-to-perps', requireTgUser, async (req, res) => {
+  try {
+    const user = (req as any).user
+    const { runSpotToPerps } = await import('./services/spotToPerps')
+    const { decryptPrivateKey } = await import('./services/wallet')
+    const { getSpotUsdcBalance, transferSpotPerp } = await import('./services/hyperliquid')
+    const result = await runSpotToPerps({
+      user: { id: user.id, telegramId: user.telegramId },
+      rawAmount: req.body?.amount,
+      deps: {
+        findActiveWallet: async (userId) => {
+          const w = await db.wallet.findFirst({ where: { userId, isActive: true } })
+          return w
+            ? { address: w.address, encryptedPK: w.encryptedPK, userId: w.userId }
+            : null
+        },
+        decryptPrivateKey,
+        getSpotUsdcBalance,
+        transferSpotPerp,
+        markUnifiedAccount: async (userId) => {
+          await db.user.update({ where: { id: userId }, data: { hyperliquidUnified: true } })
+        },
+      },
+    })
+    res.status(result.status).json(result.body)
+  } catch (err: any) {
+    console.error('[API] /hyperliquid/spot-to-perps failed:', err?.message)
+    res.status(500).json({ success: false, error: err?.message ?? 'Internal error' })
+  }
+})
+
+// POST /api/hyperliquid/perps-to-spot
+// Reverse of /spot-to-perps: move USDC from the user's perps wallet back to
+// their HL spot sub-account so they can withdraw to Arbitrum (HL withdrawals
+// are only possible from spot). Mirrors the spot-to-perps endpoint exactly —
+// same per-user mutex (intentionally shared with spot→perps so a quick
+// double-tap across either direction can't race), same master-PK decrypt
+// candidate loop, same input shape: { amount?: number } (omit / 0 = move
+// all free margin).
+app.post('/api/hyperliquid/perps-to-spot', requireTgUser, async (req, res) => {
   try {
     const user = (req as any).user
     if (HL_SPOT_TRANSFER_LOCKS.has(user.id)) {
@@ -1761,14 +1797,10 @@ app.post('/api/hyperliquid/spot-to-perps', requireTgUser, async (req, res) => {
       if (!wallet) return res.status(404).json({ success: false, error: 'No active wallet' })
 
       const { decryptPrivateKey } = await import('./services/wallet')
-      const { getSpotUsdcBalance, transferSpotPerp } = await import('./services/hyperliquid')
+      const { getAccountState, transferSpotPerp } = await import('./services/hyperliquid')
 
-      // ── Decrypt the user's master PK. Use the *full* candidate set
-      //    (user.id, telegramId, wallet.userId) so users encrypted under
-      //    any historical convention can use this. Matches the order
-      //    endpoint's broader candidate list — earlier I'd copied the
-      //    narrower /approve list which left a slice of legacy wallets
-      //    unable to move funds.
+      // Same broad candidate set as /spot-to-perps so legacy wallets
+      // encrypted under any historical convention still work.
       const idCandidates = Array.from(new Set([
         user.id,
         user.telegramId?.toString(),
@@ -1783,7 +1815,7 @@ app.post('/api/hyperliquid/spot-to-perps', requireTgUser, async (req, res) => {
       }
       if (!userPk) {
         console.error(
-          `[/hyperliquid/spot-to-perps] decrypt wallet PK failed user=${user.id} tg=${user.telegramId} wallet=${wallet.address}`,
+          `[/hyperliquid/perps-to-spot] decrypt wallet PK failed user=${user.id} tg=${user.telegramId} wallet=${wallet.address}`,
         )
         return res.status(500).json({
           success: false,
@@ -1791,32 +1823,45 @@ app.post('/api/hyperliquid/spot-to-perps', requireTgUser, async (req, res) => {
         })
       }
 
-      // ── Resolve transfer amount. If caller didn't specify (or sent 0),
-      //    move the full available spot USDC. Cap requested amount to the
-      //    available balance so we never send a request HL will reject.
-      //    Validate the input is a finite number — defensive even though
-      //    `transferSpotPerp` also guards.
+      // Available = free margin on perps (HL withdrawable). We refuse to
+      // sweep margin that's locked behind open positions — HL would reject
+      // it anyway, but failing fast gives the user a clearer error.
       const rawAmount = req.body?.amount
       const requested = rawAmount == null ? 0 : Number(rawAmount)
       if (!Number.isFinite(requested) || requested < 0) {
         return res.status(400).json({ success: false, error: 'amount must be a non-negative number' })
       }
-      const available = await getSpotUsdcBalance(wallet.address)
+      const acc = await getAccountState(wallet.address)
+      const available = acc.withdrawableUsdc
       if (available < 0.01) {
         return res.status(400).json({
           success: false,
-          error: `No USDC on the HL spot account (${wallet.address}). Bridge USDC into Hyperliquid first.`,
+          error: `No free margin on perps to move (${wallet.address}). Close positions first if you want to withdraw.`,
         })
       }
       const amount = requested > 0 ? Math.min(requested, available) : available
 
-      const result = await transferSpotPerp(userPk, amount, true)
+      const result = await transferSpotPerp(userPk, amount, false)
       if (!result.success) {
-        return res.status(502).json({ success: false, error: result.error ?? 'transfer failed' })
+        // Same unified-account detection as /spot-to-perps. Persist the
+        // flag so the UI suppresses the move CTA on the next /account
+        // poll, and surface it in the response so the page reacts
+        // instantly without waiting for the poll cycle.
+        if (result.unifiedAccount) {
+          try { await db.user.update({ where: { id: user.id }, data: { hyperliquidUnified: true } }) }
+          catch (e: any) {
+            console.warn(`[/hyperliquid/perps-to-spot] persist unified flag failed user=${user.id}: ${e?.message}`)
+          }
+        }
+        return res.status(502).json({
+          success:        false,
+          error:          result.error ?? 'transfer failed',
+          unifiedAccount: result.unifiedAccount || undefined,
+        })
       }
 
       console.log(
-        `[/hyperliquid/spot-to-perps] user=${user.id} tg=${user.telegramId} ` +
+        `[/hyperliquid/perps-to-spot] user=${user.id} tg=${user.telegramId} ` +
         `wallet=${wallet.address} moved=$${amount.toFixed(2)} (of $${available.toFixed(2)} available)`,
       )
       res.json({ success: true, amount })
@@ -1824,7 +1869,7 @@ app.post('/api/hyperliquid/spot-to-perps', requireTgUser, async (req, res) => {
       HL_SPOT_TRANSFER_LOCKS.delete(user.id)
     }
   } catch (err: any) {
-    console.error('[API] /hyperliquid/spot-to-perps failed:', err?.message)
+    console.error('[API] /hyperliquid/perps-to-spot failed:', err?.message)
     res.status(500).json({ success: false, error: err?.message ?? 'Internal error' })
   }
 })
