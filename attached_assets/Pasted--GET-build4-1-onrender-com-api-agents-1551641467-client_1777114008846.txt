@@ -1,0 +1,61 @@
+[GET]
+build4-1.onrender.com/api/agents/1551641467 clientIP="2.51.180.232" requestID="858b9431-c9cf-4658" responseTimeMS=559 responseBytes=1424 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/buybacks clientIP="2.51.180.232" requestID="f240710a-48a3-4bf8" responseTimeMS=923 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+  ],
+  "topLevelKeys": [
+    "address",
+    "accountPrivacy",
+    "perpAssets",
+    "spotAssets"
+  ]
+}
+[GET]
+build4-1.onrender.com/api/user/1551641467 clientIP="2.51.180.232" requestID="1666206e-0e8c-466b" responseTimeMS=1293 responseBytes=180 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="2.51.180.232" requestID="6ae5035d-8448-417c" responseTimeMS=1831 responseBytes=1876 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'TACUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'TACUSDT', interval: '5m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'VELVETUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'VELVETUSDT', interval: '5m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AEVOUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'AEVOUSDT', interval: '5m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'MERLUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'MERLUSDT', interval: '5m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BBUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'BBUSDT', interval: '5m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'HUMAUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'HUMAUSDT', interval: '5m', limit: 100 }
+[GET]
+build4-1.onrender.com/app/ clientIP="2.51.180.232" requestID="7a878d83-eeb0-48ae" responseTimeMS=6 responseBytes=1005 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/me/admin clientIP="2.51.180.232" requestID="1538c2b6-1ce1-4abd" responseTimeMS=381 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/agents/1551641467 clientIP="2.51.180.232" requestID="2050744d-d918-428a" responseTimeMS=371 responseBytes=1424 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/buybacks clientIP="2.51.180.232" requestID="b88d4629-57c4-4a42" responseTimeMS=738 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/user/1551641467 clientIP="2.51.180.232" requestID="45141dea-9746-4710" responseTimeMS=1010 responseBytes=180 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+[Aster] signed /fapi/v3/balance failed for 0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4 → 400 { code: -1000, msg: 'No agent found' } — falling back to JSON-RPC
+[Aster RPC] aster_getBalance multi-asset response for 0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4 : {
+  "perpAssets": [
+    {
+      "asset": "ASTER",
+      "walletBalance": 272.99045944
+    },
+    {
+      "asset": "USDT",
+      "walletBalance": 9.38432251
+    }
+  ],
+  "topLevelKeys": [
+Menu
+    "address",
+    "accountPrivacy",
+    "perpAssets",
+    "spotAssets"
+  ]
+}
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="2.51.180.232" requestID="01d6dc82-e135-4ab8" responseTimeMS=1484 responseBytes=180 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
