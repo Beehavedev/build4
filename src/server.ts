@@ -1783,6 +1783,113 @@ app.post('/api/hyperliquid/order', requireTgUser, async (req, res) => {
   }
 })
 
+// POST /api/hyperliquid/close
+//
+// Flatten the user's open perp position for `coin` with a single
+// reduce-only IoC market order. We:
+//   1. Pull live perp state to get the actual `szi` (signed base-coin
+//      size) of the position. This is the only source of truth — using a
+//      cached/stale UI value risks under- or over-closing.
+//   2. Submit a MARKET order in the OPPOSITE direction with `r:true`
+//      (reduceOnly), so HL guarantees the order can only shrink the
+//      position and never accidentally flip it to the opposite side if
+//      sizing is slightly off.
+//   3. Reuse the same builder-fee + noBuilder fallback ladder that
+//      /api/hyperliquid/order uses, so a misconfigured builder never
+//      blocks a user from getting OUT of a position. Particularly
+//      important for closes — being unable to exit is far worse than
+//      being unable to enter.
+//
+// Body: { coin: string }
+app.post('/api/hyperliquid/close', requireTgUser, async (req, res) => {
+  try {
+    const user = (req as any).user
+    if (!user.hyperliquidOnboarded) {
+      return res.status(400).json({
+        success: false,
+        error: 'Activate Hyperliquid trading first',
+        needsApprove: true,
+      })
+    }
+
+    const { coin } = req.body ?? {}
+    if (typeof coin !== 'string' || !coin) {
+      return res.status(400).json({ success: false, error: 'coin required' })
+    }
+
+    const wallet = await db.wallet.findFirst({ where: { userId: user.id, isActive: true } })
+    if (!wallet) return res.status(404).json({ success: false, error: 'No active wallet' })
+
+    const { resolveAgentCreds, getAccountState, placeOrder } = await import('./services/hyperliquid')
+    const creds = await resolveAgentCreds(user, wallet.address)
+    if (!creds) {
+      return res.status(400).json({
+        success: false,
+        error: 'Agent credentials missing — re-activate Hyperliquid',
+        needsApprove: true,
+      })
+    }
+
+    const sym = coin.toUpperCase().replace(/USDT?$/, '').replace(/-USD$/, '')
+    const state = await getAccountState(wallet.address)
+    const pos = state.positions.find(p => p.coin.toUpperCase() === sym)
+    if (!pos || pos.szi === 0) {
+      return res.status(404).json({
+        success: false,
+        error: `No open ${sym} position to close`,
+      })
+    }
+
+    // szi is signed: positive = long, negative = short. Close direction is
+    //   the opposite. The size we send is |szi| — placeOrder applies the
+    //   szDecimals rounding internally.
+    const closeSide: 'LONG' | 'SHORT' = pos.szi > 0 ? 'SHORT' : 'LONG'
+    const sz = Math.abs(pos.szi)
+
+    // reduceOnly = true so we cannot accidentally flip into the opposite
+    //   side if mark drift / rounding nudges the order slightly oversized.
+    const orderArgs = {
+      coin: sym,
+      side: closeSide,
+      type: 'MARKET' as const,
+      sz,
+      reduceOnly: true,
+    }
+
+    let result = await placeOrder(creds, orderArgs)
+
+    // Same noBuilder fallback ladder as /order — see that route for the
+    // detailed reasoning. Critical for closes: an exit must not be wedged
+    // by a misconfigured builder.
+    if (!result.success && /insufficient balance|not registered|not a (registered )?builder/i.test(result.error ?? '')) {
+      console.warn(
+        `[/hyperliquid/close] BUILDER UNREGISTERED — falling back to no-builder close ` +
+        `user=${user.id} coin=${sym} err=${result.error}`,
+      )
+      result = await placeOrder(creds, { ...orderArgs, noBuilder: true })
+      if (result.success) {
+        console.warn(
+          `[/hyperliquid/close] no-builder close succeeded user=${user.id} coin=${sym} — 0.1% fee skipped`,
+        )
+      }
+    }
+
+    if (!result.success) {
+      return res.status(400).json(result)
+    }
+    return res.json({
+      ...result,
+      coin: sym,
+      side: closeSide,
+      sz,
+      closedSzi: pos.szi,
+    })
+  } catch (err: any) {
+    console.error('[API] /hyperliquid/close failed:', err?.message ?? err)
+    res.status(500).json({ success: false, error: err?.message ?? 'Internal error' })
+  }
+})
+
 app.get('/api/hyperliquid/account', requireTgUser, async (req, res) => {
   try {
     const user = (req as any).user

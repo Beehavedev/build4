@@ -55,6 +55,12 @@ export default function Hyperliquid() {
   // USDC landed on the spot sub-account instead of perps.
   const [movingSpot, setMovingSpot] = useState(false)
   const [spotMsg, setSpotMsg]       = useState<string | null>(null)
+  // Per-coin close-position state. Tracks which row is currently submitting
+  //   a reduce-only market close so we can disable that row's button +
+  //   show a spinner without freezing the whole positions card. `closeMsg`
+  //   surfaces a transient success/error banner under the positions list.
+  const [closingCoin, setClosingCoin] = useState<string | null>(null)
+  const [closeMsg, setCloseMsg]       = useState<string | null>(null)
   // Perps → spot in-app transfer state. Mirror of the above. Needed before
   // a user can withdraw to Arbitrum, because HL withdrawals are only
   // possible from the spot sub-account.
@@ -241,6 +247,38 @@ export default function Hyperliquid() {
       setActivateMsg(e?.message ?? 'Activation failed')
     } finally {
       setActivating(false)
+    }
+  }
+
+  // Close a single open perp position with one tap. Server fetches the live
+  // szi, computes the opposite side, and submits a reduce-only IoC market
+  // order — see /api/hyperliquid/close. We optimistically lock the row,
+  // then refetch the account to reflect the new state (position gone, USDC
+  // reflects realized PnL minus taker fee).
+  const closePosition = async (coin: string) => {
+    if (closingCoin) return
+    setClosingCoin(coin)
+    setCloseMsg(null)
+    try {
+      const r = await apiFetch<{ success: boolean; sz?: number; side?: string; error?: string }>(
+        '/api/hyperliquid/close',
+        { method: 'POST', body: JSON.stringify({ coin }) },
+      )
+      if (r.success) {
+        setCloseMsg(`Closed ${coin} (${r.side ?? ''} ${r.sz ?? ''}). Refreshing…`)
+        // Same 1.5s settle pad we use after spot↔perps moves — HL's
+        // clearinghouse occasionally lags the fill ack by a beat, and
+        // refetching too quickly leaves the position visibly stuck on
+        // the card for a confusing extra second.
+        await new Promise((res) => setTimeout(res, 1500))
+        await load()
+      } else {
+        setCloseMsg(r.error ?? 'Close failed')
+      }
+    } catch (e: any) {
+      setCloseMsg(e?.message ?? 'Close failed')
+    } finally {
+      setClosingCoin(null)
     }
   }
 
@@ -669,21 +707,53 @@ export default function Hyperliquid() {
       {account && account.positions.length > 0 && (
         <div style={cardStyle} data-testid="card-hl-positions">
           <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10 }}>Open positions</div>
-          {account.positions.map((p) => (
-            <div key={p.coin}
-                 style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderTop: '1px solid #1f2937' }}
-                 data-testid={`row-hl-position-${p.coin}`}>
-              <span style={{ fontSize: 13 }}>
-                <b>{p.coin}</b>{' '}
-                <span style={{ color: p.szi > 0 ? '#22c55e' : '#ef4444' }}>
-                  {p.szi > 0 ? 'LONG' : 'SHORT'}
+          {account.positions.map((p) => {
+            const isClosingThis = closingCoin === p.coin
+            const anyClosing    = closingCoin !== null
+            return (
+              <div key={p.coin}
+                   style={{
+                     display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                     gap: 8, padding: '8px 0', borderTop: '1px solid #1f2937',
+                   }}
+                   data-testid={`row-hl-position-${p.coin}`}>
+                <span style={{ fontSize: 13, flex: '1 1 auto' }}>
+                  <b>{p.coin}</b>{' '}
+                  <span style={{ color: p.szi > 0 ? '#22c55e' : '#ef4444' }}>
+                    {p.szi > 0 ? 'LONG' : 'SHORT'}
+                  </span>
                 </span>
-              </span>
-              <span style={{ fontSize: 12, color: p.unrealizedPnl >= 0 ? '#22c55e' : '#ef4444' }}>
-                {p.unrealizedPnl >= 0 ? '+' : ''}${p.unrealizedPnl.toFixed(2)}
-              </span>
+                <span style={{ fontSize: 12, color: p.unrealizedPnl >= 0 ? '#22c55e' : '#ef4444' }}
+                      data-testid={`text-hl-position-pnl-${p.coin}`}>
+                  {p.unrealizedPnl >= 0 ? '+' : ''}${p.unrealizedPnl.toFixed(2)}
+                </span>
+                <button
+                  onClick={() => closePosition(p.coin)}
+                  disabled={anyClosing}
+                  data-testid={`button-hl-close-${p.coin}`}
+                  style={{
+                    padding: '5px 10px', borderRadius: 6, fontSize: 11, fontWeight: 600,
+                    background: isClosingThis ? '#374151' : '#ef4444',
+                    color: '#fff', border: 'none',
+                    cursor: anyClosing ? 'not-allowed' : 'pointer',
+                    opacity: anyClosing && !isClosingThis ? 0.5 : 1,
+                  }}>
+                  {isClosingThis ? 'Closing…' : 'Close'}
+                </button>
+              </div>
+            )
+          })}
+          {closeMsg && (
+            <div data-testid="text-hl-close-msg"
+                 style={{
+                   marginTop: 10, padding: '8px 10px', borderRadius: 6, fontSize: 12,
+                   background: closeMsg.toLowerCase().startsWith('closed')
+                     ? '#14532d' : '#7f1d1d',
+                   color: '#fff',
+                 }}>
+              {closeMsg}
             </div>
-          ))}
+          )}
         </div>
       )}
 

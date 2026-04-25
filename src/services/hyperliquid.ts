@@ -426,6 +426,13 @@ export async function placeOrder(
      * the operator knows to fund the builder address.
      */
     noBuilder?: boolean;
+    /**
+     * Set the HL `r` (reduceOnly) flag on the order. Required for closing
+     * positions cleanly: ensures the order can ONLY shrink an existing
+     * position and never accidentally flips it to the opposite side if
+     * sizing is slightly off (e.g. mark moved between read and submit).
+     */
+    reduceOnly?: boolean;
   },
 ): Promise<{ success: boolean; oid?: number; status?: string; error?: string }> {
   try {
@@ -482,7 +489,7 @@ export async function placeOrder(
         b: isBuy,
         p: pxStr,
         s: szStr,
-        r: false,
+        r: !!args.reduceOnly,
         t: args.type === 'MARKET'
           ? { limit: { tif: 'Ioc' } }
           : { limit: { tif: 'Gtc' } },
