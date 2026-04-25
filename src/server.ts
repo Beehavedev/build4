@@ -1829,6 +1829,92 @@ app.post('/api/hyperliquid/spot-to-perps', requireTgUser, async (req, res) => {
   }
 })
 
+// POST /api/hyperliquid/perps-to-spot
+// Reverse of /spot-to-perps: move USDC from the user's perps wallet back to
+// their HL spot sub-account so they can withdraw to Arbitrum (HL withdrawals
+// are only possible from spot). Mirrors the spot-to-perps endpoint exactly —
+// same per-user mutex (intentionally shared with spot→perps so a quick
+// double-tap across either direction can't race), same master-PK decrypt
+// candidate loop, same input shape: { amount?: number } (omit / 0 = move
+// all free margin).
+app.post('/api/hyperliquid/perps-to-spot', requireTgUser, async (req, res) => {
+  try {
+    const user = (req as any).user
+    if (HL_SPOT_TRANSFER_LOCKS.has(user.id)) {
+      return res.status(409).json({
+        success: false,
+        error:   'Transfer already in progress. Hold on a few seconds and try again.',
+      })
+    }
+    HL_SPOT_TRANSFER_LOCKS.add(user.id)
+    try {
+      const wallet = await db.wallet.findFirst({ where: { userId: user.id, isActive: true } })
+      if (!wallet) return res.status(404).json({ success: false, error: 'No active wallet' })
+
+      const { decryptPrivateKey } = await import('./services/wallet')
+      const { getAccountState, transferSpotPerp } = await import('./services/hyperliquid')
+
+      // Same broad candidate set as /spot-to-perps so legacy wallets
+      // encrypted under any historical convention still work.
+      const idCandidates = Array.from(new Set([
+        user.id,
+        user.telegramId?.toString(),
+        wallet.userId,
+      ].filter((v): v is string => Boolean(v))))
+      let userPk: string | null = null
+      for (const candidate of idCandidates) {
+        try {
+          const out = decryptPrivateKey(wallet.encryptedPK, candidate)
+          if (out?.startsWith('0x')) { userPk = out; break }
+        } catch { /* try next candidate */ }
+      }
+      if (!userPk) {
+        console.error(
+          `[/hyperliquid/perps-to-spot] decrypt wallet PK failed user=${user.id} tg=${user.telegramId} wallet=${wallet.address}`,
+        )
+        return res.status(500).json({
+          success: false,
+          error: 'Could not decrypt wallet. Use Admin → Wallet recovery to re-encrypt your private key, then try again.',
+        })
+      }
+
+      // Available = free margin on perps (HL withdrawable). We refuse to
+      // sweep margin that's locked behind open positions — HL would reject
+      // it anyway, but failing fast gives the user a clearer error.
+      const rawAmount = req.body?.amount
+      const requested = rawAmount == null ? 0 : Number(rawAmount)
+      if (!Number.isFinite(requested) || requested < 0) {
+        return res.status(400).json({ success: false, error: 'amount must be a non-negative number' })
+      }
+      const acc = await getAccountState(wallet.address)
+      const available = acc.withdrawableUsdc
+      if (available < 0.01) {
+        return res.status(400).json({
+          success: false,
+          error: `No free margin on perps to move (${wallet.address}). Close positions first if you want to withdraw.`,
+        })
+      }
+      const amount = requested > 0 ? Math.min(requested, available) : available
+
+      const result = await transferSpotPerp(userPk, amount, false)
+      if (!result.success) {
+        return res.status(502).json({ success: false, error: result.error ?? 'transfer failed' })
+      }
+
+      console.log(
+        `[/hyperliquid/perps-to-spot] user=${user.id} tg=${user.telegramId} ` +
+        `wallet=${wallet.address} moved=$${amount.toFixed(2)} (of $${available.toFixed(2)} available)`,
+      )
+      res.json({ success: true, amount })
+    } finally {
+      HL_SPOT_TRANSFER_LOCKS.delete(user.id)
+    }
+  } catch (err: any) {
+    console.error('[API] /hyperliquid/perps-to-spot failed:', err?.message)
+    res.status(500).json({ success: false, error: err?.message ?? 'Internal error' })
+  }
+})
+
 // Per-user mutex for withdrawals — prevents double-spend if a client
 // fires concurrent requests before the first tx is broadcast.
 const withdrawLocks = new Map<string, Promise<unknown>>()

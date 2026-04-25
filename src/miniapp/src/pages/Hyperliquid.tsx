@@ -45,6 +45,11 @@ export default function Hyperliquid() {
   // USDC landed on the spot sub-account instead of perps.
   const [movingSpot, setMovingSpot] = useState(false)
   const [spotMsg, setSpotMsg]       = useState<string | null>(null)
+  // Perps → spot in-app transfer state. Mirror of the above. Needed before
+  // a user can withdraw to Arbitrum, because HL withdrawals are only
+  // possible from the spot sub-account.
+  const [movingPerps, setMovingPerps] = useState(false)
+  const [perpsMsg, setPerpsMsg]       = useState<string | null>(null)
 
   // Order ticket state
   const [orderCoin, setOrderCoin]         = useState('BTC')
@@ -258,6 +263,33 @@ export default function Hyperliquid() {
     }
   }
 
+  // Perps → spot internal transfer. Counterpart to moveSpotToPerps. POSTs
+  // to /api/hyperliquid/perps-to-spot which signs a usdClassTransfer with
+  // toPerp=false using the user's master key. Needed because HL only
+  // permits withdrawals to Arbitrum from the spot sub-account, so users
+  // who want to take profits have to move free margin off perps first.
+  const movePerpsToSpot = async () => {
+    setMovingPerps(true)
+    setPerpsMsg(null)
+    try {
+      const r = await apiFetch<{ success: boolean; amount?: number; error?: string }>(
+        '/api/hyperliquid/perps-to-spot',
+        { method: 'POST', body: JSON.stringify({}) },
+      )
+      if (r.success) {
+        setPerpsMsg(`Moved $${(r.amount ?? 0).toFixed(2)} to spot. Reloading…`)
+        await new Promise((res) => setTimeout(res, 1500))
+        await load()
+      } else {
+        setPerpsMsg(r.error ?? 'Transfer failed')
+      }
+    } catch (e: any) {
+      setPerpsMsg(e?.message ?? 'Transfer failed')
+    } finally {
+      setMovingPerps(false)
+    }
+  }
+
   const load = async () => {
     setError(null)
     try {
@@ -461,6 +493,48 @@ export default function Hyperliquid() {
                 ${account.accountValue.toFixed(2)}
               </span>
             </div>
+            {/* Perps → spot move. HL withdrawals to Arbitrum are only
+                possible from the spot sub-account, so users who want to
+                take profits need a one-tap way to sweep free margin
+                across without leaving for app.hyperliquid.xyz. Only
+                surfaces when there's actually free margin to move and
+                the user is onboarded (avoids cluttering empty/onboard
+                states). Mirrors the spot→perps button above. */}
+            {account.onboarded && account.withdrawableUsdc >= 0.01 && (
+              <div style={{ marginTop: 10 }} data-testid="card-hl-perps-to-spot">
+                <button
+                  onClick={movePerpsToSpot}
+                  disabled={movingPerps}
+                  data-testid="button-hl-perps-to-spot"
+                  style={{
+                    width: '100%', padding: '10px 14px', borderRadius: 8,
+                    background: movingPerps ? '#1e3a8a' : 'linear-gradient(90deg,#2563eb,#60a5fa)',
+                    color: '#fff', border: 'none', fontSize: 13, fontWeight: 600,
+                    cursor: movingPerps ? 'wait' : 'pointer',
+                  }}
+                >
+                  {movingPerps
+                    ? 'Moving…'
+                    : `Move $${account.withdrawableUsdc.toFixed(2)} to Spot (for withdrawal)`}
+                </button>
+                <div style={{ fontSize: 10, color: '#64748b', marginTop: 6, lineHeight: 1.4 }}>
+                  HL withdrawals to Arbitrum can only be made from the spot account.
+                  Move free margin here first, then withdraw from your wallet.
+                </div>
+                {perpsMsg && (
+                  <div
+                    data-testid="text-hl-perps-msg"
+                    style={{
+                      marginTop: 8, padding: 6, borderRadius: 4, fontSize: 11,
+                      background: perpsMsg.startsWith('Moved') ? '#064e3b' : '#7f1d1d',
+                      color: perpsMsg.startsWith('Moved') ? '#a7f3d0' : '#fecaca',
+                    }}
+                  >
+                    {perpsMsg}
+                  </div>
+                )}
+              </div>
+            )}
             {(!account.onboarded || forceActivateUi) && (
               <div style={{ marginTop: 12 }} data-testid="card-hl-onboard">
                 <button
