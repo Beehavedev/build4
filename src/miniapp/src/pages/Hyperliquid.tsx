@@ -416,7 +416,13 @@ export default function Hyperliquid() {
   // every coin currently in `account.positions` once per second so the
   // detail card's mark + computed PnL tick visibly. Re-subscribes when
   // the set of open coins changes (close → drops, open → adds).
-  const positionCoins = (account?.positions ?? []).filter(p => p.szi !== 0).map(p => p.coin)
+  // isFinite guard: a malformed HL payload that produced NaN szi must
+  // not be treated as an open position (NaN !== 0 is true). Backend
+  // already coerces in safeNum, but defense-in-depth — a future caller
+  // populating account.positions from a different source can't break us.
+  const positionCoins = (account?.positions ?? [])
+    .filter(p => Number.isFinite(p.szi) && p.szi !== 0)
+    .map(p => p.coin)
   useEffect(() => {
     if (positionCoins.length === 0) {
       setLivePxByCoin({})
