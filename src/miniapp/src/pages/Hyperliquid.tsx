@@ -10,9 +10,23 @@
 import { useEffect, useState } from 'react'
 import { apiFetch } from '../api'
 import { TradingChart } from '../components/TradingChart'
-import { MarketTicker } from '../components/MarketTicker'
+import { MarketTicker, fmtUsd, fmtUsdRaw } from '../components/MarketTicker'
 
 const COINS = ['BTC', 'ETH', 'SOL', 'BNB', 'HYPE', 'DOGE']
+
+interface HlPosition {
+  coin:           string
+  szi:            number    // signed size — positive=long, negative=short
+  entryPx:        number
+  unrealizedPnl:  number
+  positionValue:  number    // signed USDC notional; markPx = positionValue/szi
+  leverage:       number
+  leverageType:   'cross' | 'isolated'
+  maxLeverage:    number
+  liquidationPx:  number    // 0 when unavailable
+  marginUsed:     number
+  returnOnEquity: number
+}
 
 interface AccountState {
   walletAddress:    string
@@ -34,7 +48,7 @@ interface AccountState {
   //      up with what the user can actually trade with.
   // Optional because older deploys won't have the flag set on the User row.
   unifiedAccount?:  boolean
-  positions:        Array<{ coin: string; szi: number; entryPx: number; unrealizedPnl: number }>
+  positions:        HlPosition[]
 }
 
 const cardStyle: React.CSSProperties = {
@@ -66,6 +80,13 @@ export default function Hyperliquid() {
   // possible from the spot sub-account.
   const [movingPerps, setMovingPerps] = useState(false)
   const [perpsMsg, setPerpsMsg]       = useState<string | null>(null)
+
+  // Live mark prices for OPEN POSITIONS, polled every second so PnL ticks
+  // visibly while you stare at the page (instead of being stuck at the
+  // last full-account refresh value). Keyed by coin so a closed position
+  // automatically drops out of the polling set on the next account
+  // refresh. Mirrors the Aster Trade.tsx pattern.
+  const [livePxByCoin, setLivePxByCoin] = useState<Record<string, number>>({})
 
   // Order ticket state
   const [orderCoin, setOrderCoin]         = useState('BTC')
@@ -127,7 +148,7 @@ export default function Hyperliquid() {
       if (r.success) {
         const px = orderType === 'LIMIT' ? Number(orderLimitPx) : (r.markPrice ?? 0)
         setOrderMsg(
-          `${orderSide} ${r.sz?.toFixed(4) ?? '?'} ${orderCoin} ${orderType} @ $${px.toFixed(2)} ${
+          `${orderSide} ${r.sz?.toFixed(4) ?? '?'} ${orderCoin} ${orderType} @ $${fmtUsdRaw(px)} ${
             orderType === 'LIMIT' ? 'resting' : 'placed'
           }.`,
         )
@@ -369,12 +390,15 @@ export default function Hyperliquid() {
     setLoading(false)
   }
 
-  // Two-tier polling so users see a "live" mark price without us hammering
-  // the public allMids endpoint with full account-state fetches every second.
-  //   - load() (account + all mids + arbitrum): every 8s
-  //   - selected-coin mid only: every 1s, so the headline price next to the
-  //     order ticket actually feels alive while you're sizing your trade.
-  useEffect(() => { load(); const t = setInterval(load, 8000); return () => clearInterval(t) }, [])
+  // Three-tier polling so the screen feels truly "live" without hammering
+  // the public allMids endpoint with full account-state fetches every second:
+  //   - load() (account + all mids + arbitrum): every 6s — picks up new
+  //     positions, balance changes, leverage adjustments
+  //   - selected-coin mid: every 1s — keeps the headline price next to
+  //     the order ticket alive while sizing
+  //   - per-position mark prices: every 1s — so PnL on every open
+  //     position ticks in real time, not stuck on the last 6s snapshot
+  useEffect(() => { load(); const t = setInterval(load, 6000); return () => clearInterval(t) }, [])
   useEffect(() => {
     let cancelled = false
     const poll = async () => {
@@ -387,6 +411,40 @@ export default function Hyperliquid() {
     const t = setInterval(poll, 1000)
     return () => { cancelled = true; clearInterval(t) }
   }, [orderCoin])
+
+  // Live mark-price poll for open positions. Pulls /markprice/:coin for
+  // every coin currently in `account.positions` once per second so the
+  // detail card's mark + computed PnL tick visibly. Re-subscribes when
+  // the set of open coins changes (close → drops, open → adds).
+  const positionCoins = (account?.positions ?? []).filter(p => p.szi !== 0).map(p => p.coin)
+  useEffect(() => {
+    if (positionCoins.length === 0) {
+      setLivePxByCoin({})
+      return
+    }
+    let cancelled = false
+    const tick = async () => {
+      const updates = await Promise.all(positionCoins.map(async (c) => {
+        try {
+          const r = await apiFetch<{ markPrice: number }>(`/api/hyperliquid/markprice/${c}`)
+          return [c, r.markPrice] as const
+        } catch { return null }
+      }))
+      if (cancelled) return
+      setLivePxByCoin(prev => {
+        const next: Record<string, number> = {}
+        // Only carry coins that are still open this tick — drop stale
+        // entries from positions the user just closed.
+        for (const c of positionCoins) next[c] = prev[c] ?? 0
+        for (const u of updates) if (u) next[u[0]] = u[1]
+        return next
+      })
+    }
+    tick()
+    const t = setInterval(tick, 1000)
+    return () => { cancelled = true; clearInterval(t) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [positionCoins.join(',')])
 
   return (
     <div style={{ paddingTop: 20 }} data-testid="page-hyperliquid">
@@ -707,43 +765,128 @@ export default function Hyperliquid() {
         )}
       </div>
 
-      {/* Positions */}
-      {account && account.positions.length > 0 && (
+      {/* Positions — rich detail card per position, mirrors the Aster
+          Trade.tsx layout so HL doesn't feel like a downgraded venue.
+          Each position shows: coin, side+leverage, size @ entry, mark
+          (live, ticks every second), unrealized PnL (live + ROE %),
+          margin used, and liquidation price when HL provides one
+          (cross-at-full-equity reports liq=0 → we hide that row). */}
+      {account && account.positions.filter(p => p.szi !== 0).length > 0 && (
         <div style={cardStyle} data-testid="card-hl-positions">
-          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10 }}>Open positions</div>
-          {account.positions.map((p) => {
+          <div style={{
+            fontSize: 13, fontWeight: 600, marginBottom: 10,
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          }}>
+            <span>Open positions</span>
+            <span style={{ fontSize: 11, color: '#64748b', fontWeight: 400 }}>
+              {account.positions.filter(p => p.szi !== 0).length} open
+            </span>
+          </div>
+          {account.positions.filter(p => p.szi !== 0).map((p) => {
             const isClosingThis = closingCoin === p.coin
             const anyClosing    = closingCoin !== null
+            const isLong        = p.szi > 0
+            const sideColor     = isLong ? '#22c55e' : '#ef4444'
+
+            // Live mark: fall back to derived (positionValue / szi) from the
+            // last full account snapshot if the per-coin poll hasn't landed
+            // yet. Avoids a flash of "—" on the first render.
+            const snapshotMark = p.szi !== 0 ? Math.abs(p.positionValue / p.szi) : 0
+            const liveMark     = livePxByCoin[p.coin] || snapshotMark
+
+            // Recompute PnL on every render against the live mark so the
+            // number updates each second instead of being stuck at the
+            // last 6s account snapshot. Sign convention: long profits as
+            // mark rises, short profits as mark falls.
+            const sz       = Math.abs(p.szi)
+            const dir      = isLong ? 1 : -1
+            const livePnl  = (liveMark - p.entryPx) * sz * dir
+            const liveRoe  = p.marginUsed > 0 ? livePnl / p.marginUsed : 0
+            const pnlColor = livePnl >= 0 ? '#22c55e' : '#ef4444'
+
             return (
               <div key={p.coin}
+                   data-testid={`row-hl-position-${p.coin}`}
                    style={{
-                     display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                     gap: 8, padding: '8px 0', borderTop: '1px solid #1f2937',
-                   }}
-                   data-testid={`row-hl-position-${p.coin}`}>
-                <span style={{ fontSize: 13, flex: '1 1 auto' }}>
-                  <b>{p.coin}</b>{' '}
-                  <span style={{ color: p.szi > 0 ? '#22c55e' : '#ef4444' }}>
-                    {p.szi > 0 ? 'LONG' : 'SHORT'}
+                     padding: 10, borderRadius: 8, marginTop: 8,
+                     background: '#0f0f17', border: '1px solid #1f2937',
+                     display: 'flex', flexDirection: 'column', gap: 4,
+                   }}>
+                {/* Header row: coin + side · leverage */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                  <span style={{ fontSize: 14, fontWeight: 700 }}>{p.coin}</span>
+                  <span style={{ color: sideColor, fontWeight: 600, fontSize: 13 }}>
+                    {isLong ? 'LONG' : 'SHORT'} · {p.leverage}x
+                    <span style={{ color: '#64748b', fontWeight: 400, fontSize: 11, marginLeft: 4 }}>
+                      {p.leverageType}
+                    </span>
                   </span>
-                </span>
-                <span style={{ fontSize: 12, color: p.unrealizedPnl >= 0 ? '#22c55e' : '#ef4444' }}
-                      data-testid={`text-hl-position-pnl-${p.coin}`}>
-                  {p.unrealizedPnl >= 0 ? '+' : ''}${p.unrealizedPnl.toFixed(2)}
-                </span>
-                <button
-                  onClick={() => closePosition(p.coin)}
-                  disabled={anyClosing}
-                  data-testid={`button-hl-close-${p.coin}`}
-                  style={{
-                    padding: '5px 10px', borderRadius: 6, fontSize: 11, fontWeight: 600,
-                    background: isClosingThis ? '#374151' : '#ef4444',
-                    color: '#fff', border: 'none',
-                    cursor: anyClosing ? 'not-allowed' : 'pointer',
-                    opacity: anyClosing && !isClosingThis ? 0.5 : 1,
-                  }}>
-                  {isClosingThis ? 'Closing…' : 'Close'}
-                </button>
+                </div>
+
+                {/* Size @ entry · mark (live) — both prices with full precision
+                    so users can sanity-check their entry against the current
+                    market without leaving for a chart. */}
+                <div style={{
+                  display: 'flex', justifyContent: 'space-between',
+                  fontSize: 12, color: '#94a3b8',
+                  fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
+                }}>
+                  <span data-testid={`text-hl-position-entry-${p.coin}`}>
+                    {fmtUsdRaw(sz)} @ {fmtUsd(p.entryPx)}
+                  </span>
+                  <span data-testid={`text-hl-position-mark-${p.coin}`}>
+                    mark {fmtUsd(liveMark)}
+                  </span>
+                </div>
+
+                {/* Margin · liquidation. Liq is hidden when HL doesn't compute
+                    one (cross at full equity → 0). Margin used is shown so the
+                    user knows what's locked behind the position. */}
+                <div style={{
+                  display: 'flex', justifyContent: 'space-between',
+                  fontSize: 11, color: '#64748b',
+                }}>
+                  <span data-testid={`text-hl-position-margin-${p.coin}`}>
+                    margin {fmtUsd(p.marginUsed)}
+                  </span>
+                  {p.liquidationPx > 0 && (
+                    <span data-testid={`text-hl-position-liq-${p.coin}`}>
+                      liq {fmtUsd(p.liquidationPx)}
+                    </span>
+                  )}
+                </div>
+
+                {/* PnL row + Close button. PnL ticks live, ROE shown for
+                    quick sanity ("am I 1% up or 30%?" matters more than
+                    the dollar amount when sizing varies). */}
+                <div style={{
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  marginTop: 4,
+                }}>
+                  <span style={{ color: pnlColor, fontWeight: 700, fontSize: 14 }}
+                        data-testid={`text-hl-position-pnl-${p.coin}`}>
+                    {livePnl >= 0 ? '+' : ''}${livePnl.toFixed(2)} USDC
+                    <span style={{
+                      marginLeft: 6, fontSize: 11, fontWeight: 500,
+                      color: pnlColor, opacity: 0.85,
+                    }}>
+                      ({liveRoe >= 0 ? '+' : ''}{(liveRoe * 100).toFixed(2)}%)
+                    </span>
+                  </span>
+                  <button
+                    onClick={() => closePosition(p.coin)}
+                    disabled={anyClosing}
+                    data-testid={`button-hl-close-${p.coin}`}
+                    style={{
+                      padding: '6px 14px', borderRadius: 6, fontSize: 12, fontWeight: 600,
+                      background: isClosingThis ? '#374151' : '#ef4444',
+                      color: '#fff', border: 'none',
+                      cursor: anyClosing ? 'not-allowed' : 'pointer',
+                      opacity: anyClosing && !isClosingThis ? 0.5 : 1,
+                    }}>
+                    {isClosingThis ? 'Closing…' : 'Close'}
+                  </button>
+                </div>
               </div>
             )
           })}
@@ -773,9 +916,7 @@ export default function Hyperliquid() {
                 data-testid="text-hl-selected-mark"
                 style={{ fontSize: 18, fontWeight: 700, color: mids[orderCoin] > 0 ? '#a7f3d0' : '#6b7280', fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace' }}
               >
-                {mids[orderCoin] > 0
-                  ? `$${mids[orderCoin].toLocaleString(undefined, { maximumFractionDigits: mids[orderCoin] < 1 ? 5 : 2 })}`
-                  : '—'}
+                {fmtUsd(mids[orderCoin])}
               </div>
             </div>
           </div>
@@ -867,7 +1008,7 @@ export default function Hyperliquid() {
                       background: 'transparent', border: 'none', cursor: 'pointer',
                     }}
                   >
-                    use mark ${mids[orderCoin].toLocaleString(undefined, { maximumFractionDigits: mids[orderCoin] < 1 ? 5 : 2 })}
+                    use mark ${fmtUsdRaw(mids[orderCoin])}
                   </button>
                 )}
               </div>
@@ -1001,7 +1142,7 @@ export default function Hyperliquid() {
                data-testid={`row-hl-mid-${c}`}>
             <span style={{ fontSize: 13, fontWeight: 500 }}>{c}</span>
             <span style={{ fontSize: 13, color: mids[c] > 0 ? '#fff' : '#6b7280' }}>
-              {mids[c] > 0 ? `$${mids[c].toLocaleString(undefined, { maximumFractionDigits: mids[c] < 1 ? 5 : 2 })}` : '—'}
+              {fmtUsd(mids[c])}
             </span>
           </div>
         ))}

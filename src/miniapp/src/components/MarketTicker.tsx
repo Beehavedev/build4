@@ -102,10 +102,36 @@ function subscribe(symbol: string, pollMs: number, cb: (d: Stats | null, err: bo
 }
 
 // ─── Formatters ──────────────────────────────────────────────────────────
-function fmtPrice(n: number): string {
+//
+// Tiered decimal precision for USD prices. Users complained that 2 dp
+// was hiding meaningful precision on mid-priced assets (BNB at $637.84
+// hides cents-of-cents that PnL pivots on at 5x leverage; HYPE at
+// $41.36 hides whole basis points). The thresholds are tuned so the
+// number of *significant* digits stays roughly constant (5–6) across
+// the whole price range you'd actually see on a perp screen.
+//
+// Exported so Hyperliquid.tsx and Trade.tsx can use the same scaling
+// for mark prices, entry prices, position cards, etc. — without each
+// page reinventing slightly-different rules.
+export function fmtUsd(n: number): string {
   if (!Number.isFinite(n) || n <= 0) return '—'
-  const max = n < 1 ? 5 : n < 100 ? 4 : 2
-  return `$${n.toLocaleString(undefined, { maximumFractionDigits: max })}`
+  return `$${fmtUsdRaw(n)}`
+}
+export function fmtUsdRaw(n: number): string {
+  if (!Number.isFinite(n)) return '0'
+  const abs = Math.abs(n)
+  let max: number
+  if (abs >= 10000)     max = 2   // BTC: 96,234.56
+  else if (abs >= 1000) max = 3   // ETH: 3,457.123
+  else if (abs >= 100)  max = 4   // SOL/BNB: 86.1234
+  else if (abs >= 10)   max = 4   // HYPE: 41.3651
+  else if (abs >= 1)    max = 5   // ASTER: 0.64590
+  else if (abs >= 0.01) max = 6   // micro-cap: 0.012345
+  else                  max = 8   // really tiny: 0.00001234
+  return n.toLocaleString(undefined, { maximumFractionDigits: max })
+}
+function fmtPrice(n: number): string {
+  return fmtUsd(n)
 }
 
 function fmtVol(n: number): string {

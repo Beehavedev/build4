@@ -257,7 +257,22 @@ export async function getAccountState(userAddress: string): Promise<{
   withdrawableUsdc: number
   accountValue:     number
   onboarded:        boolean
-  positions:        Array<{ coin: string; szi: number; entryPx: number; unrealizedPnl: number }>
+  positions:        Array<{
+    coin:          string
+    szi:           number
+    entryPx:       number
+    unrealizedPnl: number
+    // Extra fields surfaced so the mini-app can render rich position
+    // cards (entry / mark / leverage / liq) instead of just side+pnl.
+    // All come straight from HL's clearinghouseState response.
+    positionValue: number   // signed USDC notional ; markPx = positionValue/szi
+    leverage:      number   // user-set leverage (1..maxLeverage)
+    leverageType:  'cross' | 'isolated'
+    maxLeverage:   number   // venue cap for the asset
+    liquidationPx: number   // 0 when unavailable (e.g. cross at full equity)
+    marginUsed:    number   // initial margin currently locked by this position
+    returnOnEquity: number  // unrealizedPnl / marginUsed (HL-computed)
+  }>
   abstraction:      'unifiedAccount' | 'portfolioMargin' | 'disabled' | null
 }> {
   try {
@@ -268,12 +283,22 @@ export async function getAccountState(userAddress: string): Promise<{
       infoClient.clearinghouseState({ user: userAddress as `0x${string}` }),
       getUserAbstraction(userAddress),
     ])
-    const positions = (state.assetPositions ?? []).map((ap: any) => ({
-      coin:          ap.position?.coin ?? '',
-      szi:           parseFloat(ap.position?.szi ?? '0'),
-      entryPx:       parseFloat(ap.position?.entryPx ?? '0'),
-      unrealizedPnl: parseFloat(ap.position?.unrealizedPnl ?? '0'),
-    }))
+    const positions = (state.assetPositions ?? []).map((ap: any) => {
+      const p = ap.position ?? {}
+      return {
+        coin:           p.coin ?? '',
+        szi:            parseFloat(p.szi ?? '0'),
+        entryPx:        parseFloat(p.entryPx ?? '0'),
+        unrealizedPnl:  parseFloat(p.unrealizedPnl ?? '0'),
+        positionValue:  parseFloat(p.positionValue ?? '0'),
+        leverage:       Number(p.leverage?.value ?? 1),
+        leverageType:   (p.leverage?.type === 'isolated' ? 'isolated' : 'cross') as 'cross' | 'isolated',
+        maxLeverage:    Number(p.maxLeverage ?? 0),
+        liquidationPx:  parseFloat(p.liquidationPx ?? '0'),
+        marginUsed:     parseFloat(p.marginUsed ?? '0'),
+        returnOnEquity: parseFloat(p.returnOnEquity ?? '0'),
+      }
+    })
     const accountValue = parseFloat((state as any).marginSummary?.accountValue ?? '0')
     // A user is "onboarded" on HL the moment a clearinghouse account exists
     // for their address — which is exactly when HL returns a marginSummary
