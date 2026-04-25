@@ -1794,11 +1794,14 @@ app.post('/api/hyperliquid/order', requireTgUser, async (req, res) => {
 //      (reduceOnly), so HL guarantees the order can only shrink the
 //      position and never accidentally flip it to the opposite side if
 //      sizing is slightly off.
-//   3. Reuse the same builder-fee + noBuilder fallback ladder that
-//      /api/hyperliquid/order uses, so a misconfigured builder never
-//      blocks a user from getting OUT of a position. Particularly
-//      important for closes — being unable to exit is far worse than
-//      being unable to enter.
+//   3. On ANY builder-related reject, immediately retry with noBuilder.
+//      This is INTENTIONALLY more aggressive than /order's multi-stage
+//      ladder (which auto-approves + backs off + only falls back on
+//      unregistered) — for an EXIT, the priority is the user gets out;
+//      losing the 0.1% builder kickback on a single close fill is
+//      trivially acceptable compared to wedging a user inside a position
+//      they're actively trying to flatten. See L1864+ for the regex and
+//      the detailed asymmetry-vs-/order rationale.
 //
 // Body: { coin: string }
 app.post('/api/hyperliquid/close', requireTgUser, async (req, res) => {
