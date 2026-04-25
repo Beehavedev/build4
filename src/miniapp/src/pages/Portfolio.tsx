@@ -35,9 +35,14 @@ export default function Portfolio({ userId }: PortfolioProps) {
   }, [])
 
   const trades: any[] = data?.trades ?? []
-  const totalPnl = trades.reduce((s: number, t: any) => s + (t.pnl ?? 0), 0)
-  const wins = trades.filter((t: any) => (t.pnl ?? 0) > 0).length
-  const winRate = trades.length > 0 ? (wins / trades.length) * 100 : 0
+  // Lifetime stats (Total PnL, Win Rate, Best Trade) only count CLOSED
+  // trades. Open positions carry unrealized PnL that fluctuates with the
+  // market — including them here would make "lifetime" numbers move
+  // tick-to-tick, which isn't what users expect from a performance card.
+  const realized = trades.filter((t: any) => t.status !== 'open')
+  const totalPnl = realized.reduce((s: number, t: any) => s + (t.pnl ?? 0), 0)
+  const wins = realized.filter((t: any) => (t.pnl ?? 0) > 0).length
+  const winRate = realized.length > 0 ? (wins / realized.length) * 100 : 0
 
   // Build cumulative PnL chart data
   const now = Date.now()
@@ -212,7 +217,7 @@ export default function Portfolio({ userId }: PortfolioProps) {
           { label: 'Total PnL', value: `${totalPnl >= 0 ? '+' : ''}$${totalPnl.toFixed(2)}`, color: totalPnl >= 0 ? '#10b981' : '#ef4444' },
           { label: 'Win Rate', value: `${winRate.toFixed(1)}%`, color: '#e2e8f0' },
           { label: 'Total Trades', value: trades.length, color: '#e2e8f0' },
-          { label: 'Best Trade', value: `+$${Math.max(0, ...trades.map((t: any) => t.pnl ?? 0)).toFixed(2)}`, color: '#10b981' }
+          { label: 'Best Trade', value: `+$${Math.max(0, ...realized.map((t: any) => t.pnl ?? 0)).toFixed(2)}`, color: '#10b981' }
         ].map(stat => (
           <div key={stat.label} className="card">
             <div style={{ fontSize: 11, color: '#64748b', marginBottom: 4 }}>{stat.label}</div>
