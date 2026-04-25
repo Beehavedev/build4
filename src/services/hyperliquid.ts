@@ -330,17 +330,34 @@ export async function approveBuilderFee(
   userPrivateKey: string,
 ): Promise<{ success: boolean; error?: string; skipped?: boolean }> {
   if (!BUILDER_ADDRESS) return { success: true, skipped: true }
+  console.log(
+    `[HL approveBuilderFee] using builder=${BUILDER_ADDRESS} rate=${BUILDER_MAX_RATE} ` +
+    `userAddr=${new ethers.Wallet(userPrivateKey).address}`,
+  )
   try {
     const userWallet = new ethers.Wallet(userPrivateKey)
     const client = new hl.ExchangeClient({ transport, wallet: userWallet as any })
-    await client.approveBuilderFee({
+    const resp = await client.approveBuilderFee({
       builder:     BUILDER_ADDRESS as `0x${string}`,
       maxFeeRate:  BUILDER_MAX_RATE as `${string}%`,
     })
+    console.log('[HL approveBuilderFee] OK raw=', JSON.stringify(resp))
     return { success: true }
   } catch (err: any) {
+    // Capture EVERY shape HL might return: HTTP body, axios response.data,
+    // SDK-thrown nested cause, plain message. The "Builder has insufficient
+    // balance to be approved" error has historically come back as a 200 with
+    // status:"err" inside .response.data, NOT as a thrown error — so we also
+    // need the SDK to surface it. Dumping the whole err object catches both.
+    let dump: any
+    try {
+      dump = JSON.stringify(err, Object.getOwnPropertyNames(err))
+    } catch { dump = String(err) }
     const msg = err?.response?.data ?? err?.message ?? 'approveBuilderFee failed'
-    console.error('[HL] approveBuilderFee failed:', BUILDER_ADDRESS, '→', msg)
+    console.error(
+      `[HL approveBuilderFee] FAIL builder=${BUILDER_ADDRESS} → msg=${typeof msg === 'string' ? msg : JSON.stringify(msg)} ` +
+      `rawErr=${dump}`,
+    )
     return { success: false, error: typeof msg === 'string' ? msg : JSON.stringify(msg) }
   }
 }
@@ -444,11 +461,29 @@ export async function placeOrder(
     const res = await client.order(orderPayload)
 
     const status = (res as any)?.response?.data?.statuses?.[0]
-    if (status?.error) return { success: false, error: status.error }
+    if (status?.error) {
+      // Builder-related rejects come back as `status.error` strings INSIDE a
+      // 200 response, not as thrown errors. Log the full HL response so we
+      // can read HL's authoritative explanation (esp. for the elusive
+      // "Builder has insufficient balance to be approved" path).
+      if (/builder/i.test(status.error)) {
+        console.error(
+          `[HL placeOrder] BUILDER REJECT user=${creds.userAddress} ` +
+          `builder=${BUILDER_ADDRESS} feeTenths=${BUILDER_FEE_TENTHS} ` +
+          `errFromHL="${status.error}" fullResp=${JSON.stringify(res)}`,
+        )
+      }
+      return { success: false, error: status.error }
+    }
     return { success: true, oid: status?.resting?.oid ?? status?.filled?.oid, status: JSON.stringify(status) }
   } catch (err: any) {
+    let dump: any
+    try { dump = JSON.stringify(err, Object.getOwnPropertyNames(err)) } catch { dump = String(err) }
     const msg = err?.response?.data ?? err?.message ?? 'placeOrder failed'
-    console.error('[HL] placeOrder failed:', creds.userAddress, '→', msg)
+    console.error(
+      `[HL] placeOrder failed user=${creds.userAddress} → ${typeof msg === 'string' ? msg : JSON.stringify(msg)} ` +
+      `rawErr=${dump}`,
+    )
     return { success: false, error: typeof msg === 'string' ? msg : JSON.stringify(msg) }
   }
 }
