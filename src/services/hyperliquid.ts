@@ -60,16 +60,50 @@ export function formatHlSize(sz: number, szDecimals: number): string {
 // if you ever want HL revenue to land in a separate treasury.
 //
 //   HYPERLIQUID_BUILDER_ADDRESS    optional override; defaults to ASTER_BUILDER_ADDRESS
+//                                  Set to "" (empty string) or "disabled" to
+//                                  EXPLICITLY disable HL builder fees without
+//                                  touching ASTER. Useful when HL rejects the
+//                                  builder address (e.g. "Builder has insufficient
+//                                  balance to be approved") and you need users
+//                                  to be able to trade while you sort out the
+//                                  builder wallet's HL eligibility.
 //   HYPERLIQUID_BUILDER_MAX_RATE   ceiling user signs, e.g. '0.1%' (HL max allowed)
 //   HYPERLIQUID_BUILDER_FEE_TENTHS per-order fee in tenths of a basis point
 //                                  (10 bps = 100, which is HL's hard cap)
 //
 // If neither builder address is set we skip the builder approval and place
 // orders without a builder field — zero revenue but no breakage.
-const BUILDER_ADDRESS    =
-  (process.env.HYPERLIQUID_BUILDER_ADDRESS ?? process.env.ASTER_BUILDER_ADDRESS ?? '').toLowerCase()
+//
+// Resolution rule (intentional, do NOT regress to `??`):
+//   - empty string "" or literal "disabled" on HYPERLIQUID_BUILDER_ADDRESS
+//     wins → HL builder fully disabled (no fallback to ASTER_BUILDER).
+//   - undefined HYPERLIQUID_BUILDER_ADDRESS → falls back to ASTER_BUILDER.
+//   - any non-empty string → used verbatim.
+// `??` would silently fall through on "" which is the opposite of what an
+// operator means when they clear the var to disable the feature.
+const _hlBuilderRaw = (process.env.HYPERLIQUID_BUILDER_ADDRESS ?? '').trim().toLowerCase()
+const BUILDER_ADDRESS = (() => {
+  if (process.env.HYPERLIQUID_BUILDER_ADDRESS !== undefined) {
+    if (_hlBuilderRaw === '' || _hlBuilderRaw === 'disabled' || _hlBuilderRaw === 'none' || _hlBuilderRaw === 'off') {
+      return ''
+    }
+    return _hlBuilderRaw
+  }
+  return (process.env.ASTER_BUILDER_ADDRESS ?? '').trim().toLowerCase()
+})()
 const BUILDER_MAX_RATE   = process.env.HYPERLIQUID_BUILDER_MAX_RATE ?? '0.1%'
 const BUILDER_FEE_TENTHS = Number(process.env.HYPERLIQUID_BUILDER_FEE_TENTHS ?? '100')
+
+// Loud startup banner so a misconfigured builder address is visible from the
+// FIRST log line of every deploy. Without this, the only way to know what
+// builder Render has loaded is to wait for a user to attempt a trade and
+// trigger the per-call log. Cheap, prints once per process.
+console.log(
+  `[HL config] builder=${BUILDER_ADDRESS || '<DISABLED>'} ` +
+  `(HYPERLIQUID_BUILDER_ADDRESS=${process.env.HYPERLIQUID_BUILDER_ADDRESS ?? '<unset>'}, ` +
+  `ASTER_BUILDER_ADDRESS=${process.env.ASTER_BUILDER_ADDRESS ?? '<unset>'}) ` +
+  `rate=${BUILDER_MAX_RATE} feeTenths=${BUILDER_FEE_TENTHS}`,
+)
 
 // Single shared transport — re-used across calls for connection pooling.
 const transport = new hl.HttpTransport(HL_API_URL !== 'https://api.hyperliquid.xyz' ? ({ url: HL_API_URL } as any) : {})
