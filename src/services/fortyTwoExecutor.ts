@@ -2,7 +2,7 @@ import { ethers } from 'ethers';
 import { db } from '../db';
 import { decryptPrivateKey } from './wallet';
 import { FortyTwoTrader, type DryRunReceipt } from './fortyTwoTrader';
-import { readMarketOnchain, isWinningTokenId } from './fortyTwoOnchain';
+import { readMarketOnchain, isWinningTokenId, quoteRedeemValue } from './fortyTwoOnchain';
 import type { Market42 } from './fortyTwo';
 import { getMarketByAddress } from './fortyTwo';
 
@@ -901,21 +901,15 @@ export async function closePredictionPosition(
   if (!sellAmt.ok) return sellAmt;
   const tokenAmt = sellAmt.tokenAmt;
 
-  // 30% slippage tolerance on sell. Prediction-market AMMs (LMSR-style) move
-  // a LOT when closing positions in thin markets — selling 200+ tokens on a
-  // micro-cap outcome can routinely exceed 5–10% impact even though the
-  // marginal price barely changes. The old 5% bound was reverting every
-  // legitimate close. Buy-side stays tighter (cap at entry) because there
-  // the user can simply size down; on sell they have a fixed bag to exit.
-  const SLIPPAGE_BPS_SELL = 3000;
-  const tokensSoldFloat = Number(ethers.formatUnits(tokenAmt, 18));
-  const expectedUsdtOut = tokensSoldFloat * outcome.impliedProbability;
-  const minUsdtOut = paperTrade
-    ? 0n
-    : ethers.parseUnits(
-        (expectedUsdtOut * (1 - SLIPPAGE_BPS_SELL / 10_000)).toFixed(6),
-        18,
-      );
+  const sellQuote = await computeSellMinOut({
+    paperTrade,
+    marketAddress: pos.marketAddress,
+    curveAddress: market.curve,
+    tokenId: pos.tokenId,
+    tokenAmt,
+    impliedProbability: outcome.impliedProbability,
+  });
+  const { minUsdtOut, expectedPayoutFloat, exitPriceFloat } = sellQuote;
 
   let receipt: TxReceiptLike = null;
   try {
@@ -931,24 +925,99 @@ export async function closePredictionPosition(
   }
   const txHash = receiptHash(receipt);
 
-  // Payout estimate: real implementation would read USDT balance delta. For
-  // now, marginal price * tokens sold is the closest cheap approximation and
-  // is consistent with how the bonding curve prices small fills.
-  const payout = tokensSoldFloat * outcome.impliedProbability;
-  const pnl = payout - pos.usdtIn;
+  // Payout estimate: when we got an exact curve quote it's the post-fee USDT
+  // delta. Otherwise we fall back to marginal-price * tokens (the same
+  // approximation we used before — close enough for cosmetic PnL display
+  // until we read the wallet's USDT delta from the receipt logs).
+  const pnl = expectedPayoutFloat - pos.usdtIn;
   await db.$executeRawUnsafe(
     `UPDATE "OutcomePosition"
      SET status='closed', "exitPrice"=$1, "payoutUsdt"=$2, pnl=$3,
          "txHashClose"=$4, "closedAt"=NOW(), "paperTrade"=$5
      WHERE id=$6`,
-    outcome.impliedProbability,
-    payout,
+    exitPriceFloat,
+    expectedPayoutFloat,
     pnl,
     txHash,
     paperTrade,
     pos.id,
   );
   return { ok: true, pnl };
+}
+
+/**
+ * Compute the minUsdtOut to pass to `sellOutcome` plus the float values we
+ * record on the closed position row.
+ *
+ * Strategy: ask the bonding curve directly for the exact post-fee USDT
+ * payout via `quoteRedeemValue` (staticCall on
+ * `IFTCurve.calRedeemValueByOtDelta`). When the quote succeeds we apply a
+ * tight 5% slippage tolerance on that exact number — enough to absorb a
+ * small price drift between staticCall and the broadcast tx, without
+ * giving sandwich-MEV a useful margin.
+ *
+ * When the quote fails (RPC down, exotic curve, market closed mid-quote)
+ * we fall back to the previous behaviour: marginal-price * tokens with a
+ * generous 30% buffer. The marginal-price estimate over-states actual
+ * payout on partial exits because price walks down the curve as you sell,
+ * so the wider buffer is needed to keep the close from reverting.
+ *
+ * Paper-trade mode always returns minUsdtOut=0n — there's no on-chain
+ * settlement to protect against.
+ */
+async function computeSellMinOut(args: {
+  paperTrade: boolean;
+  marketAddress: string;
+  curveAddress: string;
+  tokenId: number;
+  tokenAmt: bigint;
+  impliedProbability: number;
+}): Promise<{ minUsdtOut: bigint; expectedPayoutFloat: number; exitPriceFloat: number }> {
+  const { paperTrade, marketAddress, curveAddress, tokenId, tokenAmt, impliedProbability } = args;
+
+  if (paperTrade) {
+    const tokensFloat = Number(ethers.formatUnits(tokenAmt, 18));
+    return {
+      minUsdtOut: 0n,
+      expectedPayoutFloat: tokensFloat * impliedProbability,
+      exitPriceFloat: impliedProbability,
+    };
+  }
+
+  // Tight 5% slippage on the exact curve quote — covers small price drift
+  // between staticCall and broadcast. Anything more would just leak value
+  // to sandwichers without unblocking real reverts.
+  const SLIPPAGE_BPS_QUOTE = 500;
+  // Wide 30% slippage on the legacy marginal-price estimate. The estimate
+  // overstates payout on partial exits because price walks down the curve;
+  // 30% is what we used to ship before the exact-quote path landed and is
+  // empirically wide enough for thin pools.
+  const SLIPPAGE_BPS_FALLBACK = 3000;
+
+  const quoted = await quoteRedeemValue(marketAddress, tokenId, tokenAmt, curveAddress);
+
+  if (quoted !== null && quoted > 0n) {
+    // Apply slippage in bigint space to avoid float-rounding drift on the
+    // 18-decimal value. (quoted * (10000 - 500)) / 10000.
+    const minUsdtOut = (quoted * BigInt(10_000 - SLIPPAGE_BPS_QUOTE)) / 10_000n;
+    const expectedPayoutFloat = Number(ethers.formatUnits(quoted, 18));
+    const tokensFloat = Number(ethers.formatUnits(tokenAmt, 18));
+    const exitPriceFloat = tokensFloat > 0 ? expectedPayoutFloat / tokensFloat : impliedProbability;
+    return { minUsdtOut, expectedPayoutFloat, exitPriceFloat };
+  }
+
+  // Fallback to the previous estimate path.
+  const tokensFloat = Number(ethers.formatUnits(tokenAmt, 18));
+  const expectedFloat = tokensFloat * impliedProbability;
+  const minUsdtOut = ethers.parseUnits(
+    (expectedFloat * (1 - SLIPPAGE_BPS_FALLBACK / 10_000)).toFixed(6),
+    18,
+  );
+  return {
+    minUsdtOut,
+    expectedPayoutFloat: expectedFloat,
+    exitPriceFloat: impliedProbability,
+  };
 }
 
 /**
@@ -1213,21 +1282,15 @@ export async function closeUserPredictionPosition(
   if (!sellAmt.ok) return sellAmt;
   const tokenAmt = sellAmt.tokenAmt;
 
-  // 30% slippage tolerance on sell. Prediction-market AMMs (LMSR-style) move
-  // a LOT when closing positions in thin markets — selling 200+ tokens on a
-  // micro-cap outcome can routinely exceed 5–10% impact even though the
-  // marginal price barely changes. The old 5% bound was reverting every
-  // legitimate close. Buy-side stays tighter (cap at entry) because there
-  // the user can simply size down; on sell they have a fixed bag to exit.
-  const SLIPPAGE_BPS_SELL = 3000;
-  const tokensSoldFloat = Number(ethers.formatUnits(tokenAmt, 18));
-  const expectedUsdtOut = tokensSoldFloat * outcome.impliedProbability;
-  const minUsdtOut = paperTrade
-    ? 0n
-    : ethers.parseUnits(
-        (expectedUsdtOut * (1 - SLIPPAGE_BPS_SELL / 10_000)).toFixed(6),
-        18,
-      );
+  const sellQuote = await computeSellMinOut({
+    paperTrade,
+    marketAddress: pos.marketAddress,
+    curveAddress: market.curve,
+    tokenId: pos.tokenId,
+    tokenAmt,
+    impliedProbability: outcome.impliedProbability,
+  });
+  const { minUsdtOut, expectedPayoutFloat, exitPriceFloat } = sellQuote;
 
   let receipt: TxReceiptLike = null;
   try {
@@ -1247,15 +1310,14 @@ export async function closeUserPredictionPosition(
   }
   const txHash = receiptHash(receipt);
 
-  const payout = tokensSoldFloat * outcome.impliedProbability;
-  const pnl = payout - pos.usdtIn;
+  const pnl = expectedPayoutFloat - pos.usdtIn;
   await db.$executeRawUnsafe(
     `UPDATE "OutcomePosition"
      SET status='closed', "exitPrice"=$1, "payoutUsdt"=$2, pnl=$3,
          "txHashClose"=$4, "closedAt"=NOW(), "paperTrade"=$5
      WHERE id=$6`,
-    outcome.impliedProbability,
-    payout,
+    exitPriceFloat,
+    expectedPayoutFloat,
     pnl,
     txHash,
     paperTrade,
