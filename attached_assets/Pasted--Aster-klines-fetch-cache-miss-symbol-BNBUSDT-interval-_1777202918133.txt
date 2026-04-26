@@ -1,0 +1,50 @@
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'LINKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'LINKUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AEVOUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AEVOUSDT', interval: '1h', limit: 100 }
+[News] Analysis failed: 400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."},"request_id":"req_011CaSJYUyxHiZXx6V1zxvPF"}
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '4h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '4h', limit: 200 }
+[inference:akash] circuit tripped — status=402 parked for 10m. body={"error":{"message":"Insufficient credits. Please add credits to your account to continue.","type":"insufficient_quota",
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=202/202 (100.0%)
+[inference:anthropic] circuit tripped — status=400 parked for 10m. body={"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropi
+[inference:xai] circuit tripped — status=403 parked for 10m. body={"code":"The caller does not have permission to execute the specified operation","error":"Your newly created team doesn'
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=203/203 (100.0%)
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=204/204 (100.0%)
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=205/205 (100.0%)
+[Agent BTPredict] HOLD on SOLUSDT — Waiting for more convincing signals, including improved volume confirmation and 
+[Agent SeanBuild4] HOLD on SOLUSDT — Waiting for clearer confirmation from volume and momentum indicators to increase
+[Agent TENSHI] HOLD on SOLUSDT — Waiting for clearer entry signals, such as increased volume and more definitive 
+[Agent Mineirohunter] HOLD on SOLUSDT — Waiting for clearer signals or more confirmation, such as increased volume or a 
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=206/206 (100.0%)
+[Agent Xander] HOLD on SOLUSDT — Waiting for confirming volume and a stronger momentum signal to increase confide
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=1/1 (100.0%)
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=2/2 (100.0%)
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=3/3 (100.0%)
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=4/4 (100.0%)
+[Agent BTPredict] HOLD on SOLUSDT — Waiting for volume confirmation and more favorable momentum indicators.
+[Agent SeanBuild4] HOLD on SOLUSDT — Waiting for clearer setup and higher volume confirmation.
+[Agent BNT] HOLD on SOLUSDT — Waiting for clearer trend continuation signals and higher volume confirmation.
+[Agent Xander] HOLD on SOLUSDT — Waiting for confirming volume and strong momentum signals to enter a long positi
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] circuit open — provider had a fatal error recently, parked) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=207/207 (100.0%)
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=5/5 (100.0%)
+[Agent BNT] HOLD on SOLUSDT — Waiting for clearer trend continuation signals and higher volume confirmation.
+[Agent TENSHI] HOLD on SOLUSDT — Waiting for clearer entry signals with improved volume and momentum alignment.
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=6/6 (100.0%)
+[Agent Mineirohunter] HOLD on SOLUSDT — Waiting for clearer signals and more confirmation, such as increased volume and 
