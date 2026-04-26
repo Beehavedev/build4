@@ -62,76 +62,74 @@ export function friendlySellError(raw: string): { code: string; message: string;
   if (r.includes('marketended') || r.includes('marketclosed') || r.includes('marketfinalised')) {
     return {
       code: 'market_ended',
-      message: "Trading window closed for this market — selling is no longer possible.",
-      hint: "Wait for the market to resolve, then tap Claim. If your side wins you get paid out automatically; if it loses the position closes at $0.",
+      message: "This market has stopped trading.",
+      hint: "It will settle automatically once the result is final. If your prediction wins, the payout will appear in your wallet.",
     };
   }
   if (r.includes('marketresolved')) {
     return {
       code: 'market_resolved',
-      message: "Market already resolved — use Claim to redeem any winnings.",
-      hint: "Tap Claim on this position. Winning outcome tokens redeem 1:1 to USDT; losing outcomes pay nothing.",
+      message: "This market has settled.",
+      hint: "Tap Claim to collect any winnings.",
     };
   }
   if (r.includes('slippageexceeded')) {
     return {
       code: 'slippage',
-      message: "Price moved too much between quote and execution.",
-      hint: "Try again in a few seconds — thin prediction markets re-price quickly. The 30% sell tolerance is already wide; persistent failures usually mean the pool is nearly drained.",
+      message: "The price moved while we were preparing your order.",
+      hint: "Please try again — markets like this one can re-price within seconds.",
     };
   }
   if (r.includes('insufficientliquidity')) {
     return {
       code: 'no_liquidity',
-      message: "Pool can't fill this size — liquidity drained on this outcome.",
-      hint: "Try selling a smaller portion, or wait for the market to resolve and Claim instead.",
+      message: "There isn't enough depth to fill this size right now.",
+      hint: "Try a smaller amount, or wait for the market to settle and use Claim.",
     };
   }
   if (r.includes('insufficientbalance')) {
     return {
       code: 'no_balance',
-      message: "Your wallet doesn't hold enough of this outcome token to sell.",
-      hint: "The position may already be closed or transferred. Refresh the page; if it persists, contact support.",
+      message: "This position can't be closed right now.",
+      hint: "Pull down to refresh. If it stays here after refreshing, please contact support and we'll take a look.",
     };
   }
   if (r.includes('safe6909transfer') || r.includes('notoperator')) {
     return {
       code: 'router_approval',
-      message: "Router is missing approval to move your outcome tokens.",
-      hint: "This is automatic — re-tap Sell once. If it still fails, the on-chain approval tx is being mined; wait 15s and retry.",
+      message: "Setting up your wallet for selling — please try again.",
+      hint: "First-time sells need a quick one-time setup. Tap Sell again in about 15 seconds.",
     };
   }
   if (r.includes('paused')) {
     return {
       code: 'paused',
-      message: "Trading is paused on this market by the operator.",
-      hint: "Try again later. If the market resolves while paused you'll still be able to Claim.",
+      message: "Trading is paused on this market.",
+      hint: "Please try again later. If the market settles while paused, you'll still be able to claim.",
     };
   }
   if (r.includes('insufficient funds') || r.includes('insufficient_funds')) {
     return {
       code: 'no_gas',
-      message: "Not enough BNB in your trading wallet to pay gas.",
-      hint: "Send a small amount of BNB (~0.001) to your wallet address shown on the Wallet tab and try again.",
+      message: "Your trading wallet needs a small amount of BNB to cover network fees.",
+      hint: "Send around 0.001 BNB to your wallet address shown on the Wallet tab, then try again.",
     };
   }
   if (r.includes('buffer_overrun') || r.includes('cannot slice beyond data bounds')) {
     return {
       code: 'rpc_flake',
-      message: "BSC RPC returned an empty response.",
-      hint: "Public BSC nodes are throttling — try again in 10 seconds.",
+      message: "The network is busy right now.",
+      hint: "Please try again in about 10 seconds.",
     };
   }
 
-  // Fallback: keep the raw message but trim the noisy ethers prefix.
-  const cleaned = raw
-    .replace(/^.*?sellOutcome would revert: /i, '')
-    .replace(/execution reverted \(unknown custom error\)\s*→\s*/i, '')
-    .trim();
+  // Fallback: don't leak raw chain errors to users. Log details server-side
+  // (already happens upstream via console.error in the caller) and show a
+  // calm, actionable message.
   return {
     code: 'unknown',
-    message: `Sell failed: ${cleaned.length > 200 ? cleaned.slice(0, 200) + '…' : cleaned}`,
-    hint: "Try again in a moment. If this keeps happening, screenshot this message so we can investigate.",
+    message: "We couldn't close this position.",
+    hint: "Please try again in a moment. If this keeps happening, contact support and we'll investigate.",
   };
 }
 
@@ -1079,9 +1077,9 @@ async function resolveSellAmount(args: {
     if (tokenAmt === 0n) {
       return {
         ok: false,
-        reason: 'wallet holds zero of this outcome token',
+        reason: "This position can't be closed right now.",
         code: 'no_balance',
-        hint: 'The position appears open in our records but the wallet no longer holds the tokens — likely closed elsewhere or transferred. The Sell button will swap to a refresh prompt.',
+        hint: "Pull down to refresh. If it stays here after refreshing, please contact support and we'll take a look.",
       };
     }
     return { ok: true, tokenAmt };
@@ -1105,9 +1103,9 @@ async function resolveSellAmount(args: {
   if (walletBal === 0n) {
     return {
       ok: false,
-      reason: 'wallet holds zero of this outcome token',
+      reason: "This position can't be closed right now.",
       code: 'no_balance',
-      hint: 'The position appears open in our records but the wallet no longer holds the tokens — likely closed elsewhere or transferred. The Sell button will swap to a refresh prompt.',
+      hint: "Pull down to refresh. If it stays here after refreshing, please contact support and we'll take a look.",
     };
   }
 
@@ -1129,9 +1127,9 @@ async function resolveSellAmount(args: {
   if (tokenAmt === 0n) {
     return {
       ok: false,
-      reason: 'computed share is zero — try selling another lot first',
+      reason: "This position can't be closed right now.",
       code: 'no_balance',
-      hint: 'You have multiple open lots on the same outcome and this one\'s fair share rounds to zero. Close the larger lot first, then retry this one.',
+      hint: "You have other open positions on the same outcome — try closing the larger one first.",
     };
   }
   console.warn(

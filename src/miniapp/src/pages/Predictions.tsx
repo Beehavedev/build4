@@ -1606,7 +1606,7 @@ function MyPositionsList({
                           background: '#1e293b', border: '1px solid #334155',
                           color: '#94a3b8',
                         }}>
-                        No tokens to sell — refresh
+                        Pull to refresh
                       </div>
                     )
                   }
