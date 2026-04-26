@@ -578,6 +578,496 @@ export default function Hyperliquid() {
       <MarketTicker symbol={orderCoin} testIdPrefix="hl-ticker" />
       <NativeChart venue="hl" symbol={orderCoin} defaultInterval="15m" height={300} testIdPrefix="hl-chart" />
 
+      {/* Order ticket — only when onboarded AND we haven't been told
+          by the server that activation is needed (forceActivateUi). */}
+      {account?.onboarded && !forceActivateUi && (
+        <div style={cardStyle} data-testid="card-hl-order">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
+            <div style={{ fontSize: 13, fontWeight: 600 }}>Place order</div>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: 10, color: '#9ca3af', letterSpacing: 0.4 }}>{orderCoin} MARK · LIVE</div>
+              <div
+                data-testid="text-hl-selected-mark"
+                style={{ fontSize: 18, fontWeight: 700, color: mids[orderCoin] > 0 ? '#a7f3d0' : '#6b7280', fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace' }}
+              >
+                {fmtUsd(mids[orderCoin])}
+              </div>
+            </div>
+          </div>
+
+          {/* Coin selector */}
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
+            {COINS.map(c => (
+              <button
+                key={c}
+                onClick={() => setOrderCoin(c)}
+                data-testid={`button-hl-coin-${c}`}
+                style={{
+                  padding: '6px 10px', borderRadius: 8, fontSize: 12, fontWeight: 600,
+                  background: orderCoin === c ? '#7c3aed' : '#1f2937',
+                  color: '#fff', border: 'none', cursor: 'pointer',
+                }}
+              >
+                {c}
+              </button>
+            ))}
+          </div>
+
+          {/* LONG / SHORT */}
+          <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+            <button
+              onClick={() => setOrderSide('LONG')}
+              data-testid="button-hl-side-long"
+              style={{
+                flex: 1, padding: '10px', borderRadius: 8, fontSize: 13, fontWeight: 600,
+                background: orderSide === 'LONG' ? '#22c55e' : '#1f2937',
+                color: '#fff', border: 'none', cursor: 'pointer',
+              }}
+            >
+              LONG
+            </button>
+            <button
+              onClick={() => setOrderSide('SHORT')}
+              data-testid="button-hl-side-short"
+              style={{
+                flex: 1, padding: '10px', borderRadius: 8, fontSize: 13, fontWeight: 600,
+                background: orderSide === 'SHORT' ? '#ef4444' : '#1f2937',
+                color: '#fff', border: 'none', cursor: 'pointer',
+              }}
+            >
+              SHORT
+            </button>
+          </div>
+
+          {/* MARKET / LIMIT order type */}
+          <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+            <button
+              onClick={() => setOrderType('MARKET')}
+              data-testid="button-hl-type-market"
+              style={{
+                flex: 1, padding: '8px', borderRadius: 8, fontSize: 12, fontWeight: 600,
+                background: orderType === 'MARKET' ? '#8b5cf6' : '#1f2937',
+                color: '#fff', border: 'none', cursor: 'pointer',
+              }}
+            >
+              MARKET
+            </button>
+            <button
+              onClick={() => setOrderType('LIMIT')}
+              data-testid="button-hl-type-limit"
+              style={{
+                flex: 1, padding: '8px', borderRadius: 8, fontSize: 12, fontWeight: 600,
+                background: orderType === 'LIMIT' ? '#8b5cf6' : '#1f2937',
+                color: '#fff', border: 'none', cursor: 'pointer',
+              }}
+            >
+              LIMIT
+            </button>
+          </div>
+
+          {/* Limit price — only when LIMIT. Lives above size so the user
+              can see it ticks as the live mark moves (next to the LIVE
+              header readout above). One-tap "Use mark" snaps it to the
+              current mid in case they nudged off and want to reset. */}
+          {orderType === 'LIMIT' && (
+            <div style={{ marginBottom: 10 }}>
+              <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 4, display: 'flex', justifyContent: 'space-between' }}>
+                <span>Limit price (USDC)</span>
+                {mids[orderCoin] > 0 && (
+                  <button
+                    onClick={() => setOrderLimitPx(mids[orderCoin].toString())}
+                    data-testid="button-hl-limit-use-mark"
+                    style={{
+                      padding: '0 6px', fontSize: 10, color: '#a78bfa',
+                      background: 'transparent', border: 'none', cursor: 'pointer',
+                    }}
+                  >
+                    use mark ${fmtUsdRaw(mids[orderCoin])}
+                  </button>
+                )}
+              </div>
+              <input
+                type="number"
+                value={orderLimitPx}
+                onChange={(e) => setOrderLimitPx(e.target.value)}
+                placeholder={mids[orderCoin] > 0 ? mids[orderCoin].toString() : '0.00'}
+                data-testid="input-hl-limit-px"
+                style={{
+                  width: '100%', padding: '10px', borderRadius: 8, fontSize: 14,
+                  background: '#0f172a', border: '1px solid #334155', color: '#fff',
+                  boxSizing: 'border-box',
+                }}
+              />
+              {hlLimitMeta && (
+                <div
+                  style={{
+                    fontSize: 11,
+                    color: hlLimitMeta.crossable ? '#f59e0b' : '#9ca3af',
+                    marginTop: 4,
+                    lineHeight: 1.4,
+                  }}
+                  data-testid="text-hl-limit-distance"
+                >
+                  {Math.abs(hlLimitMeta.pct).toFixed(2)}% {hlLimitMeta.above ? 'above' : 'below'} mark
+                  {hlLimitMeta.crossable
+                    ? ' · this side of the book — your order will likely fill immediately as a taker'
+                    : ' · should rest as a maker until price reaches it'}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Notional + leverage */}
+          <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+            <div style={{ flex: 2 }}>
+              <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 4 }}>Size (USDC)</div>
+              <input
+                type="number"
+                value={orderNotional}
+                onChange={(e) => setOrderNotional(e.target.value)}
+                data-testid="input-hl-notional"
+                style={{
+                  width: '100%', padding: '10px', borderRadius: 8, fontSize: 14,
+                  background: '#0f172a', border: '1px solid #334155', color: '#fff',
+                  boxSizing: 'border-box',
+                }}
+              />
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 4 }}>Leverage</div>
+              <input
+                type="number"
+                value={orderLeverage}
+                onChange={(e) => setOrderLeverage(e.target.value)}
+                min="1"
+                max="50"
+                data-testid="input-hl-leverage"
+                style={{
+                  width: '100%', padding: '10px', borderRadius: 8, fontSize: 14,
+                  background: '#0f172a', border: '1px solid #334155', color: '#fff',
+                  boxSizing: 'border-box',
+                }}
+              />
+            </div>
+          </div>
+
+          {/* Quick size buttons */}
+          <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+            {['10', '25', '100', '500'].map(amt => (
+              <button
+                key={amt}
+                onClick={() => setOrderNotional(amt)}
+                data-testid={`button-hl-quick-${amt}`}
+                style={{
+                  flex: 1, padding: '6px', borderRadius: 6, fontSize: 11,
+                  background: '#1f2937', color: '#9ca3af', border: 'none', cursor: 'pointer',
+                }}
+              >
+                ${amt}
+              </button>
+            ))}
+          </div>
+
+          <button
+            onClick={placeOrder}
+            disabled={placing || !orderNotional || Number(orderNotional) <= 0}
+            data-testid="button-hl-place-order"
+            style={{
+              width: '100%', padding: '12px', borderRadius: 10, fontSize: 14, fontWeight: 600,
+              background: placing ? '#4c1d95'
+                : orderSide === 'LONG' ? 'linear-gradient(90deg,#16a34a,#22c55e)'
+                : 'linear-gradient(90deg,#dc2626,#ef4444)',
+              color: '#fff', border: 'none', cursor: placing ? 'wait' : 'pointer',
+            }}
+          >
+            {placing
+              ? 'Placing…'
+              : `${orderSide} $${orderNotional || '0'} ${orderCoin} ${orderType} @ ${orderLeverage}x`}
+          </button>
+
+          {orderMsg && (
+            <div
+              style={{
+                marginTop: 8, padding: 8, borderRadius: 6, fontSize: 11,
+                background: orderMsgIsErr ? '#7f1d1d' : '#064e3b',
+                color: orderMsgIsErr ? '#fecaca' : '#a7f3d0',
+              }}
+              data-testid="text-hl-order-msg"
+            >
+              {orderMsg}
+            </div>
+          )}
+
+          {needsBuilderApproval && (
+            <button
+              onClick={approveBuilder}
+              disabled={approvingBuilder}
+              data-testid="button-hl-approve-builder"
+              style={{
+                marginTop: 8, width: '100%', padding: '10px', borderRadius: 8,
+                fontSize: 13, fontWeight: 600,
+                background: approvingBuilder ? '#4c1d95' : 'linear-gradient(90deg,#7c3aed,#a78bfa)',
+                color: '#fff', border: 'none', cursor: approvingBuilder ? 'wait' : 'pointer',
+              }}
+            >
+              {approvingBuilder ? 'Approving…' : 'Approve builder fee & retry'}
+            </button>
+          )}
+
+          <div style={{ fontSize: 10, color: '#64748b', marginTop: 10, lineHeight: 1.4 }}>
+            {orderType === 'MARKET'
+              ? 'Market orders execute immediately at best available price (5% slippage cap).'
+              : 'Limit orders rest on the orderbook (GTC) until filled or cancelled.'}{' '}
+            BUILD4 takes a 0.1% builder fee on every fill.{' '}
+            <span
+              onClick={resigning ? undefined : resignBuilder}
+              data-testid="link-hl-resign-builder"
+              style={{
+                color: resigning ? '#475569' : '#a78bfa',
+                cursor: resigning ? 'wait' : 'pointer',
+                textDecoration: 'underline',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {resigning ? 'Refreshing approval…' : 'Refresh approval'}
+            </span>
+          </div>
+
+          {resignMsg && (
+            <div
+              style={{
+                marginTop: 8, padding: 8, borderRadius: 6, fontSize: 11,
+                background: resignMsgIsErr ? '#7f1d1d' : '#064e3b',
+                color: resignMsgIsErr ? '#fecaca' : '#a7f3d0',
+              }}
+              data-testid="text-hl-resign-msg"
+            >
+              {resignMsg}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Positions — rich detail card per position, mirrors the Aster
+          Trade.tsx layout so HL doesn't feel like a downgraded venue.
+          Each position shows: coin, side+leverage, size @ entry, mark
+          (live, ticks every second), unrealized PnL (live + ROE %),
+          margin used, and liquidation price when HL provides one
+          (cross-at-full-equity reports liq=0 → we hide that row). */}
+      {account && account.positions.filter(p => p.szi !== 0).length > 0 && (
+        <div style={cardStyle} data-testid="card-hl-positions">
+          <div style={{
+            fontSize: 13, fontWeight: 600, marginBottom: 10,
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          }}>
+            <span>Open positions</span>
+            <span style={{ fontSize: 11, color: '#64748b', fontWeight: 400 }}>
+              {account.positions.filter(p => p.szi !== 0).length} open
+            </span>
+          </div>
+          {account.positions.filter(p => p.szi !== 0).map((p) => {
+            const isClosingThis = closingCoin === p.coin
+            const anyClosing    = closingCoin !== null
+            const isLong        = p.szi > 0
+            const sideColor     = isLong ? '#22c55e' : '#ef4444'
+
+            // Live mark: fall back to derived (positionValue / szi) from the
+            // last full account snapshot if the per-coin poll hasn't landed
+            // yet. Avoids a flash of "—" on the first render.
+            const snapshotMark = p.szi !== 0 ? Math.abs(p.positionValue / p.szi) : 0
+            const liveMark     = livePxByCoin[p.coin] || snapshotMark
+
+            // Recompute PnL on every render against the live mark so the
+            // number updates each second instead of being stuck at the
+            // last 6s account snapshot. Sign convention: long profits as
+            // mark rises, short profits as mark falls.
+            const sz       = Math.abs(p.szi)
+            const dir      = isLong ? 1 : -1
+            const livePnl  = (liveMark - p.entryPx) * sz * dir
+            const liveRoe  = p.marginUsed > 0 ? livePnl / p.marginUsed : 0
+            const pnlColor = livePnl >= 0 ? '#22c55e' : '#ef4444'
+
+            return (
+              <div key={p.coin}
+                   data-testid={`row-hl-position-${p.coin}`}
+                   style={{
+                     padding: 10, borderRadius: 8, marginTop: 8,
+                     background: '#0f0f17', border: '1px solid #1f2937',
+                     display: 'flex', flexDirection: 'column', gap: 4,
+                   }}>
+                {/* Header row: coin + side · leverage */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                  <span style={{ fontSize: 14, fontWeight: 700 }}>{p.coin}</span>
+                  <span style={{ color: sideColor, fontWeight: 600, fontSize: 13 }}>
+                    {isLong ? 'LONG' : 'SHORT'} · {p.leverage}x
+                    <span style={{ color: '#64748b', fontWeight: 400, fontSize: 11, marginLeft: 4 }}>
+                      {p.leverageType}
+                    </span>
+                  </span>
+                </div>
+
+                {/* Size @ entry · mark (live) — both prices with full precision
+                    so users can sanity-check their entry against the current
+                    market without leaving for a chart. */}
+                <div style={{
+                  display: 'flex', justifyContent: 'space-between',
+                  fontSize: 12, color: '#94a3b8',
+                  fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
+                }}>
+                  <span data-testid={`text-hl-position-entry-${p.coin}`}>
+                    {fmtUsdRaw(sz)} @ {fmtUsd(p.entryPx)}
+                  </span>
+                  <span data-testid={`text-hl-position-mark-${p.coin}`}>
+                    mark {fmtUsd(liveMark)}
+                  </span>
+                </div>
+
+                {/* Margin · liquidation. Liq is hidden when HL doesn't compute
+                    one (cross at full equity → 0). Margin used is shown so the
+                    user knows what's locked behind the position. */}
+                <div style={{
+                  display: 'flex', justifyContent: 'space-between',
+                  fontSize: 11, color: '#64748b',
+                }}>
+                  <span data-testid={`text-hl-position-margin-${p.coin}`}>
+                    margin {fmtUsd(p.marginUsed)}
+                  </span>
+                  {p.liquidationPx > 0 && (
+                    <span data-testid={`text-hl-position-liq-${p.coin}`}>
+                      liq {fmtUsd(p.liquidationPx)}
+                    </span>
+                  )}
+                </div>
+
+                {/* PnL row + Close button. PnL ticks live, ROE shown for
+                    quick sanity ("am I 1% up or 30%?" matters more than
+                    the dollar amount when sizing varies). */}
+                <div style={{
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  marginTop: 4,
+                }}>
+                  <span style={{ color: pnlColor, fontWeight: 700, fontSize: 14 }}
+                        data-testid={`text-hl-position-pnl-${p.coin}`}>
+                    {livePnl >= 0 ? '+' : ''}${livePnl.toFixed(2)} USDC
+                    <span style={{
+                      marginLeft: 6, fontSize: 11, fontWeight: 500,
+                      color: pnlColor, opacity: 0.85,
+                    }}>
+                      ({liveRoe >= 0 ? '+' : ''}{(liveRoe * 100).toFixed(2)}%)
+                    </span>
+                  </span>
+                  <button
+                    onClick={() => closePosition(p.coin)}
+                    disabled={anyClosing}
+                    data-testid={`button-hl-close-${p.coin}`}
+                    style={{
+                      padding: '6px 14px', borderRadius: 6, fontSize: 12, fontWeight: 600,
+                      background: isClosingThis ? '#374151' : '#ef4444',
+                      color: '#fff', border: 'none',
+                      cursor: anyClosing ? 'not-allowed' : 'pointer',
+                      opacity: anyClosing && !isClosingThis ? 0.5 : 1,
+                    }}>
+                    {isClosingThis ? 'Closing…' : 'Close'}
+                  </button>
+                </div>
+              </div>
+            )
+          })}
+          {closeMsg && (
+            <div data-testid="text-hl-close-msg"
+                 style={{
+                   marginTop: 10, padding: '8px 10px', borderRadius: 6, fontSize: 12,
+                   background: closeMsg.toLowerCase().startsWith('closed')
+                     ? '#14532d' : '#7f1d1d',
+                   color: '#fff',
+                 }}>
+              {closeMsg}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Recent fills — pulled from HL's userFills endpoint via
+          /api/hyperliquid/trades. Each row shows the actual fee HL
+          charged on the fill (USDC), which is the ground truth for fee
+          accounting. Mirror of the Aster Trade.tsx panel so users have
+          a single mental model across both venues. */}
+      {account?.onboarded && !forceActivateUi && (
+        <div style={cardStyle} data-testid="card-hl-fills">
+          <div style={{
+            fontSize: 13, fontWeight: 600, marginBottom: 10,
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          }}>
+            <span>Recent fills</span>
+            <span style={{ fontSize: 11, color: '#64748b', fontWeight: 400 }}>
+              last {fills.length}
+            </span>
+          </div>
+          {fillsErr ? (
+            <div style={{ fontSize: 13, color: '#ef4444' }} data-testid="text-hl-fills-error">
+              Could not load fills: {fillsErr}
+            </div>
+          ) : fills.length === 0 ? (
+            <div style={{ fontSize: 13, color: '#64748b' }} data-testid="text-hl-no-fills">
+              No fills yet on this account.
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {fills.map((f) => {
+                const notional = f.px * f.sz
+                // bps math: HL fees are always quoted in USDC and notional is
+                // px*sz in USDC, so the denominations always match. No need
+                // for the commissionAsset guard we use on Aster.
+                const feeBps = notional > 0 ? (f.fee / notional) * 10000 : 0
+                const isBuy  = f.side === 'B'
+                const sideColor = isBuy ? '#22c55e' : '#ef4444'
+                // HL's `dir` is the canonical "what did this trade do" label.
+                // Falls back to BUY/SELL when missing (older fills).
+                const label = f.dir || (isBuy ? 'BUY' : 'SELL')
+                return (
+                  <div
+                    key={`${f.tid}-${f.time}`}
+                    data-testid={`row-hl-fill-${f.tid}`}
+                    style={{
+                      padding: 10, borderRadius: 8,
+                      background: '#0f0f17', border: '1px solid #1f2937',
+                      display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12,
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ fontWeight: 600 }}>
+                        <span style={{ color: sideColor }}>{label}</span>
+                        <span style={{ marginLeft: 6 }}>{f.coin}</span>
+                      </span>
+                      <span style={{ color: '#64748b' }}>{ago(f.time)}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', color: '#94a3b8' }}>
+                      <span>{f.sz} @ {fmtUsd(f.px)}</span>
+                      <span>${notional.toFixed(2)} notional</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', color: '#94a3b8' }}>
+                      <span>
+                        fee {f.fee.toFixed(6)} USDC
+                        {feeBps > 0 && (
+                          <span style={{ color: '#64748b', marginLeft: 6 }}>
+                            ({feeBps.toFixed(2)} bps)
+                          </span>
+                        )}
+                      </span>
+                      {f.closedPnl !== 0 && (
+                        <span style={{ color: f.closedPnl >= 0 ? '#22c55e' : '#ef4444', fontWeight: 600 }}>
+                          {f.closedPnl >= 0 ? '+' : ''}{f.closedPnl.toFixed(4)} PnL
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Account state */}
       <div style={cardStyle} data-testid="card-hl-account">
         <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10 }}>Your account</div>
@@ -874,496 +1364,6 @@ export default function Hyperliquid() {
           <div style={{ fontSize: 12, color: '#9ca3af' }}>No account yet.</div>
         )}
       </div>
-
-      {/* Positions — rich detail card per position, mirrors the Aster
-          Trade.tsx layout so HL doesn't feel like a downgraded venue.
-          Each position shows: coin, side+leverage, size @ entry, mark
-          (live, ticks every second), unrealized PnL (live + ROE %),
-          margin used, and liquidation price when HL provides one
-          (cross-at-full-equity reports liq=0 → we hide that row). */}
-      {account && account.positions.filter(p => p.szi !== 0).length > 0 && (
-        <div style={cardStyle} data-testid="card-hl-positions">
-          <div style={{
-            fontSize: 13, fontWeight: 600, marginBottom: 10,
-            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-          }}>
-            <span>Open positions</span>
-            <span style={{ fontSize: 11, color: '#64748b', fontWeight: 400 }}>
-              {account.positions.filter(p => p.szi !== 0).length} open
-            </span>
-          </div>
-          {account.positions.filter(p => p.szi !== 0).map((p) => {
-            const isClosingThis = closingCoin === p.coin
-            const anyClosing    = closingCoin !== null
-            const isLong        = p.szi > 0
-            const sideColor     = isLong ? '#22c55e' : '#ef4444'
-
-            // Live mark: fall back to derived (positionValue / szi) from the
-            // last full account snapshot if the per-coin poll hasn't landed
-            // yet. Avoids a flash of "—" on the first render.
-            const snapshotMark = p.szi !== 0 ? Math.abs(p.positionValue / p.szi) : 0
-            const liveMark     = livePxByCoin[p.coin] || snapshotMark
-
-            // Recompute PnL on every render against the live mark so the
-            // number updates each second instead of being stuck at the
-            // last 6s account snapshot. Sign convention: long profits as
-            // mark rises, short profits as mark falls.
-            const sz       = Math.abs(p.szi)
-            const dir      = isLong ? 1 : -1
-            const livePnl  = (liveMark - p.entryPx) * sz * dir
-            const liveRoe  = p.marginUsed > 0 ? livePnl / p.marginUsed : 0
-            const pnlColor = livePnl >= 0 ? '#22c55e' : '#ef4444'
-
-            return (
-              <div key={p.coin}
-                   data-testid={`row-hl-position-${p.coin}`}
-                   style={{
-                     padding: 10, borderRadius: 8, marginTop: 8,
-                     background: '#0f0f17', border: '1px solid #1f2937',
-                     display: 'flex', flexDirection: 'column', gap: 4,
-                   }}>
-                {/* Header row: coin + side · leverage */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                  <span style={{ fontSize: 14, fontWeight: 700 }}>{p.coin}</span>
-                  <span style={{ color: sideColor, fontWeight: 600, fontSize: 13 }}>
-                    {isLong ? 'LONG' : 'SHORT'} · {p.leverage}x
-                    <span style={{ color: '#64748b', fontWeight: 400, fontSize: 11, marginLeft: 4 }}>
-                      {p.leverageType}
-                    </span>
-                  </span>
-                </div>
-
-                {/* Size @ entry · mark (live) — both prices with full precision
-                    so users can sanity-check their entry against the current
-                    market without leaving for a chart. */}
-                <div style={{
-                  display: 'flex', justifyContent: 'space-between',
-                  fontSize: 12, color: '#94a3b8',
-                  fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
-                }}>
-                  <span data-testid={`text-hl-position-entry-${p.coin}`}>
-                    {fmtUsdRaw(sz)} @ {fmtUsd(p.entryPx)}
-                  </span>
-                  <span data-testid={`text-hl-position-mark-${p.coin}`}>
-                    mark {fmtUsd(liveMark)}
-                  </span>
-                </div>
-
-                {/* Margin · liquidation. Liq is hidden when HL doesn't compute
-                    one (cross at full equity → 0). Margin used is shown so the
-                    user knows what's locked behind the position. */}
-                <div style={{
-                  display: 'flex', justifyContent: 'space-between',
-                  fontSize: 11, color: '#64748b',
-                }}>
-                  <span data-testid={`text-hl-position-margin-${p.coin}`}>
-                    margin {fmtUsd(p.marginUsed)}
-                  </span>
-                  {p.liquidationPx > 0 && (
-                    <span data-testid={`text-hl-position-liq-${p.coin}`}>
-                      liq {fmtUsd(p.liquidationPx)}
-                    </span>
-                  )}
-                </div>
-
-                {/* PnL row + Close button. PnL ticks live, ROE shown for
-                    quick sanity ("am I 1% up or 30%?" matters more than
-                    the dollar amount when sizing varies). */}
-                <div style={{
-                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                  marginTop: 4,
-                }}>
-                  <span style={{ color: pnlColor, fontWeight: 700, fontSize: 14 }}
-                        data-testid={`text-hl-position-pnl-${p.coin}`}>
-                    {livePnl >= 0 ? '+' : ''}${livePnl.toFixed(2)} USDC
-                    <span style={{
-                      marginLeft: 6, fontSize: 11, fontWeight: 500,
-                      color: pnlColor, opacity: 0.85,
-                    }}>
-                      ({liveRoe >= 0 ? '+' : ''}{(liveRoe * 100).toFixed(2)}%)
-                    </span>
-                  </span>
-                  <button
-                    onClick={() => closePosition(p.coin)}
-                    disabled={anyClosing}
-                    data-testid={`button-hl-close-${p.coin}`}
-                    style={{
-                      padding: '6px 14px', borderRadius: 6, fontSize: 12, fontWeight: 600,
-                      background: isClosingThis ? '#374151' : '#ef4444',
-                      color: '#fff', border: 'none',
-                      cursor: anyClosing ? 'not-allowed' : 'pointer',
-                      opacity: anyClosing && !isClosingThis ? 0.5 : 1,
-                    }}>
-                    {isClosingThis ? 'Closing…' : 'Close'}
-                  </button>
-                </div>
-              </div>
-            )
-          })}
-          {closeMsg && (
-            <div data-testid="text-hl-close-msg"
-                 style={{
-                   marginTop: 10, padding: '8px 10px', borderRadius: 6, fontSize: 12,
-                   background: closeMsg.toLowerCase().startsWith('closed')
-                     ? '#14532d' : '#7f1d1d',
-                   color: '#fff',
-                 }}>
-              {closeMsg}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Recent fills — pulled from HL's userFills endpoint via
-          /api/hyperliquid/trades. Each row shows the actual fee HL
-          charged on the fill (USDC), which is the ground truth for fee
-          accounting. Mirror of the Aster Trade.tsx panel so users have
-          a single mental model across both venues. */}
-      {account?.onboarded && !forceActivateUi && (
-        <div style={cardStyle} data-testid="card-hl-fills">
-          <div style={{
-            fontSize: 13, fontWeight: 600, marginBottom: 10,
-            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-          }}>
-            <span>Recent fills</span>
-            <span style={{ fontSize: 11, color: '#64748b', fontWeight: 400 }}>
-              last {fills.length}
-            </span>
-          </div>
-          {fillsErr ? (
-            <div style={{ fontSize: 13, color: '#ef4444' }} data-testid="text-hl-fills-error">
-              Could not load fills: {fillsErr}
-            </div>
-          ) : fills.length === 0 ? (
-            <div style={{ fontSize: 13, color: '#64748b' }} data-testid="text-hl-no-fills">
-              No fills yet on this account.
-            </div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {fills.map((f) => {
-                const notional = f.px * f.sz
-                // bps math: HL fees are always quoted in USDC and notional is
-                // px*sz in USDC, so the denominations always match. No need
-                // for the commissionAsset guard we use on Aster.
-                const feeBps = notional > 0 ? (f.fee / notional) * 10000 : 0
-                const isBuy  = f.side === 'B'
-                const sideColor = isBuy ? '#22c55e' : '#ef4444'
-                // HL's `dir` is the canonical "what did this trade do" label.
-                // Falls back to BUY/SELL when missing (older fills).
-                const label = f.dir || (isBuy ? 'BUY' : 'SELL')
-                return (
-                  <div
-                    key={`${f.tid}-${f.time}`}
-                    data-testid={`row-hl-fill-${f.tid}`}
-                    style={{
-                      padding: 10, borderRadius: 8,
-                      background: '#0f0f17', border: '1px solid #1f2937',
-                      display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12,
-                    }}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ fontWeight: 600 }}>
-                        <span style={{ color: sideColor }}>{label}</span>
-                        <span style={{ marginLeft: 6 }}>{f.coin}</span>
-                      </span>
-                      <span style={{ color: '#64748b' }}>{ago(f.time)}</span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', color: '#94a3b8' }}>
-                      <span>{f.sz} @ {fmtUsd(f.px)}</span>
-                      <span>${notional.toFixed(2)} notional</span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', color: '#94a3b8' }}>
-                      <span>
-                        fee {f.fee.toFixed(6)} USDC
-                        {feeBps > 0 && (
-                          <span style={{ color: '#64748b', marginLeft: 6 }}>
-                            ({feeBps.toFixed(2)} bps)
-                          </span>
-                        )}
-                      </span>
-                      {f.closedPnl !== 0 && (
-                        <span style={{ color: f.closedPnl >= 0 ? '#22c55e' : '#ef4444', fontWeight: 600 }}>
-                          {f.closedPnl >= 0 ? '+' : ''}{f.closedPnl.toFixed(4)} PnL
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Order ticket — only when onboarded AND we haven't been told
-          by the server that activation is needed (forceActivateUi). */}
-      {account?.onboarded && !forceActivateUi && (
-        <div style={cardStyle} data-testid="card-hl-order">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
-            <div style={{ fontSize: 13, fontWeight: 600 }}>Place order</div>
-            <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: 10, color: '#9ca3af', letterSpacing: 0.4 }}>{orderCoin} MARK · LIVE</div>
-              <div
-                data-testid="text-hl-selected-mark"
-                style={{ fontSize: 18, fontWeight: 700, color: mids[orderCoin] > 0 ? '#a7f3d0' : '#6b7280', fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace' }}
-              >
-                {fmtUsd(mids[orderCoin])}
-              </div>
-            </div>
-          </div>
-
-          {/* Coin selector */}
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
-            {COINS.map(c => (
-              <button
-                key={c}
-                onClick={() => setOrderCoin(c)}
-                data-testid={`button-hl-coin-${c}`}
-                style={{
-                  padding: '6px 10px', borderRadius: 8, fontSize: 12, fontWeight: 600,
-                  background: orderCoin === c ? '#7c3aed' : '#1f2937',
-                  color: '#fff', border: 'none', cursor: 'pointer',
-                }}
-              >
-                {c}
-              </button>
-            ))}
-          </div>
-
-          {/* LONG / SHORT */}
-          <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
-            <button
-              onClick={() => setOrderSide('LONG')}
-              data-testid="button-hl-side-long"
-              style={{
-                flex: 1, padding: '10px', borderRadius: 8, fontSize: 13, fontWeight: 600,
-                background: orderSide === 'LONG' ? '#22c55e' : '#1f2937',
-                color: '#fff', border: 'none', cursor: 'pointer',
-              }}
-            >
-              LONG
-            </button>
-            <button
-              onClick={() => setOrderSide('SHORT')}
-              data-testid="button-hl-side-short"
-              style={{
-                flex: 1, padding: '10px', borderRadius: 8, fontSize: 13, fontWeight: 600,
-                background: orderSide === 'SHORT' ? '#ef4444' : '#1f2937',
-                color: '#fff', border: 'none', cursor: 'pointer',
-              }}
-            >
-              SHORT
-            </button>
-          </div>
-
-          {/* MARKET / LIMIT order type */}
-          <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
-            <button
-              onClick={() => setOrderType('MARKET')}
-              data-testid="button-hl-type-market"
-              style={{
-                flex: 1, padding: '8px', borderRadius: 8, fontSize: 12, fontWeight: 600,
-                background: orderType === 'MARKET' ? '#8b5cf6' : '#1f2937',
-                color: '#fff', border: 'none', cursor: 'pointer',
-              }}
-            >
-              MARKET
-            </button>
-            <button
-              onClick={() => setOrderType('LIMIT')}
-              data-testid="button-hl-type-limit"
-              style={{
-                flex: 1, padding: '8px', borderRadius: 8, fontSize: 12, fontWeight: 600,
-                background: orderType === 'LIMIT' ? '#8b5cf6' : '#1f2937',
-                color: '#fff', border: 'none', cursor: 'pointer',
-              }}
-            >
-              LIMIT
-            </button>
-          </div>
-
-          {/* Limit price — only when LIMIT. Lives above size so the user
-              can see it ticks as the live mark moves (next to the LIVE
-              header readout above). One-tap "Use mark" snaps it to the
-              current mid in case they nudged off and want to reset. */}
-          {orderType === 'LIMIT' && (
-            <div style={{ marginBottom: 10 }}>
-              <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 4, display: 'flex', justifyContent: 'space-between' }}>
-                <span>Limit price (USDC)</span>
-                {mids[orderCoin] > 0 && (
-                  <button
-                    onClick={() => setOrderLimitPx(mids[orderCoin].toString())}
-                    data-testid="button-hl-limit-use-mark"
-                    style={{
-                      padding: '0 6px', fontSize: 10, color: '#a78bfa',
-                      background: 'transparent', border: 'none', cursor: 'pointer',
-                    }}
-                  >
-                    use mark ${fmtUsdRaw(mids[orderCoin])}
-                  </button>
-                )}
-              </div>
-              <input
-                type="number"
-                value={orderLimitPx}
-                onChange={(e) => setOrderLimitPx(e.target.value)}
-                placeholder={mids[orderCoin] > 0 ? mids[orderCoin].toString() : '0.00'}
-                data-testid="input-hl-limit-px"
-                style={{
-                  width: '100%', padding: '10px', borderRadius: 8, fontSize: 14,
-                  background: '#0f172a', border: '1px solid #334155', color: '#fff',
-                  boxSizing: 'border-box',
-                }}
-              />
-              {hlLimitMeta && (
-                <div
-                  style={{
-                    fontSize: 11,
-                    color: hlLimitMeta.crossable ? '#f59e0b' : '#9ca3af',
-                    marginTop: 4,
-                    lineHeight: 1.4,
-                  }}
-                  data-testid="text-hl-limit-distance"
-                >
-                  {Math.abs(hlLimitMeta.pct).toFixed(2)}% {hlLimitMeta.above ? 'above' : 'below'} mark
-                  {hlLimitMeta.crossable
-                    ? ' · this side of the book — your order will likely fill immediately as a taker'
-                    : ' · should rest as a maker until price reaches it'}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Notional + leverage */}
-          <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
-            <div style={{ flex: 2 }}>
-              <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 4 }}>Size (USDC)</div>
-              <input
-                type="number"
-                value={orderNotional}
-                onChange={(e) => setOrderNotional(e.target.value)}
-                data-testid="input-hl-notional"
-                style={{
-                  width: '100%', padding: '10px', borderRadius: 8, fontSize: 14,
-                  background: '#0f172a', border: '1px solid #334155', color: '#fff',
-                  boxSizing: 'border-box',
-                }}
-              />
-            </div>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 4 }}>Leverage</div>
-              <input
-                type="number"
-                value={orderLeverage}
-                onChange={(e) => setOrderLeverage(e.target.value)}
-                min="1"
-                max="50"
-                data-testid="input-hl-leverage"
-                style={{
-                  width: '100%', padding: '10px', borderRadius: 8, fontSize: 14,
-                  background: '#0f172a', border: '1px solid #334155', color: '#fff',
-                  boxSizing: 'border-box',
-                }}
-              />
-            </div>
-          </div>
-
-          {/* Quick size buttons */}
-          <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
-            {['10', '25', '100', '500'].map(amt => (
-              <button
-                key={amt}
-                onClick={() => setOrderNotional(amt)}
-                data-testid={`button-hl-quick-${amt}`}
-                style={{
-                  flex: 1, padding: '6px', borderRadius: 6, fontSize: 11,
-                  background: '#1f2937', color: '#9ca3af', border: 'none', cursor: 'pointer',
-                }}
-              >
-                ${amt}
-              </button>
-            ))}
-          </div>
-
-          <button
-            onClick={placeOrder}
-            disabled={placing || !orderNotional || Number(orderNotional) <= 0}
-            data-testid="button-hl-place-order"
-            style={{
-              width: '100%', padding: '12px', borderRadius: 10, fontSize: 14, fontWeight: 600,
-              background: placing ? '#4c1d95'
-                : orderSide === 'LONG' ? 'linear-gradient(90deg,#16a34a,#22c55e)'
-                : 'linear-gradient(90deg,#dc2626,#ef4444)',
-              color: '#fff', border: 'none', cursor: placing ? 'wait' : 'pointer',
-            }}
-          >
-            {placing
-              ? 'Placing…'
-              : `${orderSide} $${orderNotional || '0'} ${orderCoin} ${orderType} @ ${orderLeverage}x`}
-          </button>
-
-          {orderMsg && (
-            <div
-              style={{
-                marginTop: 8, padding: 8, borderRadius: 6, fontSize: 11,
-                background: orderMsgIsErr ? '#7f1d1d' : '#064e3b',
-                color: orderMsgIsErr ? '#fecaca' : '#a7f3d0',
-              }}
-              data-testid="text-hl-order-msg"
-            >
-              {orderMsg}
-            </div>
-          )}
-
-          {needsBuilderApproval && (
-            <button
-              onClick={approveBuilder}
-              disabled={approvingBuilder}
-              data-testid="button-hl-approve-builder"
-              style={{
-                marginTop: 8, width: '100%', padding: '10px', borderRadius: 8,
-                fontSize: 13, fontWeight: 600,
-                background: approvingBuilder ? '#4c1d95' : 'linear-gradient(90deg,#7c3aed,#a78bfa)',
-                color: '#fff', border: 'none', cursor: approvingBuilder ? 'wait' : 'pointer',
-              }}
-            >
-              {approvingBuilder ? 'Approving…' : 'Approve builder fee & retry'}
-            </button>
-          )}
-
-          <div style={{ fontSize: 10, color: '#64748b', marginTop: 10, lineHeight: 1.4 }}>
-            {orderType === 'MARKET'
-              ? 'Market orders execute immediately at best available price (5% slippage cap).'
-              : 'Limit orders rest on the orderbook (GTC) until filled or cancelled.'}{' '}
-            BUILD4 takes a 0.1% builder fee on every fill.{' '}
-            <span
-              onClick={resigning ? undefined : resignBuilder}
-              data-testid="link-hl-resign-builder"
-              style={{
-                color: resigning ? '#475569' : '#a78bfa',
-                cursor: resigning ? 'wait' : 'pointer',
-                textDecoration: 'underline',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {resigning ? 'Refreshing approval…' : 'Refresh approval'}
-            </span>
-          </div>
-
-          {resignMsg && (
-            <div
-              style={{
-                marginTop: 8, padding: 8, borderRadius: 6, fontSize: 11,
-                background: resignMsgIsErr ? '#7f1d1d' : '#064e3b',
-                color: resignMsgIsErr ? '#fecaca' : '#a7f3d0',
-              }}
-              data-testid="text-hl-resign-msg"
-            >
-              {resignMsg}
-            </div>
-          )}
-        </div>
-      )}
 
       {/* Live mids */}
       <div style={cardStyle} data-testid="card-hl-mids">
