@@ -1370,8 +1370,15 @@ app.post('/api/aster/order', requireTgUser, async (req, res) => {
           slStatus = 'placed'
         } catch (slErr: any) {
           slStatus = 'failed'
-          slError  = slErr?.message ?? 'Stop loss could not be placed.'
-          console.warn('[API] /aster/order SL leg failed:', slError)
+          // Run the raw thrown error through the same sanitizer the main
+          // route uses — never let an axios message, exchange code, or
+          // chain string surface to the user. Log the raw cause for the
+          // operator side, return only the friendly message to the user.
+          slError  = aster.friendlyAsterError(slErr)
+          console.warn(
+            '[API] /aster/order SL leg failed (raw):',
+            slErr?.response?.data ?? slErr?.message,
+          )
         }
       }
     }
@@ -1996,6 +2003,32 @@ app.post('/api/hyperliquid/order', requireTgUser, async (req, res) => {
             ? `Stop loss must be below the entry price ($${markPrice.toFixed(2)}).`
             : `Stop loss must be above the entry price ($${markPrice.toFixed(2)}).`
       } else {
+        // Map any raw HL/SDK error string to a clean, actionable user
+        // message. Never surface raw exchange/chain text — the operator
+        // sees the raw form in logs, the user sees only the friendly form.
+        const friendlyHlSlError = (raw: string | undefined): string => {
+          const s = (raw ?? '').toLowerCase()
+          if (!s) return 'Stop loss could not be placed — please try again or add it manually.'
+          if (/(builder|must approve)/.test(s)) {
+            return 'Stop loss could not be placed right now. Please tap "Approve builder fee" and try again.'
+          }
+          if (/(insufficient.*balance|not registered|not a (registered )?builder)/.test(s)) {
+            return 'Stop loss is temporarily unavailable on this venue. Please try again in a few minutes.'
+          }
+          if (/(price|tick|decimals|invalid)/.test(s)) {
+            return 'That stop-loss price isn\'t valid for this market — try a level a few cents away from the current price.'
+          }
+          if (/(min(imum)? size|size.*small|rounds to 0|sz)/.test(s)) {
+            return 'Stop loss size is too small for this market — increase your position size and try again.'
+          }
+          if (/(429|too many requests)/.test(s)) {
+            return 'The exchange is rate-limiting us right now — please retry the stop loss in a few seconds.'
+          }
+          if (/(timeout|timed out|econn|enotfound|network)/.test(s)) {
+            return 'Could not reach the exchange to place the stop loss — please retry.'
+          }
+          return 'Stop loss could not be placed — please try again or add it manually.'
+        }
         try {
           const { placeStopLoss } = await import('./services/hyperliquid')
           const slRes = await placeStopLoss(creds, {
@@ -2008,13 +2041,15 @@ app.post('/api/hyperliquid/order', requireTgUser, async (req, res) => {
             slStatus = 'placed'
           } else {
             slStatus = 'failed'
-            slError  = slRes.error ?? 'Stop loss could not be placed.'
-            console.warn(`[/hyperliquid/order] SL leg failed user=${user.id} err=${slError}`)
+            slError  = friendlyHlSlError(slRes.error)
+            console.warn(
+              `[/hyperliquid/order] SL leg failed user=${user.id} raw="${slRes.error}"`,
+            )
           }
         } catch (slErr: any) {
           slStatus = 'failed'
-          slError  = slErr?.message ?? 'Stop loss could not be placed.'
-          console.warn('[/hyperliquid/order] SL leg threw:', slError)
+          slError  = friendlyHlSlError(slErr?.message)
+          console.warn('[/hyperliquid/order] SL leg threw (raw):', slErr?.message)
         }
       }
     }
