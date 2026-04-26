@@ -3314,7 +3314,7 @@ app.get('/api/predictions/latest', async (_req, res) => {
 // Public (read-only, all data is on-chain).
 // ──────────────────────────────────────────────────────────────────────────
 const predictionMarketCache = new Map<string, {
-  payload: { market: { address: string; question: string; status: string; endDate: string; category: string }
+  payload: { market: { address: string; question: string; description: string; status: string; endDate: string; category: string }
                 outcomes: Array<{ tokenId: number; label: string; priceFloat: number; impliedProbability: number; isWinner: boolean }> }
   fetchedAt: number
 }>()
@@ -3340,6 +3340,10 @@ app.get('/api/predictions/market/:address', async (req, res) => {
       market: {
         address: market.address,
         question: market.question,
+        // Resolution rules / market description from 42.space metadata.
+        // Surfaced in the mini-app's expanded scanner row so users can read
+        // the full question and resolution criteria before placing a trade.
+        description: market.description ?? '',
         status: market.status,
         endDate: market.endDate,
         category: (market.categories ?? [])[0] ?? 'uncategorized',
