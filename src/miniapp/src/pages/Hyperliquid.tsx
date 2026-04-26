@@ -495,15 +495,14 @@ export default function Hyperliquid() {
     setLoading(false)
   }
 
-  // Three-tier polling so the screen feels truly "live" without hammering
-  // the public allMids endpoint with full account-state fetches every second:
-  //   - load() (account + all mids + arbitrum): every 6s — picks up new
-  //     positions, balance changes, leverage adjustments
+  // Three-tier polling so the screen feels truly "live":
+  //   - load() (account + all mids + arbitrum): every 2s — picks up new
+  //     positions, balance changes, leverage adjustments quickly
   //   - selected-coin mid: every 1s — keeps the headline price next to
   //     the order ticket alive while sizing
   //   - per-position mark prices: every 1s — so PnL on every open
-  //     position ticks in real time, not stuck on the last 6s snapshot
-  useEffect(() => { load(); const t = setInterval(load, 6000); return () => clearInterval(t) }, [])
+  //     position ticks in real time
+  useEffect(() => { load(); const t = setInterval(load, 2000); return () => clearInterval(t) }, [])
   useEffect(() => {
     let cancelled = false
     const poll = async () => {

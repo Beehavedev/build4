@@ -184,10 +184,10 @@ export function Trade() {
     }
     tick()
     const id = setInterval(tick, 1000)
-    const refreshId = setInterval(loadPositions, 8000)
+    const refreshId = setInterval(loadPositions, 2000)
     // Poll resting orders too — when a LIMIT fills it disappears from this
     // list and reappears under positions, so users see the transition live.
-    const ordersId  = setInterval(loadOrders,    8000)
+    const ordersId  = setInterval(loadOrders,    2000)
     return () => { cancelled = true; clearInterval(id); clearInterval(refreshId); clearInterval(ordersId) }
   }, [positions.map(p => p.symbol).join(',')])
 
@@ -427,170 +427,254 @@ export function Trade() {
         </div>
       )}
 
-      <div className="card">
-        <div style={toggleRowStyle} data-testid="side-toggle">
+      {/* Place-order card — visually mirrors the Hyperliquid order ticket
+          (LIVE mark in header, coin chip row, large LONG/SHORT buttons,
+          numeric leverage input next to size) so a user moving between
+          venues sees the same UI vocabulary on both. */}
+      <div
+        style={{
+          background: 'var(--bg-card, #12121a)',
+          border: '1px solid var(--border, #2a2a3e)',
+          borderRadius: 12,
+          padding: 14,
+          marginBottom: 12,
+        }}
+        data-testid="card-aster-order"
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>Place order</div>
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: 10, color: '#9ca3af', letterSpacing: 0.4 }}>{pair} MARK · LIVE</div>
+            <div
+              data-testid="text-mark-price"
+              style={{
+                fontSize: 18,
+                fontWeight: 700,
+                color: mark?.markPrice && mark.markPrice > 0 ? '#a7f3d0' : '#6b7280',
+                fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
+              }}
+            >
+              {mark?.markPrice ? `$${fmtPrice(mark.markPrice)}` : '—'}
+            </div>
+            {mark?.lastFundingRate ? (
+              <div style={{ fontSize: 10, color: '#6b7280', marginTop: 2 }}>
+                funding {(mark.lastFundingRate * 100).toFixed(4)}%
+              </div>
+            ) : null}
+          </div>
+        </div>
+
+        {/* Pair chip row */}
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
+          {PAIRS.map(p => (
+            <button
+              key={p}
+              onClick={() => setPair(p)}
+              data-testid={`button-aster-pair-${p}`}
+              style={{
+                padding: '6px 10px', borderRadius: 8, fontSize: 12, fontWeight: 600,
+                background: pair === p ? '#7c3aed' : '#1f2937',
+                color: '#fff', border: 'none', cursor: 'pointer',
+              }}
+            >
+              {p.replace('USDT', '')}
+            </button>
+          ))}
+        </div>
+
+        {/* LONG / SHORT */}
+        <div style={{ display: 'flex', gap: 6, marginBottom: 10 }} data-testid="side-toggle">
           <button
             onClick={() => setSide('LONG')}
-            style={toggleBtnStyle(side === 'LONG', '#22c55e')}
             data-testid="btn-long"
-          >Long</button>
+            style={{
+              flex: 1, padding: '10px', borderRadius: 8, fontSize: 13, fontWeight: 600,
+              background: side === 'LONG' ? '#22c55e' : '#1f2937',
+              color: '#fff', border: 'none', cursor: 'pointer',
+            }}
+          >
+            LONG
+          </button>
           <button
             onClick={() => setSide('SHORT')}
-            style={toggleBtnStyle(side === 'SHORT', '#ef4444')}
             data-testid="btn-short"
-          >Short</button>
-        </div>
-      </div>
-
-      <div className="card">
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <label style={inputLabelStyle}>Pair</label>
-            <select
-              style={selectFieldStyle}
-              value={pair}
-              onChange={(e) => setPair(e.target.value)}
-              data-testid="select-pair"
-            >
-              {PAIRS.map((p) => <option key={p} value={p}>{p}</option>)}
-            </select>
-            {mark && (
-              <div style={{ fontSize: 11, color: '#6b7280', marginTop: 2 }} data-testid="text-mark-price">
-                Mark ${fmtPrice(mark.markPrice)}
-                {mark.lastFundingRate ? ` · funding ${(mark.lastFundingRate * 100).toFixed(4)}%` : ''}
-              </div>
-            )}
-          </div>
-
-          <div style={toggleRowStyle}>
-            <button
-              onClick={() => setOrderType('MARKET')}
-              style={toggleBtnStyle(orderType === 'MARKET', '#8b5cf6')}
-              data-testid="btn-market"
-            >Market</button>
-            <button
-              onClick={() => setOrderType('LIMIT')}
-              style={toggleBtnStyle(orderType === 'LIMIT', '#8b5cf6')}
-              data-testid="btn-limit"
-            >Limit</button>
-          </div>
-
-          {/* Limit price lives ABOVE size when active so the user sees the
-              price they're targeting before sizing into it. Mirrors HL. */}
-          {orderType === 'LIMIT' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                <label style={inputLabelStyle}>Limit Price</label>
-                {mark?.markPrice && mark.markPrice > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => setLimitPrice(String(mark.markPrice))}
-                    data-testid="btn-use-mark"
-                    style={{
-                      background: 'transparent', border: 'none', color: '#a78bfa',
-                      fontSize: 11, cursor: 'pointer', padding: '0 2px',
-                    }}
-                  >
-                    use mark ${fmtPrice(mark.markPrice)}
-                  </button>
-                )}
-              </div>
-              <input
-                style={inputFieldStyle}
-                type="number"
-                inputMode="decimal"
-                placeholder="0.00"
-                value={limitPrice}
-                onChange={(e) => setLimitPrice(e.target.value)}
-                data-testid="input-limit-price"
-              />
-              {limitMeta && (
-                <div
-                  style={{
-                    fontSize: 11,
-                    color: limitMeta.crossable ? '#f59e0b' : '#6b7280',
-                    marginTop: 2,
-                    lineHeight: 1.4,
-                  }}
-                  data-testid="text-limit-distance"
-                >
-                  {Math.abs(limitMeta.pct).toFixed(2)}% {limitMeta.above ? 'above' : 'below'} mark
-                  {limitMeta.crossable
-                    ? ' · this side of the book — your order will likely fill immediately as a taker'
-                    : ' · should rest as a maker until price reaches it'}
-                </div>
-              )}
-            </div>
-          )}
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <label style={inputLabelStyle}>Size (USDT notional)</label>
-            <input
-              style={inputFieldStyle}
-              type="number"
-              inputMode="decimal"
-              placeholder="100"
-              value={size}
-              onChange={(e) => setSize(e.target.value)}
-              data-testid="input-size"
-            />
-            {/* Quick size shortcuts — match HL's $10/$25/$100/$500 row so a
-                user moving between venues doesn't have to relearn the UI. */}
-            <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
-              {['10', '25', '100', '500'].map(amt => (
-                <button
-                  key={amt}
-                  type="button"
-                  onClick={() => setSize(amt)}
-                  data-testid={`btn-quick-size-${amt}`}
-                  style={{
-                    flex: 1, padding: '6px', borderRadius: 6, fontSize: 11,
-                    background: '#1f2937', color: '#9ca3af', border: 'none',
-                    cursor: 'pointer', fontWeight: 600,
-                  }}
-                >
-                  ${amt}
-                </button>
-              ))}
-            </div>
-            {sizeNum > 0 && refPrice > 0 && (
-              <div style={{ fontSize: 11, color: '#6b7280', marginTop: 2 }} data-testid="text-est-qty">
-                ≈ {estQty.toFixed(6)} {pair.replace('USDT', '')} · margin {requiredMargin.toFixed(2)} USDT
-              </div>
-            )}
-          </div>
-
-          <div className="input-group">
-            <label className="input-label">Leverage: {leverage}x</label>
-            <input
-              className="leverage-slider"
-              type="range" min="1" max="50"
-              value={leverage}
-              onChange={(e) => setLeverage(Number(e.target.value))}
-              data-testid="slider-leverage"
-            />
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-muted)' }}>
-              <span>1x</span><span>10x</span><span>25x</span><span>50x</span>
-            </div>
-          </div>
-
-          {insufficientMargin && (
-            <div style={{ fontSize: 12, color: '#ef4444' }} data-testid="text-margin-warning">
-              Need {requiredMargin.toFixed(2)} USDT margin, have {availableMargin.toFixed(2)} available.
-            </div>
-          )}
-
-          <button
-            className={`btn ${side === 'LONG' ? 'btn-green' : 'btn-red'}`}
-            onClick={submit}
-            disabled={!canSubmit}
-            data-testid="btn-place-order"
+            style={{
+              flex: 1, padding: '10px', borderRadius: 8, fontSize: 13, fontWeight: 600,
+              background: side === 'SHORT' ? '#ef4444' : '#1f2937',
+              color: '#fff', border: 'none', cursor: 'pointer',
+            }}
           >
-            {submitting
-              ? 'Placing…'
-              : `${side === 'LONG' ? '🟢' : '🔴'} ${side} ${pair} — ${leverage}x`}
+            SHORT
           </button>
         </div>
+
+        {/* MARKET / LIMIT */}
+        <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+          <button
+            onClick={() => setOrderType('MARKET')}
+            data-testid="btn-market"
+            style={{
+              flex: 1, padding: '8px', borderRadius: 8, fontSize: 12, fontWeight: 600,
+              background: orderType === 'MARKET' ? '#8b5cf6' : '#1f2937',
+              color: '#fff', border: 'none', cursor: 'pointer',
+            }}
+          >
+            MARKET
+          </button>
+          <button
+            onClick={() => setOrderType('LIMIT')}
+            data-testid="btn-limit"
+            style={{
+              flex: 1, padding: '8px', borderRadius: 8, fontSize: 12, fontWeight: 600,
+              background: orderType === 'LIMIT' ? '#8b5cf6' : '#1f2937',
+              color: '#fff', border: 'none', cursor: 'pointer',
+            }}
+          >
+            LIMIT
+          </button>
+        </div>
+
+        {/* Limit price — only when LIMIT, lives above size so the user sees
+            the target price before sizing into it. Mirrors HL. */}
+        {orderType === 'LIMIT' && (
+          <div style={{ marginBottom: 10 }}>
+            <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 4, display: 'flex', justifyContent: 'space-between' }}>
+              <span>Limit price (USDT)</span>
+              {mark?.markPrice && mark.markPrice > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setLimitPrice(String(mark.markPrice))}
+                  data-testid="btn-use-mark"
+                  style={{
+                    padding: '0 6px', fontSize: 10, color: '#a78bfa',
+                    background: 'transparent', border: 'none', cursor: 'pointer',
+                  }}
+                >
+                  use mark ${fmtPrice(mark.markPrice)}
+                </button>
+              )}
+            </div>
+            <input
+              type="number"
+              inputMode="decimal"
+              value={limitPrice}
+              onChange={(e) => setLimitPrice(e.target.value)}
+              placeholder={mark?.markPrice ? String(mark.markPrice) : '0.00'}
+              data-testid="input-limit-price"
+              style={{
+                width: '100%', padding: '10px', borderRadius: 8, fontSize: 14,
+                background: '#0f172a', border: '1px solid #334155', color: '#fff',
+                boxSizing: 'border-box',
+              }}
+            />
+            {limitMeta && (
+              <div
+                style={{
+                  fontSize: 11,
+                  color: limitMeta.crossable ? '#f59e0b' : '#9ca3af',
+                  marginTop: 4,
+                  lineHeight: 1.4,
+                }}
+                data-testid="text-limit-distance"
+              >
+                {Math.abs(limitMeta.pct).toFixed(2)}% {limitMeta.above ? 'above' : 'below'} mark
+                {limitMeta.crossable
+                  ? ' · this side of the book — your order will likely fill immediately as a taker'
+                  : ' · should rest as a maker until price reaches it'}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Size + Leverage side-by-side, both numeric — no slider. */}
+        <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+          <div style={{ flex: 2 }}>
+            <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 4 }}>Size (USDT)</div>
+            <input
+              type="number"
+              inputMode="decimal"
+              value={size}
+              onChange={(e) => setSize(e.target.value)}
+              placeholder="100"
+              data-testid="input-size"
+              style={{
+                width: '100%', padding: '10px', borderRadius: 8, fontSize: 14,
+                background: '#0f172a', border: '1px solid #334155', color: '#fff',
+                boxSizing: 'border-box',
+              }}
+            />
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 4 }}>Leverage</div>
+            <input
+              type="number"
+              inputMode="numeric"
+              value={leverage}
+              onChange={(e) => {
+                const n = parseInt(e.target.value, 10)
+                if (Number.isFinite(n)) setLeverage(Math.min(50, Math.max(1, n)))
+                else setLeverage(1)
+              }}
+              min={1}
+              max={50}
+              data-testid="input-leverage"
+              style={{
+                width: '100%', padding: '10px', borderRadius: 8, fontSize: 14,
+                background: '#0f172a', border: '1px solid #334155', color: '#fff',
+                boxSizing: 'border-box',
+              }}
+            />
+          </div>
+        </div>
+
+        {/* Quick size buttons */}
+        <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+          {['10', '25', '100', '500'].map(amt => (
+            <button
+              key={amt}
+              type="button"
+              onClick={() => setSize(amt)}
+              data-testid={`btn-quick-size-${amt}`}
+              style={{
+                flex: 1, padding: '6px', borderRadius: 6, fontSize: 11,
+                background: '#1f2937', color: '#9ca3af', border: 'none',
+                cursor: 'pointer', fontWeight: 600,
+              }}
+            >
+              ${amt}
+            </button>
+          ))}
+        </div>
+
+        {sizeNum > 0 && refPrice > 0 && (
+          <div style={{ fontSize: 11, color: '#6b7280', marginBottom: 8 }} data-testid="text-est-qty">
+            ≈ {estQty.toFixed(6)} {pair.replace('USDT', '')} · margin {requiredMargin.toFixed(2)} USDT
+          </div>
+        )}
+
+        {insufficientMargin && (
+          <div style={{ fontSize: 12, color: '#ef4444', marginBottom: 8 }} data-testid="text-margin-warning">
+            Need {requiredMargin.toFixed(2)} USDT margin, have {availableMargin.toFixed(2)} available.
+          </div>
+        )}
+
+        <button
+          onClick={submit}
+          disabled={!canSubmit}
+          data-testid="btn-place-order"
+          style={{
+            width: '100%', padding: '12px', borderRadius: 8, fontSize: 14, fontWeight: 700,
+            color: '#fff', border: 'none', cursor: canSubmit ? 'pointer' : 'not-allowed',
+            background: !canSubmit
+              ? '#374151'
+              : side === 'LONG' ? '#22c55e' : '#ef4444',
+            opacity: canSubmit ? 1 : 0.7,
+          }}
+        >
+          {submitting
+            ? 'Placing…'
+            : `${side} ${pair} — ${leverage}x`}
+        </button>
       </div>
 
       {msg && (

@@ -1421,7 +1421,7 @@ app.get('/api/aster/candles', async (req, res) => {
       close:  k.close[i],
       volume: k.volume[i],
     }))
-    res.set('Cache-Control', 'public, max-age=10')
+    res.set('Cache-Control', 'public, max-age=2')
     res.json(rows)
   } catch (err: any) {
     console.error('[API] /aster/candles failed:', err?.message)
@@ -1442,7 +1442,7 @@ app.get('/api/hl/candles', async (req, res) => {
     const limit    = Math.max(1, Math.min(500, parseInt(String(req.query.limit ?? '200'), 10) || 200))
     const { getCandles } = await import('./services/hyperliquid')
     const rows = await getCandles(coin, interval, limit)
-    res.set('Cache-Control', 'public, max-age=10')
+    res.set('Cache-Control', 'public, max-age=2')
     res.json(rows)
   } catch (err: any) {
     console.error('[API] /hl/candles failed:', err?.message)
