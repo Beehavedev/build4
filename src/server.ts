@@ -2007,8 +2007,13 @@ app.get('/api/hyperliquid/trades', requireTgUser, async (req, res) => {
     if (!wallet) return res.status(404).json({ error: 'No active wallet' })
 
     const limit = Math.max(1, Math.min(100, parseInt(String(req.query.limit ?? '20'), 10) || 20))
-    const { getUserFills } = await import('./services/hyperliquid')
-    const all = await getUserFills(wallet.address)
+    // Use the *strict* variant — the silent `getUserFills` would surface an
+    // HL outage as an empty list, which the UI would then render as the
+    // (misleading) "No fills yet" state. We want outages to flow through
+    // to the catch below and become a real 5xx so the panel's error
+    // banner fires, matching Aster's observable behavior.
+    const { getUserFillsStrict } = await import('./services/hyperliquid')
+    const all = await getUserFillsStrict(wallet.address)
     // HL returns fills oldest→newest; the UI wants newest first. Sort
     // defensively in case that ever changes upstream, then trim.
     const trades = [...all]
