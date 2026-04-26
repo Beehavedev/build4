@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { apiFetch } from '../api'
-import { TradingChart } from '../components/TradingChart'
+import { NativeChart } from '../components/NativeChart'
 import { MarketTicker, fmtUsdRaw } from '../components/MarketTicker'
 
 const PAIRS = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'DOGEUSDT', 'XRPUSDT', 'ASTERUSDT']
@@ -191,6 +191,17 @@ export function Trade() {
     return () => { cancelled = true; clearInterval(id); clearInterval(refreshId); clearInterval(ordersId) }
   }, [positions.map(p => p.symbol).join(',')])
 
+  // Auto-prefill the limit input with the live mark the FIRST time the user
+  // toggles into LIMIT mode (or comes back to it after clearing the field).
+  // Without this the input is blank and most users tap the field expecting
+  // the current price to appear, which it didn't. Mirrors HL's behaviour so
+  // the two pages feel identical.
+  useEffect(() => {
+    if (orderType === 'LIMIT' && !limitPrice && mark?.markPrice && mark.markPrice > 0) {
+      setLimitPrice(String(mark.markPrice))
+    }
+  }, [orderType, mark?.markPrice, limitPrice])
+
   const onboarded = wallet?.aster.onboarded === true
   const availableMargin = wallet?.aster.availableMargin ?? 0
   const sizeNum = Number(size) || 0
@@ -198,6 +209,25 @@ export function Trade() {
   const refPrice = orderType === 'LIMIT' ? Number(limitPrice) || 0 : (mark?.markPrice ?? 0)
   const estQty = refPrice > 0 ? sizeNum / refPrice : 0
   const insufficientMargin = sizeNum > 0 && requiredMargin > availableMargin + 0.01
+
+  // Distance of the LIMIT price from the live mark, plus a heuristic for
+  // whether the order will rest as a maker (good — earns rebates, won't pay
+  // taker fee) or cross immediately as a taker (less good — was probably
+  // meant as a market order). Without bid/ask depth we approximate with mark:
+  //   LONG  limit > mark → likely crossable (asks sit at/above mark)
+  //   SHORT limit < mark → likely crossable (bids sit at/below mark)
+  // This is an estimate, not a guarantee — but it catches the common
+  // mistake of typing the price in the wrong direction.
+  const limitMeta = useMemo(() => {
+    if (orderType !== 'LIMIT') return null
+    const px = Number(limitPrice)
+    const m  = mark?.markPrice ?? 0
+    if (!Number.isFinite(px) || px <= 0 || m <= 0) return null
+    const pct      = ((px - m) / m) * 100
+    const above    = pct > 0
+    const crossable = (side === 'LONG' && pct > 0) || (side === 'SHORT' && pct < 0)
+    return { pct, above, crossable }
+  }, [orderType, limitPrice, mark?.markPrice, side])
 
   const canSubmit = useMemo(() => {
     if (!onboarded || submitting) return false
@@ -351,7 +381,7 @@ export function Trade() {
           context before any wallet/order UI, which is what serious perp
           terminals do. Both react to the `pair` selector below. */}
       <MarketTicker symbol={pair} testIdPrefix="aster-ticker" />
-      <TradingChart symbol={pair} defaultInterval="15" height={300} testIdPrefix="aster-chart" />
+      <NativeChart venue="aster" symbol={pair} defaultInterval="15m" height={300} testIdPrefix="aster-chart" />
 
       {walletErr && (
         <div className="card" style={{ borderLeft: '3px solid #ef4444' }} data-testid="text-wallet-error">
@@ -439,6 +469,54 @@ export function Trade() {
             >Limit</button>
           </div>
 
+          {/* Limit price lives ABOVE size when active so the user sees the
+              price they're targeting before sizing into it. Mirrors HL. */}
+          {orderType === 'LIMIT' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                <label style={inputLabelStyle}>Limit Price</label>
+                {mark?.markPrice && mark.markPrice > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setLimitPrice(String(mark.markPrice))}
+                    data-testid="btn-use-mark"
+                    style={{
+                      background: 'transparent', border: 'none', color: '#a78bfa',
+                      fontSize: 11, cursor: 'pointer', padding: '0 2px',
+                    }}
+                  >
+                    use mark ${fmtPrice(mark.markPrice)}
+                  </button>
+                )}
+              </div>
+              <input
+                style={inputFieldStyle}
+                type="number"
+                inputMode="decimal"
+                placeholder="0.00"
+                value={limitPrice}
+                onChange={(e) => setLimitPrice(e.target.value)}
+                data-testid="input-limit-price"
+              />
+              {limitMeta && (
+                <div
+                  style={{
+                    fontSize: 11,
+                    color: limitMeta.crossable ? '#f59e0b' : '#6b7280',
+                    marginTop: 2,
+                    lineHeight: 1.4,
+                  }}
+                  data-testid="text-limit-distance"
+                >
+                  {Math.abs(limitMeta.pct).toFixed(2)}% {limitMeta.above ? 'above' : 'below'} mark
+                  {limitMeta.crossable
+                    ? ' · this side of the book — your order will likely fill immediately as a taker'
+                    : ' · should rest as a maker until price reaches it'}
+                </div>
+              )}
+            </div>
+          )}
+
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <label style={inputLabelStyle}>Size (USDT notional)</label>
             <input
@@ -450,27 +528,31 @@ export function Trade() {
               onChange={(e) => setSize(e.target.value)}
               data-testid="input-size"
             />
+            {/* Quick size shortcuts — match HL's $10/$25/$100/$500 row so a
+                user moving between venues doesn't have to relearn the UI. */}
+            <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+              {['10', '25', '100', '500'].map(amt => (
+                <button
+                  key={amt}
+                  type="button"
+                  onClick={() => setSize(amt)}
+                  data-testid={`btn-quick-size-${amt}`}
+                  style={{
+                    flex: 1, padding: '6px', borderRadius: 6, fontSize: 11,
+                    background: '#1f2937', color: '#9ca3af', border: 'none',
+                    cursor: 'pointer', fontWeight: 600,
+                  }}
+                >
+                  ${amt}
+                </button>
+              ))}
+            </div>
             {sizeNum > 0 && refPrice > 0 && (
               <div style={{ fontSize: 11, color: '#6b7280', marginTop: 2 }} data-testid="text-est-qty">
                 ≈ {estQty.toFixed(6)} {pair.replace('USDT', '')} · margin {requiredMargin.toFixed(2)} USDT
               </div>
             )}
           </div>
-
-          {orderType === 'LIMIT' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <label style={inputLabelStyle}>Limit Price</label>
-              <input
-                style={inputFieldStyle}
-                type="number"
-                inputMode="decimal"
-                placeholder="0.00"
-                value={limitPrice}
-                onChange={(e) => setLimitPrice(e.target.value)}
-                data-testid="input-limit-price"
-              />
-            </div>
-          )}
 
           <div className="input-group">
             <label className="input-label">Leverage: {leverage}x</label>

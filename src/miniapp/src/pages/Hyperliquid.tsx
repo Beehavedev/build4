@@ -7,9 +7,9 @@
 // onboarding flow (handled in a follow-up — needs approveAgent on-chain
 // signature with the user's BSC PK).
 // ─────────────────────────────────────────────────────────────────────────────
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { apiFetch } from '../api'
-import { TradingChart } from '../components/TradingChart'
+import { NativeChart } from '../components/NativeChart'
 import { MarketTicker, fmtUsd, fmtUsdRaw } from '../components/MarketTicker'
 
 const COINS = ['BTC', 'ETH', 'SOL', 'BNB', 'HYPE', 'DOGE']
@@ -312,6 +312,23 @@ export default function Hyperliquid() {
     }
   }, [orderType, orderCoin, mids, orderLimitPx])
 
+  // Distance of the LIMIT price from the live mark + maker/taker heuristic.
+  // Identical math to the Aster Trade page so both venues feel the same:
+  //   LONG  with limit > mark  → likely crosses immediately as taker
+  //   SHORT with limit < mark  → likely crosses immediately as taker
+  // Without orderbook depth this is an approximation, but it catches the
+  // common error of typing a price on the wrong side of the market.
+  const hlLimitMeta = useMemo(() => {
+    if (orderType !== 'LIMIT') return null
+    const px = Number(orderLimitPx)
+    const m  = mids[orderCoin] ?? 0
+    if (!Number.isFinite(px) || px <= 0 || m <= 0) return null
+    const pct       = ((px - m) / m) * 100
+    const above     = pct > 0
+    const crossable = (orderSide === 'LONG' && pct > 0) || (orderSide === 'SHORT' && pct < 0)
+    return { pct, above, crossable }
+  }, [orderType, orderLimitPx, mids, orderCoin, orderSide])
+
   const activate = async () => {
     setActivating(true)
     setActivateMsg(null)
@@ -552,7 +569,7 @@ export default function Hyperliquid() {
           moment you land on the page, just like a serious perp UI.
           Re-renders when `orderCoin` changes via the chip row below. */}
       <MarketTicker symbol={orderCoin} testIdPrefix="hl-ticker" />
-      <TradingChart symbol={orderCoin} defaultInterval="15" height={300} testIdPrefix="hl-chart" />
+      <NativeChart venue="hl" symbol={orderCoin} defaultInterval="15m" height={300} testIdPrefix="hl-chart" />
 
       {/* Account state */}
       <div style={cardStyle} data-testid="card-hl-account">
@@ -1191,6 +1208,22 @@ export default function Hyperliquid() {
                   boxSizing: 'border-box',
                 }}
               />
+              {hlLimitMeta && (
+                <div
+                  style={{
+                    fontSize: 11,
+                    color: hlLimitMeta.crossable ? '#f59e0b' : '#9ca3af',
+                    marginTop: 4,
+                    lineHeight: 1.4,
+                  }}
+                  data-testid="text-hl-limit-distance"
+                >
+                  {Math.abs(hlLimitMeta.pct).toFixed(2)}% {hlLimitMeta.above ? 'above' : 'below'} mark
+                  {hlLimitMeta.crossable
+                    ? ' · this side of the book — your order will likely fill immediately as a taker'
+                    : ' · should rest as a maker until price reaches it'}
+                </div>
+              )}
             </div>
           )}
 
