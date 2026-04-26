@@ -1214,7 +1214,7 @@ app.post('/api/aster/order', requireTgUser, async (req, res) => {
       return res.status(400).json({ error: 'Activate trading account first', needsApprove: true })
     }
 
-    const { pair, side, type, notionalUsdt, leverage, limitPrice } = req.body ?? {}
+    const { pair, side, type, notionalUsdt, leverage, limitPrice, stopLoss } = req.body ?? {}
     if (typeof pair !== 'string' || !pair) {
       return res.status(400).json({ error: 'pair required' })
     }
@@ -1333,13 +1333,57 @@ app.post('/api/aster/order', requireTgUser, async (req, res) => {
       })
     }
 
+    // Optional stop-loss attached to the user's manual entry. Best-effort:
+    // if the SL leg fails (bad price, wrong side of mark, etc.) we still
+    // return success on the entry — the entry is what the user committed
+    // capital to. The error is logged so operators can spot recurring
+    // failures, and the user gets a non-fatal note in the response.
+    let slStatus: 'placed' | 'skipped' | 'failed' = 'skipped'
+    let slError: string | undefined
+    const slPx = Number(stopLoss)
+    if (Number.isFinite(slPx) && slPx > 0) {
+      // Sanity: SL must be on the right side of the mark for the position
+      // direction. Otherwise it would trigger immediately and close at a
+      // loss the user didn't expect.
+      const wrongSide =
+        (side === 'LONG'  && slPx >= refPrice) ||
+        (side === 'SHORT' && slPx <= refPrice)
+      if (wrongSide) {
+        slStatus = 'failed'
+        slError =
+          side === 'LONG'
+            ? `Stop loss must be below the entry price ($${refPrice.toFixed(2)}).`
+            : `Stop loss must be above the entry price ($${refPrice.toFixed(2)}).`
+      } else {
+        try {
+          await aster.placeBracketOrders({
+            symbol:         sym,
+            side,
+            stopLoss:       slPx,
+            quantity:       qty,
+            creds,
+            // Even though closePosition='true' fills are flat-the-book,
+            // route through the builder so BUILD4 earns the broker
+            // kickback on the SL fill the same way we do on the entry.
+            ...(builderAddress ? { builderAddress, feeRate } : {}),
+          })
+          slStatus = 'placed'
+        } catch (slErr: any) {
+          slStatus = 'failed'
+          slError  = slErr?.message ?? 'Stop loss could not be placed.'
+          console.warn('[API] /aster/order SL leg failed:', slError)
+        }
+      }
+    }
+
     res.json({
       success: true,
       order: result,
       qty,
       refPrice,
       notionalUsdt: notional,
-      leverage: lev
+      leverage: lev,
+      stopLoss: { status: slStatus, price: slPx > 0 ? slPx : undefined, error: slError },
     })
   } catch (err: any) {
     const msg = (await import('./services/aster')).friendlyAsterError(err)
@@ -1718,7 +1762,7 @@ app.post('/api/hyperliquid/order', requireTgUser, async (req, res) => {
       })
     }
 
-    const { coin, side, type = 'MARKET', notionalUsdc, limitPx, leverage } = req.body ?? {}
+    const { coin, side, type = 'MARKET', notionalUsdc, limitPx, leverage, stopLoss } = req.body ?? {}
     if (typeof coin !== 'string' || !coin) {
       return res.status(400).json({ success: false, error: 'coin required' })
     }
@@ -1929,6 +1973,52 @@ app.post('/api/hyperliquid/order', requireTgUser, async (req, res) => {
         ...(stillBuilder ? { needsBuilderApproval: true } : {}),
       })
     }
+    // Optional stop-loss attached to the user's manual entry. Best-effort:
+    // if the SL leg fails we still return success on the entry — the
+    // entry is what the user committed capital to. We log the SL failure
+    // and surface it as a non-fatal note in the response so the UI can
+    // tell the user "filled, but stop loss didn't land — try again".
+    let slStatus: 'placed' | 'skipped' | 'failed' = 'skipped'
+    let slError: string | undefined
+    const slPx = Number(stopLoss)
+    if (Number.isFinite(slPx) && slPx > 0) {
+      // Sanity: SL must be on the right side of the mark for the position
+      // direction (LONG → SL below mark, SHORT → SL above). HL would
+      // accept the order and fire it instantly, closing for an unexpected
+      // loss; reject locally with a clear message instead.
+      const wrongSide =
+        (side === 'LONG'  && slPx >= markPrice) ||
+        (side === 'SHORT' && slPx <= markPrice)
+      if (wrongSide) {
+        slStatus = 'failed'
+        slError =
+          side === 'LONG'
+            ? `Stop loss must be below the entry price ($${markPrice.toFixed(2)}).`
+            : `Stop loss must be above the entry price ($${markPrice.toFixed(2)}).`
+      } else {
+        try {
+          const { placeStopLoss } = await import('./services/hyperliquid')
+          const slRes = await placeStopLoss(creds, {
+            coin:      sym,
+            side,
+            sz,
+            triggerPx: slPx,
+          })
+          if (slRes.success) {
+            slStatus = 'placed'
+          } else {
+            slStatus = 'failed'
+            slError  = slRes.error ?? 'Stop loss could not be placed.'
+            console.warn(`[/hyperliquid/order] SL leg failed user=${user.id} err=${slError}`)
+          }
+        } catch (slErr: any) {
+          slStatus = 'failed'
+          slError  = slErr?.message ?? 'Stop loss could not be placed.'
+          console.warn('[/hyperliquid/order] SL leg threw:', slError)
+        }
+      }
+    }
+
     return res.json({
       ...result,
       coin:     sym,
@@ -1937,6 +2027,7 @@ app.post('/api/hyperliquid/order', requireTgUser, async (req, res) => {
       sz,
       markPrice,
       notionalUsdc: notional,
+      stopLoss: { status: slStatus, price: slPx > 0 ? slPx : undefined, error: slError },
     })
   } catch (err: any) {
     console.error('[API] /hyperliquid/order failed:', err?.message ?? err)

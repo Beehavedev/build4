@@ -720,6 +720,93 @@ export async function placeOrder(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Stop-loss trigger order
+//
+// Reduce-only stop-market that closes the position when MARK reaches
+// `triggerPx`. Submitted in the OPPOSITE direction of the open position
+// (SELL to close LONG, BUY to close SHORT). Always reduce-only so it can
+// only shrink the position — never accidentally flip it.
+//
+// Builder-fee attribution mirrors placeOrder(): when BUILDER_ADDRESS is
+// configured the trigger order carries a `builder` field so BUILD4 earns
+// its kickback on the close fill the same way it does on the entry. The
+// only callers today are the manual /api/aster/order and
+// /api/hyperliquid/order routes (added with the user-facing SL field) —
+// the AI agent on HL is not yet wired in (see tradingAgent.ts).
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function placeStopLoss(
+  creds: HyperliquidCredentials,
+  args: {
+    coin:        string
+    /** Side of the OPEN position. We submit the opposite side as a close. */
+    side:        'LONG' | 'SHORT'
+    sz:          number
+    triggerPx:   number
+    /**
+     * Skip the builder field. Same semantics as placeOrder.noBuilder —
+     * used as a graceful fallback if the builder treasury isn't approved
+     * yet so the SL still lands rather than wedging the user without
+     * downside protection.
+     */
+    noBuilder?:  boolean
+  },
+): Promise<{ success: boolean; oid?: number; error?: string }> {
+  try {
+    const client = exchangeClientFor(creds)
+    const sym = args.coin.toUpperCase().replace(/USDT?$/, '').replace(/-USD$/, '')
+
+    const meta = await infoClient.meta()
+    const assetIdx = meta.universe.findIndex(u => u.name === sym)
+    if (assetIdx < 0) return { success: false, error: `Unknown coin ${sym}` }
+
+    const szDecimals = (meta.universe[assetIdx] as any)?.szDecimals ?? 4
+    // For a stop-MARKET the `p` field is just a reference price the SDK
+    // requires — the actual fill happens at market once `triggerPx` is
+    // reached. Use the trigger price itself, formatted to HL's tick rules.
+    const pxStr  = formatHlPrice(args.triggerPx, szDecimals)
+    const trgStr = formatHlPrice(args.triggerPx, szDecimals)
+    const szStr  = formatHlSize(args.sz, szDecimals)
+    if (Number(szStr) <= 0) {
+      return { success: false, error: `SL size rounds to 0 at szDecimals=${szDecimals}` }
+    }
+
+    // OPPOSITE side of the open position — SELL to close LONG, BUY to
+    // close SHORT. `r:true` (reduceOnly) guarantees this can only shrink
+    // the position even if sizing drifted between read and submit.
+    const isCloseBuy = args.side === 'SHORT'
+
+    const orderPayload: any = {
+      orders: [{
+        a: assetIdx,
+        b: isCloseBuy,
+        p: pxStr,
+        s: szStr,
+        r: true,
+        t: { trigger: { isMarket: true, triggerPx: trgStr, tpsl: 'sl' } },
+      }],
+      grouping: 'na',
+    }
+    if (BUILDER_ADDRESS && BUILDER_FEE_TENTHS > 0 && !args.noBuilder) {
+      orderPayload.builder = { b: BUILDER_ADDRESS, f: BUILDER_FEE_TENTHS }
+    }
+    const res = await client.order(orderPayload)
+    const status = (res as any)?.response?.data?.statuses?.[0]
+    if (status?.error) {
+      return { success: false, error: status.error }
+    }
+    return { success: true, oid: status?.resting?.oid ?? status?.filled?.oid }
+  } catch (err: any) {
+    const msg = err?.response?.data ?? err?.message ?? 'placeStopLoss failed'
+    console.error(
+      `[HL] placeStopLoss failed user=${creds.userAddress} → ` +
+      `${typeof msg === 'string' ? msg : JSON.stringify(msg)}`,
+    )
+    return { success: false, error: typeof msg === 'string' ? msg : JSON.stringify(msg) }
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Spot ↔ Perp internal transfer
 // ─────────────────────────────────────────────────────────────────────────────
 //

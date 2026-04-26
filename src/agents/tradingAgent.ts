@@ -1694,7 +1694,10 @@ If you would not put real money in this trade right now, action = HOLD.`
             fillPrice  = result.avgPrice > 0 ? result.avgPrice : currentPrice
             orderIdStr = String(result.orderId)
 
-            // SL + TP bracket orders
+            // SL + TP bracket orders. Pass the builder address through so
+            // the closing fills also route through BUILD4 — without this
+            // the entry collects the broker fee but the exit fill (SL/TP)
+            // bypasses it, leaking ~50% of fee revenue per trade.
             if (decision.stopLoss && decision.takeProfit) {
               await placeBracketOrders({
                 symbol:     sym,
@@ -1702,7 +1705,9 @@ If you would not put real money in this trade right now, action = HOLD.`
                 stopLoss:   decision.stopLoss,
                 takeProfit: decision.takeProfit,
                 quantity:   qty,
-                creds
+                creds,
+                builderAddress,
+                feeRate,
               })
             }
           } catch (execErr: any) {

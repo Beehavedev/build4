@@ -126,6 +126,10 @@ export default function Hyperliquid() {
   const [orderNotional, setOrderNotional] = useState('25')
   const [orderLeverage, setOrderLeverage] = useState('5')
   const [orderLimitPx, setOrderLimitPx]   = useState('')
+  // Optional stop-loss attached to the user's manual entry. Empty string
+  // means "no SL". Server places a reduce-only stop-MARKET trigger order
+  // (with builder fee attribution) after the entry fills.
+  const [orderStopLoss, setOrderStopLoss] = useState('')
   const [placing, setPlacing]             = useState(false)
   const [orderMsg, setOrderMsg]           = useState<string | null>(null)
   // Explicit success/error tag for orderMsg styling. Using regex on the
@@ -169,21 +173,39 @@ export default function Hyperliquid() {
         }
         body.limitPx = px
       }
+      // Optional stop-loss. Only sent when > 0; server treats undefined
+      // as "no SL" and places a reduce-only stop-MARKET trigger when set.
+      const slNum = Number(orderStopLoss)
+      if (Number.isFinite(slNum) && slNum > 0) {
+        body.stopLoss = slNum
+      }
       const r = await apiFetch<{
         success: boolean; error?: string; sz?: number; markPrice?: number;
-        needsBuilderApproval?: boolean; needsApprove?: boolean
+        needsBuilderApproval?: boolean; needsApprove?: boolean;
+        stopLoss?: { status: 'placed' | 'skipped' | 'failed'; price?: number; error?: string };
       }>(
         '/api/hyperliquid/order',
         { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) },
       )
       if (r.success) {
         const px = orderType === 'LIMIT' ? Number(orderLimitPx) : (r.markPrice ?? 0)
+        // Surface the SL leg outcome alongside the entry. Failure is non-
+        // fatal for the entry but critical for the user to know — silent
+        // failure would leave them thinking they're protected when they
+        // aren't. Style as an error if the SL leg failed.
+        const slBit =
+          r.stopLoss?.status === 'placed'
+            ? ` Stop loss set at $${fmtUsdRaw(r.stopLoss.price ?? 0)}.`
+            : r.stopLoss?.status === 'failed'
+              ? ` Stop loss didn't land — ${r.stopLoss.error ?? 'please add it manually'}.`
+              : ''
         setOrderMsg(
           `${orderSide} ${r.sz?.toFixed(4) ?? '?'} ${orderCoin} ${orderType} @ $${fmtUsdRaw(px)} ${
             orderType === 'LIMIT' ? 'resting' : 'placed'
-          }.`,
+          }.${slBit}`,
         )
-        setOrderMsgIsErr(false)
+        setOrderMsgIsErr(r.stopLoss?.status === 'failed')
+        if (r.stopLoss?.status !== 'failed') setOrderStopLoss('')
         await load()
       } else {
         setOrderMsg(r.error ?? 'Order failed')
@@ -716,6 +738,55 @@ export default function Hyperliquid() {
               )}
             </div>
           )}
+
+          {/* Stop loss (optional). Placed as a reduce-only stop-MARKET
+              trigger after the entry fills. Distance vs mark shown so
+              users see what they're risking before submitting. */}
+          <div style={{ marginBottom: 10 }}>
+            <div style={{
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              fontSize: 11, color: '#9ca3af', marginBottom: 4,
+            }}>
+              <span>Stop loss <span style={{ color: '#6b7280' }}>· optional</span></span>
+              {mids[orderCoin] > 0 && Number(orderStopLoss) > 0 && (() => {
+                const m   = mids[orderCoin]
+                const sl  = Number(orderStopLoss)
+                const pct = ((sl - m) / m) * 100
+                const wrongSide =
+                  (orderSide === 'LONG'  && sl >= m) ||
+                  (orderSide === 'SHORT' && sl <= m)
+                return (
+                  <span
+                    style={{ color: wrongSide ? '#ef4444' : '#9ca3af', fontWeight: 500 }}
+                    data-testid="text-hl-sl-distance"
+                  >
+                    {wrongSide
+                      ? (orderSide === 'LONG' ? 'must be below mark' : 'must be above mark')
+                      : `${Math.abs(pct).toFixed(2)}% ${pct > 0 ? 'above' : 'below'} mark`}
+                  </span>
+                )
+              })()}
+            </div>
+            <input
+              type="number"
+              inputMode="decimal"
+              value={orderStopLoss}
+              onChange={(e) => setOrderStopLoss(e.target.value)}
+              placeholder={
+                mids[orderCoin] > 0
+                  ? (orderSide === 'LONG'
+                      ? `< ${fmtUsdRaw(mids[orderCoin])} (closes if price falls)`
+                      : `> ${fmtUsdRaw(mids[orderCoin])} (closes if price rises)`)
+                  : 'Trigger price'
+              }
+              data-testid="input-hl-stop-loss"
+              style={{
+                width: '100%', padding: '10px', borderRadius: 8, fontSize: 14,
+                background: '#0f172a', border: '1px solid #334155', color: '#fff',
+                boxSizing: 'border-box',
+              }}
+            />
+          </div>
 
           {/* Notional + leverage */}
           <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
