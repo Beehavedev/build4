@@ -1518,6 +1518,17 @@ function MyPositionsList({
                   {p.paperTrade && (
                     <span style={{ marginLeft: 6, color: '#a855f7' }}>· paper</span>
                   )}
+                  {!p.paperTrade && p.txHashOpen && (
+                    <a
+                      href={`https://bscscan.com/tx/${p.txHashOpen}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      data-testid={`link-position-tx-${p.id}`}
+                      title="View opening transaction on BscScan"
+                      style={{ marginLeft: 6, color: '#7c3aed', textDecoration: 'none', fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace' }}>
+                      · tx {shortHash(p.txHashOpen)} ↗
+                    </a>
+                  )}
                 </div>
               </div>
               <span style={{
