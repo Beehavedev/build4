@@ -961,10 +961,26 @@ export async function closePosition(
 export async function placeBracketOrders(params: {
   symbol:     string
   side:       'LONG' | 'SHORT'
-  stopLoss:   number
-  takeProfit: number
+  /**
+   * Optional. If omitted (or 0), the SL leg is skipped. Lets callers (e.g.
+   * the manual /api/aster/order route) attach just a stop-loss without a
+   * paired take-profit — the AI agent still passes both.
+   */
+  stopLoss?:   number
+  /** Optional, see stopLoss above. */
+  takeProfit?: number
   quantity:   number
   creds:      AsterCredentials
+  /**
+   * Optional builder-fee attribution. When supplied, both SL and TP closing
+   * orders include `builder` + `feeRate` in the v3 body so the BUILD4
+   * treasury earns the broker kickback on the closing fill — same path
+   * already used by entries via placeOrderWithBuilderCode. Without this,
+   * SL/TP fills bypass the builder and we lose ~50% of fee revenue per
+   * trade (entry collected, exit not).
+   */
+  builderAddress?: string
+  feeRate?:        string
 }): Promise<void> {
   const closeSide = params.side === 'LONG' ? 'SELL' : 'BUY'
   const symbol    = params.symbol.replace('/', '')
@@ -976,32 +992,43 @@ export async function placeBracketOrders(params: {
   const fmtPx = (p: number): string =>
     filters ? roundDownToStep(p, filters.tickSize, filters.pricePrecision) : p.toString()
 
+  const builderFields: Record<string, any> =
+    params.builderAddress && params.feeRate
+      ? { builder: params.builderAddress, feeRate: params.feeRate }
+      : {}
+
   // Stop loss
-  try {
-    await signedPOST('/fapi/v3/order', {
-      symbol,
-      side:          closeSide,
-      type:          'STOP_MARKET',
-      stopPrice:     fmtPx(params.stopLoss),
-      closePosition: 'true',
-      workingType:   'MARK_PRICE'
-    }, params.creds)
-  } catch (err: any) {
-    console.error('[Aster] SL order failed:', err?.response?.data ?? err.message)
+  if (params.stopLoss && params.stopLoss > 0) {
+    try {
+      await signedPOST('/fapi/v3/order', {
+        symbol,
+        side:          closeSide,
+        type:          'STOP_MARKET',
+        stopPrice:     fmtPx(params.stopLoss),
+        closePosition: 'true',
+        workingType:   'MARK_PRICE',
+        ...builderFields,
+      }, params.creds)
+    } catch (err: any) {
+      console.error('[Aster] SL order failed:', err?.response?.data ?? err.message)
+    }
   }
 
   // Take profit
-  try {
-    await signedPOST('/fapi/v3/order', {
-      symbol,
-      side:          closeSide,
-      type:          'TAKE_PROFIT_MARKET',
-      stopPrice:     fmtPx(params.takeProfit),
-      closePosition: 'true',
-      workingType:   'MARK_PRICE'
-    }, params.creds)
-  } catch (err: any) {
-    console.error('[Aster] TP order failed:', err?.response?.data ?? err.message)
+  if (params.takeProfit && params.takeProfit > 0) {
+    try {
+      await signedPOST('/fapi/v3/order', {
+        symbol,
+        side:          closeSide,
+        type:          'TAKE_PROFIT_MARKET',
+        stopPrice:     fmtPx(params.takeProfit),
+        closePosition: 'true',
+        workingType:   'MARK_PRICE',
+        ...builderFields,
+      }, params.creds)
+    } catch (err: any) {
+      console.error('[Aster] TP order failed:', err?.response?.data ?? err.message)
+    }
   }
 }
 

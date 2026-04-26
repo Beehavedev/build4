@@ -59,6 +59,11 @@ interface WalletInfo {
 interface OrderResponse {
   success: boolean; qty: number; refPrice: number; leverage: number;
   order: { orderId: string | number; status: string; avgPrice: number }
+  // Server returns the SL leg outcome alongside the entry. `placed` →
+  // STOP_MARKET landed; `failed` → entry succeeded but the SL didn't,
+  // surfaced as a non-fatal note in the toast; `skipped` → no SL was
+  // requested (most common, e.g. the user left the field blank).
+  stopLoss?: { status: 'placed' | 'skipped' | 'failed'; price?: number; error?: string }
 }
 interface AsterTrade {
   symbol: string; side: 'BUY' | 'SELL'; positionSide: string;
@@ -84,6 +89,11 @@ export function Trade() {
   const [orderType, setOrderType] = useState<'MARKET' | 'LIMIT'>('MARKET')
   const [size, setSize]           = useState('')
   const [limitPrice, setLimitPrice] = useState('')
+  // Optional stop-loss attached to the user's manual entry. Stored as a
+  // string so empty input means "no SL" rather than NaN. Validated and
+  // submitted alongside the entry — server places a STOP_MARKET reduce-
+  // only order with builder fee attribution after the entry fills.
+  const [stopLoss, setStopLoss]   = useState('')
   const [leverage, setLeverage]   = useState(5)
   const [mark, setMark]           = useState<MarkPrice | null>(null)
   const [positions, setPositions] = useState<AsterPosition[]>([])
@@ -264,10 +274,15 @@ export function Trade() {
   const submit = async () => {
     setSubmitting(true); setMsg(null)
     try {
+      const slNum = Number(stopLoss)
       const body = {
         pair, side, type: orderType,
         notionalUsdt: sizeNum, leverage,
-        limitPrice: orderType === 'LIMIT' ? Number(limitPrice) : undefined
+        limitPrice: orderType === 'LIMIT' ? Number(limitPrice) : undefined,
+        // Only send stopLoss if the user actually typed one — server
+        // treats undefined / 0 as "no SL", anything > 0 as a request to
+        // attach a STOP_MARKET reduce-only after the entry fills.
+        stopLoss: Number.isFinite(slNum) && slNum > 0 ? slNum : undefined,
       }
       const r = await apiFetch<OrderResponse>('/api/aster/order', {
         method: 'POST',
@@ -291,11 +306,21 @@ export function Trade() {
           : resting
             ? `resting on book at $${r.refPrice.toFixed(2)} — will fill when reached`
             : `placed (${status.toLowerCase()})`
+      // Surface SL leg outcome alongside the entry. The entry is what
+      // counts (the user's capital is committed), but if they asked for
+      // an SL and it didn't land they need to know — silent failure
+      // would leave them thinking they're protected when they aren't.
+      const slBit =
+        r.stopLoss?.status === 'placed'
+          ? ` · stop loss set at $${r.stopLoss.price?.toFixed(2)}`
+          : r.stopLoss?.status === 'failed'
+            ? ` · stop loss didn't land — ${r.stopLoss.error ?? 'please add it manually'}`
+            : ''
       setMsg({
-        kind: 'ok',
-        text: `${side} ${pair} ${orderType} ${verb} — ${r.qty} ${pair.replace('USDT', '')}`,
+        kind: r.stopLoss?.status === 'failed' ? 'err' : 'ok',
+        text: `${side} ${pair} ${orderType} ${verb} — ${r.qty} ${pair.replace('USDT', '')}${slBit}`,
       })
-      setSize(''); setLimitPrice('')
+      setSize(''); setLimitPrice(''); setStopLoss('')
       // Refresh all four panels so the user sees the order land in the
       // right place (positions if filled, open orders if resting).
       await Promise.all([loadPositions(), loadWallet(), loadTrades(), loadOrders()])
@@ -585,6 +610,53 @@ export function Trade() {
             )}
           </div>
         )}
+
+        {/* Stop loss (optional). Placed as a STOP_MARKET reduce-only on the
+            opposite side after the entry fills. Distance vs mark shown so
+            users see what they're risking before submitting. */}
+        <div style={{ marginBottom: 10 }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            fontSize: 11, color: '#9ca3af', marginBottom: 4,
+          }}>
+            <span>Stop loss <span style={{ color: '#6b7280' }}>· optional</span></span>
+            {mark?.markPrice && Number(stopLoss) > 0 && (() => {
+              const pct = ((Number(stopLoss) - mark.markPrice) / mark.markPrice) * 100
+              const wrongSide =
+                (side === 'LONG'  && Number(stopLoss) >= mark.markPrice) ||
+                (side === 'SHORT' && Number(stopLoss) <= mark.markPrice)
+              return (
+                <span
+                  style={{ color: wrongSide ? '#ef4444' : '#9ca3af', fontWeight: 500 }}
+                  data-testid="text-sl-distance"
+                >
+                  {wrongSide
+                    ? (side === 'LONG' ? 'must be below mark' : 'must be above mark')
+                    : `${Math.abs(pct).toFixed(2)}% ${pct > 0 ? 'above' : 'below'} mark`}
+                </span>
+              )
+            })()}
+          </div>
+          <input
+            type="number"
+            inputMode="decimal"
+            value={stopLoss}
+            onChange={(e) => setStopLoss(e.target.value)}
+            placeholder={
+              mark?.markPrice
+                ? (side === 'LONG'
+                    ? `< ${mark.markPrice.toFixed(2)} (closes if price falls)`
+                    : `> ${mark.markPrice.toFixed(2)} (closes if price rises)`)
+                : 'Trigger price'
+            }
+            data-testid="input-stop-loss"
+            style={{
+              width: '100%', padding: '10px', borderRadius: 8, fontSize: 14,
+              background: '#0f172a', border: '1px solid #334155', color: '#fff',
+              boxSizing: 'border-box',
+            }}
+          />
+        </div>
 
         {/* Size + Leverage side-by-side, both numeric — no slider. */}
         <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
