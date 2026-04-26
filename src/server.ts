@@ -1122,6 +1122,79 @@ app.get('/api/aster/trades', requireTgUser, async (req, res) => {
   }
 })
 
+// GET /api/aster/orders
+// Query: ?symbol=BTCUSDT (optional)
+// Returns the user's resting (NEW / PARTIALLY_FILLED) orders. A LIMIT placed
+// away from market sits here until matched — it is *not* a position yet, and
+// it has no fills yet, so the only way for the UI to show it is this route.
+// Errors propagate so the panel can render "Could not load open orders"
+// distinctly from "no working orders" (same pattern as HL fills).
+app.get('/api/aster/orders', requireTgUser, async (req, res) => {
+  try {
+    const user = (req as any).user
+    if (!user.asterOnboarded) {
+      return res.status(400).json({ error: 'Activate trading account first', needsApprove: true })
+    }
+    const wallet = await db.wallet.findFirst({ where: { userId: user.id, isActive: true } })
+    if (!wallet) return res.status(404).json({ error: 'No active wallet' })
+
+    const aster = await import('./services/aster')
+    const creds = await aster.resolveAgentCreds(user, wallet.address)
+    if (!creds) return res.status(400).json({ error: 'No agent credentials — re-activate Aster' })
+
+    const symbol = typeof req.query.symbol === 'string' ? req.query.symbol : undefined
+    const orders = await aster.getOpenOrders(creds, symbol)
+    res.json({ orders })
+  } catch (err: any) {
+    console.error('[API] /aster/orders failed:', err?.message)
+    res.status(500).json({ error: err?.message ?? 'Internal error' })
+  }
+})
+
+// POST /api/aster/orders/cancel
+// Body: { symbol: 'BTCUSDT', orderId: 12345 }
+// Cancels a single resting order. The underlying service swallows errors
+// (logs to console) for backwards compat with bracket-cancel callers, so
+// we re-fetch open orders after to confirm the cancel actually took. If
+// the order is still there we surface a distinct error to the UI.
+app.post('/api/aster/orders/cancel', requireTgUser, async (req, res) => {
+  try {
+    const user = (req as any).user
+    if (!user.asterOnboarded) {
+      return res.status(400).json({ error: 'Activate trading account first', needsApprove: true })
+    }
+    const wallet = await db.wallet.findFirst({ where: { userId: user.id, isActive: true } })
+    if (!wallet) return res.status(404).json({ error: 'No active wallet' })
+
+    const { symbol, orderId } = (req.body ?? {}) as { symbol?: string; orderId?: number | string }
+    if (!symbol || typeof symbol !== 'string') {
+      return res.status(400).json({ error: 'symbol required' })
+    }
+    const oid = Number(orderId)
+    if (!Number.isFinite(oid) || oid <= 0) {
+      return res.status(400).json({ error: 'orderId required' })
+    }
+
+    const aster = await import('./services/aster')
+    const creds = await aster.resolveAgentCreds(user, wallet.address)
+    if (!creds) return res.status(400).json({ error: 'No agent credentials — re-activate Aster' })
+
+    await aster.cancelOrder(symbol, oid, creds)
+    // Confirm the cancel landed — Aster's API replies with the canceled
+    // order on success but the service helper currently swallows the
+    // payload, so we re-fetch and assert the orderId is gone.
+    const remaining = await aster.getOpenOrders(creds, symbol)
+    const stillThere = remaining.some(o => Number(o.orderId) === oid)
+    if (stillThere) {
+      return res.status(502).json({ error: 'Cancel did not take effect — try again' })
+    }
+    res.json({ success: true, orderId: oid })
+  } catch (err: any) {
+    console.error('[API] /aster/orders/cancel failed:', err?.message)
+    res.status(500).json({ error: err?.message ?? 'Internal error' })
+  }
+})
+
 // POST /api/aster/order
 // Body: { pair, side: 'LONG'|'SHORT', type: 'MARKET'|'LIMIT',
 //         notionalUsdt, leverage, limitPrice? }

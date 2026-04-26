@@ -622,6 +622,61 @@ export async function getUserTrades(
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Open orders — resting LIMIT/STOP orders that haven't filled yet
+//
+// Aster mirrors the Binance Futures API here: GET /fapi/v1/openOrders returns
+// every working order (NEW / PARTIALLY_FILLED) for the account. We need this
+// because a resting LIMIT lives in a third state — it's not a position yet
+// (so /positionRisk doesn't show it) and it has no fills yet (so /userTrades
+// doesn't show it). Without this endpoint, users who place a limit order
+// would think it vanished even though it's correctly resting on the book.
+//
+// Throws on any underlying error so callers can surface "Could not load open
+// orders" distinctly from "no working orders" — same pattern we used for HL
+// fills after the architect review.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface AsterOpenOrder {
+  orderId:      number
+  symbol:       string
+  side:         'BUY' | 'SELL'
+  positionSide: string
+  type:         string         // LIMIT, STOP_MARKET, TAKE_PROFIT_MARKET, ...
+  price:        number         // limit price (0 for market-style stops)
+  stopPrice:    number         // trigger for stop/TP variants
+  origQty:      number         // requested size
+  executedQty:  number         // partial-fill progress
+  status:       string         // NEW / PARTIALLY_FILLED
+  reduceOnly:   boolean
+  timeInForce:  string         // GTC / IOC / FOK
+  time:         number         // ms epoch when placed
+}
+
+export async function getOpenOrders(
+  creds:   AsterCredentials,
+  symbol?: string
+): Promise<AsterOpenOrder[]> {
+  const params: any = {}
+  if (symbol) params.symbol = symbol.replace('/', '')
+  const res = await signedGET('/fapi/v1/openOrders', params, creds)
+  return (res.data as any[]).map((o: any) => ({
+    orderId:      Number(o.orderId ?? 0),
+    symbol:       String(o.symbol ?? ''),
+    side:         o.side === 'SELL' ? 'SELL' : 'BUY',
+    positionSide: String(o.positionSide ?? 'BOTH'),
+    type:         String(o.type ?? 'LIMIT'),
+    price:        parseFloat(o.price ?? '0') || 0,
+    stopPrice:    parseFloat(o.stopPrice ?? '0') || 0,
+    origQty:      parseFloat(o.origQty ?? '0') || 0,
+    executedQty:  parseFloat(o.executedQty ?? '0') || 0,
+    status:       String(o.status ?? 'NEW'),
+    reduceOnly:   Boolean(o.reduceOnly),
+    timeInForce:  String(o.timeInForce ?? 'GTC'),
+    time:         Number(o.time ?? o.updateTime ?? 0),
+  }))
+}
+
 export async function getPositions(
   creds: AsterCredentials,
   symbol?: string
