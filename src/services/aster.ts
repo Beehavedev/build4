@@ -416,6 +416,83 @@ async function signedDELETE(path: string, params: Record<string, any>, creds: As
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// User-facing error translator
+//
+// Aster's API returns a mix of axios errors ("Request failed with status code
+// 401"), Cloudflare HTML, and Binance-style JSON errors ({code, msg}). Surfaced
+// raw, none of these mean anything to a trader — "401" is especially confusing
+// because the user has no concept of HTTP status codes.
+//
+// This helper inspects whatever the underlying call threw and produces a single
+// short, plain-English sentence that explains what actually happened and what
+// the user can do about it. EVERY route that touches Aster on the user's behalf
+// must pipe its catch through this so the UI never displays raw axios output.
+//
+// Order of preference:
+//   1. Aster's own JSON `msg` field (their server-rendered explanation, in
+//      English) — usually the most accurate.
+//   2. Known HTTP status codes mapped to actionable copy (401, 403, 429, 5xx).
+//   3. A safe generic fallback for transport-level failures (network down,
+//      timeout, DNS) so we never say "Request failed with status code…".
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function friendlyAsterError(err: any): string {
+  const status = err?.response?.status
+  const data   = err?.response?.data
+
+  // 1. Aster's own message (Binance-compat shape: { code, msg })
+  if (data && typeof data === 'object' && typeof data.msg === 'string' && data.msg.trim()) {
+    // Strip leading "Error: " or punctuation noise that Aster sometimes prepends.
+    const msg = data.msg.replace(/^error[:\s]+/i, '').trim()
+    if (data.code === -2014 || data.code === -2015) {
+      return 'Trading agent rejected by Aster — please re-activate your account from the Wallet tab.'
+    }
+    if (data.code === -1021) {
+      return 'Aster timing check failed — please retry in a few seconds.'
+    }
+    if (data.code === -1022) {
+      return 'Aster signature check failed — please re-activate your account from the Wallet tab.'
+    }
+    if (data.code === -2010 || data.code === -2011) {
+      // Order rejected (insufficient margin, reduce-only conflict, etc.) —
+      // Aster's msg is already user-readable here ("Insufficient balance",
+      // "Order would immediately trigger", etc.). Pass through as-is.
+      return msg
+    }
+    return msg
+  }
+
+  // 2. Known HTTP statuses
+  if (status === 401) {
+    return 'Aster did not accept your trading agent — please re-activate your account from the Wallet tab.'
+  }
+  if (status === 403) {
+    return 'Aster blocked the request (geo or rate). Please try again in a moment.'
+  }
+  if (status === 429) {
+    return 'Too many requests to Aster — please wait a few seconds and retry.'
+  }
+  if (status === 418) {
+    return 'Aster temporarily banned this device for too many requests — wait a minute and retry.'
+  }
+  if (typeof status === 'number' && status >= 500) {
+    return 'Aster is temporarily unavailable — please retry shortly.'
+  }
+
+  // 3. Transport-level fallbacks
+  const code = err?.code
+  if (code === 'ECONNABORTED' || code === 'ETIMEDOUT') {
+    return 'Aster took too long to respond — please retry.'
+  }
+  if (code === 'ENOTFOUND' || code === 'ECONNREFUSED' || code === 'ENETUNREACH') {
+    return 'Could not reach Aster — please check your connection and retry.'
+  }
+
+  // Last-resort: never leak axios's "Request failed with status code…" string.
+  return 'Could not complete the request to Aster — please retry.'
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Account balance — via Aster's public RPC (no signing required)
 //
 // Endpoint: POST https://tapi.asterdex.com/info
@@ -625,12 +702,16 @@ export async function getUserTrades(
 // ─────────────────────────────────────────────────────────────────────────────
 // Open orders — resting LIMIT/STOP orders that haven't filled yet
 //
-// Aster mirrors the Binance Futures API here: GET /fapi/v1/openOrders returns
-// every working order (NEW / PARTIALLY_FILLED) for the account. We need this
-// because a resting LIMIT lives in a third state — it's not a position yet
-// (so /positionRisk doesn't show it) and it has no fills yet (so /userTrades
-// doesn't show it). Without this endpoint, users who place a limit order
-// would think it vanished even though it's correctly resting on the book.
+// Returns every working order (NEW / PARTIALLY_FILLED) for the account. We
+// need this because a resting LIMIT lives in a third state — it's not a
+// position yet (so /positionRisk doesn't show it) and it has no fills yet
+// (so /userTrades doesn't show it). Without this endpoint, users who place a
+// limit order would think it vanished even though it's correctly resting.
+//
+// IMPORTANT: Aster's agent-signed scheme is only exposed under /fapi/v3/*.
+// The first version of this used /fapi/v1/openOrders (Binance-compat path)
+// and Aster rejected it with 401 Unauthorized. /fapi/v3/openOrders accepts
+// the same EIP-712 signature as the rest of our trading calls.
 //
 // Throws on any underlying error so callers can surface "Could not load open
 // orders" distinctly from "no working orders" — same pattern we used for HL
@@ -659,7 +740,7 @@ export async function getOpenOrders(
 ): Promise<AsterOpenOrder[]> {
   const params: any = {}
   if (symbol) params.symbol = symbol.replace('/', '')
-  const res = await signedGET('/fapi/v1/openOrders', params, creds)
+  const res = await signedGET('/fapi/v3/openOrders', params, creds)
   return (res.data as any[]).map((o: any) => ({
     orderId:      Number(o.orderId ?? 0),
     symbol:       String(o.symbol ?? ''),
