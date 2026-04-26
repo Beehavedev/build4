@@ -48,14 +48,13 @@ const INTERVALS: Array<{ label: string; value: Props['defaultInterval'] }> = [
   { label: '1D',  value: '1d' },
 ]
 
-// How often we re-poll the venue for fresh candles. Short timeframes need
-// to update the live candle frequently so the wick visibly grows; long
-// timeframes don't need anywhere near the same cadence.
-function pollMsForInterval(intv: string): number {
-  if (intv === '1m')  return 4_000
-  if (intv === '5m')  return 6_000
-  if (intv === '15m') return 10_000
-  return 15_000
+// How often we re-poll the venue for fresh candles. We poll every 1.5s on
+// every timeframe so the live (right-most) candle visibly ticks as price
+// moves, matching what serious perp terminals do. The cost is a re-fetch
+// of ~200 candles per second, which both venues can serve cheaply (Aster
+// has a server-side cache, HL's candleSnapshot is light).
+function pollMsForInterval(_intv: string): number {
+  return 1_500
 }
 
 function buildCandlesUrl(venue: Venue, symbol: string, interval: string, limit = 200): string {
