@@ -1088,8 +1088,10 @@ app.get('/api/aster/positions', requireTgUser, async (req, res) => {
     const positions = await getPositions(creds)
     res.json({ positions })
   } catch (err: any) {
-    console.error('[API] /aster/positions failed:', err?.message)
-    res.status(500).json({ error: err?.message ?? 'Internal error' })
+    const { friendlyAsterError } = await import('./services/aster')
+    const msg = friendlyAsterError(err)
+    console.error('[API] /aster/positions failed:', msg, '(raw:', err?.message, 'status:', err?.response?.status, ')')
+    res.status(502).json({ error: msg })
   }
 })
 
@@ -1117,8 +1119,9 @@ app.get('/api/aster/trades', requireTgUser, async (req, res) => {
     const trades = await aster.getUserTrades(creds, { symbol, limit })
     res.json({ trades })
   } catch (err: any) {
-    console.error('[API] /aster/trades failed:', err?.message)
-    res.status(500).json({ error: err?.message ?? 'Internal error' })
+    const msg = (await import('./services/aster')).friendlyAsterError(err)
+    console.error('[API] /aster/trades failed:', msg, '(raw:', err?.message, 'status:', err?.response?.status, ')')
+    res.status(502).json({ error: msg })
   }
 })
 
@@ -1146,8 +1149,9 @@ app.get('/api/aster/orders', requireTgUser, async (req, res) => {
     const orders = await aster.getOpenOrders(creds, symbol)
     res.json({ orders })
   } catch (err: any) {
-    console.error('[API] /aster/orders failed:', err?.message)
-    res.status(500).json({ error: err?.message ?? 'Internal error' })
+    const msg = (await import('./services/aster')).friendlyAsterError(err)
+    console.error('[API] /aster/orders failed:', msg, '(raw:', err?.message, 'status:', err?.response?.status, ')')
+    res.status(502).json({ error: msg })
   }
 })
 
@@ -1186,12 +1190,13 @@ app.post('/api/aster/orders/cancel', requireTgUser, async (req, res) => {
     const remaining = await aster.getOpenOrders(creds, symbol)
     const stillThere = remaining.some(o => Number(o.orderId) === oid)
     if (stillThere) {
-      return res.status(502).json({ error: 'Cancel did not take effect — try again' })
+      return res.status(502).json({ error: 'Aster did not cancel the order — please try again.' })
     }
     res.json({ success: true, orderId: oid })
   } catch (err: any) {
-    console.error('[API] /aster/orders/cancel failed:', err?.message)
-    res.status(500).json({ error: err?.message ?? 'Internal error' })
+    const msg = (await import('./services/aster')).friendlyAsterError(err)
+    console.error('[API] /aster/orders/cancel failed:', msg, '(raw:', err?.message, 'status:', err?.response?.status, ')')
+    res.status(502).json({ error: msg })
   }
 })
 
@@ -1337,9 +1342,9 @@ app.post('/api/aster/order', requireTgUser, async (req, res) => {
       leverage: lev
     })
   } catch (err: any) {
-    const msg = err?.response?.data?.msg ?? err?.message ?? 'Internal error'
-    console.error('[API] /aster/order failed:', msg)
-    res.status(500).json({ error: msg })
+    const msg = (await import('./services/aster')).friendlyAsterError(err)
+    console.error('[API] /aster/order failed:', msg, '(raw:', err?.message, 'status:', err?.response?.status, ')')
+    res.status(502).json({ error: msg })
   }
 })
 
@@ -1374,9 +1379,9 @@ app.post('/api/aster/close', requireTgUser, async (req, res) => {
     const result = await closePosition(pair.replace(/[\/\s]/g, '').toUpperCase(), side, qty, creds)
     res.json({ success: true, order: result })
   } catch (err: any) {
-    const msg = err?.response?.data?.msg ?? err?.message ?? 'Internal error'
-    console.error('[API] /aster/close failed:', msg)
-    res.status(500).json({ error: msg })
+    const msg = (await import('./services/aster')).friendlyAsterError(err)
+    console.error('[API] /aster/close failed:', msg, '(raw:', err?.message, 'status:', err?.response?.status, ')')
+    res.status(502).json({ error: msg })
   }
 })
 
