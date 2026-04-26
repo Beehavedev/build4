@@ -1076,7 +1076,14 @@ async function resolveSellAmount(args: {
   if (pos.outcomeTokenAmount && pos.outcomeTokenAmount > 0) {
     const recorded = ethers.parseUnits(pos.outcomeTokenAmount.toFixed(6), 18);
     const tokenAmt = recorded < walletBal ? recorded : walletBal;
-    if (tokenAmt === 0n) return { ok: false, reason: 'wallet holds zero of this outcome token' };
+    if (tokenAmt === 0n) {
+      return {
+        ok: false,
+        reason: 'wallet holds zero of this outcome token',
+        code: 'no_balance',
+        hint: 'The position appears open in our records but the wallet no longer holds the tokens — likely closed elsewhere or transferred. The Sell button will swap to a refresh prompt.',
+      };
+    }
     return { ok: true, tokenAmt };
   }
 
@@ -1096,7 +1103,12 @@ async function resolveSellAmount(args: {
   const otherCount = Number(otherLots[0]?.c ?? 0);
 
   if (walletBal === 0n) {
-    return { ok: false, reason: 'wallet holds zero of this outcome token' };
+    return {
+      ok: false,
+      reason: 'wallet holds zero of this outcome token',
+      code: 'no_balance',
+      hint: 'The position appears open in our records but the wallet no longer holds the tokens — likely closed elsewhere or transferred. The Sell button will swap to a refresh prompt.',
+    };
   }
 
   if (otherCount === 0) {
@@ -1114,7 +1126,14 @@ async function resolveSellAmount(args: {
   const fairShare = (walletBal * BigInt(Math.max(1, Math.floor(myShare * 1_000_000)))) / 1_000_000n;
   const entryEstimate = ethers.parseUnits((pos.usdtIn / pos.entryPrice).toFixed(6), 18);
   const tokenAmt = fairShare < entryEstimate ? fairShare : entryEstimate;
-  if (tokenAmt === 0n) return { ok: false, reason: 'computed share is zero — try selling another lot first' };
+  if (tokenAmt === 0n) {
+    return {
+      ok: false,
+      reason: 'computed share is zero — try selling another lot first',
+      code: 'no_balance',
+      hint: 'You have multiple open lots on the same outcome and this one\'s fair share rounds to zero. Close the larger lot first, then retry this one.',
+    };
+  }
   console.warn(
     `[fortyTwoExecutor] position ${pos.id} has no recorded outcomeTokenAmount and ${otherCount} other open lot(s); selling fair share ${ethers.formatUnits(tokenAmt, 18)} of wallet ${ethers.formatUnits(walletBal, 18)}`,
   );
