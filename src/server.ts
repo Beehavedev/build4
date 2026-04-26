@@ -1093,6 +1093,35 @@ app.get('/api/aster/positions', requireTgUser, async (req, res) => {
   }
 })
 
+// GET /api/aster/trades
+// Query: ?symbol=SOLUSDT (optional) &limit=20 (optional, max 100)
+// Returns the user's most recent Aster fills with commission, so users can
+// audit fees end-to-end (notional, executed price, commission paid). This is
+// the source of truth for builder-fee verification — Aster's `commission`
+// field on each fill reflects the broker fee actually charged.
+app.get('/api/aster/trades', requireTgUser, async (req, res) => {
+  try {
+    const user = (req as any).user
+    if (!user.asterOnboarded) {
+      return res.status(400).json({ error: 'Activate trading account first', needsApprove: true })
+    }
+    const wallet = await db.wallet.findFirst({ where: { userId: user.id, isActive: true } })
+    if (!wallet) return res.status(404).json({ error: 'No active wallet' })
+
+    const aster = await import('./services/aster')
+    const creds = await aster.resolveAgentCreds(user, wallet.address)
+    if (!creds) return res.status(400).json({ error: 'No agent credentials — re-activate Aster' })
+
+    const symbol = typeof req.query.symbol === 'string' ? req.query.symbol : undefined
+    const limit  = Math.max(1, Math.min(100, parseInt(String(req.query.limit ?? '20'), 10) || 20))
+    const trades = await aster.getUserTrades(creds, { symbol, limit })
+    res.json({ trades })
+  } catch (err: any) {
+    console.error('[API] /aster/trades failed:', err?.message)
+    res.status(500).json({ error: err?.message ?? 'Internal error' })
+  }
+})
+
 // POST /api/aster/order
 // Body: { pair, side: 'LONG'|'SHORT', type: 'MARKET'|'LIMIT',
 //         notionalUsdt, leverage, limitPrice? }
