@@ -240,6 +240,38 @@ export default function Hyperliquid() {
     }
   }
 
+  // Standalone "Re-sign builder approval" — same call as approveBuilder above
+  // but does NOT auto-place an order on success. Surfaced as a small always-
+  // visible link in the trade panel footer so users whose approval has gone
+  // stale (e.g. operator rotated the builder treasury wallet) can refresh it
+  // themselves without having to wait for an order to fail and surface the
+  // reactive button. One-shot, idempotent, safe to tap repeatedly.
+  const [resigning, setResigning] = useState(false)
+  const [resignMsg, setResignMsg] = useState<string | null>(null)
+  const [resignMsgIsErr, setResignMsgIsErr] = useState(false)
+  const resignBuilder = async () => {
+    setResigning(true)
+    setResignMsg(null)
+    try {
+      const r = await apiFetch<{ success: boolean; error?: string }>(
+        '/api/hyperliquid/approve-builder',
+        { method: 'POST' },
+      )
+      if (r.success) {
+        setResignMsg('Builder approval refreshed — your next order will route through BUILD4.')
+        setResignMsgIsErr(false)
+      } else {
+        setResignMsg(r.error ?? 'Approval refresh failed — please try again in a moment.')
+        setResignMsgIsErr(true)
+      }
+    } catch (e: any) {
+      setResignMsg(e?.message ?? 'Approval refresh failed — please try again in a moment.')
+      setResignMsgIsErr(true)
+    } finally {
+      setResigning(false)
+    }
+  }
+
   // When the user flips MARKET → LIMIT for the first time, prefill with the
   // live mark so they can nudge from a sensible starting point. We only
   // prefill if the field is empty — never clobber a price they already typed.
@@ -1134,8 +1166,33 @@ export default function Hyperliquid() {
             {orderType === 'MARKET'
               ? 'Market orders execute immediately at best available price (5% slippage cap).'
               : 'Limit orders rest on the orderbook (GTC) until filled or cancelled.'}{' '}
-            BUILD4 takes a 0.1% builder fee on every fill.
+            BUILD4 takes a 0.1% builder fee on every fill.{' '}
+            <span
+              onClick={resigning ? undefined : resignBuilder}
+              data-testid="link-hl-resign-builder"
+              style={{
+                color: resigning ? '#475569' : '#a78bfa',
+                cursor: resigning ? 'wait' : 'pointer',
+                textDecoration: 'underline',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {resigning ? 'Refreshing approval…' : 'Refresh approval'}
+            </span>
           </div>
+
+          {resignMsg && (
+            <div
+              style={{
+                marginTop: 8, padding: 8, borderRadius: 6, fontSize: 11,
+                background: resignMsgIsErr ? '#7f1d1d' : '#064e3b',
+                color: resignMsgIsErr ? '#fecaca' : '#a7f3d0',
+              }}
+              data-testid="text-hl-resign-msg"
+            >
+              {resignMsg}
+            </div>
+          )}
         </div>
       )}
 
