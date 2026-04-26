@@ -50,9 +50,21 @@ const MARKET_ABI = [
   'function questionId() view returns (bytes32)',
 ];
 
-// IFTCurve.calMarginalPrice is a `view` function returning price in collateral decimals.
+// IFTCurve quotes. calMarginalPrice is `view`. calRedeemValueByOtDelta is
+// NOT declared view in the interface ("may contain state-modifying calls"
+// per fortytwo-protocol/ft-contracts-public/src/interfaces/IFTCurve.sol)
+// even though PowerCurve doesn't actually mutate state during a quote — so
+// we must invoke it via staticCall to read it without sending a tx.
+//
+// The redeem-value quote returns the EXACT post-fee USDT a sell of
+// `otDelta` outcome tokens would produce right now, walking the bonding
+// curve. This is what we use to set tight slippage on close-position calls
+// — the marginal-price * tokens estimate that Predictions used previously
+// overstated payout on thin markets and triggered RouterSlippage reverts
+// even with 30% buffer.
 const CURVE_ABI = [
   'function calMarginalPrice(address market, uint256 tokenId) view returns (uint256)',
+  'function calRedeemValueByOtDelta(address market, uint256 tokenId, uint256 otDelta, bytes dataSwap) returns (uint256 collateralToUser, uint256 collateralToTreasury)',
 ];
 
 // ── Caching ────────────────────────────────────────────────────────────────
@@ -209,6 +221,55 @@ export async function getOutcomePrices(
 
   priceCache.set(marketAddress, { prices: outcomes, fetchedAt: Date.now() });
   return outcomes;
+}
+
+/**
+ * Quote the exact post-fee USDT amount a user would receive for selling
+ * `otDelta` of `tokenId` on `marketAddress` right now. Uses staticCall on
+ * `IFTCurve.calRedeemValueByOtDelta` so we never broadcast — pure read.
+ *
+ * Returns the bigint USDT amount (in collateral decimals, normally 18) or
+ * `null` if the curve quote reverts (curve unsupported, market closed,
+ * RPC failure, etc.). Callers should fall back to their marginal-price
+ * estimate in that case rather than block the close.
+ *
+ * Why not just read marginalPrice * tokenAmt: marginal price is the
+ * INSTANT price for an infinitesimal trade. Selling N tokens walks the
+ * curve down — the integral payout is strictly less than N * marginalPrice
+ * (and meaningfully less for thin pools). We were hitting RouterSlippage
+ * even with a 30% buffer because the marginal-price overstatement on
+ * partial exits exceeded that buffer for newly-created markets.
+ */
+export async function quoteRedeemValue(
+  marketAddress: string,
+  tokenId: number,
+  otDelta: bigint,
+  curveAddress: string = POWER_CURVE_ADDRESS,
+): Promise<bigint | null> {
+  if (otDelta === 0n) return 0n;
+  try {
+    const curve = new ethers.Contract(curveAddress, CURVE_ABI, provider());
+    const result = await rpcWithRetry(
+      () =>
+        curve.calRedeemValueByOtDelta.staticCall(
+          marketAddress,
+          BigInt(tokenId),
+          otDelta,
+          '0x',
+        ) as Promise<[bigint, bigint]>,
+    );
+    // result = [collateralToUser, collateralToTreasury]; user receives the first.
+    const collateralToUser = Array.isArray(result) ? result[0] : (result as unknown as bigint);
+    return typeof collateralToUser === 'bigint' ? collateralToUser : null;
+  } catch (err) {
+    const msg = (err as { shortMessage?: string; message?: string })?.shortMessage
+      ?? (err as Error)?.message
+      ?? String(err);
+    console.warn(
+      `[fortyTwo] quoteRedeemValue failed market=${marketAddress} tokenId=${tokenId} otDelta=${otDelta.toString()} curve=${curveAddress}: ${msg}`,
+    );
+    return null;
+  }
 }
 
 /** Combined market state: metadata + live outcome prices. */
