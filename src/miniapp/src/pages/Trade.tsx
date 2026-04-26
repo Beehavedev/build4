@@ -60,6 +60,12 @@ interface OrderResponse {
   success: boolean; qty: number; refPrice: number; leverage: number;
   order: { orderId: string | number; status: string; avgPrice: number }
 }
+interface AsterTrade {
+  symbol: string; side: 'BUY' | 'SELL'; positionSide: string;
+  price: number; qty: number; quoteQty: number;
+  realizedPnl: number; commission: number; commissionAsset: string;
+  time: number; orderId: number;
+}
 
 export function Trade() {
   const [wallet, setWallet]       = useState<WalletInfo | null>(null)
@@ -72,6 +78,8 @@ export function Trade() {
   const [leverage, setLeverage]   = useState(5)
   const [mark, setMark]           = useState<MarkPrice | null>(null)
   const [positions, setPositions] = useState<AsterPosition[]>([])
+  const [trades, setTrades]       = useState<AsterTrade[]>([])
+  const [tradesErr, setTradesErr] = useState<string | null>(null)
   // Live mark prices for OPEN POSITIONS, polled separately from the
   // selected-pair mark above. Keyed by symbol so closing a position
   // automatically drops it from the polling set on the next tick.
@@ -94,6 +102,17 @@ export function Trade() {
       setPositions(r.positions)
     } catch { /* not onboarded yet, ignore */ }
   }
+  const loadTrades = async () => {
+    try {
+      const r = await apiFetch<{ trades: AsterTrade[] }>('/api/aster/trades?limit=10')
+      setTrades(r.trades); setTradesErr(null)
+    } catch (e: any) {
+      // Distinguish "couldn't reach Aster" from "no fills yet" — the previous
+      // behavior silently swallowed both, making outages indistinguishable
+      // from a clean account.
+      setTradesErr(e?.message ?? 'Could not load fills')
+    }
+  }
   const loadMark = async (p: string) => {
     try {
       const m = await apiFetch<MarkPrice>(`/api/aster/markprice/${p}`)
@@ -101,7 +120,7 @@ export function Trade() {
     } catch { setMark(null) }
   }
 
-  useEffect(() => { loadWallet(); loadPositions() }, [])
+  useEffect(() => { loadWallet(); loadPositions(); loadTrades() }, [])
   // Refresh mark price every second so the limit-price input has a live
   // reference to anchor against. Aster's markprice endpoint is cheap and
   // we're only polling one symbol at a time — well within rate limits.
@@ -193,7 +212,7 @@ export function Trade() {
         text: `${side} ${pair} ${orderType} placed — ${r.qty} @ ${r.refPrice.toFixed(2)} (${r.order.status})`
       })
       setSize(''); setLimitPrice('')
-      await Promise.all([loadPositions(), loadWallet()])
+      await Promise.all([loadPositions(), loadWallet(), loadTrades()])
     } catch (e: any) {
       setMsg({ kind: 'err', text: e?.message ?? 'Order failed' })
     } finally { setSubmitting(false) }
@@ -208,10 +227,20 @@ export function Trade() {
         body: JSON.stringify({ pair: p.symbol, side: p.side, size: p.size })
       })
       setMsg({ kind: 'ok', text: `Closed ${p.symbol} ${p.side}` })
-      await Promise.all([loadPositions(), loadWallet()])
+      await Promise.all([loadPositions(), loadWallet(), loadTrades()])
     } catch (e: any) {
       setMsg({ kind: 'err', text: e?.message ?? 'Close failed' })
     }
+  }
+
+  // Compact relative-time formatter for the fills feed. Recent fills are the
+  // most useful so we show "12s/3m/2h ago" instead of full timestamps.
+  const ago = (ms: number): string => {
+    const s = Math.max(0, Math.floor((Date.now() - ms) / 1000))
+    if (s < 60)    return `${s}s ago`
+    if (s < 3600)  return `${Math.floor(s / 60)}m ago`
+    if (s < 86400) return `${Math.floor(s / 3600)}h ago`
+    return `${Math.floor(s / 86400)}d ago`
   }
 
   return (
@@ -478,6 +507,79 @@ export function Trade() {
           </div>
         )}
       </div>
+
+      {/* Recent fills — pulled from Aster's userTrades endpoint. Each row
+          shows the actual commission Aster charged on the fill, which is the
+          ground truth for fee accounting. Helps users audit their trading
+          costs and surfaces builder-fee attribution transparently. */}
+      {onboarded && (
+        <div className="card">
+          <div className="card-title" style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <span>Recent fills</span>
+            <span style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 400 }}>
+              last {trades.length}
+            </span>
+          </div>
+          {tradesErr ? (
+            <div style={{ fontSize: 13, color: '#ef4444', marginTop: 8 }} data-testid="text-trades-error">
+              Could not load fills: {tradesErr}
+            </div>
+          ) : trades.length === 0 ? (
+            <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 8 }} data-testid="text-no-trades">
+              No fills yet on this account.
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
+              {trades.map((t) => {
+                const notional = t.qty * t.price
+                // bps math is only meaningful when commission is paid in USDT
+                // (the same denomination as notional). If Aster ever charges in
+                // BNB or another asset, suppress the bps annotation rather
+                // than display a number that mixes denominations.
+                const sameDenom = (t.commissionAsset || '').toUpperCase() === 'USDT'
+                const feeBps = sameDenom && notional > 0 ? (t.commission / notional) * 10000 : 0
+                const sideColor = t.side === 'BUY' ? '#10b981' : '#ef4444'
+                return (
+                  <div
+                    key={`${t.orderId}-${t.time}`}
+                    data-testid={`row-trade-${t.orderId}`}
+                    style={{
+                      padding: 10, borderRadius: 8, background: 'var(--bg-elev)',
+                      display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12,
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ fontWeight: 600 }}>
+                        <span style={{ color: sideColor }}>{t.side}</span> {t.symbol}
+                      </span>
+                      <span style={{ color: 'var(--text-muted)' }}>{ago(t.time)}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-secondary)' }}>
+                      <span>{t.qty} @ ${fmtPrice(t.price)}</span>
+                      <span>${notional.toFixed(2)} notional</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-secondary)' }}>
+                      <span>
+                        fee {t.commission.toFixed(6)} {t.commissionAsset}
+                        {feeBps > 0 && (
+                          <span style={{ color: 'var(--text-muted)', marginLeft: 6 }}>
+                            ({feeBps.toFixed(2)} bps)
+                          </span>
+                        )}
+                      </span>
+                      {t.realizedPnl !== 0 && (
+                        <span style={{ color: t.realizedPnl >= 0 ? '#10b981' : '#ef4444', fontWeight: 600 }}>
+                          {t.realizedPnl >= 0 ? '+' : ''}{t.realizedPnl.toFixed(4)} PnL
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
