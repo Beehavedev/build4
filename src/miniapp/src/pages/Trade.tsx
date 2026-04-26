@@ -66,6 +66,15 @@ interface AsterTrade {
   realizedPnl: number; commission: number; commissionAsset: string;
   time: number; orderId: number;
 }
+// Resting orders surfaced from /api/aster/orders. Distinct from positions
+// (which are filled, on-book exposure) and trades (which are completed
+// fills) — these are working orders waiting to match.
+interface AsterOrder {
+  orderId: number; symbol: string; side: 'BUY' | 'SELL'; positionSide: string;
+  type: string; price: number; stopPrice: number;
+  origQty: number; executedQty: number; status: string;
+  reduceOnly: boolean; timeInForce: string; time: number;
+}
 
 export function Trade() {
   const [wallet, setWallet]       = useState<WalletInfo | null>(null)
@@ -80,6 +89,12 @@ export function Trade() {
   const [positions, setPositions] = useState<AsterPosition[]>([])
   const [trades, setTrades]       = useState<AsterTrade[]>([])
   const [tradesErr, setTradesErr] = useState<string | null>(null)
+  // Resting orders (LIMIT / stop variants that haven't matched yet). Lives in
+  // its own panel between Positions and Recent fills so a placed limit is
+  // visible immediately, instead of appearing to vanish until it fills.
+  const [orders, setOrders]       = useState<AsterOrder[]>([])
+  const [ordersErr, setOrdersErr] = useState<string | null>(null)
+  const [cancellingId, setCancellingId] = useState<number | null>(null)
   // Live mark prices for OPEN POSITIONS, polled separately from the
   // selected-pair mark above. Keyed by symbol so closing a position
   // automatically drops it from the polling set on the next tick.
@@ -113,6 +128,19 @@ export function Trade() {
       setTradesErr(e?.message ?? 'Could not load fills')
     }
   }
+  const loadOrders = async () => {
+    try {
+      const r = await apiFetch<{ orders: AsterOrder[] }>('/api/aster/orders')
+      // Newest first — Aster usually returns ascending by time so we sort
+      // defensively here, same as we do for fills.
+      setOrders([...r.orders].sort((a, b) => b.time - a.time))
+      setOrdersErr(null)
+    } catch (e: any) {
+      // Same distinction as fills: an outage must show a banner, not a
+      // misleading "no resting orders" empty state.
+      setOrdersErr(e?.message ?? 'Could not load open orders')
+    }
+  }
   const loadMark = async (p: string) => {
     try {
       const m = await apiFetch<MarkPrice>(`/api/aster/markprice/${p}`)
@@ -120,7 +148,7 @@ export function Trade() {
     } catch { setMark(null) }
   }
 
-  useEffect(() => { loadWallet(); loadPositions(); loadTrades() }, [])
+  useEffect(() => { loadWallet(); loadPositions(); loadTrades(); loadOrders() }, [])
   // Refresh mark price every second so the limit-price input has a live
   // reference to anchor against. Aster's markprice endpoint is cheap and
   // we're only polling one symbol at a time — well within rate limits.
@@ -157,7 +185,10 @@ export function Trade() {
     tick()
     const id = setInterval(tick, 1000)
     const refreshId = setInterval(loadPositions, 8000)
-    return () => { cancelled = true; clearInterval(id); clearInterval(refreshId) }
+    // Poll resting orders too — when a LIMIT fills it disappears from this
+    // list and reappears under positions, so users see the transition live.
+    const ordersId  = setInterval(loadOrders,    8000)
+    return () => { cancelled = true; clearInterval(id); clearInterval(refreshId); clearInterval(ordersId) }
   }, [positions.map(p => p.symbol).join(',')])
 
   const onboarded = wallet?.aster.onboarded === true
@@ -207,12 +238,31 @@ export function Trade() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
       })
+      // Aster returns one of FILLED / PARTIALLY_FILLED / NEW / EXPIRED for
+      // the immediate placement response. A LIMIT placed away from market
+      // comes back NEW (working) — previously the toast said "(NEW)" which
+      // looked like a status code dump, leaving users unsure if the order
+      // actually went through. Translate to plain English here so the user
+      // knows exactly what state the order is in.
+      const status = r.order.status
+      const filled = status === 'FILLED'
+      const partial = status === 'PARTIALLY_FILLED'
+      const resting = status === 'NEW'
+      const verb = filled
+        ? 'filled'
+        : partial
+          ? 'partially filled — rest resting on book'
+          : resting
+            ? `resting on book at $${r.refPrice.toFixed(2)} — will fill when reached`
+            : `placed (${status.toLowerCase()})`
       setMsg({
         kind: 'ok',
-        text: `${side} ${pair} ${orderType} placed — ${r.qty} @ ${r.refPrice.toFixed(2)} (${r.order.status})`
+        text: `${side} ${pair} ${orderType} ${verb} — ${r.qty} ${pair.replace('USDT', '')}`,
       })
       setSize(''); setLimitPrice('')
-      await Promise.all([loadPositions(), loadWallet(), loadTrades()])
+      // Refresh all four panels so the user sees the order land in the
+      // right place (positions if filled, open orders if resting).
+      await Promise.all([loadPositions(), loadWallet(), loadTrades(), loadOrders()])
     } catch (e: any) {
       setMsg({ kind: 'err', text: e?.message ?? 'Order failed' })
     } finally { setSubmitting(false) }
@@ -227,9 +277,26 @@ export function Trade() {
         body: JSON.stringify({ pair: p.symbol, side: p.side, size: p.size })
       })
       setMsg({ kind: 'ok', text: `Closed ${p.symbol} ${p.side}` })
-      await Promise.all([loadPositions(), loadWallet(), loadTrades()])
+      await Promise.all([loadPositions(), loadWallet(), loadTrades(), loadOrders()])
     } catch (e: any) {
       setMsg({ kind: 'err', text: e?.message ?? 'Close failed' })
+    }
+  }
+
+  const cancelOrder = async (o: AsterOrder) => {
+    setMsg(null); setCancellingId(o.orderId)
+    try {
+      await apiFetch('/api/aster/orders/cancel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ symbol: o.symbol, orderId: o.orderId }),
+      })
+      setMsg({ kind: 'ok', text: `Canceled ${o.symbol} ${o.side} @ $${o.price.toFixed(2)}` })
+      await Promise.all([loadOrders(), loadWallet()])
+    } catch (e: any) {
+      setMsg({ kind: 'err', text: e?.message ?? 'Cancel failed' })
+    } finally {
+      setCancellingId(null)
     }
   }
 
@@ -507,6 +574,83 @@ export function Trade() {
           </div>
         )}
       </div>
+
+      {/* Open orders — resting LIMIT/STOP orders that haven't filled yet.
+          Lives between Positions (filled exposure) and Recent fills (history)
+          so a placed limit is immediately visible. Without this panel a
+          resting order looked like it had vanished — see April 26 incident
+          where a $100 BTCUSDT limit at 5x was placed but appeared nowhere
+          on the page until it filled. Each row shows side, type, price,
+          progress (executed / requested), age, and a one-tap Cancel. */}
+      {onboarded && (
+        <div className="card">
+          <div className="card-title" style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <span>Open orders</span>
+            <span style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 400 }}>
+              {orders.length} working
+            </span>
+          </div>
+          {ordersErr ? (
+            <div style={{ fontSize: 13, color: '#ef4444', marginTop: 8 }} data-testid="text-orders-err">
+              {ordersErr}
+            </div>
+          ) : orders.length === 0 ? (
+            <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 8 }} data-testid="text-no-orders">
+              No working orders. Limit orders will show here until filled.
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
+              {orders.map((o) => {
+                // Prefer the trigger price for stop variants where the
+                // 'price' field is 0 — that's how Aster surfaces these.
+                const px = o.price > 0 ? o.price : o.stopPrice
+                const sideColor = o.side === 'BUY' ? '#22c55e' : '#ef4444'
+                const filledPct = o.origQty > 0 ? (o.executedQty / o.origQty) * 100 : 0
+                const isCanceling = cancellingId === o.orderId
+                return (
+                  <div
+                    key={o.orderId}
+                    data-testid={`row-order-${o.orderId}`}
+                    style={{ padding: 10, borderRadius: 8, background: 'var(--bg-elev)' }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                      <span style={{ fontWeight: 600, fontSize: 14 }}>
+                        <span style={{ color: sideColor }}>{o.side}</span>{' '}
+                        {o.symbol}
+                        <span style={{ color: 'var(--text-muted)', fontWeight: 400, marginLeft: 6, fontSize: 12 }}>
+                          {o.type.replace('_', ' ')}{o.reduceOnly ? ' · close' : ''}
+                        </span>
+                      </span>
+                      <span style={{ fontSize: 11, color: 'var(--text-muted)' }} data-testid={`text-order-age-${o.orderId}`}>
+                        {ago(o.time)}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: 'var(--text-secondary)', marginTop: 4 }}>
+                      <span data-testid={`text-order-px-${o.orderId}`}>
+                        {o.origQty} @ ${fmtPrice(px)}
+                      </span>
+                      <span style={{ color: filledPct > 0 ? '#22c55e' : 'var(--text-muted)' }}>
+                        {filledPct > 0 ? `${filledPct.toFixed(0)}% filled` : o.status === 'NEW' ? 'Working' : o.status}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 6 }}>
+                      <button
+                        className="btn btn-red"
+                        style={{ padding: '6px 14px', fontSize: 13 }}
+                        onClick={() => cancelOrder(o)}
+                        disabled={isCanceling}
+                        data-testid={`btn-cancel-order-${o.orderId}`}
+                      >
+                        {isCanceling ? 'Canceling…' : 'Cancel'}
+                      </button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Recent fills — pulled from Aster's userTrades endpoint. Each row
           shows the actual commission Aster charged on the fill, which is the
