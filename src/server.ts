@@ -1687,39 +1687,21 @@ app.post('/api/hyperliquid/order', requireTgUser, async (req, res) => {
             console.warn(
               `[/hyperliquid/order] auto-approveBuilderFee failed user=${user.id} err=${br.error}`,
             )
-            // ── BUILDER UNREGISTERED via approve path
-            //    The order error is "Builder fee has not been approved" (matches the
-            //    auto-heal regex above), but the underlying problem is that HL won't
-            //    LET us approve the configured builder ("Builder has insufficient
-            //    balance to be approved"). The "insufficient balance" string comes
-            //    back on the APPROVE call, NOT on the order — so the L1708 fallback
-            //    below won't fire because it inspects `result.error` (the order
-            //    error). We have to thread the approve error through here and fall
-            //    back to noBuilder immediately, otherwise users are wedged in an
-            //    infinite "Approve builder fee & retry" loop.
-            // Require BOTH "builder" AND one of the unregistered/unfunded
-            //   phrases. Without the "builder" anchor, a stray "insufficient
-            //   balance" wording from an unrelated approve failure (e.g. user's
-            //   own gas/fee balance) could spuriously trigger a noBuilder
-            //   fallback when the right answer is to surface that error.
+            // ── BUILDER UNREGISTERED via approve path (operator-side issue)
+            //    "Builder has insufficient balance to be approved" comes back
+            //    on the APPROVE call, not the ORDER call. We deliberately do
+            //    NOT fall back to a no-builder order here. Reasoning below.
+            //    `result` keeps the original order error so the final
+            //    response handler surfaces a clean "service unavailable"
+            //    message and the operator gets a loud log line to act on.
             const approveErr = (br.error ?? '').toLowerCase()
             const isBuilderUnregistered = /builder/.test(approveErr)
               && /insufficient balance|not registered|not a (registered )?builder/.test(approveErr)
             if (isBuilderUnregistered) {
-              console.warn(
+              console.error(
                 `[/hyperliquid/order] BUILDER UNREGISTERED via approve path user=${user.id} ` +
-                `approveErr="${br.error}" — placing order WITHOUT builder field (0% fee for this fill)`,
+                `approveErr="${br.error}" — failing the order. ACTION: top up USDC on the builder wallet on HL.`,
               )
-              result = await placeOrder(creds, { ...orderArgs, noBuilder: true })
-              if (result.success) {
-                console.warn(
-                  `[/hyperliquid/order] no-builder fallback succeeded user=${user.id} — 0.1% fee skipped`,
-                )
-              } else {
-                console.error(
-                  `[/hyperliquid/order] no-builder fallback ALSO failed user=${user.id} → ${result.error}`,
-                )
-              }
             }
           }
         } else {
@@ -1732,37 +1714,54 @@ app.post('/api/hyperliquid/order', requireTgUser, async (req, res) => {
       }
     }
 
-    // ── Last-resort fallback: if HL is still rejecting because OUR builder
-    //   address isn't a registered/funded builder on HL, retry the order
-    //   WITHOUT a builder field. Loses the 0.1% kickback for this fill but
-    //   the user actually gets to trade. This path is OPS-side recoverable
-    //   only — fund BUILDER_ADDRESS on HL and remove this branch's hits
-    //   from logs. Surface the no-builder error to the user as a soft
-    //   warning so they know the order placed but no fee was charged.
-    if (!result.success && /insufficient balance|not registered|not a (registered )?builder/i.test(result.error ?? '')) {
-      console.error(
-        `[/hyperliquid/order] BUILDER UNREGISTERED — fund the builder address on HL. ` +
-        `Falling back to no-builder order user=${user.id} err=${result.error}`,
-      )
-      result = await placeOrder(creds, { ...orderArgs, noBuilder: true })
-      if (result.success) {
-        console.warn(
-          `[/hyperliquid/order] no-builder fallback succeeded user=${user.id} — 0.1% fee skipped`,
-        )
-      }
-    }
+    // ── INTENTIONAL: NO no-builder fallback on /order
+    //
+    // Earlier revisions of this handler had a "last-resort" fallback that
+    // retried the order with `noBuilder: true` whenever HL rejected because
+    // OUR builder address wasn't registered/funded on HL. That fallback is
+    // DELIBERATELY REMOVED. Reasoning:
+    //
+    //   1. Silent success on the no-builder path means we lose the 0.1%
+    //      kickback on every affected fill while the operator has no signal
+    //      to fix the underlying problem. The order succeeds, the user is
+    //      happy, nobody reports anything, weeks of revenue evaporate.
+    //
+    //   2. Failing loudly on builder issues forces the user to surface the
+    //      problem (via support / Telegram), which alerts the operator
+    //      immediately. Recovery is cheap (top up the builder wallet on HL,
+    //      or rotate HYPERLIQUID_BUILDER_ADDRESS) — typically <5 min.
+    //
+    //   3. Builder revenue is a load-bearing part of the venue's economics.
+    //      Treating it as optional with a quiet fallback signals to the team
+    //      that it's "nice to have" — which it isn't.
+    //
+    // If you ever consider re-adding a no-builder fallback here: don't.
+    // Add an admin-only flag instead so operators can flip it deliberately
+    // during a known incident, with a logged audit trail.
 
     if (!result.success) {
-      // If self-heal couldn't fix the builder reject, surface a flag so the
-      // UI can prompt a manual "Approve builder fee" button (which calls
-      // /api/hyperliquid/approve-builder). Match the same pattern used in
-      // the auto-heal detector — `builder` OR `must approve` — so a slightly
-      // worded HL reject doesn't suppress the UI button. EXCEPTION: don't
-      // show the approve button for "insufficient balance" — user-side
-      // approval can't fix that and the prompt would loop forever.
+      // BUILDER UNREGISTERED — operator-side problem (builder wallet not
+      // funded/registered on HL). The user's approval is irrelevant here, so
+      // showing them an "approve" button would just loop them. Surface a
+      // clean, non-jargon "service unavailable" message instead.
       const isUnregistered = /insufficient balance|not registered|not a (registered )?builder/i
         .test(result.error ?? '')
-      const stillBuilder = !isUnregistered && /(builder|must approve)/i.test(result.error ?? '')
+      if (isUnregistered) {
+        console.error(
+          `[/hyperliquid/order] BUILDER UNREGISTERED — operator must top up the builder wallet on HL ` +
+          `(user=${user.id} err=${result.error})`,
+        )
+        return res.status(503).json({
+          success: false,
+          error:
+            'Trading is temporarily unavailable on Hyperliquid. Please try again in a few minutes. ' +
+            "If this continues, please contact support and we'll take a look.",
+          code: 'service_unavailable',
+        })
+      }
+      // Builder approval missing for THIS user — surface the flag so the
+      // reactive "Approve builder fee & retry" button shows in the UI.
+      const stillBuilder = /(builder|must approve)/i.test(result.error ?? '')
       return res.status(400).json({
         ...result,
         ...(stillBuilder ? { needsBuilderApproval: true } : {}),
