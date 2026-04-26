@@ -892,31 +892,14 @@ export async function closePredictionPosition(
   // In live mode we still cap by the on-chain balance (in case some tokens
   // were already redeemed/transferred out) so the sell can't revert with
   // insufficient balance. Paper-trade mode skips the on-chain read.
-  let tokenAmt: bigint;
-  if (paperTrade) {
-    const estimateFloat = pos.outcomeTokenAmount ?? pos.usdtIn / pos.entryPrice;
-    tokenAmt = ethers.parseUnits(estimateFloat.toFixed(6), 18);
-  } else {
-    if (!pos.outcomeTokenAmount || pos.outcomeTokenAmount <= 0) {
-      // Live position with no recorded token amount → can't safely lot-account.
-      // Bail rather than risk over-selling other positions' inventory.
-      return {
-        ok: false,
-        reason: 'live position has no recorded outcomeTokenAmount; cannot safely close',
-      };
-    }
-    const recorded = ethers.parseUnits(pos.outcomeTokenAmount.toFixed(6), 18);
-    let walletBal: bigint;
-    try {
-      walletBal = await trader.balanceOfOutcome(pos.marketAddress, pos.tokenId);
-    } catch (err) {
-      return { ok: false, reason: `balanceOfOutcome failed: ${(err as Error).message}` };
-    }
-    tokenAmt = recorded < walletBal ? recorded : walletBal;
-    if (tokenAmt === 0n) {
-      return { ok: false, reason: 'wallet holds zero of this outcome token' };
-    }
-  }
+  const sellAmt = await resolveSellAmount({
+    pos,
+    paperTrade,
+    trader,
+    isAgentPath: true,
+  });
+  if (!sellAmt.ok) return sellAmt;
+  const tokenAmt = sellAmt.tokenAmt;
 
   // 30% slippage tolerance on sell. Prediction-market AMMs (LMSR-style) move
   // a LOT when closing positions in thin markets — selling 200+ tokens on a
@@ -966,6 +949,97 @@ export async function closePredictionPosition(
     pos.id,
   );
   return { ok: true, pnl };
+}
+
+/**
+ * Resolve the bigint amount of outcome tokens to sell for `pos`.
+ *
+ * Normal path: the buy stored `outcomeTokenAmount` (from the on-chain
+ * balance delta), so we sell exactly that, capped by current wallet
+ * balance in case some were redeemed/transferred externally.
+ *
+ * Fallback path (Issue: "live position has no recorded outcomeTokenAmount"):
+ * older rows opened before we tracked outcomeTokenAmount have it null.
+ * Rather than refuse to close, we look up how many other open positions
+ * the same user has on this exact (market, tokenId) and:
+ *   - If this is the only open lot → sell the entire wallet balance.
+ *     The user has nothing to over-sell because there's nothing else.
+ *   - If there are other open lots → sell `usdtIn / entryPrice` (the
+ *     classic "what you should have gotten at entry" estimate), capped
+ *     by `walletBal / openLotCount` so we never dip below an even share.
+ *
+ * Returns { ok: true, tokenAmt } or a failure compatible with the
+ * caller's return shape.
+ */
+async function resolveSellAmount(args: {
+  pos: { id: string; userId: string; marketAddress: string; tokenId: number; outcomeTokenAmount: number | null; usdtIn: number; entryPrice: number };
+  paperTrade: boolean;
+  trader: ExecutorTrader;
+  isAgentPath: boolean;
+}): Promise<{ ok: true; tokenAmt: bigint } | { ok: false; reason: string; hint?: string; code?: string }> {
+  const { pos, paperTrade, trader } = args;
+
+  // Paper-trade path needs no on-chain balance — use recorded amount or the
+  // entry-price estimate. Same as before.
+  if (paperTrade) {
+    const estimateFloat = pos.outcomeTokenAmount ?? pos.usdtIn / pos.entryPrice;
+    return { ok: true, tokenAmt: ethers.parseUnits(estimateFloat.toFixed(6), 18) };
+  }
+
+  let walletBal: bigint;
+  try {
+    walletBal = await trader.balanceOfOutcome(pos.marketAddress, pos.tokenId);
+  } catch (err) {
+    return { ok: false, reason: `balanceOfOutcome failed: ${(err as Error).message}` };
+  }
+
+  // Recorded-amount path (the common case post-tracking-rollout).
+  if (pos.outcomeTokenAmount && pos.outcomeTokenAmount > 0) {
+    const recorded = ethers.parseUnits(pos.outcomeTokenAmount.toFixed(6), 18);
+    const tokenAmt = recorded < walletBal ? recorded : walletBal;
+    if (tokenAmt === 0n) return { ok: false, reason: 'wallet holds zero of this outcome token' };
+    return { ok: true, tokenAmt };
+  }
+
+  // ── Fallback for older rows missing outcomeTokenAmount ──
+  // Count this user's *other* open lots on the same (market, tokenId) so we
+  // can decide whether selling the wallet balance is safe.
+  const otherLots = await db.$queryRawUnsafe<Array<{ c: bigint; sumIn: number | null }>>(
+    `SELECT COUNT(*)::bigint AS c, COALESCE(SUM("usdtIn"), 0)::float8 AS "sumIn"
+     FROM "OutcomePosition"
+     WHERE "userId" = $1
+       AND LOWER("marketAddress") = LOWER($2)
+       AND "tokenId" = $3
+       AND status = 'open'
+       AND id <> $4`,
+    pos.userId, pos.marketAddress, pos.tokenId, pos.id,
+  );
+  const otherCount = Number(otherLots[0]?.c ?? 0);
+
+  if (walletBal === 0n) {
+    return { ok: false, reason: 'wallet holds zero of this outcome token' };
+  }
+
+  if (otherCount === 0) {
+    // Sole holder of this token — selling the whole wallet balance is safe.
+    console.warn(
+      `[fortyTwoExecutor] position ${pos.id} has no recorded outcomeTokenAmount; falling back to wallet balance ${ethers.formatUnits(walletBal, 18)} (sole open lot)`,
+    );
+    return { ok: true, tokenAmt: walletBal };
+  }
+
+  // Multiple open lots — split the wallet balance proportionally to usdtIn so
+  // we sell at most this lot's fair share. Use entry-price estimate as a
+  // ceiling so we never sell more than this position theoretically minted.
+  const myShare = pos.usdtIn / (pos.usdtIn + Number(otherLots[0]?.sumIn ?? 0));
+  const fairShare = (walletBal * BigInt(Math.max(1, Math.floor(myShare * 1_000_000)))) / 1_000_000n;
+  const entryEstimate = ethers.parseUnits((pos.usdtIn / pos.entryPrice).toFixed(6), 18);
+  const tokenAmt = fairShare < entryEstimate ? fairShare : entryEstimate;
+  if (tokenAmt === 0n) return { ok: false, reason: 'computed share is zero — try selling another lot first' };
+  console.warn(
+    `[fortyTwoExecutor] position ${pos.id} has no recorded outcomeTokenAmount and ${otherCount} other open lot(s); selling fair share ${ethers.formatUnits(tokenAmt, 18)} of wallet ${ethers.formatUnits(walletBal, 18)}`,
+  );
+  return { ok: true, tokenAmt };
 }
 
 /**
@@ -1130,29 +1204,14 @@ export async function closeUserPredictionPosition(
   if (!built) return { ok: false, reason: 'no wallet' };
   const { trader, paperTrade } = built;
 
-  let tokenAmt: bigint;
-  if (paperTrade) {
-    const estimateFloat = pos.outcomeTokenAmount ?? pos.usdtIn / pos.entryPrice;
-    tokenAmt = ethers.parseUnits(estimateFloat.toFixed(6), 18);
-  } else {
-    if (!pos.outcomeTokenAmount || pos.outcomeTokenAmount <= 0) {
-      return {
-        ok: false,
-        reason: 'live position has no recorded outcomeTokenAmount; cannot safely close',
-      };
-    }
-    const recorded = ethers.parseUnits(pos.outcomeTokenAmount.toFixed(6), 18);
-    let walletBal: bigint;
-    try {
-      walletBal = await trader.balanceOfOutcome(pos.marketAddress, pos.tokenId);
-    } catch (err) {
-      return { ok: false, reason: `balanceOfOutcome failed: ${(err as Error).message}` };
-    }
-    tokenAmt = recorded < walletBal ? recorded : walletBal;
-    if (tokenAmt === 0n) {
-      return { ok: false, reason: 'wallet holds zero of this outcome token' };
-    }
-  }
+  const sellAmt = await resolveSellAmount({
+    pos,
+    paperTrade,
+    trader,
+    isAgentPath: false,
+  });
+  if (!sellAmt.ok) return sellAmt;
+  const tokenAmt = sellAmt.tokenAmt;
 
   // 30% slippage tolerance on sell. Prediction-market AMMs (LMSR-style) move
   // a LOT when closing positions in thin markets — selling 200+ tokens on a

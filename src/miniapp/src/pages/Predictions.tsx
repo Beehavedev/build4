@@ -117,7 +117,7 @@ interface MarketDetailOutcome {
 }
 
 interface MarketDetailResponse {
-  market: { address: string; question: string; status: string; endDate: string; category: string }
+  market: { address: string; question: string; description: string; status: string; endDate: string; category: string }
   outcomes: MarketDetailOutcome[]
   cached?: boolean
 }
@@ -632,22 +632,36 @@ export default function Predictions() {
         </div>
       )}
 
-      {/* ── Section 3: Open Positions ── */}
+      {/* ── Section 3: Recent Community Trades ──
+          Public, anonymized feed of every recent on-chain prediction
+          position across all users (not just the viewer). Renamed from
+          "Open Positions" because users were confused — they expected
+          their own positions and saw markets they didn't hold. The
+          per-user view is "Your Positions" above. */}
       <div style={{ marginBottom: 16 }}>
         <SectionTitle
-          title="Open Positions"
+          title="Recent Community Trades"
           right={
-            <span style={{ color: totalPnl >= 0 ? '#10b981' : '#ef4444', fontWeight: 600 }}>
+            <span
+              data-testid="text-community-pnl"
+              style={{ color: totalPnl >= 0 ? '#10b981' : '#ef4444', fontWeight: 600 }}>
               {totalPnl >= 0 ? '+' : ''}${totalPnl.toFixed(2)}
             </span>
           }
         />
+        <div style={{
+          fontSize: 10, color: '#64748b', marginTop: -4, marginBottom: 8,
+          padding: '0 2px', lineHeight: 1.4,
+        }}>
+          Anonymized feed of recent prediction-market trades across all users.
+          Your own positions live in <em>Your Positions</em> above.
+        </div>
         {loading && !data ? (
           <div className="card"><Skeleton /><Skeleton /><Skeleton /></div>
         ) : openPositions.length === 0 ? (
           <EmptyState
-            title="No open positions"
-            body="The swarm is watching 42.space markets for opportunities. Positions appear here once an agent opens one on-chain."
+            title="No recent community trades"
+            body="The swarm is watching 42.space markets for opportunities. New trades from any user appear here once they're opened on-chain."
             testId="empty-positions"
           />
         ) : (
@@ -867,8 +881,18 @@ function ScannerRowItem({
           alignItems: 'center', cursor: 'pointer', color: 'inherit',
         }}>
         <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{ fontSize: 12, fontWeight: 500, color: '#e2e8f0',
-                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <div style={{
+            fontSize: 12, fontWeight: 500, color: '#e2e8f0',
+            // When expanded, let the title wrap so the user sees the full
+            // question (titles like "Highest AI Model Token Usage via
+            // OpenRouter (Apr 20 - Apr 26)?" are routinely 60+ chars).
+            // Collapsed rows keep the single-line ellipsis to preserve
+            // the dense scanner layout.
+            overflow: expanded ? 'visible' : 'hidden',
+            textOverflow: expanded ? 'clip' : 'ellipsis',
+            whiteSpace: expanded ? 'normal' : 'nowrap',
+            lineHeight: expanded ? 1.4 : 1.2,
+          }}>
             {row.marketTitle}
           </div>
           <div style={{ fontSize: 10, color: '#64748b', marginTop: 2 }}>
@@ -908,6 +932,29 @@ function ScannerRowItem({
             </div>
           ) : (
             <>
+              {detail.data.market.description && detail.data.market.description.trim().length > 0 && (
+                <details
+                  data-testid={`details-rules-${row.marketAddress}`}
+                  style={{ marginBottom: 8 }}
+                >
+                  <summary style={{
+                    fontSize: 10, color: '#64748b', cursor: 'pointer',
+                    letterSpacing: 0.4, textTransform: 'uppercase', fontWeight: 600,
+                    padding: '4px 0',
+                  }}>
+                    Resolution rules
+                  </summary>
+                  <div style={{
+                    fontSize: 11, color: '#94a3b8', lineHeight: 1.5,
+                    padding: '6px 8px', background: '#0a0a12',
+                    borderLeft: '2px solid #1e1e2e', borderRadius: 2,
+                    whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                    maxHeight: 200, overflowY: 'auto',
+                  }}>
+                    {detail.data.market.description}
+                  </div>
+                </details>
+              )}
               <OutcomeBars outcomes={detail.data.outcomes} />
               <TradeForm
                 marketAddress={row.marketAddress}

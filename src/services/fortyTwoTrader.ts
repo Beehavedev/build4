@@ -103,16 +103,102 @@ function dryHash(seed: string): string {
 // Known 42.space / FTRouter custom-error selectors. When the ABI doesn't
 // contain the error definition, ethers can't decode it and reports
 // "execution reverted (unknown custom error)" — useless for users. We
-// resolve the 4-byte selector to a friendly name here. Add new entries as
-// we encounter them in production.
+// resolve the 4-byte selector to a friendly name here.
+//
+// Sourced from the official fortytwo-protocol/ft-contracts-public repo
+// (every `error Foo(...)` declaration under src/). Keep this in sync if
+// the contracts add new errors. Selectors are precomputed here as string
+// literals so the file doesn't pay an `ethers.id(...)` cost on import.
 const KNOWN_CUSTOM_ERRORS: Record<string, string> = {
-  // Computed via ethers.id('Name(...)').slice(0,10):
+  // ── Router (most likely to hit users) ──
+  '0x8562065a': 'RouterSlippage (price moved beyond minOutOrMaxIn — try wider slippage)',
+  '0xa77c5c33': 'RouterUnauthorized (router not authorized to act on the wallet)',
+  '0x916b0e26': 'RouterArrayLengthsMismatch (router call arguments malformed)',
+  '0x7a602cda': 'RouterDbCViolated (router debt-bond invariant violated)',
+  '0x0c798b38': 'RouterNotClaimableYet (market not yet claimable)',
+  '0xf3e1b630': 'RouterUnsupportedSelector (router multicall path not whitelisted)',
+
+  // ── Market lifecycle ──
+  '0x98add4c4': 'MarketEnded (trading window closed — wait for resolution then Claim)',
+  '0x55e8cb5f': 'MarketResolved (market resolved — use Claim, not sell)',
+  '0x651378fd': 'MarketNotFinalised (awaiting on-chain finalisation)',
+  '0x2e96c726': 'MarketNotResolved (market not yet resolved — cannot claim)',
+  '0x474d3013': 'MarketNoClaim (no claim available for this wallet)',
+  '0x54882d18': 'MarketPaused (market is paused)',
+  '0x774620b8': 'MarketNotStarted (market trading window has not opened)',
+
+  // ── Market swap mechanics ──
+  '0x670174d5': 'MarketSwapPriceInvalidated (quote stale — price moved; retry)',
+  '0x719076b5': 'MarketSwapAmountCannotBeZero (sell amount is zero)',
+  '0x7784726d': 'MarketZeroCostBasis (no cost basis on this outcome)',
+  '0xa62d1e8e': 'MarketNotWhole (token amount not on a valid tick)',
+  '0x99998a26': 'MarketTooManyOutcomes (market has too many outcomes for this op)',
+  '0x5b8a369f': 'MarketTooManyTotalSupplies (market supply overflow)',
+  '0x605561c6': 'MarketReceiverIsMarket (receiver address is the market itself)',
+  '0x72085081': 'MarketZeroAddress (zero address rejected)',
+  '0xcb2de8aa': 'MarketInvalidTokenId (tokenId not in this market)',
+  '0xefae04e4': 'MarketUnauthorizedAccess (caller not authorized for this market op)',
+  '0x8f75ddb7': 'MarketPayoutPerOutcomeAlreadyCalculated (resolution path already run)',
+  '0xa8bf89e8': 'MarketUnprocessableAnswer (market answer cannot be processed)',
+
+  // ── ERC-6909 outcome-token errors (operator/balance/allowance) ──
+  '0xb1b4fec0': 'ERC6909InsufficientBalance (wallet does not hold enough of this outcome token)',
+  '0x58a3fd5a': 'ERC6909InsufficientAllowance (router lacks ERC-6909 operator approval)',
+  '0x6f65f465': 'ERC6909InvalidSpender (router not approved as spender)',
+  '0xa4352080': 'ERC6909InvalidSender (sender address invalid)',
+  '0xb8bbd610': 'ERC6909InvalidReceiver (receiver address invalid)',
+  '0xcc766a98': 'ERC6909InvalidApprover (approver address invalid)',
+  '0x1b27b213': 'ERC6909SelfTransfer (cannot transfer to self)',
+
+  // ── Curve / guess (bonding-curve solver) ──
+  '0x8bf20a2d': 'CurveOtDeltaNotOnTick (token delta not on a valid bonding-curve tick)',
+  '0xdca392a0': 'CurveInvalidCost (curve cost calc invalid)',
+  '0x4d5222e2': 'GuessInvalidDataLength (curve solver data malformed)',
+  '0x6302a955': 'GuessExceedMaxIterations (curve solver did not converge)',
+  '0x83fed927': 'GuessExceedMaxInterpolationIterations (curve solver did not converge)',
+  '0xfb81bc72': 'GuessTargetUnreachable (curve solver could not reach target)',
+  '0xba060820': 'GuessMinGreaterThanMax (curve bounds invalid)',
+  '0x9ecb92a3': 'GuessMaxIterationsZero (curve solver max iterations zero)',
+  '0x9f885524': 'GuessEpsAboveMax (curve solver epsilon too large)',
+  '0x1f5c3f81': 'ClampIncorrectBounds (clamp bounds invalid)',
+  '0x93dafdf1': 'SafeCastOverflow (numeric overflow on safe cast)',
+
+  // ── Factory / Registry (admin paths — rare for end-users) ──
+  '0x6344c41e': 'FactoryInvalidCurve',
+  '0xbc1d7980': 'FactoryInvalidCollateral',
+  '0xc352a16d': 'FactoryFeeRateExceedMaximumLimit',
+  '0xff07385a': 'FactoryInvalidSeedAmount',
+  '0xe0803152': 'FactoryUnsuccessfulMarketDeployment',
+  '0x028436cb': 'RegistryAlreadyRegistered',
+  '0x5334476d': 'RegistryNotRegistered',
+  '0x65f8cb28': 'RegistryNotResolved',
+  '0xd7598137': 'RegistryAlreadyFinalised',
+  '0xf1942541': 'RegistryInvalidAnswer',
+  '0xfe0a23d0': 'RegistryAnswerDoesNotMatchCurrent',
+  '0x10bfc578': 'RegistrySameAnswer',
+  '0x6ca14111': 'Registry6909MustBeRegisteredMarket',
+  '0xdc4718aa': 'RegistryInsufficientOutcomesGiven',
+  '0xb75c4902': 'RegistryEndTimestampBeforeExisting',
+  '0xcad14c57': 'RegistryEndTimestampHasPassed',
+  '0xc3360520': 'RegistryDuplicateOutcome',
+  '0x610631e8': 'RegistryTokenIdNotCreatedForMarket',
+  '0x15637061': 'RegistryInvalidTokenIdAsCollateral',
+  '0xba4dcc95': 'RegistryInvalidAddressPtr',
+  '0xf64a1112': 'RegistryInvalidTreasuryAddress',
+  '0x61bea74d': 'RegistryEmptyTitle',
+  '0xbb42b869': 'RegistryEmptyName',
+  '0x933e36ed': 'RegistryExceedMaxNameLength',
+  '0x2c30a7bc': 'RegistryExceedMaxTitleLength',
+  '0x407d29fc': 'RegistryExceedMaxDescriptionLength',
+  '0x0f653a9e': 'RegistryExceedMaxNames',
+
+  // ── Legacy / pre-rename aliases retained so older deploys still resolve ──
+  // These names predate the official contract repo's current naming and
+  // may show up if a different on-chain version is fronting requests.
   [ethers.id('Safe6909Transfer()').slice(0, 10)]: 'Safe6909Transfer (router lacks ERC-6909 operator approval on this market)',
   [ethers.id('SlippageExceeded()').slice(0, 10)]: 'SlippageExceeded (price moved beyond minOutOrMaxIn — try larger tolerance)',
   [ethers.id('MarketClosed()').slice(0, 10)]: 'MarketClosed (market is no longer accepting trades — only claims after resolution)',
-  [ethers.id('MarketEnded()').slice(0, 10)]: 'MarketEnded (trading window closed)',
   [ethers.id('MarketFinalised()').slice(0, 10)]: 'MarketFinalised (awaiting resolution; no swaps possible)',
-  [ethers.id('MarketResolved()').slice(0, 10)]: 'MarketResolved (use claim, not sell)',
   [ethers.id('NotOperator()').slice(0, 10)]: 'NotOperator (router missing ERC-6909 operator approval)',
   [ethers.id('InsufficientBalance()').slice(0, 10)]: 'InsufficientBalance (wallet does not hold enough of this outcome token)',
   [ethers.id('InsufficientLiquidity()').slice(0, 10)]: 'InsufficientLiquidity (AMM cannot fill at any price — pool drained on this outcome)',
@@ -154,7 +240,10 @@ function extractRevertReason(err: unknown): string {
     const selector = rawData.slice(0, 10).toLowerCase();
     const friendly = KNOWN_CUSTOM_ERRORS[selector];
     if (friendly) return `${base} → ${friendly}`;
-    // Selector unknown — surface it so we can add it to the lookup.
+    // Selector unknown — log to stderr so deploy logs show every new
+    // selector we hit, and surface it in the user-facing message so we
+    // can add it to KNOWN_CUSTOM_ERRORS.
+    console.warn(`[fortyTwoTrader] UNKNOWN custom-error selector ${selector} — add to KNOWN_CUSTOM_ERRORS. data=${rawData.slice(0, 138)}`);
     return `${base} [selector ${selector}, data ${rawData.slice(0, 138)}]`;
   }
   return base;
@@ -215,10 +304,34 @@ export class FortyTwoTrader {
       return;
     }
     const allowance: bigint = await this.usdt.allowance(this.wallet.address, FTROUTER_ADDRESS);
-    if (allowance < amount) {
-      const tx = await this.usdt.approve(FTROUTER_ADDRESS, ethers.MaxUint256);
-      await tx.wait();
+    if (allowance >= amount) return;
+
+    const tx = await this.usdt.approve(FTROUTER_ADDRESS, ethers.MaxUint256);
+    await tx.wait();
+
+    // Read-after-write race on public BSC RPCs: the approve tx is mined,
+    // but the read-only RPC node serving the next allowance() / staticCall
+    // may still serve a stale view for a few hundred ms. If we proceed
+    // immediately the buyOutcome staticCall reverts with
+    // "BEP20: transfer amount exceeds allowance". Poll until the read
+    // catches up, then continue. Cap the wait so a permanently-broken
+    // node doesn't hang the trade forever — fall through with a warning
+    // and let the real signed tx surface the issue if any remains.
+    const POLL_MS = 400;
+    const MAX_POLLS = 12; // ~4.8s worst-case
+    for (let i = 0; i < MAX_POLLS; i++) {
+      let post: bigint;
+      try {
+        post = await this.usdt.allowance(this.wallet.address, FTROUTER_ADDRESS);
+      } catch {
+        post = 0n;
+      }
+      if (post >= amount) return;
+      await new Promise((r) => setTimeout(r, POLL_MS));
     }
+    console.warn(
+      `[FortyTwoTrader] approve(${ethers.formatUnits(amount, 18)} USDT) mined but read RPC still shows stale allowance after ${MAX_POLLS * POLL_MS}ms — proceeding (signed tx will use chain truth)`,
+    );
   }
 
   /**
@@ -293,6 +406,27 @@ export class FortyTwoTrader {
     if (isOp) return;
     const tx = await market.setOperator(FTROUTER_ADDRESS, true);
     await tx.wait();
+
+    // Same read-after-write race as ensureApproval: setOperator is mined,
+    // but the read RPC may still report isOperator=false for ~1s, causing
+    // the immediately-following sellOutcome staticCall to revert with
+    // Safe6909Transfer / NotOperator (surfaced to users as "Router missing
+    // approval"). Poll until the read catches up.
+    const POLL_MS = 400;
+    const MAX_POLLS = 12;
+    for (let i = 0; i < MAX_POLLS; i++) {
+      let post: boolean;
+      try {
+        post = await market.isOperator(this.wallet.address, FTROUTER_ADDRESS);
+      } catch {
+        post = false;
+      }
+      if (post) return;
+      await new Promise((r) => setTimeout(r, POLL_MS));
+    }
+    console.warn(
+      `[FortyTwoTrader] setOperator on ${marketAddress} mined but read RPC still shows isOperator=false after ${MAX_POLLS * POLL_MS}ms — proceeding`,
+    );
   }
 
   /**
