@@ -113,6 +113,72 @@ const infoClient = new hl.InfoClient({ transport })
 // Public market data
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Public candle fetch for the mini-app's native chart.
+//
+// HL exposes OHLC via POST /info {type:'candleSnapshot', req:{coin, interval,
+// startTime, endTime}}. Coin is the bare symbol ("BTC", not "BTCUSDT"). The
+// payload comes back as { t, T, o, c, h, l, v } with prices as strings.
+//
+// We accept the same interval strings Aster uses (1m/5m/15m/1h/4h/1d) so the
+// chart component can hand the same value to either venue. HL accepts
+// 1m/3m/5m/15m/30m/1h/2h/4h/8h/12h/1d/3d/1w/1M — a strict superset of what
+// the chart UI exposes, so passthrough is safe.
+//
+// Cached only briefly: candles do roll, and the mini-app polls. Returns
+// shape that lightweight-charts consumes directly (time in seconds, OHLC
+// as numbers).
+const HL_VALID_INTERVALS = new Set([
+  '1m','3m','5m','15m','30m','1h','2h','4h','8h','12h','1d','3d','1w','1M'
+])
+const HL_INTERVAL_MS: Record<string, number> = {
+  '1m': 60_000, '3m': 180_000, '5m': 300_000, '15m': 900_000, '30m': 1_800_000,
+  '1h': 3_600_000, '2h': 7_200_000, '4h': 14_400_000, '8h': 28_800_000,
+  '12h': 43_200_000, '1d': 86_400_000, '3d': 259_200_000, '1w': 604_800_000,
+  '1M': 2_592_000_000,
+}
+
+export interface HlCandle {
+  time:   number  // unix seconds (lightweight-charts expects seconds, not ms)
+  open:   number
+  high:   number
+  low:    number
+  close:  number
+  volume: number
+}
+
+export async function getCandles(
+  coin: string,
+  interval: string = '15m',
+  limit: number = 200,
+): Promise<HlCandle[]> {
+  const sym = (coin || '').toUpperCase().replace(/USDT?$/, '').replace(/-USD$/, '').replace(/[^A-Z0-9]/g, '')
+  if (!sym) return []
+  const intv = HL_VALID_INTERVALS.has(interval) ? interval : '15m'
+  const safeLimit = Math.max(1, Math.min(1500, Math.floor(limit)))
+  const stepMs = HL_INTERVAL_MS[intv] ?? 900_000
+  const endTime = Date.now()
+  const startTime = endTime - stepMs * safeLimit
+
+  try {
+    const res: any = await (transport as any).request('info', {
+      type: 'candleSnapshot',
+      req: { coin: sym, interval: intv, startTime, endTime },
+    })
+    if (!Array.isArray(res)) return []
+    return res.map((c: any) => ({
+      time:   Math.floor(Number(c.t) / 1000),
+      open:   parseFloat(c.o),
+      high:   parseFloat(c.h),
+      low:    parseFloat(c.l),
+      close:  parseFloat(c.c),
+      volume: parseFloat(c.v),
+    })).filter(c => Number.isFinite(c.open) && Number.isFinite(c.close))
+  } catch (err: any) {
+    console.error('[HL] getCandles failed:', sym, intv, err?.message)
+    return []
+  }
+}
+
 /**
  * Get the current mark price for a perp coin (e.g. 'BTC', 'ETH', 'SOL').
  * Hyperliquid returns "mids" — mid prices keyed by the coin symbol.

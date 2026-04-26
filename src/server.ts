@@ -1395,6 +1395,61 @@ app.post('/api/aster/close', requireTgUser, async (req, res) => {
 //   GET  /api/hyperliquid/account           caller's HL clearinghouse state
 // ─────────────────────────────────────────────────────────────────────────────
 
+// GET /api/aster/candles?symbol=BTCUSDT&interval=15m&limit=200
+//
+// Public Aster perp candles in lightweight-charts format.
+// No auth — purely market data, identical to what /fapi/v1/klines returns
+// but transposed into row-shape ({time, open, high, low, close, volume})
+// so the frontend chart can `setData(rows)` without re-shaping.
+//
+// We expose this so the mini-app's chart shows the EXACT same candles the
+// user is trading against on Aster, instead of reading Binance via
+// TradingView (which can drift on illiquid pairs and confuses users when
+// mark price disagrees with the visible chart).
+app.get('/api/aster/candles', async (req, res) => {
+  try {
+    const symbol   = String(req.query.symbol ?? 'BTCUSDT')
+    const interval = String(req.query.interval ?? '15m')
+    const limit    = Math.max(1, Math.min(500, parseInt(String(req.query.limit ?? '200'), 10) || 200))
+    const { getKlines } = await import('./services/aster')
+    const k = await getKlines(symbol, interval, limit)
+    const rows = k.timestamps.map((t, i) => ({
+      time:   Math.floor(t / 1000),
+      open:   k.open[i],
+      high:   k.high[i],
+      low:    k.low[i],
+      close:  k.close[i],
+      volume: k.volume[i],
+    }))
+    res.set('Cache-Control', 'public, max-age=10')
+    res.json(rows)
+  } catch (err: any) {
+    console.error('[API] /aster/candles failed:', err?.message)
+    res.status(502).json({ error: 'Could not load chart data — please try again.' })
+  }
+})
+
+// GET /api/hl/candles?coin=BTC&interval=15m&limit=200
+//
+// Public Hyperliquid perp candles in lightweight-charts format. Coin is the
+// bare symbol (e.g. "BTC", "ETH", "HYPE") — accepts BTCUSDT shapes too and
+// strips the suffix server-side so the frontend can hand the same identifier
+// it uses everywhere else.
+app.get('/api/hl/candles', async (req, res) => {
+  try {
+    const coin     = String(req.query.coin ?? 'BTC')
+    const interval = String(req.query.interval ?? '15m')
+    const limit    = Math.max(1, Math.min(500, parseInt(String(req.query.limit ?? '200'), 10) || 200))
+    const { getCandles } = await import('./services/hyperliquid')
+    const rows = await getCandles(coin, interval, limit)
+    res.set('Cache-Control', 'public, max-age=10')
+    res.json(rows)
+  } catch (err: any) {
+    console.error('[API] /hl/candles failed:', err?.message)
+    res.status(502).json({ error: 'Could not load chart data — please try again.' })
+  }
+})
+
 app.get('/api/hyperliquid/markprice/:coin', async (req, res) => {
   try {
     const { getMarkPrice } = await import('./services/hyperliquid')
