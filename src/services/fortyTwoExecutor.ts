@@ -996,17 +996,27 @@ async function computeSellMinOut(args: {
 
   const quoted = await quoteRedeemValue(marketAddress, tokenId, tokenAmt, curveAddress);
 
-  if (quoted !== null && quoted > 0n) {
+  // Authoritative path: quote returned (even if 0n). A 0 quote means the
+  // curve says these tokens currently redeem for nothing — the sell would
+  // legitimately produce zero USDT (e.g. ultra-drained pool). Setting
+  // minUsdtOut=0n lets the close go through; falling back to the marginal
+  // estimate here would invent a positive floor and revert the exit, which
+  // is the exact bug we shipped this commit to kill.
+  if (quoted !== null) {
+    const tokensFloat = Number(ethers.formatUnits(tokenAmt, 18));
+    if (quoted === 0n) {
+      return { minUsdtOut: 0n, expectedPayoutFloat: 0, exitPriceFloat: 0 };
+    }
     // Apply slippage in bigint space to avoid float-rounding drift on the
     // 18-decimal value. (quoted * (10000 - 500)) / 10000.
     const minUsdtOut = (quoted * BigInt(10_000 - SLIPPAGE_BPS_QUOTE)) / 10_000n;
     const expectedPayoutFloat = Number(ethers.formatUnits(quoted, 18));
-    const tokensFloat = Number(ethers.formatUnits(tokenAmt, 18));
     const exitPriceFloat = tokensFloat > 0 ? expectedPayoutFloat / tokensFloat : impliedProbability;
     return { minUsdtOut, expectedPayoutFloat, exitPriceFloat };
   }
 
-  // Fallback to the previous estimate path.
+  // Quote reverted (RPC down, exotic curve, market closed mid-quote) — fall
+  // back to the previous marginal-price estimate with the wide 30% buffer.
   const tokensFloat = Number(ethers.formatUnits(tokenAmt, 18));
   const expectedFloat = tokensFloat * impliedProbability;
   const minUsdtOut = ethers.parseUnits(
