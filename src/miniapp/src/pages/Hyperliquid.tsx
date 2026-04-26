@@ -28,6 +28,20 @@ interface HlPosition {
   returnOnEquity: number
 }
 
+interface HlFill {
+  coin:      string
+  px:        number
+  sz:        number
+  side:      'B' | 'A'   // B = buy, A = ask/sell
+  dir:       string      // "Open Long", "Close Long", "Open Short", "Close Short", "Liquidated …"
+  closedPnl: number      // realized PnL on closing fills; "0" for opens
+  fee:       number      // taker fee in USDC
+  time:      number      // ms epoch
+  hash:      string
+  oid:       number
+  tid:       number
+}
+
 interface AccountState {
   walletAddress:    string
   onboarded:        boolean
@@ -87,6 +101,23 @@ export default function Hyperliquid() {
   // automatically drops out of the polling set on the next account
   // refresh. Mirrors the Aster Trade.tsx pattern.
   const [livePxByCoin, setLivePxByCoin] = useState<Record<string, number>>({})
+
+  // Recent fills feed — pulled from HL's userFills via /api/hyperliquid/trades.
+  // Mirrors the Aster Trade.tsx fills panel so users can audit per-fill fees
+  // (the ground truth for builder-fee verification on HL too) and see realized
+  // PnL on close fills without leaving for app.hyperliquid.xyz.
+  const [fills, setFills]       = useState<HlFill[]>([])
+  const [fillsErr, setFillsErr] = useState<string | null>(null)
+
+  // Compact relative-time formatter for the fills feed. Matches the
+  // formatter on the Aster Trade page so both venues read identically.
+  const ago = (ms: number): string => {
+    const s = Math.max(0, Math.floor((Date.now() - ms) / 1000))
+    if (s < 60)    return `${s}s ago`
+    if (s < 3600)  return `${Math.floor(s / 60)}m ago`
+    if (s < 86400) return `${Math.floor(s / 3600)}h ago`
+    return `${Math.floor(s / 86400)}d ago`
+  }
 
   // Order ticket state
   const [orderCoin, setOrderCoin]         = useState('BTC')
@@ -395,11 +426,28 @@ export default function Hyperliquid() {
     }
   }
 
+  const loadFills = async () => {
+    try {
+      const r = await apiFetch<{ trades: HlFill[] }>('/api/hyperliquid/trades?limit=10')
+      setFills(r.trades); setFillsErr(null)
+    } catch (e: any) {
+      // Distinguish "couldn't reach HL" from "no fills yet" — silent
+      // fallbacks make outages indistinguishable from a clean account.
+      // Suppress the not-onboarded case (handled by the activate UI).
+      const msg = e?.message ?? 'Could not load fills'
+      if (typeof msg === 'string' && /activate hyperliquid/i.test(msg)) return
+      setFillsErr(msg)
+    }
+  }
+
   const load = async () => {
     setError(null)
     try {
       const acc = await apiFetch<AccountState>('/api/hyperliquid/account')
       setAccount(acc)
+      // Only fetch fills after we know the account exists; pulling without
+      // an active wallet would just produce a confusing 404 in the panel.
+      if (acc.onboarded) loadFills()
     } catch (e: any) {
       setError(e?.message ?? 'Failed to load account')
     }
@@ -937,6 +985,87 @@ export default function Hyperliquid() {
                    color: '#fff',
                  }}>
               {closeMsg}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Recent fills — pulled from HL's userFills endpoint via
+          /api/hyperliquid/trades. Each row shows the actual fee HL
+          charged on the fill (USDC), which is the ground truth for fee
+          accounting. Mirror of the Aster Trade.tsx panel so users have
+          a single mental model across both venues. */}
+      {account?.onboarded && !forceActivateUi && (
+        <div style={cardStyle} data-testid="card-hl-fills">
+          <div style={{
+            fontSize: 13, fontWeight: 600, marginBottom: 10,
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          }}>
+            <span>Recent fills</span>
+            <span style={{ fontSize: 11, color: '#64748b', fontWeight: 400 }}>
+              last {fills.length}
+            </span>
+          </div>
+          {fillsErr ? (
+            <div style={{ fontSize: 13, color: '#ef4444' }} data-testid="text-hl-fills-error">
+              Could not load fills: {fillsErr}
+            </div>
+          ) : fills.length === 0 ? (
+            <div style={{ fontSize: 13, color: '#64748b' }} data-testid="text-hl-no-fills">
+              No fills yet on this account.
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {fills.map((f) => {
+                const notional = f.px * f.sz
+                // bps math: HL fees are always quoted in USDC and notional is
+                // px*sz in USDC, so the denominations always match. No need
+                // for the commissionAsset guard we use on Aster.
+                const feeBps = notional > 0 ? (f.fee / notional) * 10000 : 0
+                const isBuy  = f.side === 'B'
+                const sideColor = isBuy ? '#22c55e' : '#ef4444'
+                // HL's `dir` is the canonical "what did this trade do" label.
+                // Falls back to BUY/SELL when missing (older fills).
+                const label = f.dir || (isBuy ? 'BUY' : 'SELL')
+                return (
+                  <div
+                    key={`${f.tid}-${f.time}`}
+                    data-testid={`row-hl-fill-${f.tid}`}
+                    style={{
+                      padding: 10, borderRadius: 8,
+                      background: '#0f0f17', border: '1px solid #1f2937',
+                      display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12,
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ fontWeight: 600 }}>
+                        <span style={{ color: sideColor }}>{label}</span>
+                        <span style={{ marginLeft: 6 }}>{f.coin}</span>
+                      </span>
+                      <span style={{ color: '#64748b' }}>{ago(f.time)}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', color: '#94a3b8' }}>
+                      <span>{f.sz} @ {fmtUsd(f.px)}</span>
+                      <span>${notional.toFixed(2)} notional</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', color: '#94a3b8' }}>
+                      <span>
+                        fee {f.fee.toFixed(6)} USDC
+                        {feeBps > 0 && (
+                          <span style={{ color: '#64748b', marginLeft: 6 }}>
+                            ({feeBps.toFixed(2)} bps)
+                          </span>
+                        )}
+                      </span>
+                      {f.closedPnl !== 0 && (
+                        <span style={{ color: f.closedPnl >= 0 ? '#22c55e' : '#ef4444', fontWeight: 600 }}>
+                          {f.closedPnl >= 0 ? '+' : ''}{f.closedPnl.toFixed(4)} PnL
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           )}
         </div>

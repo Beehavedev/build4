@@ -1990,6 +1990,42 @@ app.get('/api/hyperliquid/account', requireTgUser, async (req, res) => {
   }
 })
 
+// GET /api/hyperliquid/trades
+// Query: ?limit=20 (optional, max 100)
+// Returns the user's most recent Hyperliquid fills with per-fill fee, so
+// users can audit their trading costs and verify builder-fee accounting
+// end-to-end. HL emits a separate fill row per match (a single market
+// order walking the book yields N fills with the same `oid`/`tid`),
+// which we surface as-is — the UI dedupes presentationally if needed.
+app.get('/api/hyperliquid/trades', requireTgUser, async (req, res) => {
+  try {
+    const user = (req as any).user
+    if (!user.hyperliquidOnboarded) {
+      return res.status(400).json({ error: 'Activate Hyperliquid trading first', needsApprove: true })
+    }
+    const wallet = await db.wallet.findFirst({ where: { userId: user.id, isActive: true } })
+    if (!wallet) return res.status(404).json({ error: 'No active wallet' })
+
+    const limit = Math.max(1, Math.min(100, parseInt(String(req.query.limit ?? '20'), 10) || 20))
+    // Use the *strict* variant — the silent `getUserFills` would surface an
+    // HL outage as an empty list, which the UI would then render as the
+    // (misleading) "No fills yet" state. We want outages to flow through
+    // to the catch below and become a real 5xx so the panel's error
+    // banner fires, matching Aster's observable behavior.
+    const { getUserFillsStrict } = await import('./services/hyperliquid')
+    const all = await getUserFillsStrict(wallet.address)
+    // HL returns fills oldest→newest; the UI wants newest first. Sort
+    // defensively in case that ever changes upstream, then trim.
+    const trades = [...all]
+      .sort((a, b) => b.time - a.time)
+      .slice(0, limit)
+    res.json({ trades })
+  } catch (err: any) {
+    console.error('[API] /hyperliquid/trades failed:', err?.message)
+    res.status(500).json({ error: err?.message ?? 'Internal error' })
+  }
+})
+
 // POST /api/hyperliquid/spot-to-perps
 // Move USDC from the user's HL spot sub-account into their perps account
 // from inside the mini-app — no need to leave for app.hyperliquid.xyz.

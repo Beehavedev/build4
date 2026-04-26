@@ -349,8 +349,13 @@ export async function getAccountState(userAddress: string): Promise<{
  *
  * Returns [] on any error so the caller can degrade to "no history yet"
  * instead of failing the whole portfolio page.
+ *
+ * For endpoints that need to surface HL outages distinctly from "no fills"
+ * (e.g. the user-facing /api/hyperliquid/trades route), use
+ * `getUserFillsStrict` below — it propagates the underlying error instead
+ * of swallowing it as an empty array.
  */
-export async function getUserFills(userAddress: string): Promise<Array<{
+type HlFillRow = {
   coin: string
   px: number
   sz: number
@@ -362,26 +367,56 @@ export async function getUserFills(userAddress: string): Promise<Array<{
   hash: string
   oid: number
   tid: number
-}>> {
+}
+
+// Defensive coercion for HL's stringly-typed fill payload. parseFloat on a
+// missing/garbage field would otherwise yield NaN and pollute downstream
+// math (sort, bps, PnL totals). Treat anything non-finite as 0 so the row
+// still renders as a harmless "no value" instead of breaking the panel.
+function safeFloat(v: any): number {
+  const n = parseFloat(v ?? '0')
+  return Number.isFinite(n) ? n : 0
+}
+function safeInt(v: any): number {
+  const n = Number(v ?? 0)
+  return Number.isFinite(n) ? n : 0
+}
+
+function normalizeFill(f: any): HlFillRow {
+  return {
+    coin:      f.coin ?? '',
+    px:        safeFloat(f.px),
+    sz:        safeFloat(f.sz),
+    side:      f.side === 'B' ? 'B' : 'A',
+    dir:       f.dir ?? '',
+    closedPnl: safeFloat(f.closedPnl),
+    fee:       safeFloat(f.fee),
+    time:      safeInt(f.time),
+    hash:      f.hash ?? '',
+    oid:       safeInt(f.oid),
+    tid:       safeInt(f.tid),
+  }
+}
+
+export async function getUserFills(userAddress: string): Promise<HlFillRow[]> {
   try {
     const fills = await infoClient.userFills({ user: userAddress as `0x${string}` })
-    return (fills ?? []).map((f: any) => ({
-      coin:      f.coin ?? '',
-      px:        parseFloat(f.px ?? '0'),
-      sz:        parseFloat(f.sz ?? '0'),
-      side:      f.side === 'B' ? 'B' : 'A',
-      dir:       f.dir ?? '',
-      closedPnl: parseFloat(f.closedPnl ?? '0'),
-      fee:       parseFloat(f.fee ?? '0'),
-      time:      Number(f.time ?? 0),
-      hash:      f.hash ?? '',
-      oid:       Number(f.oid ?? 0),
-      tid:       Number(f.tid ?? 0),
-    }))
+    return (fills ?? []).map(normalizeFill)
   } catch (err: any) {
     console.warn('[HL] getUserFills failed:', userAddress, err?.message)
     return []
   }
+}
+
+/**
+ * Same as `getUserFills` but propagates errors instead of swallowing them.
+ * Use this when the caller needs to distinguish an HL outage from a clean
+ * empty account — the user-facing fills panel relies on this to show a
+ * "Could not load fills" banner rather than a misleading "No fills yet".
+ */
+export async function getUserFillsStrict(userAddress: string): Promise<HlFillRow[]> {
+  const fills = await infoClient.userFills({ user: userAddress as `0x${string}` })
+  return (fills ?? []).map(normalizeFill)
 }
 
 /**
