@@ -191,16 +191,22 @@ export function Trade() {
     return () => { cancelled = true; clearInterval(id); clearInterval(refreshId); clearInterval(ordersId) }
   }, [positions.map(p => p.symbol).join(',')])
 
-  // Auto-prefill the limit input with the live mark the FIRST time the user
-  // toggles into LIMIT mode (or comes back to it after clearing the field).
-  // Without this the input is blank and most users tap the field expecting
-  // the current price to appear, which it didn't. Mirrors HL's behaviour so
-  // the two pages feel identical.
+  // Prefill the limit input with the live mark the moment the user toggles
+  // into LIMIT mode — but ONLY once per toggle. After the first prefill we
+  // consider the field "user-owned" so they can clear it, edit it, or wait
+  // for a target price without us re-filling on every mark tick.
+  // Reset on toggling back to MARKET so the next LIMIT switch re-prefills.
+  const [limitPrefilled, setLimitPrefilled] = useState(false)
   useEffect(() => {
-    if (orderType === 'LIMIT' && !limitPrice && mark?.markPrice && mark.markPrice > 0) {
-      setLimitPrice(String(mark.markPrice))
+    if (orderType !== 'LIMIT') {
+      if (limitPrefilled) setLimitPrefilled(false)
+      return
     }
-  }, [orderType, mark?.markPrice, limitPrice])
+    if (!limitPrefilled && !limitPrice && mark?.markPrice && mark.markPrice > 0) {
+      setLimitPrice(String(mark.markPrice))
+      setLimitPrefilled(true)
+    }
+  }, [orderType, mark?.markPrice, limitPrice, limitPrefilled])
 
   const onboarded = wallet?.aster.onboarded === true
   const availableMargin = wallet?.aster.availableMargin ?? 0
