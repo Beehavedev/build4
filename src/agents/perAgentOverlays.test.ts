@@ -54,6 +54,28 @@ test('does NOT veto on observation-type memories — only corrections count', ()
   assert.equal(result, false)
 })
 
+test('does NOT veto on execution-failure corrections — only LOSS corrections count', () => {
+  // Mirrors the format saveMemory(...) writes at tradingAgent.ts L1848 when
+  // an order fails to execute. Vetoing on these would lock the agent out
+  // of a pair after one transient RPC error or insufficient-balance blip.
+  const memories = [
+    mem('Order execution failed for BTCUSDT LONG: insufficient balance', 6),
+  ]
+  const result = shouldVetoOnMemory({ memories, pair: 'BTCUSDT', side: 'LONG', nowMs: NOW })
+  assert.equal(result, false, 'execution failures must not veto — only real losses')
+})
+
+test('vetoes only when content starts with "LOSS"', () => {
+  // A correction that mentions BTCUSDT LONG but isn\'t a LOSS (e.g. a future
+  // contributor adds a new correction format) must not silently start
+  // vetoing trades. Strict prefix is the contract.
+  const memories = [
+    mem('Note about BTCUSDT LONG behaviour around halving event', 6),
+  ]
+  const result = shouldVetoOnMemory({ memories, pair: 'BTCUSDT', side: 'LONG', nowMs: NOW })
+  assert.equal(result, false)
+})
+
 test('does NOT veto when the loss is older than the lookback window', () => {
   const memories = [
     // 72h old, default window is 48h

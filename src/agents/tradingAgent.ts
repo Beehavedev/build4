@@ -1220,6 +1220,14 @@ export async function runAgentTick(agent: Agent): Promise<void> {
       //     build42MarketContext, so concurrent agent ticks share one fetch.
       //     Wrapped in try/catch + 1.5s timeout race — if the 42 stack hangs
       //     or rejects, we still trade. Trading must never block on this.
+      // The 42.space market block is GLOBAL (cached at module level by
+      // build42MarketContext, no per-agent state) — safe to share across
+      // every agent on this pair. Kept in sharedPredictionContext.
+      // The per-agent open-positions block built below (positionIds for
+      // CLOSE_PREDICTION) must NEVER be folded into the shared scan
+      // input or it would leak one agent's positionIds into another
+      // agent's decision via the cached scan result.
+      let sharedPredictionContext = ''
       let predictionContext = ''
       try {
         const { build42MarketContext } = await import('../services/fortyTwoPrompt')
@@ -1227,7 +1235,10 @@ export async function runAgentTick(agent: Agent): Promise<void> {
           build42MarketContext({ maxMarkets: 5, tradingRelevantOnly: true }),
           new Promise<string>((resolve) => setTimeout(() => resolve(''), 1500)),
         ])
-        if (block.trim()) predictionContext = '\n' + block
+        if (block.trim()) {
+          sharedPredictionContext = '\n' + block
+          predictionContext = sharedPredictionContext
+        }
       } catch (err) {
         console.warn(`[Agent ${agent.name}] 42.space context unavailable:`, (err as Error).message)
       }
@@ -1356,8 +1367,14 @@ If you would not put real money in this trade right now, action = HOLD.`
             // News + prediction context are shared across every agent on
             // this pair within the cache TTL — these fetchers only fire
             // on the first cache miss for this (pair, mode, tick).
+            // Critically, predictionContext here is sharedPredictionContext,
+            // NOT the full per-agent predictionContext: the latter contains
+            // this agent's open 42.space positionIds, which would leak
+            // into another agent's cached scan result and could surface
+            // a positionId that other agent doesn't own. Pure global
+            // market block only.
             fetchNewsBlock: async () => newsContext,
-            fetchPredictionBlock: async () => predictionContext,
+            fetchPredictionBlock: async () => sharedPredictionContext,
           },
         )
         decision = scan.decision
@@ -1419,15 +1436,21 @@ If you would not put real money in this trade right now, action = HOLD.`
         // ── Per-agent overlay 4: leverage default ────────────────────
         // The shared scan returns leverage=null. The downstream clamp
         // at L1578 falls back to `?? 1` — a literal 1x for OPEN signals,
-        // which would silently sandbag every shared-scan trade. Default
-        // to the agent's max so the clamp behaves as a no-op for
-        // shared-scan callers (matching the original LLM behaviour
-        // where the LLM was told the cap and almost always picked it).
+        // which would silently sandbag every shared-scan trade.
+        //
+        // Default to the agent's max — but in momentum (new-listing)
+        // mode the original NEW_LISTING_SYSTEM_PROMPT pinned the LLM to
+        // a HARD 3x cap because new-listing volatility regularly
+        // liquidates higher leverage. The downstream clamp only enforces
+        // agent.maxLeverage (often 10x or 25x), so we apply the 3x cap
+        // here to preserve the strategy.
         if (
           (decision.action === 'OPEN_LONG' || decision.action === 'OPEN_SHORT') &&
           decision.leverage == null
         ) {
-          decision.leverage = agent.maxLeverage
+          decision.leverage = isNewListingPair
+            ? Math.min(agent.maxLeverage, 3)
+            : agent.maxLeverage
         }
       } catch (aiErr) {
         console.error(`[Agent ${agent.name}] Shared scan failed:`, aiErr)

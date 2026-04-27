@@ -29,15 +29,28 @@ function canonicalPair(pair: string): string {
 }
 
 // ─── shouldVetoOnMemory ──────────────────────────────────────────────
-// Returns true when there's a recent `correction` memory matching this
-// pair AND side, written within the lookback window. A "correction"
-// memory is what `saveMemory(agent.id, 'correction', ...)` writes when
-// a trade closes at a loss, formatted like:
-//   `LOSS on BTCUSDT LONG: closed at $X, entry was $Y, lost $Z USDT...`
+// Returns true when there's a recent loss-correction memory matching
+// this pair AND side, written within the lookback window.
 //
-// We intentionally do a permissive substring match against the canon-
-// icalised pair AND the side string. Both must appear: a correction
-// about a SHORT loss does not veto a fresh LONG attempt.
+// IMPORTANT: the `correction` memory type is reused for two distinct
+// signals in tradingAgent.ts:
+//   1. LOSS corrections — `LOSS on ${pair} ${side}: closed at $X...`
+//      These are real "I lost money on this setup" lessons.
+//   2. Execution-failure corrections — `Order execution failed for
+//      ${pair} ${side}: ${err}`. These are infrastructure failures
+//      (insufficient balance, RPC blip, transient liquidity gap), not
+//      bad-setup signals — vetoing future trades on them would
+//      effectively lock the agent out of a pair after one transient
+//      RPC error.
+//
+// We therefore require the memory content to start with "LOSS" before
+// it can veto. This precisely matches the loss-correction format
+// emitted by tradingAgent.ts L1989 and ignores the execution-failure
+// format emitted at L1848.
+//
+// We use a permissive substring match against the canonicalised pair
+// AND the side string. Both must appear: a correction about a SHORT
+// loss does not veto a fresh LONG attempt.
 //
 // The 48h default window is a balance — long enough that a single bad
 // session puts you in cooldown, short enough that a stale lesson from
@@ -64,6 +77,9 @@ export function shouldVetoOnMemory(input: VetoInputs): boolean {
         : Date.parse(String(m.createdAt))
     if (!Number.isFinite(created) || created <= cutoff) continue
     const upper = (m.content ?? '').toUpperCase()
+    // Only loss corrections veto. Execution-failure corrections are
+    // skipped — see the function docblock for why.
+    if (!upper.startsWith('LOSS')) continue
     if (upper.includes(sym) && upper.includes(input.side)) return true
   }
   return false
