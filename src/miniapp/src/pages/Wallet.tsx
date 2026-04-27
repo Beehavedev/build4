@@ -158,13 +158,61 @@ export default function Wallet() {
       {state === 'C' && <TransferFlow w={w} onDone={load} initialDirection="to_aster" />}
       {state === 'D' && <TradingReadyFlow w={w} onDone={load} copy={copy} copied={copied} />}
 
-      {/* $B4 holder wallet link — proves you own an external EOA holding
-          $B4 so the airdrop snapshot includes you. */}
-      <LinkB4HolderCard copy={copy} />
+      {/* Secondary actions — collapsed by default to keep the wallet
+          screen focused on funding/trading. Most users hit Wallet for
+          balances and deposits, not for airdrop linking or cross-chain
+          bridging. The header summarises both behind a single tap. */}
+      <SecondaryActions copy={copy} recipient={w.address} />
+    </div>
+  )
+}
 
-      {/* Cross-chain bridges — pure deeplinks; no custody. Pre-fills the
-          user's BUILD4 address as the destination. */}
-      <BridgeCard recipient={w.address} />
+// Collapsible wrapper around the airdrop link card and the bridge card.
+// Both children are mounted lazily (only when expanded) — that means
+// LinkB4HolderCard's /api/me/link-wallet fetch fires on first open, not
+// on page mount, which matches the "secondary, opt-in" framing of this
+// section. If we ever want to surface a "Linked ✓" badge in the
+// collapsed summary line, hoist that one query up to this component.
+function SecondaryActions({ copy, recipient }: { copy: (s: string) => Promise<void>; recipient: string }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div
+      className="card"
+      style={{ marginTop: 12, padding: 0, overflow: 'hidden' }}
+      data-testid="card-secondary-actions"
+    >
+      <button
+        onClick={() => setOpen(o => !o)}
+        data-testid="button-toggle-secondary"
+        style={{
+          width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '14px 16px', background: 'transparent', border: 'none',
+          color: 'var(--text-primary)', cursor: 'pointer', textAlign: 'left',
+        }}
+      >
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 600 }}>More options</div>
+          <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
+            Link a $B4 holder wallet · Bridge from another chain
+          </div>
+        </div>
+        <span
+          aria-hidden
+          style={{
+            fontSize: 16, color: 'var(--text-secondary)',
+            transform: open ? 'rotate(90deg)' : 'rotate(0deg)',
+            transition: 'transform 150ms ease',
+          }}
+        >›</span>
+      </button>
+      {open && (
+        <div style={{ padding: '0 16px 16px', borderTop: '1px solid var(--border)' }}>
+          <div style={{ marginTop: 12 }}>
+            <LinkB4HolderCard copy={copy} />
+          </div>
+          <BridgeCard recipient={recipient} />
+        </div>
+      )}
     </div>
   )
 }

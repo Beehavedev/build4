@@ -22,6 +22,9 @@ export default function App() {
   const [page, setPage] = useState<Page>('dashboard')
   const [userId, setUserId] = useState<string | null>(null)
   const [isAdmin, setIsAdmin] = useState(false)
+  // Top-right overflow menu — houses Admin (when allow-listed) and any
+  // future low-traffic destinations. Keeps the bottom nav at six tabs.
+  const [menuOpen, setMenuOpen] = useState(false)
 
   useEffect(() => {
     // Init Telegram WebApp
@@ -48,20 +51,91 @@ export default function App() {
     return () => window.removeEventListener('b4-nav', onNav as EventListener)
   }, [])
 
+  // Six-tab bottom nav — every label is one word so they all fit on a
+  // 360-px-wide handset without wrapping. Admin is intentionally NOT here
+  // (operator-only) and lives behind the top-right ⋯ menu instead.
   const navItems: { id: Page; label: string; icon: string | 'crosshair' }[] = [
-    { id: 'dashboard', label: 'Home', icon: '⚡' },
-    { id: 'agents', label: 'Agents', icon: '🤖' },
-    { id: 'trade', label: 'Trade', icon: '📈' },
-    { id: 'wallet', label: 'Wallet', icon: '💳' },
+    { id: 'dashboard',   label: 'Home',      icon: '⚡' },
+    { id: 'agents',      label: 'Agents',    icon: '🤖' },
+    { id: 'trade',       label: 'Trade',     icon: '📈' },
+    { id: 'wallet',      label: 'Wallet',    icon: '💳' },
+    { id: 'portfolio',   label: 'Portfolio', icon: '📊' },
+    { id: 'predictions', label: 'Predict',   icon: 'crosshair' },
     // Copy trading hidden for now — coming back to it later.
     // { id: 'copy', label: 'Copy', icon: '📋' },
-    { id: 'portfolio', label: 'Portfolio', icon: '📊' },
-    { id: 'predictions', label: 'Predict', icon: 'crosshair' },
+  ]
+
+  // Items shown inside the top-right overflow menu. Right now Admin is the
+  // only entry, but routing it through a list keeps the door open for low-
+  // traffic destinations later (e.g. Activity log, Help, Sign out) without
+  // having to add another bottom-nav slot for each.
+  const overflowItems: { id: Page; label: string; icon: string }[] = [
     ...(isAdmin ? [{ id: 'admin' as Page, label: 'Admin', icon: '🛠' }] : [])
   ]
+  const hasOverflow = overflowItems.length > 0
 
   return (
     <div style={{ minHeight: '100vh', paddingBottom: '72px' }}>
+      {/* Top-right overflow menu — only renders if there's something inside.
+          Sits above page content as a small floating affordance so it never
+          competes with each screen's own header text. Tap-outside closes. */}
+      {hasOverflow && (
+        <div style={{ position: 'fixed', top: 8, right: 12, zIndex: 200 }}>
+          <button
+            onClick={() => setMenuOpen(o => !o)}
+            data-testid="button-overflow-menu"
+            aria-label="More"
+            style={{
+              width: 32, height: 32, borderRadius: 16,
+              background: menuOpen ? 'var(--bg-elevated)' : 'transparent',
+              border: '1px solid var(--border)',
+              color: 'var(--text-secondary)',
+              cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 18, lineHeight: 1, padding: 0,
+            }}
+          >
+            ⋯
+          </button>
+          {menuOpen && (
+            <>
+              {/* Tap-outside catcher */}
+              <div
+                onClick={() => setMenuOpen(false)}
+                style={{ position: 'fixed', inset: 0, zIndex: 199 }}
+              />
+              <div
+                data-testid="menu-overflow"
+                style={{
+                  position: 'absolute', top: 38, right: 0, zIndex: 201,
+                  background: 'var(--bg-card)', border: '1px solid var(--border)',
+                  borderRadius: 10, padding: 4, minWidth: 160,
+                  boxShadow: '0 4px 16px rgba(0,0,0,0.5)',
+                }}
+              >
+                {overflowItems.map(item => (
+                  <button
+                    key={item.id}
+                    onClick={() => { setPage(item.id); setMenuOpen(false) }}
+                    data-testid={`menu-item-${item.id}`}
+                    style={{
+                      width: '100%', padding: '10px 12px', borderRadius: 6,
+                      background: 'transparent', border: 'none', cursor: 'pointer',
+                      color: 'var(--text-primary)', textAlign: 'left',
+                      display: 'flex', alignItems: 'center', gap: 10,
+                      fontSize: 13, fontWeight: 500,
+                    }}
+                  >
+                    <span style={{ fontSize: 16 }}>{item.icon}</span>
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
       {/* Page content */}
       <div style={{ padding: '0 16px' }}>
         {page === 'dashboard' && <Dashboard userId={userId} onNavigate={setPage} />}

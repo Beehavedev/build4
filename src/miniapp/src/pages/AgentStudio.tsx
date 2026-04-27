@@ -89,14 +89,33 @@ export default function AgentStudio(_props: AgentStudioProps) {
           </div>
         </div>
       ) : (
-        agents.map(agent => (
+        agents.map(agent => {
+          // AUTO-mode agents don't watch a single ticker — they pick the
+          // hottest pair from a multi-coin scan each tick. So a literal
+          // "AUTOUSDT" symbol must never reach MarketTicker (it 404s on
+          // Binance and surfaces a "ticker unavailable" amber banner —
+          // an internal failure leaking into the user's UI). We branch
+          // here and render a calmer subtitle + skip the per-pair widgets
+          // entirely.
+          const isAuto = Array.isArray(agent.pairs) && agent.pairs.includes('AUTO')
+          const watched: string[] = Array.isArray(agent.pairs) ? agent.pairs.filter((p: string) => p !== 'AUTO') : []
+          // Total PnL colour: green when positive, red when negative,
+          // muted neutral when exactly zero (most new agents). Previously
+          // a freshly-created agent with $0.00 lifetime PnL still rendered
+          // in green which confused users into thinking they had won the
+          // coin toss before placing a single trade.
+          const pnlValue = agent.totalPnl ?? 0
+          const pnlColor = pnlValue > 0 ? '#10b981' : pnlValue < 0 ? '#ef4444' : 'var(--text-secondary)'
+          return (
           <div key={agent.id} className="card" style={{ marginBottom: 12 }}>
             {/* Header */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
               <div>
-                <div style={{ fontSize: 15, fontWeight: 600 }}>{agent.name}</div>
+                <div style={{ fontSize: 15, fontWeight: 600 }} data-testid={`text-agent-name-${agent.id}`}>{agent.name}</div>
                 <div style={{ fontSize: 11, color: '#64748b' }}>
-                  {agent.exchange} · {agent.pairs?.join(', ')}
+                  {isAuto
+                    ? `${agent.exchange} · AUTO — scanning the market`
+                    : `${agent.exchange} · ${agent.pairs?.join(', ')}`}
                 </div>
               </div>
               {/* Toggle */}
@@ -121,7 +140,7 @@ export default function AgentStudio(_props: AgentStudioProps) {
             {/* Stats row */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 12 }}>
               {[
-                { label: 'Total PnL', value: `${agent.totalPnl >= 0 ? '+' : ''}$${agent.totalPnl?.toFixed(2) ?? '0.00'}`, color: agent.totalPnl >= 0 ? '#10b981' : '#ef4444' },
+                { label: 'Total PnL', value: `${pnlValue > 0 ? '+' : pnlValue < 0 ? '-' : ''}$${Math.abs(pnlValue).toFixed(2)}`, color: pnlColor },
                 { label: 'Win Rate', value: `${agent.winRate?.toFixed(0) ?? 0}%`, color: '#e2e8f0' },
                 { label: 'Trades', value: agent.totalTrades ?? 0, color: '#e2e8f0' }
               ].map(stat => (
@@ -152,15 +171,13 @@ export default function AgentStudio(_props: AgentStudioProps) {
               {agent.isActive ? '● Active — next tick in ~60s' : '○ Inactive'}
             </div>
 
-            {/* Live market block — terminal-style 24h ticker for the
-                pair the agent is currently watching, plus a one-tap
-                "Open chart" toggle that reveals a full TradingView chart
-                inline. Pairs come from agent.pairs; user can flip
-                between them via chips when the agent watches more
-                than one. We only mount the chart iframe when this card
-                is the currently-expanded one to keep memory bounded. */}
-            {Array.isArray(agent.pairs) && agent.pairs.length > 0 && (() => {
-              const watched: string[] = agent.pairs
+            {/* Live market block — only renders for single-ticker agents.
+                AUTO-mode agents scan many pairs each tick, so there is no
+                single chart to embed and no single 24h row that means
+                anything; rendering the ticker for them produced the
+                "ticker unavailable for AUTOUSDT" amber banner the user
+                reported. We hide the whole block in that case. */}
+            {!isAuto && watched.length > 0 && (() => {
               const selected = agentPairSel[agent.id] ?? watched[0]
               const isOpen = openChartAgentId === agent.id
               return (
@@ -213,7 +230,8 @@ export default function AgentStudio(_props: AgentStudioProps) {
               )
             })()}
           </div>
-        ))
+          )
+        })
       )}
 
       <div style={{ marginTop: 8, fontSize: 12, color: '#64748b', textAlign: 'center' }}>

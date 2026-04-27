@@ -1,3 +1,10 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   LEGACY / UNUSED STYLESHEET — NOT THE LIVE PATH.
+   The live entry (src/miniapp/main.tsx) imports ./src/index.css. Only that
+   file is bundled by vite. Keep this file's design tokens in sync with
+   index.css as a hedge, but do NOT add new visual behavior here without
+   first redirecting the active import chain or you will ship dead CSS.
+   ───────────────────────────────────────────────────────────────────────── */
 * {
   margin: 0;
   padding: 0;
@@ -5,7 +12,11 @@
 }
 
 :root {
-  --bg-primary: #0a0a0f;
+  /* --bg-primary MUST match the value passed to tg.setHeaderColor and
+     tg.setBackgroundColor in main.tsx. Any drift here re-creates the
+     thin lighter band at the top of the WebApp on iOS scroll bounce
+     (the Telegram chat thread peeking through above our header). */
+  --bg-primary: #0D0D0F;
   --bg-secondary: #12121a;
   --bg-card: #1a1a28;
   --bg-card-hover: #222236;
@@ -23,6 +34,14 @@
   --blue: #3b82f6;
 }
 
+html {
+  /* Paint the html element the same colour as the body so an iOS
+     overscroll bounce reveals our background, not the Telegram chat
+     thread sitting behind the WebApp sheet. Without this, the user
+     sees parent-chat text ("oracle test markets on BSC", etc.) bleed
+     in above our header when they pull-to-refresh. */
+  background: var(--bg-primary);
+}
 body {
   font-family: "Inter", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   background: var(--bg-primary);
@@ -30,6 +49,10 @@ body {
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
   overflow-x: hidden;
+  /* Belt-and-braces with the disableVerticalSwipes() call in main.tsx —
+     blocks scroll-chaining into the chat thread on browsers/clients
+     where the WebApp API stub doesn't expose disableVerticalSwipes. */
+  overscroll-behavior-y: none;
 }
 
 .app {
