@@ -593,3 +593,71 @@ test('executeOpen returns mock for mock-mode agents (paper-trading fallthrough)'
   })
   assert.deepEqual(r, { ok: false, reason: 'mock' })
 })
+
+// ── Helpers: normalizeHlCoin ─────────────────────────────────────────────────
+import { normalizeHlCoin, isLiveVenueRejection } from './exchangeAdapter'
+
+test('normalizeHlCoin handles every pair format we see today', () => {
+  // The architect specifically called out BTC/USDT and BTC-USDT — those
+  // were silently failing the venue-position match before.
+  assert.equal(normalizeHlCoin('BTCUSDT'),  'BTC')
+  assert.equal(normalizeHlCoin('ETHUSDT'),  'ETH')
+  assert.equal(normalizeHlCoin('BTC/USDT'), 'BTC')
+  assert.equal(normalizeHlCoin('BTC-USDT'), 'BTC')
+  assert.equal(normalizeHlCoin('BTC_USDT'), 'BTC')
+  assert.equal(normalizeHlCoin('BTCUSD'),   'BTC')
+  assert.equal(normalizeHlCoin('SOL-USD'),  'SOL')
+  assert.equal(normalizeHlCoin('btc/usdt'), 'BTC')   // case-insensitive
+  assert.equal(normalizeHlCoin(' BTC USDT '), 'BTC') // whitespace-tolerant
+  assert.equal(normalizeHlCoin('BTC'),      'BTC')   // already bare
+})
+
+test('executeCloseHl venue-match works with hyphenated/slashed pair formats', async () => {
+  let placedSz: number | null = null
+  const svc: HlCloseServices = {
+    resolveAgentCreds: async () => fakeHlCreds,
+    placeOrder:        async (_c, args) => { placedSz = args.sz; return { success: true, oid: 1 } },
+    getMarkPrice:      async () => ({ markPrice: 50_000 }),
+    getAccountState:   async () => ({ positions: [{ coin: 'BTC', szi: 0.05 }] }) as any,
+  }
+  // Pair comes in as "BTC/USDT" — must still match venue's "BTC".
+  await executeCloseHl(
+    closeInput({
+      agent: hlAgent,
+      openPos: { id: 't', pair: 'BTC/USDT', side: 'LONG', entryPrice: 50_000, size: 2_500 },
+    }),
+    svc,
+  )
+  assert.equal(placedSz, 0.05, 'must match venue szi via normalized coin (not return false-flat)')
+})
+
+// ── Helpers: isLiveVenueRejection ────────────────────────────────────────────
+
+test('isLiveVenueRejection: live exchange + rejected → true', () => {
+  assert.equal(isLiveVenueRejection({ ok: false, reason: 'rejected', detail: 'x' } as any, 'hyperliquid'), true)
+  assert.equal(isLiveVenueRejection({ ok: false, reason: 'rejected' } as any, 'aster'), true)
+})
+
+test('isLiveVenueRejection: live exchange + no-creds → true', () => {
+  assert.equal(isLiveVenueRejection({ ok: false, reason: 'no-creds' } as any, 'hyperliquid'), true)
+  assert.equal(isLiveVenueRejection({ ok: false, reason: 'no-creds' } as any, 'aster'), true)
+})
+
+test('isLiveVenueRejection: mock exchange always → false (paper-trade preserved)', () => {
+  assert.equal(isLiveVenueRejection({ ok: false, reason: 'rejected' } as any, 'mock'), false)
+  assert.equal(isLiveVenueRejection({ ok: false, reason: 'no-creds' } as any, 'mock'), false)
+  assert.equal(isLiveVenueRejection({ ok: false, reason: 'mock' } as any, 'mock'), false)
+})
+
+test('isLiveVenueRejection: ok results always → false', () => {
+  assert.equal(isLiveVenueRejection({ ok: true, exitPrice: 100 } as any, 'hyperliquid'), false)
+  assert.equal(isLiveVenueRejection({ ok: true, fillPrice: 100, orderIdStr: '1' } as any, 'aster'), false)
+})
+
+test('isLiveVenueRejection: live exchange + no-balance → false (caller already handles)', () => {
+  // no-balance is its own branch in the OPEN site (already logs+continues
+  // with full diagnostics); we don't want the caller to double-handle it
+  // through the rejection path.
+  assert.equal(isLiveVenueRejection({ ok: false, reason: 'no-balance', balance: 0 } as any, 'hyperliquid'), false)
+  assert.equal(isLiveVenueRejection({ ok: false, reason: 'mock' } as any, 'hyperliquid'), false)
+})

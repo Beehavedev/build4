@@ -22,7 +22,7 @@ import {
 import { buildMemoryContext, getRecentMemories, saveMemory } from './memory'
 import { getSharedMarketScan } from './marketScan'
 import { shouldVetoOnMemory, applyDrawdownSizeCut } from './perAgentOverlays'
-import { executeOpen, executeClose } from './exchangeAdapter'
+import { executeOpen, executeClose, isLiveVenueRejection } from './exchangeAdapter'
 
 // Wrap agentLog.create so that a stale Prisma client (one missing the new
 // pair/adx/rsi/score/regime/reason/price columns, e.g. on a Render box that
@@ -950,6 +950,7 @@ export async function runAgentTick(agent: Agent): Promise<void> {
           include: { wallets: { where: { isActive: true }, take: 1 } }
         })
         const userAddrEmerg = dbUserEmerg?.wallets?.[0]?.address ?? ''
+        let emergFailed = 0
         for (const pos of allOpen) {
           try {
             const closeResult = await executeClose({
@@ -959,6 +960,20 @@ export async function runAgentTick(agent: Agent): Promise<void> {
               openPos:       pos as any,
               fallbackPrice: pos.entryPrice,  // adapter tries getMarkPrice internally
             })
+            if (!closeResult.ok && isLiveVenueRejection(closeResult, agent.exchange)) {
+              // Venue did NOT execute the emergency close. We can't lie
+              // about it being closed — leaving the row open lets the
+              // next emergency tick (or the next news event) retry, and
+              // ensures the user's UI keeps showing real exposure.
+              emergFailed++
+              const reason = closeResult.reason
+              const detail = closeResult.detail ? ` — ${closeResult.detail}` : ''
+              console.warn(
+                `[Agent ${agent.name}] Emergency close FAILED on ${agent.exchange} for trade ${pos.id} ` +
+                `(${reason})${detail}; leaving DB row OPEN`
+              )
+              continue
+            }
             const exitPx = closeResult.ok ? closeResult.exitPrice : pos.entryPrice
             const dirMult = pos.side === 'LONG' ? 1 : -1
             const pnl = ((exitPx - pos.entryPrice) / pos.entryPrice) * pos.size * pos.leverage * dirMult
@@ -967,16 +982,21 @@ export async function runAgentTick(agent: Agent): Promise<void> {
               data: { status: 'closed', exitPrice: exitPx, pnl, closedAt: new Date() }
             })
           } catch (e: any) {
+            emergFailed++
             console.error(`[Agent ${agent.name}] Emergency close error on trade ${pos.id}:`, e?.message)
           }
         }
+        const emergClosed = allOpen.length - emergFailed
         const _bot2 = getBot()
         if (_bot2 && telegramId) {
           _bot2.api
             .sendMessage(
               telegramId,
-              `🚨 *EMERGENCY: ${escapeMd(agent.name)} closed ${allOpen.length} position(s)*\n\n` +
+              `🚨 *EMERGENCY: ${escapeMd(agent.name)} closed ${emergClosed} of ${allOpen.length} position(s)*\n\n` +
                 `Breaking: ${newsSignal.topHeadline}\n\n` +
+                (emergFailed > 0
+                  ? `${emergFailed} position(s) could not be closed and will be retried automatically.\n\n`
+                  : '') +
                 `Protecting your funds from news impact.`,
               { parse_mode: 'Markdown' }
             )
@@ -988,7 +1008,8 @@ export async function runAgentTick(agent: Agent): Promise<void> {
             userId: agent.userId,
             action: 'EMERGENCY_CLOSE',
             parsedAction: 'CLOSE',
-            executionResult: `Closed ${allOpen.length} positions on news`,
+            executionResult: `Closed ${emergClosed} of ${allOpen.length} positions on news` +
+              (emergFailed > 0 ? ` (${emergFailed} pending retry)` : ''),
             pair,
             reason: newsSignal.topHeadline.slice(0, 240),
             score: newsSignal.score
@@ -1865,11 +1886,23 @@ If you would not put real money in this trade right now, action = HOLD.`
         })
         if (closeResult.ok) {
           exitPrice = closeResult.exitPrice
+        } else if (isLiveVenueRejection(closeResult, agent.exchange)) {
+          // Live venue did NOT execute the close (rejected / no-creds).
+          // Marking the DB row closed here would lie to the user — their
+          // UI says "closed" but the position is still live on the
+          // exchange. Skip the update; the next tick will retry.
+          const reason = closeResult.reason
+          const detail = closeResult.detail ? ` — ${closeResult.detail}` : ''
+          console.warn(
+            `[Agent ${agent.name}] Close NOT confirmed on ${agent.exchange} (${reason})${detail}; ` +
+            `leaving DB trade ${openPos.id} OPEN for retry`
+          )
+          await saveMemory(agent.id, 'correction',
+            `Close failed for ${openPos.pair}: ${reason}${detail}. Will retry next tick.`, null)
+          continue
         }
-        // mock / no-creds / rejected → keep exitPrice as the synthetic
-        // ohlcv-derived value; the DB row is still marked closed below
-        // (matches prior behaviour — execution may have failed but we
-        // don't want to leave a stale "open" row behind in our books).
+        // mock-mode (or live + ok already handled): proceed to mark the
+        // row closed using the resolved exitPrice.
         // ─────────────────────────────────────────────────────────────────
 
         const priceDiff = exitPrice - openPos.entryPrice

@@ -176,6 +176,48 @@ const realHlCloseServices: HlCloseServices = {
   getAccountState:   hlGetAccountState,
 }
 
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+/**
+ * Normalize a pair string ("BTCUSDT", "BTC/USDT", "BTC-USDT", "SOL-USD",
+ * "BTCUSD", etc.) to the bare HL coin symbol ("BTC", "SOL"). Used by the
+ * close path to match against `getAccountState().positions[].coin`.
+ *
+ * Strategy: strip every separator (slash, hyphen, underscore, whitespace),
+ * then strip the stable suffix (USDT first since it's a longer match,
+ * then USD). Keeping these in one helper means the "already flat"
+ * detection in executeCloseHl can't be silently bypassed by a pair
+ * format the regex didn't anticipate (BTC/USDT was the original miss).
+ */
+export function normalizeHlCoin(pair: string): string {
+  const stripped = String(pair ?? '').toUpperCase().replace(/[\s\-_/]/g, '')
+  if (stripped.endsWith('USDT')) return stripped.slice(0, -4)
+  if (stripped.endsWith('USD'))  return stripped.slice(0, -3)
+  return stripped
+}
+
+/**
+ * Returns true when a CLOSE attempt failed against a real exchange and
+ * the DB row should NOT be marked closed (so the next tick can retry).
+ *
+ *  - mock-mode agents:    keep prior synthetic-fill behaviour (close DB row).
+ *  - live exchanges:      'rejected' or 'no-creds' both mean the venue
+ *                         did NOT execute — closing the DB row would
+ *                         create a phantom-closed/venue-open divergence.
+ *
+ * Centralized so both the regular CLOSE site and EMERGENCY_CLOSE site in
+ * tradingAgent.ts make the same call, and so the policy is unit-tested
+ * in one place.
+ */
+export function isLiveVenueRejection(
+  result: OpenResult | CloseResult,
+  exchange: string,
+): boolean {
+  if (exchange === 'mock') return false
+  if (result.ok)           return false
+  return result.reason === 'rejected' || result.reason === 'no-creds'
+}
+
 // ── Public entry points ──────────────────────────────────────────────────────
 
 /**
@@ -498,7 +540,7 @@ export async function executeCloseHl(
     // exactly the "DB says closed but HL still has exposure" failure
     // mode. Asking HL is one extra read but pays for itself the first
     // time it prevents a stuck-position incident.
-    const targetCoin = openPos.pair.toUpperCase().replace(/USDT?$/, '').replace(/-USD$/, '')
+    const targetCoin = normalizeHlCoin(openPos.pair)
     let coinUnits = openPos.size / openPos.entryPrice
     try {
       const acct = await services.getAccountState(userAddress)
