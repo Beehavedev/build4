@@ -79,13 +79,50 @@ export default function Portfolio({ userId }: PortfolioProps) {
         </div>
       </div>
 
-      {/* Hero — Lead with dominant value (total equity) + lifetime PnL */}
+      {/* Hero — Lead with dominant value (total equity) + lifetime PnL.
+          Adds:
+          - "Trading active" pill when the user is onboarded on Aster, so
+            an empty equity card still feels like a live account, not a
+            broken page.
+          - "% of equity" alongside lifetime PnL so an absolute number like
+            "+$4.12" has scale (4.12 on $50 reads very differently from
+            4.12 on $5,000).
+          - Neutral muted colour when both PnL and trade count are zero so
+            a fresh account doesn't paint a hopeful green or alarming red.
+       */}
+      {(() => {
+        const isFresh = totalPnl === 0 && trades.length === 0
+        const pnlColor = isFresh
+          ? 'var(--text-secondary)'
+          : totalPnl > 0 ? 'var(--green)' : totalPnl < 0 ? 'var(--red)' : 'var(--text-secondary)'
+        // % of equity context only kicks in once we actually have equity to
+        // measure against; otherwise dividing by ~0 throws huge percentages.
+        const pctOfEquity = totalEquity > 0.01 ? (totalPnl / totalEquity) * 100 : null
+        return (
       <div className="card" style={{ marginBottom: 14 }} data-testid="card-portfolio-hero">
-        <div style={{
-          fontSize: 11, color: 'var(--text-secondary)', letterSpacing: 0.6,
-          textTransform: 'uppercase', fontWeight: 600, marginBottom: 6
-        }}>
-          Total Equity
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+          <div style={{
+            fontSize: 11, color: 'var(--text-secondary)', letterSpacing: 0.6,
+            textTransform: 'uppercase', fontWeight: 600,
+          }}>
+            Total Equity
+          </div>
+          {wallet?.aster.onboarded && wallet.aster.usdt > 0 && (
+            <span
+              data-testid="badge-trading-active"
+              style={{
+                fontSize: 10, fontWeight: 600, letterSpacing: 0.4,
+                padding: '3px 8px', borderRadius: 999,
+                background: 'rgba(16, 185, 129, 0.12)',
+                color: '#10b981',
+                border: '1px solid rgba(16, 185, 129, 0.35)',
+                display: 'inline-flex', alignItems: 'center', gap: 5,
+              }}
+            >
+              <span style={{ width: 6, height: 6, borderRadius: 3, background: '#10b981' }} />
+              TRADING ACTIVE
+            </span>
+          )}
         </div>
         <div style={{
           fontSize: 'var(--text-2xl)', fontWeight: 800,
@@ -93,16 +130,20 @@ export default function Portfolio({ userId }: PortfolioProps) {
         }} data-testid="text-portfolio-total">
           ${totalEquity.toFixed(2)}
         </div>
-        <div style={{
-          marginTop: 6, fontSize: 13,
-          color: totalPnl > 0 ? 'var(--green)' : totalPnl < 0 ? 'var(--red)' : 'var(--text-secondary)'
-        }}>
+        <div style={{ marginTop: 6, fontSize: 13, color: pnlColor }}>
           {totalPnl >= 0 ? '+' : ''}${totalPnl.toFixed(2)} lifetime
+          {pctOfEquity !== null && totalPnl !== 0 && (
+            <span style={{ marginLeft: 6, color: pnlColor, opacity: 0.85 }}>
+              ({pctOfEquity >= 0 ? '+' : ''}{pctOfEquity.toFixed(2)}% of equity)
+            </span>
+          )}
           <span style={{ color: 'var(--text-muted)', marginLeft: 8 }}>
             · {trades.length} trades
           </span>
         </div>
       </div>
+        )
+      })()}
 
       {/* Soft amber nudge when Aster is negative — agents pause but the
           page still leads with the headline number, not the warning. */}
@@ -284,16 +325,29 @@ export default function Portfolio({ userId }: PortfolioProps) {
                   )}
                 </div>
               </div>
-              <div style={{
-                fontSize: 14, fontWeight: 600,
-                color: (t.pnl ?? 0) >= 0 ? '#10b981' : '#ef4444'
-              }}>
-                {t.status === 'open' ? (
-                  <span style={{ color: '#64748b', fontSize: 12 }}>Open</span>
-                ) : (
-                  `${(t.pnl ?? 0) >= 0 ? '+' : ''}$${(t.pnl ?? 0).toFixed(2)}`
-                )}
-              </div>
+              {/* Round near-zero PnL (anything within $0.005 of zero, i.e.
+                  pure rounding noise) to a calm muted "$0.00" instead of
+                  painting a green +$0.00 / red -$0.00. The two-cent floor
+                  also catches dust differences from fee math. */}
+              {(() => {
+                const pnl = t.pnl ?? 0
+                const isNearZero = Math.abs(pnl) < 0.005
+                const color = t.status === 'open'
+                  ? '#64748b'
+                  : isNearZero ? 'var(--text-secondary)'
+                  : pnl > 0 ? '#10b981' : '#ef4444'
+                return (
+                  <div style={{ fontSize: 14, fontWeight: 600, color }} data-testid={`text-trade-pnl-${t.id}`}>
+                    {t.status === 'open' ? (
+                      <span style={{ color: '#64748b', fontSize: 12 }}>Open</span>
+                    ) : isNearZero ? (
+                      '$0.00'
+                    ) : (
+                      `${pnl > 0 ? '+' : '-'}$${Math.abs(pnl).toFixed(2)}`
+                    )}
+                  </div>
+                )
+              })()}
             </div>
           ))
         )}

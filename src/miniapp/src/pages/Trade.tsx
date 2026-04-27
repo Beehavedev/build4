@@ -437,21 +437,6 @@ export function Trade() {
         </div>
       )}
 
-      {wallet && onboarded && (
-        <div className="card">
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--text-secondary)' }}>
-            <span>Available margin</span>
-            <span data-testid="text-available-margin" style={{ color: 'var(--text-primary)', fontWeight: 600 }}>
-              {availableMargin.toFixed(2)} USDT
-            </span>
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>
-            <span>Aster wallet</span>
-            <span style={{ color: 'var(--text-primary)' }}>{(wallet.aster.usdt ?? 0).toFixed(2)} USDT</span>
-          </div>
-        </div>
-      )}
-
       {/* Place-order card — visually mirrors the Hyperliquid order ticket
           (LIVE mark in header, coin chip row, large LONG/SHORT buttons,
           numeric leverage input next to size) so a user moving between
@@ -658,6 +643,33 @@ export function Trade() {
           />
         </div>
 
+        {/* Available margin — moved inside this card so the user sees how
+            much they can deploy directly above the Size input, instead of
+            having to scroll back up to a separate balance card. The Aster
+            wallet number underneath shows free USDT in the trading wallet
+            (i.e. capital not currently locked in an open position). */}
+        {wallet && onboarded && (
+          <div
+            style={{
+              background: 'rgba(15, 23, 42, 0.6)',
+              borderRadius: 8,
+              padding: '8px 10px',
+              marginBottom: 10,
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--text-secondary)' }}>
+              <span>Available margin</span>
+              <span data-testid="text-available-margin" style={{ color: 'var(--text-primary)', fontWeight: 600 }}>
+                {availableMargin.toFixed(2)} USDT
+              </span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>
+              <span>Aster wallet</span>
+              <span style={{ color: 'var(--text-secondary)' }}>{(wallet.aster.usdt ?? 0).toFixed(2)} USDT</span>
+            </div>
+          </div>
+        )}
+
         {/* Size + Leverage side-by-side, both numeric — no slider. */}
         <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
           <div style={{ flex: 2 }}>
@@ -834,11 +846,38 @@ export function Trade() {
               {orders.length} working
             </span>
           </div>
-          {ordersErr ? (
-            <div style={{ fontSize: 13, color: '#ef4444', marginTop: 8 }} data-testid="text-orders-err">
-              {ordersErr}
-            </div>
-          ) : orders.length === 0 ? (
+          {ordersErr ? (() => {
+            // The /aster/openOrders endpoint returns "agent not found" when
+            // the user activated their wallet but no on-chain agent has been
+            // assigned to it yet. That is the expected state for a brand-new
+            // account, not a real failure — show it as a calm empty-state
+            // hint with a one-tap shortcut to the Agents tab instead of a
+            // red ERR string. Anything else is treated as a genuine error.
+            const benign = /agent\s*not\s*found|no\s*agent/i.test(ordersErr)
+            if (benign) {
+              return (
+                <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 8 }} data-testid="text-orders-err">
+                  No agent assigned to this account yet.{' '}
+                  <a
+                    href="#"
+                    onClick={(e) => {
+                      e.preventDefault()
+                      window.dispatchEvent(new CustomEvent('b4-nav', { detail: 'agents' }))
+                    }}
+                    data-testid="link-orders-go-agents"
+                    style={{ color: '#a78bfa', textDecoration: 'none' }}
+                  >
+                    Let an agent trade for you →
+                  </a>
+                </div>
+              )
+            }
+            return (
+              <div style={{ fontSize: 13, color: '#ef4444', marginTop: 8 }} data-testid="text-orders-err">
+                {ordersErr}
+              </div>
+            )
+          })() : orders.length === 0 ? (
             <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 8 }} data-testid="text-no-orders">
               No working orders. Limit orders will show here until filled.
             </div>

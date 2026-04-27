@@ -51,6 +51,12 @@
   -webkit-tap-highlight-color: transparent;
 }
 
+html {
+  /* Paint html the same colour as body so an iOS overscroll bounce
+     reveals our background, not the chat thread sitting behind the
+     Telegram WebApp sheet. */
+  background: var(--bg-primary);
+}
 body {
   background: var(--bg-primary);
   color: var(--text-primary);
@@ -59,6 +65,10 @@ body {
   padding: 0;
   min-height: 100vh;
   overflow-x: hidden;
+  /* Stop scroll bounce from peeking through the WebApp sheet into the
+     parent Telegram chat ("oracle test markets on BSC" was bleeding in
+     above our header on iOS overscroll). */
+  overscroll-behavior-y: none;
 }
 
 /* Card — used everywhere */
