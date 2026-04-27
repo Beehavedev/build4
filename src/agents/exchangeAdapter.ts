@@ -156,6 +156,7 @@ export interface HlCloseServices {
   resolveAgentCreds: typeof hlResolveAgentCreds
   placeOrder:        typeof hlPlaceOrder
   getMarkPrice:      typeof hlGetMarkPrice
+  getAccountState:   typeof hlGetAccountState
 }
 
 const realHlOpenServices: HlOpenServices = {
@@ -172,33 +173,38 @@ const realHlCloseServices: HlCloseServices = {
   resolveAgentCreds: hlResolveAgentCreds,
   placeOrder:        hlPlaceOrder,
   getMarkPrice:      hlGetMarkPrice,
+  getAccountState:   hlGetAccountState,
 }
 
 // ── Public entry points ──────────────────────────────────────────────────────
 
 /**
  * Place an OPEN order on whatever venue the agent is configured for.
- * Returns { ok: false, reason: 'mock' } for mock-mode agents so the caller
- * can fall back to its synthetic-fill path.
+ * Strict allowlist — anything outside `aster|hyperliquid|mock` returns
+ * `rejected` rather than silently falling through to Aster (which is
+ * how a typo in `agent.exchange` could route a real HL user's order to
+ * the wrong venue and create a position they never asked for).
+ * Returns { ok: false, reason: 'mock' } for mock-mode agents so the
+ * caller can fall back to its synthetic-fill path.
  */
 export async function executeOpen(input: OpenInput): Promise<OpenResult> {
-  if (input.agent.exchange === 'mock') return { ok: false, reason: 'mock' }
-  if (input.agent.exchange === 'hyperliquid') {
-    return executeOpenHl(input, realHlOpenServices)
-  }
-  return executeOpenAster(input, realAsterOpenServices)
+  const ex = input.agent.exchange
+  if (ex === 'mock')        return { ok: false, reason: 'mock' }
+  if (ex === 'hyperliquid') return executeOpenHl(input, realHlOpenServices)
+  if (ex === 'aster')       return executeOpenAster(input, realAsterOpenServices)
+  return { ok: false, reason: 'rejected', detail: `Unknown exchange: ${ex}` }
 }
 
 /**
  * Close an OPEN position on whatever venue the agent is configured for.
- * Returns { ok: false, reason: 'mock' } for mock-mode agents.
+ * Strict allowlist — same rationale as executeOpen.
  */
 export async function executeClose(input: CloseInput): Promise<CloseResult> {
-  if (input.agent.exchange === 'mock') return { ok: false, reason: 'mock' }
-  if (input.agent.exchange === 'hyperliquid') {
-    return executeCloseHl(input, realHlCloseServices)
-  }
-  return executeCloseAster(input, realAsterCloseServices)
+  const ex = input.agent.exchange
+  if (ex === 'mock')        return { ok: false, reason: 'mock' }
+  if (ex === 'hyperliquid') return executeCloseHl(input, realHlCloseServices)
+  if (ex === 'aster')       return executeCloseAster(input, realAsterCloseServices)
+  return { ok: false, reason: 'rejected', detail: `Unknown exchange: ${ex}` }
 }
 
 // ── Aster: OPEN ──────────────────────────────────────────────────────────────
@@ -484,7 +490,36 @@ export async function executeCloseHl(
   } catch { /* keep fallback */ }
 
   try {
-    const coinUnits = openPos.size / openPos.entryPrice
+    // Reconcile size from the venue, not the DB. We store fillPrice on open
+    // as the post-fill mark (HL's API doesn't give us a true avg fill), so
+    // `openPos.size / openPos.entryPrice` can drift from the actual `szi`
+    // by a few bps of slippage. Closing with the drifted number leaves
+    // dust on the venue while the DB marks the trade fully closed —
+    // exactly the "DB says closed but HL still has exposure" failure
+    // mode. Asking HL is one extra read but pays for itself the first
+    // time it prevents a stuck-position incident.
+    const targetCoin = openPos.pair.toUpperCase().replace(/USDT?$/, '').replace(/-USD$/, '')
+    let coinUnits = openPos.size / openPos.entryPrice
+    try {
+      const acct = await services.getAccountState(userAddress)
+      const venuePos = acct.positions?.find(
+        (p: any) => String(p.coin ?? '').toUpperCase() === targetCoin,
+      )
+      const sziAbs = venuePos ? Math.abs(Number(venuePos.szi ?? 0)) : 0
+      if (!venuePos || sziAbs === 0) {
+        // Already closed externally (manual close, liquidation, etc.).
+        // Treat as a successful close — the DB just needs to catch up.
+        console.warn(`[Agent ${agent.name}] HL ${openPos.pair} already flat on venue; marking closed`)
+        return { ok: true, exitPrice }
+      }
+      coinUnits = sziAbs
+    } catch (acctErr: any) {
+      // Best-effort reconcile — if the account read fails we still try
+      // the close with our DB-derived size. reduceOnly bounds the damage
+      // (we can never over-close into a flip).
+      console.warn(`[Agent ${agent.name}] HL position reconcile failed (${acctErr?.message ?? acctErr}); using DB size`)
+    }
+
     // Submit OPPOSITE side as a reduce-only market order. HL's placeOrder
     // sets `r:true` from reduceOnly so the order can only shrink the
     // position — never accidentally flip it.
@@ -499,6 +534,13 @@ export async function executeCloseHl(
     if (!result.success) {
       console.error(`[Agent ${agent.name}] HL close failed: ${result.error}`)
       return { ok: false, reason: 'rejected', detail: result.error ?? 'placeOrder failed' }
+    }
+    // Mirror the OPEN path: success without an oid means HL accepted the
+    // request envelope but didn't book a real order. Don't mark the DB
+    // closed on a phantom — let the next tick retry.
+    if (!result.oid) {
+      console.error(`[Agent ${agent.name}] HL close returned success without oid; treating as rejected`)
+      return { ok: false, reason: 'rejected', detail: 'HL accepted close request but produced no order id' }
     }
     return { ok: true, exitPrice }
   } catch (closeErr: any) {

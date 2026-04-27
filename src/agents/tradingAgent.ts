@@ -1770,8 +1770,19 @@ If you would not put real money in this trade right now, action = HOLD.`
           await saveMemory(agent.id, 'correction',
             `Order execution failed for ${pair} ${side}: ${execResult.detail ?? 'unknown'}`, null)
           return
+        } else if (execResult.reason === 'no-creds' && agent.exchange !== 'mock') {
+          // Live venue but the user's agent credentials aren't on file
+          // (e.g. handshake half-finished, encryption key rotated). Falling
+          // through to a synthetic fill would create a phantom DB position
+          // the user can never close on the real exchange. Skip and wait
+          // for the next tick — onboarding flow will repair the creds.
+          console.warn(
+            `[Agent ${agent.name}] Skipping ${pair} ${side} — no execution credentials for ${agent.exchange}`
+          )
+          continue
         }
-        // reason === 'mock' or 'no-creds' → fall through with synthetic fill
+        // reason === 'mock' (or 'no-creds' on a mock-mode agent) → fall
+        // through with a synthetic fill so paper-trading still works.
         // ─────────────────────────────────────────────────────────────────
 
         const trade = await db.trade.create({

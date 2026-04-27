@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  executeOpen,      executeClose,
   executeOpenAster, executeCloseAster,
   executeOpenHl,    executeCloseHl,
   type AsterOpenServices, type AsterCloseServices,
@@ -404,11 +405,19 @@ test('executeOpenHl skips brackets when decision has no SL/TP', async () => {
 
 // ─── Hyperliquid: CLOSE ──────────────────────────────────────────────────────
 
+// Default account-state stub: returns one matching position so the close
+// path exercises the venue-reconcile branch. Tests that need different
+// behavior (account-throws, already-flat) override this.
+const hlAcctOk = async (_addr: string) => ({
+  positions: [{ coin: 'BTC', szi: 0.02 }],
+}) as any
+
 test('executeCloseHl returns no-creds when resolveAgentCreds returns null', async () => {
   const svc: HlCloseServices = {
     resolveAgentCreds: async () => null,
     placeOrder:        async () => ({ success: true, oid: 1 }),
     getMarkPrice:      async () => ({ markPrice: 50_000 }),
+    getAccountState:   hlAcctOk,
   }
   const r = await executeCloseHl(closeInput({ agent: hlAgent }), svc)
   assert.deepEqual(r, { ok: false, reason: 'no-creds' })
@@ -420,6 +429,7 @@ test('executeCloseHl submits OPPOSITE side as reduce-only', async () => {
     resolveAgentCreds: async () => fakeHlCreds,
     placeOrder:        async (_c, args) => { placedArgs = args; return { success: true, oid: 99 } },
     getMarkPrice:      async () => ({ markPrice: 51_000 }),
+    getAccountState:   hlAcctOk,
   }
   const r = await executeCloseHl(closeInput({ agent: hlAgent }), svc)
   assert.equal(r.ok, true)
@@ -435,6 +445,7 @@ test('executeCloseHl inverts SHORT to LONG for close', async () => {
     resolveAgentCreds: async () => fakeHlCreds,
     placeOrder:        async (_c, args) => { placedArgs = args; return { success: true, oid: 1 } },
     getMarkPrice:      async () => ({ markPrice: 50_000 }),
+    getAccountState:   async () => ({ positions: [{ coin: 'ETH', szi: -50 }] }) as any,
   }
   await executeCloseHl(
     closeInput({ agent: hlAgent, openPos: { id: 't2', pair: 'ETHUSDT', side: 'SHORT', entryPrice: 3_000, size: 50 } }),
@@ -449,6 +460,7 @@ test('executeCloseHl surfaces placeOrder failure as rejected', async () => {
     resolveAgentCreds: async () => fakeHlCreds,
     placeOrder:        async () => ({ success: false, error: 'Insufficient margin' }),
     getMarkPrice:      async () => ({ markPrice: 50_000 }),
+    getAccountState:   hlAcctOk,
   }
   const r = await executeCloseHl(closeInput({ agent: hlAgent }), svc)
   assert.equal(r.ok, false)
@@ -463,8 +475,121 @@ test('executeCloseHl uses fallbackPrice when getMarkPrice fails', async () => {
     resolveAgentCreds: async () => fakeHlCreds,
     placeOrder:        async () => ({ success: true, oid: 1 }),
     getMarkPrice:      async () => { throw new Error('mark rpc down') },
+    getAccountState:   hlAcctOk,
   }
   const r = await executeCloseHl(closeInput({ agent: hlAgent, fallbackPrice: 48_888 }), svc)
   assert.equal(r.ok, true)
   if (r.ok) assert.equal(r.exitPrice, 48_888)
+})
+
+// ── New: architect follow-ups ────────────────────────────────────────────────
+
+test('executeCloseHl uses venue szi (not DB size) when reconcile succeeds', async () => {
+  let placedSz: number | null = null
+  const svc: HlCloseServices = {
+    resolveAgentCreds: async () => fakeHlCreds,
+    placeOrder:        async (_c, args) => { placedSz = args.sz; return { success: true, oid: 7 } },
+    getMarkPrice:      async () => ({ markPrice: 50_000 }),
+    // DB thinks 0.02 BTC; venue actually has 0.0195 (2.5% slippage on entry).
+    // Reconcile must use venue value to avoid leaving dust.
+    getAccountState:   async () => ({ positions: [{ coin: 'BTC', szi: 0.0195 }] }) as any,
+  }
+  await executeCloseHl(
+    closeInput({ agent: hlAgent, openPos: { id: 't', pair: 'BTCUSDT', side: 'LONG', entryPrice: 50_000, size: 1_000 } }),
+    svc,
+  )
+  assert.equal(placedSz, 0.0195, 'close size must come from venue szi, not DB-derived')
+})
+
+test('executeCloseHl returns ok without placing order when venue is already flat', async () => {
+  let placeCalled = false
+  const svc: HlCloseServices = {
+    resolveAgentCreds: async () => fakeHlCreds,
+    placeOrder:        async () => { placeCalled = true; return { success: true, oid: 1 } },
+    getMarkPrice:      async () => ({ markPrice: 50_000 }),
+    getAccountState:   async () => ({ positions: [] }) as any, // already closed externally
+  }
+  const r = await executeCloseHl(closeInput({ agent: hlAgent }), svc)
+  assert.equal(r.ok, true, 'already-flat is a successful close — DB just catches up')
+  assert.equal(placeCalled, false, 'must NOT submit an order when there is nothing to close')
+})
+
+test('executeCloseHl falls back to DB size when account state throws', async () => {
+  let placedSz: number | null = null
+  const svc: HlCloseServices = {
+    resolveAgentCreds: async () => fakeHlCreds,
+    placeOrder:        async (_c, args) => { placedSz = args.sz; return { success: true, oid: 1 } },
+    getMarkPrice:      async () => ({ markPrice: 50_000 }),
+    getAccountState:   async () => { throw new Error('rpc 503') },
+  }
+  await executeCloseHl(
+    closeInput({ agent: hlAgent, openPos: { id: 't', pair: 'BTCUSDT', side: 'LONG', entryPrice: 50_000, size: 1_000 } }),
+    svc,
+  )
+  // 1000 USD notional / 50000 entry = 0.02 BTC
+  assert.equal(placedSz, 0.02, 'best-effort fallback to DB-derived size when reconcile is unreachable')
+})
+
+test('executeCloseHl returns rejected when placeOrder returns success without oid', async () => {
+  const svc: HlCloseServices = {
+    resolveAgentCreds: async () => fakeHlCreds,
+    placeOrder:        async () => ({ success: true /* no oid */ }) as any,
+    getMarkPrice:      async () => ({ markPrice: 50_000 }),
+    getAccountState:   hlAcctOk,
+  }
+  const r = await executeCloseHl(closeInput({ agent: hlAgent }), svc)
+  assert.equal(r.ok, false, 'phantom acceptance must NOT mark the DB closed')
+  if (!r.ok) {
+    assert.equal(r.reason, 'rejected')
+    assert.match(r.detail ?? '', /no order id/i)
+  }
+})
+
+// ── Strict dispatch (executeOpen / executeClose entry points) ────────────────
+
+test('executeOpen returns rejected for unknown exchange (no silent Aster fallthrough)', async () => {
+  const r = await executeOpen({
+    agent:        { id: 'a', name: 'Agent', exchange: 'binance' as string }, // typo'd venue
+    dbUser:       baseUser as any,
+    userAddress:  '0xuser',
+    side:         'LONG',
+    pair:         'BTCUSDT',
+    finalSize:    100,
+    currentPrice: 50_000,
+    decision:     {},
+  })
+  assert.equal(r.ok, false)
+  if (!r.ok) {
+    assert.equal(r.reason, 'rejected', 'unknown exchange must hard-reject, never default to Aster')
+    assert.match(r.detail ?? '', /Unknown exchange.*binance/i)
+  }
+})
+
+test('executeClose returns rejected for unknown exchange (no silent Aster fallthrough)', async () => {
+  const r = await executeClose({
+    agent:        { id: 'a', name: 'Agent', exchange: 'binance' as string },
+    dbUser:       baseUser as any,
+    userAddress:  '0xuser',
+    openPos:      { id: 't', pair: 'BTCUSDT', side: 'LONG', entryPrice: 50_000, size: 1_000 },
+    fallbackPrice: 50_000,
+  })
+  assert.equal(r.ok, false)
+  if (!r.ok) {
+    assert.equal(r.reason, 'rejected')
+    assert.match(r.detail ?? '', /Unknown exchange.*binance/i)
+  }
+})
+
+test('executeOpen returns mock for mock-mode agents (paper-trading fallthrough)', async () => {
+  const r = await executeOpen({
+    agent:        { id: 'a', name: 'Agent', exchange: 'mock' as string },
+    dbUser:       baseUser as any,
+    userAddress:  '0xuser',
+    side:         'LONG',
+    pair:         'BTCUSDT',
+    finalSize:    100,
+    currentPrice: 50_000,
+    decision:     {},
+  })
+  assert.deepEqual(r, { ok: false, reason: 'mock' })
 })
