@@ -53,6 +53,14 @@ model User {
   hyperliquidAgentTradingEnabled Boolean @default(true)
   pinHash           String?   // PBKDF2 hash of user's wallet PIN (optional security layer)
   pinSalt           String?
+  // 42.space prediction-market live trading opt-in. Default true — all
+  // 42.space trades execute on-chain on BSC. Read by isUserLiveOptedIn()
+  // in src/services/fortyTwoExecutor.ts and the /api/me/predictions-mode
+  // endpoint. MUST stay in sync with prisma/schema.prisma — Render's build
+  // runs `prisma db push --schema=src/prisma/schema.prisma`, so any field
+  // missing here never reaches the production DB and every read of it
+  // throws `column "fortyTwoLiveTrade" does not exist`.
+  fortyTwoLiveTrade Boolean   @default(true)
   // Multi-provider swarm decision-making opt-in (Task #18). Default false →
   // single-provider Anthropic. When true, every trading tick is run across
   // all configured providers and the quorum verdict wins.
