@@ -42,6 +42,15 @@ model User {
   // first failed transfer attempt; never cleared automatically (HL doesn't
   // let users leave unified mode mid-stream so once true, always true).
   hyperliquidUnified          Boolean @default(false)
+  // ── Per-venue agent-trading allow flags (added 2026-04-27) ───────────────
+  // User-controlled "my agents are allowed to place trades on this venue".
+  // Independent from the *Onboarded flags (which mean "user has connected
+  // the venue") — a user can be onboarded on Hyperliquid but choose to
+  // pause all HL agent activity without disconnecting. Default true so
+  // existing users keep their current behaviour after the migration.
+  // Consumed by ACTIVE_AGENTS_FILTER's per-row gate in src/agents/runner.ts.
+  asterAgentTradingEnabled       Boolean @default(true)
+  hyperliquidAgentTradingEnabled Boolean @default(true)
   pinHash           String?   // PBKDF2 hash of user's wallet PIN (optional security layer)
   pinSalt           String?
   // Multi-provider swarm decision-making opt-in (Task #18). Default false →
