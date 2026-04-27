@@ -243,7 +243,7 @@ PREDICTION-MARKET SIDECAR (optional, set predictionTrade only when justified):
 
 For HOLD: set entryZone/stopLoss/takeProfit/size/leverage/riskRewardRatio to null. Use holdReason to explain what would change your mind.`
 
-function buildMarketContext(
+export function buildMarketContext(
   ohlcv15m: OHLCV,
   ohlcv1h: OHLCV,
   ohlcv4h: OHLCV,
@@ -314,7 +314,7 @@ ${formatRecentCandles(ohlcv15m, 5)}`
 
 // Compact momentum context for new listings — uses 1m + 5m candles since
 // fresh pairs lack enough history for hourly/daily indicators.
-function buildMomentumContext(
+export function buildMomentumContext(
   ohlcv1m: OHLCV,
   ohlcv5m: OHLCV,
   pair: string,
