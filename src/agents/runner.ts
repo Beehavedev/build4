@@ -334,8 +334,20 @@ export const ACTIVE_AGENTS_FILTER = {
 
 async function runAllAgents() {
   try {
+    // Pull the per-user venue allow flags alongside the agent rows so we
+    // can gate dispatch on `User.{aster|hyperliquid}AgentTradingEnabled`
+    // without an N+1 round-trip per agent. Selecting only the booleans
+    // keeps the per-row payload tiny on the 9k+ agents table.
     const activeAgents = await db.agent.findMany({
       where: ACTIVE_AGENTS_FILTER,
+      include: {
+        user: {
+          select: {
+            asterAgentTradingEnabled: true,
+            hyperliquidAgentTradingEnabled: true,
+          },
+        },
+      },
     })
 
     if (activeAgents.length === 0) {
@@ -347,11 +359,25 @@ async function runAllAgents() {
     const tickStart = Date.now()
     let dispatched = 0
     let skippedInflight = 0
+    let skippedVenueDisabled = 0
 
     for (let i = 0; i < activeAgents.length; i += TICK_BATCH_SIZE) {
       const batch = activeAgents.slice(i, i + TICK_BATCH_SIZE)
 
       for (const agent of batch) {
+        // Per-venue allow check: a user can pause "all my Hyperliquid
+        // agents" via the platform allow-list in the mini-app without
+        // having to flip every individual isActive switch. Done in JS
+        // (not the WHERE clause) because the gate is venue-specific —
+        // the boolean to consult depends on agent.exchange.
+        const venueAllowed =
+          (agent.exchange === 'aster'       && agent.user?.asterAgentTradingEnabled       !== false) ||
+          (agent.exchange === 'hyperliquid' && agent.user?.hyperliquidAgentTradingEnabled !== false) ||
+          (agent.exchange !== 'aster' && agent.exchange !== 'hyperliquid')
+        if (!venueAllowed) {
+          skippedVenueDisabled++
+          continue
+        }
         if (runningAgents.has(agent.id)) {
           skippedInflight++
           continue
@@ -359,7 +385,10 @@ async function runAllAgents() {
         runningAgents.add(agent.id)
         // Fire-and-forget — we don't await individual ticks, only the
         // inter-batch gap. This bounds peak concurrency to TICK_BATCH_SIZE.
-        runAgentTick(agent)
+        // Strip the synthetic `user` join before passing to runAgentTick
+        // since downstream code expects a plain Agent row.
+        const { user: _u, ...plainAgent } = agent as any
+        runAgentTick(plainAgent)
           .catch((err) => console.error(`[Runner] Agent ${agent.name} error:`, err?.message ?? err))
           .finally(() => runningAgents.delete(agent.id))
         dispatched++
@@ -372,7 +401,7 @@ async function runAllAgents() {
     }
 
     const elapsed = ((Date.now() - tickStart) / 1000).toFixed(1)
-    console.log(`[Runner] Dispatched ${dispatched} ticks in ${elapsed}s (${skippedInflight} skipped — still in flight from previous tick)`)
+    console.log(`[Runner] Dispatched ${dispatched} ticks in ${elapsed}s (${skippedInflight} skipped — still in flight from previous tick, ${skippedVenueDisabled} skipped — venue paused by user)`)
   } catch (err) {
     console.error('[Runner] Error fetching agents:', err)
   }

@@ -40,6 +40,14 @@ model User {
   hyperliquidAgentAddress     String?
   hyperliquidAgentEncryptedPK String?
   hyperliquidOnboarded        Boolean @default(false)
+  // ── Per-venue agent-trading allow flags (added 2026-04-27) ───────────────
+  // User-controlled "my agents are allowed to place trades on this venue".
+  // Independent from onboarded flags (which mean "user has connected the
+  // venue") — a user can be onboarded on Hyperliquid but choose to pause
+  // all HL agent activity without disconnecting. Default true so existing
+  // users keep their current behaviour after the migration.
+  asterAgentTradingEnabled       Boolean @default(true)
+  hyperliquidAgentTradingEnabled Boolean @default(true)
   pinHash           String?   // PBKDF2 hash of user's wallet PIN (optional security layer)
   pinSalt           String?
   // 42.space prediction-market live trading opt-in. Default true — all

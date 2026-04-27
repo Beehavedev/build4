@@ -3715,6 +3715,91 @@ app.get('/api/me/predictions-mode', requireTgUser, async (req, res) => {
   }
 })
 
+// ─── /api/me/venue-permissions ────────────────────────────────────────────
+// Per-user "my agents are allowed to trade on this platform" allow-list.
+// Reads/writes the three boolean gates that govern whether the runner
+// dispatches an agent's tick to the venue's executor:
+//   - aster       → User.asterAgentTradingEnabled
+//   - hyperliquid → User.hyperliquidAgentTradingEnabled
+//   - fortytwo    → User.fortyTwoLiveTrade (existing — same flag the
+//                   /api/me/predictions-mode endpoint manages, exposed
+//                   here too so the mini-app can read all three states
+//                   in a single round-trip)
+// The flags are independent of the *Onboarded flags. A user can be
+// onboarded on Hyperliquid but choose to pause HL trading without
+// disconnecting; the runner skips dispatch silently.
+app.get('/api/me/venue-permissions', requireTgUser, async (req, res) => {
+  const user = (req as any).user
+  if (!user?.id) return res.status(401).json({ ok: false, error: 'unauthorized' })
+  try {
+    const u = await db.user.findUnique({
+      where: { id: user.id },
+      select: {
+        asterAgentTradingEnabled: true,
+        hyperliquidAgentTradingEnabled: true,
+        fortyTwoLiveTrade: true,
+        asterOnboarded: true,
+        hyperliquidOnboarded: true,
+      },
+    })
+    if (!u) return res.status(404).json({ ok: false, error: 'user not found' })
+    res.json({
+      ok: true,
+      permissions: {
+        aster:       !!u.asterAgentTradingEnabled,
+        hyperliquid: !!u.hyperliquidAgentTradingEnabled,
+        fortytwo:    !!u.fortyTwoLiveTrade,
+      },
+      onboarded: {
+        aster:       !!u.asterOnboarded,
+        hyperliquid: !!u.hyperliquidOnboarded,
+        // 42.space requires no per-user onboarding — anyone with a wallet
+        // can trade on-chain prediction markets — so it's always "ready".
+        fortytwo:    true,
+      },
+    })
+  } catch (err) {
+    console.error('[API] /me/venue-permissions GET failed:', err)
+    res.status(500).json({ ok: false, error: 'lookup failed' })
+  }
+})
+
+app.post('/api/me/venue-permissions', requireTgUser, async (req, res) => {
+  const user = (req as any).user
+  if (!user?.id) return res.status(401).json({ ok: false, error: 'unauthorized' })
+  // Body is intentionally strict — never silently flip a user into LIVE
+  // mode (especially for 42.space) due to a missing or coerced field.
+  const venue = req.body?.venue
+  const enabled = req.body?.enabled
+  if (venue !== 'aster' && venue !== 'hyperliquid' && venue !== 'fortytwo') {
+    return res.status(400).json({ ok: false, error: 'venue must be aster | hyperliquid | fortytwo' })
+  }
+  if (typeof enabled !== 'boolean') {
+    return res.status(400).json({ ok: false, error: 'enabled must be boolean' })
+  }
+  try {
+    if (venue === 'fortytwo') {
+      // Reuse the existing executor helper so the same audit trail and
+      // any side-effects (e.g. paper→live state initialisation) fire
+      // regardless of which endpoint the user used to flip the switch.
+      const { setUserLiveOptIn } = await import('./services/fortyTwoExecutor')
+      await setUserLiveOptIn(user.id, enabled)
+    } else {
+      const field = venue === 'aster'
+        ? 'asterAgentTradingEnabled'
+        : 'hyperliquidAgentTradingEnabled'
+      await db.user.update({
+        where: { id: user.id },
+        data: { [field]: enabled },
+      })
+    }
+    res.json({ ok: true, venue, enabled })
+  } catch (err) {
+    console.error('[API] /me/venue-permissions POST failed:', err)
+    res.status(500).json({ ok: false, error: 'update failed' })
+  }
+})
+
 app.post('/api/me/predictions-mode', requireTgUser, async (req, res) => {
   const user = (req as any).user
   if (!user?.id) return res.status(401).json({ ok: false, error: 'unauthorized' })
