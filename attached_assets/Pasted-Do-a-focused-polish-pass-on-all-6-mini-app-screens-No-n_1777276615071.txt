@@ -1,0 +1,52 @@
+Do a focused polish pass on all 6 mini-app screens. No new features — just fix the visual hierarchy, remove error states shown as UI, and make every screen feel intentional. Here's exactly what to fix per screen:
+AGENTS TAB
+The "ticker unavailable for AUTOUSDT" amber banner is an internal error leaking into the UI. Fix the root cause: agents set to AUTO mode don't have a single ticker — they scan multiple. The ticker display row should either show "Scanning BTC · ETH · SOL · BNB" or be hidden entirely when mode is AUTO. Never show "unavailable" to the user.
+The "Open chart · AUTO" button should be hidden when mode is AUTO — there's no single chart to open.
+The LAST / 24H% / 24H H / 24H L / 24H VOL row with all dashes should be hidden when mode is AUTO. It's noise. Show it only for single-ticker agents.
+Clean agent card final result:
+┌─────────────────────────────────┐
+│  BTPredict              ● ON   │
+│  Aster · AUTO — scanning 8 pairs│
+│                                  │
+│  PnL +$0.00  Win 0%  Trades 0   │
+│  Max $100 · Loss/day $50 · 5x   │
+│                                  │
+│  ● Active · next tick ~45s       │
+│  [Configure ···]                 │
+└─────────────────────────────────┘
+TRADE TAB
+This is your best screen — minimal changes:
+
+"No agent found" in red under Open Orders is an error state. Change to muted gray: "No agent assigned to this account"
+Add a subtle "Let an agent trade for you →" link that goes to Agents tab
+The LONG button green is perfect. Keep it.
+Move "Available margin: 9.39 USDT" to be inside the Place Order card, directly above the size input — users need to see their balance when sizing a trade
+
+WALLET TAB
+The $B4 Holder Link section and Bridge section are important but visually competing equally with Move USDT. Apply visual hierarchy:
+Primary action (Move USDT) — full card, current style ✓
+Secondary sections — reduce visual weight:
+$B4 HOLDER LINK                    ›
+Prove ownership for airdrop snapshot
+
+BRIDGE                             ›  
+Move funds cross-chain
+Collapsed by default, tap to expand. They don't need to be fully open on every load.
+PORTFOLIO TAB
+This is actually good. Three small fixes:
+
+The red PnL chart going from -0.01 to $-0.02 on two trades is technically correct but visually alarming for a $0.02 loss. Add context: show the loss as a % of equity. "
+-0.02 · -0.1% of equity" immediately reframes it as noise, not a problem.
+Trade History: SOL LONG showing "$-0.00" is confusing — round to "$0.00" and show in white not red when the value is effectively zero
+Add "● Trading active" badge to the TOTAL EQUITY card, not just the balances row
+
+GLOBAL FIXES — apply everywhere:
+
+Navigation bar: you now have 7 tabs (Home, Agents, Trade, Wallet, Portfolio, Predict, Admin). 7 tabs is too many and Admin should never be in the user nav. Move Admin to the ··· menu in the top right corner. This frees up space and makes the nav cleaner.
+Tab labels: shorten to fit — "Predict" is good, keep it. All labels should be one word.
+The top banner "oracle test markets on BSC" showing through above the header — that needs a proper background mask so it doesn't bleed through on scroll.
+Typography consistency: agent names (BTPredict, BNT) should be the same size and weight across all screens. Currently they look different sizes between Agents tab and other references.
+Empty states: replace every instance of "$0.00" in red with "$0.00" in white/muted when there are zero trades. Red means loss. Zero is neutral.
+
+The one thing that will make the biggest difference: remove Admin from the nav bar and fix the AUTOUSDT error. Those two changes alone make the app look 40% more professional immediately.
+Type-check clean. No new features. Polish only.
