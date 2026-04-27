@@ -19,7 +19,9 @@ import {
   formatRecentCandles,
   OHLCV
 } from './indicators'
-import { buildMemoryContext, saveMemory } from './memory'
+import { buildMemoryContext, getRecentMemories, saveMemory } from './memory'
+import { getSharedMarketScan } from './marketScan'
+import { shouldVetoOnMemory, applyDrawdownSizeCut } from './perAgentOverlays'
 
 // Wrap agentLog.create so that a stale Prisma client (one missing the new
 // pair/adx/rsi/score/regime/reason/price columns, e.g. on a Render box that
@@ -1333,14 +1335,102 @@ If you would not put real money in this trade right now, action = HOLD.`
       ).catch(() => [])
       const swarmOn = swarmRows[0]?.swarmEnabled === true
 
+      // Phase 1B: route the LLM call through the shared market scan so
+      // every agent tracking this pair shares one inference per tick
+      // instead of paying N times. The shared scan is intentionally
+      // generic — it never sees per-agent state. Per-agent overlays
+      // (CLOSE intent, memory veto, drawdown cut, leverage default)
+      // are applied deterministically AFTER the scan resolves.
       try {
-        const sysPrompt = isNewListingPair ? NEW_LISTING_SYSTEM_PROMPT : TRADING_SYSTEM_PROMPT
-        const llmResult = await runDecisionLLM(swarmOn, sysPrompt, userMessage)
-        decision = llmResult.decision
-        rawResponse = llmResult.rawResponse
-        providersTelemetry = llmResult.providersTelemetry
+        const scan = await getSharedMarketScan(
+          {
+            pair,
+            mode: isNewListingPair ? 'momentum' : 'standard',
+            ...(isNewListingPair
+              ? { momentumOhlcv: momentumOhlcv ?? undefined }
+              : { ohlcv: ohlcv ?? undefined }),
+            fundingRate,
+          },
+          {
+            swarmOn,
+            // News + prediction context are shared across every agent on
+            // this pair within the cache TTL — these fetchers only fire
+            // on the first cache miss for this (pair, mode, tick).
+            fetchNewsBlock: async () => newsContext,
+            fetchPredictionBlock: async () => predictionContext,
+          },
+        )
+        decision = scan.decision
+        rawResponse = scan.rawResponse
+        providersTelemetry = scan.providersTelemetry
+
+        // ── Per-agent overlay 1: CLOSE intent ────────────────────────
+        // The shared scan downgrades CLOSE → HOLD because closing is
+        // per-agent (depends on whether *this* agent holds the
+        // position). Re-promote here when the LLM's true verdict was
+        // "exit this market" AND we actually have a position to close.
+        // The existing CLOSE handler at L1820 takes it from there.
+        if (
+          scan.sharedActionRaw === 'CLOSE' &&
+          openPositions.some((p) => p.pair === pair)
+        ) {
+          decision = { ...decision, action: 'CLOSE', holdReason: null }
+        }
+
+        // ── Per-agent overlay 2: memory veto ─────────────────────────
+        // The shared scan never sees agent memory. Block a fresh OPEN
+        // if we lost on this exact pair + side within the lookback
+        // window (default 48h). Cheap protection against repeating the
+        // same mistake — and a deterministic stand-in for the memory
+        // weighting the LLM used to do per-agent.
+        if (decision.action === 'OPEN_LONG' || decision.action === 'OPEN_SHORT') {
+          const proposedSide = decision.action === 'OPEN_LONG' ? 'LONG' : 'SHORT'
+          const recentMems = await getRecentMemories(agent.id, 30).catch(() => [])
+          const vetoed = shouldVetoOnMemory({
+            memories: recentMems.map((m) => ({
+              type: m.type,
+              content: m.content,
+              createdAt: m.createdAt,
+            })),
+            pair,
+            side: proposedSide,
+            nowMs: Date.now(),
+          })
+          if (vetoed) {
+            console.log(
+              `[Agent ${agent.name}] Memory veto: recent ${proposedSide} loss on ${pair} within 48h`
+            )
+            decision = {
+              ...decision,
+              action: 'HOLD',
+              holdReason: `Skipping repeat ${proposedSide} on ${pair} — recent loss in last 48h.`,
+            }
+          }
+        }
+
+        // ── Per-agent overlay 3: drawdown size cut ───────────────────
+        // The shared scan doesn't know this agent's recent PnL. Mirror
+        // the previous LLM-instructed 50% cut when the last two trades
+        // were losses. Mutating kellySize here flows naturally into the
+        // existing sizer at L1619 (Math.min(decision.size ?? kellySize,
+        // kellySize)).
+        kellySize = applyDrawdownSizeCut({ kellySize, lastTwoLosses })
+
+        // ── Per-agent overlay 4: leverage default ────────────────────
+        // The shared scan returns leverage=null. The downstream clamp
+        // at L1578 falls back to `?? 1` — a literal 1x for OPEN signals,
+        // which would silently sandbag every shared-scan trade. Default
+        // to the agent's max so the clamp behaves as a no-op for
+        // shared-scan callers (matching the original LLM behaviour
+        // where the LLM was told the cap and almost always picked it).
+        if (
+          (decision.action === 'OPEN_LONG' || decision.action === 'OPEN_SHORT') &&
+          decision.leverage == null
+        ) {
+          decision.leverage = agent.maxLeverage
+        }
       } catch (aiErr) {
-        console.error(`[Agent ${agent.name}] LLM error:`, aiErr)
+        console.error(`[Agent ${agent.name}] Shared scan failed:`, aiErr)
         await safeAgentLogCreate({
           data: {
             agentId: agent.id,
