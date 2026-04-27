@@ -1516,10 +1516,23 @@ function MyPositionsList({
           ? `${avgFillPct.toFixed(2)}¢`
           : `${avgFillPct.toFixed(0)}¢`
         const isEstimate = p.outcomeTokenAmount === null
-        const maxPayout = tokens
-        // Bottom-left "payout" line:
-        //  - terminal states (resolved/closed/claimed) show the locked-in payoutUsdt
-        //  - open positions show "pays up to $X if wins" so the claimable upside is obvious
+        // Bottom-left "payout" line. We deliberately do NOT show a
+        // pre-resolution upside estimate here. 42.space outcome tokens
+        // redeem at the curve-implied resolution price, not 1:1 with USDT,
+        // so "tokens × $1" is wrong by the same factor as the curve's
+        // implied probability. We only ever surface money figures that
+        // come from on-chain truth (the receipt's USDT Transfer to the
+        // user wallet); for everything else we say so plainly.
+        let payoutLabel: string
+        if (p.payoutUsdt !== null) {
+          payoutLabel = `payout $${p.payoutUsdt.toFixed(2)}`
+        } else if (p.status === 'resolved_win') {
+          payoutLabel = 'won — claim to settle'
+        } else if (p.status === 'resolved_loss') {
+          payoutLabel = 'lost'
+        } else {
+          payoutLabel = `${tokens.toFixed(2)} tokens`
+        }
         return (
           <div
             key={p.id}
@@ -1563,9 +1576,7 @@ function MyPositionsList({
               <span
                 data-testid={`text-payout-${p.id}`}
                 style={{ fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace' }}>
-                {p.payoutUsdt !== null
-                  ? `payout $${p.payoutUsdt.toFixed(2)}`
-                  : `pays up to $${maxPayout.toFixed(2)} if wins`}
+                {payoutLabel}
               </span>
               <span style={{ color: pnlColor, fontWeight: 700,
                              fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace' }}
@@ -1660,7 +1671,11 @@ function MyPositionsList({
                       border: '1px solid #10b981', color: 'white',
                       cursor: busyId ? 'wait' : 'pointer',
                     }}>
-                    {busy ? 'Claiming…' : `Claim $${(p.payoutUsdt ?? 0).toFixed(2)}`}
+                    {busy
+                      ? 'Claiming…'
+                      : p.payoutUsdt !== null
+                        ? `Claim $${p.payoutUsdt.toFixed(2)}`
+                        : 'Claim winnings'}
                   </button>
                 )}
               </div>
