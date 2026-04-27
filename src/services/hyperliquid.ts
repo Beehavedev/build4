@@ -752,6 +752,49 @@ export async function placeStopLoss(
     noBuilder?:  boolean
   },
 ): Promise<{ success: boolean; oid?: number; error?: string }> {
+  return placeTriggerOrder(creds, { ...args, kind: 'sl' })
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Take-profit trigger order
+//
+// Mirrors `placeStopLoss` but with `tpsl: 'tp'`. HL has no single bracket
+// call (no equivalent of Aster's `placeBracketOrders`) so an agent that
+// wants both SL and TP must submit two independent trigger orders. Both
+// are reduce-only, so whichever fires first closes the position and the
+// other becomes a no-op (HL gracefully rejects a reduce-only order with
+// no position to reduce).
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function placeTakeProfit(
+  creds: HyperliquidCredentials,
+  args: {
+    coin:        string
+    /** Side of the OPEN position. We submit the opposite side as a close. */
+    side:        'LONG' | 'SHORT'
+    sz:          number
+    triggerPx:   number
+    noBuilder?:  boolean
+  },
+): Promise<{ success: boolean; oid?: number; error?: string }> {
+  return placeTriggerOrder(creds, { ...args, kind: 'tp' })
+}
+
+// Internal — both SL and TP are identical except for the `tpsl` field. HL
+// uses that field to decide which side of mark to wait on (sl ⇒ adverse,
+// tp ⇒ favorable) and the order itself is the opposite of the position.
+async function placeTriggerOrder(
+  creds: HyperliquidCredentials,
+  args: {
+    coin:        string
+    side:        'LONG' | 'SHORT'
+    sz:          number
+    triggerPx:   number
+    kind:        'sl' | 'tp'
+    noBuilder?:  boolean
+  },
+): Promise<{ success: boolean; oid?: number; error?: string }> {
+  const label = args.kind === 'sl' ? 'placeStopLoss' : 'placeTakeProfit'
   try {
     const client = exchangeClientFor(creds)
     const sym = args.coin.toUpperCase().replace(/USDT?$/, '').replace(/-USD$/, '')
@@ -761,14 +804,14 @@ export async function placeStopLoss(
     if (assetIdx < 0) return { success: false, error: `Unknown coin ${sym}` }
 
     const szDecimals = (meta.universe[assetIdx] as any)?.szDecimals ?? 4
-    // For a stop-MARKET the `p` field is just a reference price the SDK
-    // requires — the actual fill happens at market once `triggerPx` is
+    // For a stop-MARKET / tp-MARKET the `p` field is a reference price the
+    // SDK requires — the actual fill happens at market once `triggerPx` is
     // reached. Use the trigger price itself, formatted to HL's tick rules.
     const pxStr  = formatHlPrice(args.triggerPx, szDecimals)
     const trgStr = formatHlPrice(args.triggerPx, szDecimals)
     const szStr  = formatHlSize(args.sz, szDecimals)
     if (Number(szStr) <= 0) {
-      return { success: false, error: `SL size rounds to 0 at szDecimals=${szDecimals}` }
+      return { success: false, error: `${args.kind.toUpperCase()} size rounds to 0 at szDecimals=${szDecimals}` }
     }
 
     // OPPOSITE side of the open position — SELL to close LONG, BUY to
@@ -783,7 +826,7 @@ export async function placeStopLoss(
         p: pxStr,
         s: szStr,
         r: true,
-        t: { trigger: { isMarket: true, triggerPx: trgStr, tpsl: 'sl' } },
+        t: { trigger: { isMarket: true, triggerPx: trgStr, tpsl: args.kind } },
       }],
       grouping: 'na',
     }
@@ -797,9 +840,9 @@ export async function placeStopLoss(
     }
     return { success: true, oid: status?.resting?.oid ?? status?.filled?.oid }
   } catch (err: any) {
-    const msg = err?.response?.data ?? err?.message ?? 'placeStopLoss failed'
+    const msg = err?.response?.data ?? err?.message ?? `${label} failed`
     console.error(
-      `[HL] placeStopLoss failed user=${creds.userAddress} → ` +
+      `[HL] ${label} failed user=${creds.userAddress} → ` +
       `${typeof msg === 'string' ? msg : JSON.stringify(msg)}`,
     )
     return { success: false, error: typeof msg === 'string' ? msg : JSON.stringify(msg) }

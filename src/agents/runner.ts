@@ -309,19 +309,33 @@ function startNewsMonitor() {
 const TICK_BATCH_SIZE   = 50
 const TICK_BATCH_GAP_MS = 1_000
 
+// Filter at the DB level: only tick agents whose owner has onboarded to
+// AT LEAST ONE supported venue. Agents created during onboarding but
+// never activated would otherwise burn 1 LLM call/min forever. With
+// 9k+ agents and Claude pricing, that's the difference between $200/day
+// and $200k/day. The OR covers both venues — a user who only finished
+// the Hyperliquid handshake should still have their HL-targeting agents
+// tick (and vice versa for Aster). Per-venue execution dispatch happens
+// inside `executeOpen` / `executeClose` based on `agent.exchange`.
+//
+// Exported so a structural test can guard the shape against future
+// regressions (e.g. someone tightening it back to Aster-only and
+// silently locking out HL traffic).
+export const ACTIVE_AGENTS_FILTER = {
+  isActive: true,
+  isPaused: false,
+  user: {
+    OR: [
+      { asterOnboarded:        true },
+      { hyperliquidOnboarded:  true },
+    ],
+  },
+} as const
+
 async function runAllAgents() {
   try {
-    // Filter at the DB level: only tick agents whose owner has actually
-    // onboarded to Aster. Agents created during onboarding but never
-    // activated by depositing USDT would otherwise burn 1 LLM call/min
-    // forever. With 9k+ agents and Claude pricing, that's the difference
-    // between $200/day and $200k/day.
     const activeAgents = await db.agent.findMany({
-      where: {
-        isActive: true,
-        isPaused: false,
-        user: { asterOnboarded: true }
-      }
+      where: ACTIVE_AGENTS_FILTER,
     })
 
     if (activeAgents.length === 0) {
