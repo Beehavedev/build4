@@ -82,44 +82,62 @@ function pushTurn(chatId: number, role: 'user' | 'assistant', content: string) {
 // these deterministically — no LLM round-trip — is faster, free, and
 // resilient to LLM downtime / rate limits.
 
-type Intent = 'wallet' | 'positions' | 'portfolio'
+export type Intent = 'wallet' | 'positions' | 'portfolio'
 
+// All intent patterns require a first-person ownership cue ("my", "i",
+// "i'm", "me") so we don't hijack generic chat. Without this guard,
+// "what's your position on this token?" would route to /tradestatus and
+// "trade history of BTC" would route to /portfolio.
 const INTENT_PATTERNS: Array<{ intent: Intent; rx: RegExp }> = [
-  // BALANCE / WALLET / FUNDS
-  // Matches: "balance", "my balance", "what's my balance", "wallet",
-  // "how much do i have", "how much usdt", "funds", "deposit address",
-  // "what's in my wallet", "show me my wallet", "money".
+  // BALANCE / WALLET / FUNDS — must be account-scoped.
+  // Matches: "my balance", "what's my balance", "show me my wallet",
+  //          "how much do i have", "how much usdt do i have", "my funds".
+  // Rejects: "balance sheet", "wallet integration", "how much is btc".
   {
     intent: 'wallet',
-    rx: /\b(balance|balances|wallet|funds?|deposit\s+address|how\s+much\s+(do\s+i\s+have|usdt|usdc|bnb|money)|what(?:'s|\s+is)?\s+(in\s+)?my\s+wallet|show\s+(me\s+)?(my\s+)?(wallet|balance|funds?))\b/i,
+    rx: /\b(?:(?:my|me|i)\s+(?:balance|balances|wallet|funds?))\b|\b(?:what(?:'s|\s+is)?\s+(?:in\s+)?my\s+(?:wallet|balance|funds?))\b|\b(?:show\s+(?:me\s+)?my\s+(?:wallet|balance|funds?))\b|\b(?:how\s+much\s+(?:do\s+i\s+have|(?:usdt|usdc|bnb|money)\s+do\s+i))\b|\b(?:my\s+deposit\s+address)\b/i,
   },
 
-  // POSITIONS / OPEN TRADES
-  // Matches: "positions", "open positions", "open trades", "what trades",
-  // "what am i in", "what's open", "any positions", "my positions",
-  // "current trades", "what i'm holding", "what i'm in".
+  // POSITIONS / OPEN TRADES — must be account-scoped.
+  // Matches: "my positions", "open positions", "show me my open trades",
+  //          "what am i in", "any open positions", "what i'm holding".
+  // Rejects: "what's your position on this token", "trade ideas",
+  //          "what trades should I take", "open a position" (action verb).
   {
     intent: 'positions',
-    rx: /\b(positions?|open\s+(trades?|positions?)|current\s+(trades?|positions?)|what\s+(trades?|am\s+i\s+in|i'?m\s+(in|holding))|what'?s\s+open|any\s+(open\s+)?(trades?|positions?)|show\s+(me\s+)?(my\s+)?(positions?|trades?|open))\b/i,
+    // Note the negative lookahead `(?!\s+history)` on "my trade(s)" —
+    // without it "my trade history" gets hijacked away from /portfolio.
+    rx: /\b(?:my\s+(?:open\s+)?(?:positions?|trades?))\b(?!\s+history)|\b(?:open\s+(?:positions?|trades?))\b(?!\s+(?:on|for|in|a))|\b(?:any\s+open\s+(?:positions?|trades?))\b|\b(?:current\s+(?:positions?|trades?))\b|\b(?:what\s+am\s+i\s+(?:in|holding|trading))\b|\b(?:what(?:'s|\s+is)?\s+open)\b|\b(?:what(?:'?m|\s+am)\s+i\s+(?:in|holding))\b|\b(?:show\s+(?:me\s+)?my\s+(?:positions?|trades?|open))\b/i,
   },
 
-  // PORTFOLIO / PNL / PERFORMANCE / HISTORY
-  // Matches: "portfolio", "pnl", "p&l", "performance", "trade history",
-  // "how am i doing", "how's my (portfolio|day|week)", "win rate",
-  // "winnings", "wins", "losses", "results".
+  // PORTFOLIO / PNL / PERFORMANCE / HISTORY — must be account-scoped.
+  // Matches: "my portfolio", "my pnl", "my p&l", "my trade history",
+  //          "how am i doing", "how's my portfolio/day/week/trading",
+  //          "my win rate", "my results", "my performance".
+  // Rejects: "trade history of btc", "performance of solana",
+  //          "history of doge", "results of the airdrop".
   {
     intent: 'portfolio',
-    rx: /\b(portfolio|pnl|p\s*&\s*l|p\/l|profit\s*(and|&|\/)\s*loss|performance|trade\s+history|history|how\s+am\s+i\s+doing|how'?s\s+(my\s+)?(portfolio|day|week|trading|trades?)|win\s*rate|winnings?|wins\s+(and|&)\s+losses|results)\b/i,
+    rx: /\b(?:my\s+(?:portfolio|pnl|p\s*&\s*l|p\/l|profit\s*(?:and|&|\/)\s*loss|performance|trade\s+history|history|win\s*rate|winnings?|results))\b|\b(?:how\s+am\s+i\s+(?:doing|trading))\b|\b(?:how(?:'s|\s+is)?\s+my\s+(?:portfolio|day|week|trading|trades?))\b/i,
   },
 ]
 
-function detectIntent(text: string): Intent | null {
+export function detectIntent(text: string): Intent | null {
   const t = text.trim()
   if (!t || t.length > 200) return null
   for (const { intent, rx } of INTENT_PATTERNS) {
     if (rx.test(t)) return intent
   }
   return null
+}
+
+// In group chats, account-scoped data (wallet, positions, portfolio) is
+// PRIVATE and must never be posted publicly. Even if the user themselves
+// asks in the group, replying inline would expose their financial data
+// to everyone watching. The polite answer is "ask me in DM".
+export function isGroupChat(ctx: Context): boolean {
+  const t = ctx.chat?.type
+  return t === 'group' || t === 'supergroup'
 }
 
 async function runIntent(ctx: Context, intent: Intent): Promise<void> {
@@ -170,6 +188,23 @@ export async function handleLlmMessage(ctx: Context): Promise<boolean> {
   // of a "type /wallet" suggestion.
   const intent = detectIntent(text)
   if (intent) {
+    // Privacy guard: never post a user's balance, positions, or
+    // portfolio in a group chat — even if THEY asked. Other people are
+    // watching. Politely steer them to DM.
+    if (isGroupChat(ctx)) {
+      const me = await ctx.api.getMe().catch(() => null)
+      const dmHandle = me?.username ? `@${me.username}` : 'me in a DM'
+      await ctx
+        .reply(
+          `🔒 Your account info is private — please ask ${dmHandle} in a Direct Message and I'll show you right away.`,
+          { reply_parameters: { message_id: ctx.message!.message_id } },
+        )
+        .catch(() => {})
+      console.log(
+        `[NLIntent] BLOCKED in group chat=${chatId} user=${userId} intent=${intent}`,
+      )
+      return true
+    }
     try {
       await runIntent(ctx, intent)
       console.log(
