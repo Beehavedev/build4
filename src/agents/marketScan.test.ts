@@ -101,6 +101,42 @@ test('getSharedMarketScan caches by (pair, mode) for TTL', async () => {
   assert.equal(counters.hits, 1)
 })
 
+// ─── Cache key separation across swarmOn ─────────────────────────────────────
+// Regression guard for the bug where the first caller's swarm preference
+// silently determined the verdict for every other agent on the same pair.
+// (pair, mode) alone is NOT a sufficient cache key — swarmOn must also
+// participate, so a swarm caller and a solo caller on the same pair each
+// get their own LLM call.
+test('cache key separates swarmOn=true from swarmOn=false on the same pair', async () => {
+  _resetMarketScanCacheForTest({ ttlMs: 60_000 })
+  const llm = makeStubLLM()
+
+  const swarmDeps: MarketScanDeps = {
+    runLLM: llm.stub,
+    fetchNewsBlock: async () => '',
+    fetchPredictionBlock: async () => '',
+    swarmOn: true,
+  }
+  const soloDeps: MarketScanDeps = {
+    runLLM: llm.stub,
+    fetchNewsBlock: async () => '',
+    fetchPredictionBlock: async () => '',
+    swarmOn: false,
+  }
+
+  await getSharedMarketScan(inputs('BTCUSDT'), swarmDeps)
+  await getSharedMarketScan(inputs('BTCUSDT'), soloDeps)
+  // Repeat each — should each hit their own bucket and not refire the LLM.
+  await getSharedMarketScan(inputs('BTCUSDT'), swarmDeps)
+  await getSharedMarketScan(inputs('BTCUSDT'), soloDeps)
+
+  assert.equal(
+    llm.getCalls(),
+    2,
+    'swarm and solo callers must each get their own LLM call — and each is then cached within its own bucket',
+  )
+})
+
 // ─── Different pairs do not collide ──────────────────────────────────────────
 test('different pairs each get their own LLM call', async () => {
   _resetMarketScanCacheForTest()

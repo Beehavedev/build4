@@ -403,7 +403,15 @@ export async function getSharedMarketScan(
 ): Promise<MarketScan> {
   const now = deps.now ?? Date.now
   const pair = canonicalPair(inputs.pair)
-  const key = `${pair}:${inputs.mode}`
+  // Cache key includes swarmOn because the LLM call path differs (swarm
+  // multi-provider quorum vs single-provider Anthropic). Without this,
+  // the first caller's swarm preference would silently determine the
+  // verdict for every other agent on this pair within the TTL — a
+  // cross-user consistency bug. With it, dedupe still works perfectly
+  // within each (pair, mode, swarmOn) bucket, which is the right
+  // granularity (at most 2x cache entries per pair).
+  const swarmOn = deps.swarmOn ?? true
+  const key = `${pair}:${inputs.mode}:${swarmOn ? 'swarm' : 'solo'}`
 
   const existing = scanCache.get(key)
   if (existing) {
@@ -484,7 +492,9 @@ export function peekOrLaunchScan(
 ): Promise<MarketScan> {
   const now = deps.now ?? Date.now
   const pair = canonicalPair(inputs.pair)
-  const key = `${pair}:${inputs.mode}`
+  // Same cache key shape as getSharedMarketScan — see comment there.
+  const swarmOn = deps.swarmOn ?? true
+  const key = `${pair}:${inputs.mode}:${swarmOn ? 'swarm' : 'solo'}`
   const existing = scanCache.get(key)
   if (existing) {
     if (
