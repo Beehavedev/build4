@@ -94,6 +94,22 @@ function canonicalPair(pair: string): string {
   return (pair ?? '').replace(/[\/\s]/g, '').toUpperCase()
 }
 
+// Sentinel wrapper used to mark errors that came out of the LLM call
+// (provider timeout, upstream 5xx, quota, circuit-breaker). Only these
+// are eligible for the negative-cache cooldown. Local errors —
+// validation, contract violations, OHLCV missing, programmer bugs —
+// MUST surface immediately on every call so they can be debugged
+// instead of being suppressed for 10s and obscuring the root cause.
+class LLMScanError extends Error {
+  readonly cause: unknown
+  constructor(cause: unknown) {
+    const msg = cause instanceof Error ? cause.message : String(cause)
+    super(msg)
+    this.name = 'LLMScanError'
+    this.cause = cause
+  }
+}
+
 // In-memory counters for observability via /scanstats admin endpoint (to be
 // added). hits = served from cache, misses = LLM call actually fired,
 // dedupes = concurrent caller awaited an in-flight promise instead of
@@ -147,6 +163,26 @@ export interface MarketScanInputs {
   fundingRate?: number
 }
 
+// The shared scan's decision is narrower than a per-agent AgentDecision:
+//   action: never CLOSE (closing is a per-agent call — it depends on
+//           whether *that* agent holds a position on this pair). CLOSE
+//           is preserved on `sharedActionRaw` instead.
+//   size/leverage: always null (filled by the agent layer from Kelly
+//           tier + agent.maxLeverage clamp).
+// Encoding these invariants in the type prevents the per-agent layer
+// from accidentally trusting a CLOSE that the runtime would never emit,
+// and stops a future contributor from silently letting a non-null
+// size/leverage leak through prompt drift.
+export type SharedAction = 'OPEN_LONG' | 'OPEN_SHORT' | 'HOLD'
+export type SharedMarketDecision = Omit<
+  AgentDecision,
+  'action' | 'size' | 'leverage'
+> & {
+  action: SharedAction
+  size: null
+  leverage: null
+}
+
 export interface MarketScan {
   pair: string
   mode: ScanMode
@@ -159,14 +195,9 @@ export interface MarketScan {
     adx: number
     regime: string
   }
-  // Generic market verdict from the LLM. size/leverage are intentionally
-  // null — the agent layer fills them from the user's Kelly tier and the
-  // agent's maxLeverage. decision.action ∈ {OPEN_LONG, OPEN_SHORT, HOLD};
-  // CLOSE was downgraded to HOLD here (closing is per-agent and depends on
-  // whether *that* agent holds a position). The original action — including
-  // CLOSE — is preserved in `sharedActionRaw` below so the per-agent layer
-  // can make a real exit decision instead of staring at an empty HOLD.
-  decision: AgentDecision
+  // Generic market verdict from the LLM. See SharedMarketDecision above
+  // for the runtime invariants the type encodes.
+  decision: SharedMarketDecision
   // The action the LLM actually returned, before our CLOSE→HOLD safety
   // downgrade. The agent layer reads this when deciding whether to close
   // an existing position; e.g. if sharedActionRaw==='CLOSE' AND the agent
@@ -411,15 +442,32 @@ export async function getSharedMarketScan(
       return scan
     },
     (err: unknown) => {
-      // Promote in-flight → negative. Subsequent calls inside the cooldown
-      // get the cached error without firing the LLM again.
-      const e = err instanceof Error ? err : new Error(String(err))
-      scanCache.set(key, {
-        kind: 'negative',
-        expiresAt: now() + FAILURE_COOLDOWN_MS,
-        cachedError: e,
-      })
-      throw e
+      // Only LLM/provider failures earn a negative-cache cooldown.
+      // Local failures (validation, missing OHLCV, programmer bugs)
+      // simply evict the in-flight entry so the next call re-runs and
+      // either reproduces the bug for debugging or recovers if the
+      // caller fixed its inputs. Without this guard, a bad input on a
+      // hot pair would suppress all scans for that pair for 10s and
+      // hide the root cause.
+      const isLLMError = err instanceof LLMScanError
+      const underlying = isLLMError
+        ? (err as LLMScanError).cause instanceof Error
+          ? ((err as LLMScanError).cause as Error)
+          : new Error(String((err as LLMScanError).cause))
+        : err instanceof Error
+          ? err
+          : new Error(String(err))
+      if (isLLMError) {
+        scanCache.set(key, {
+          kind: 'negative',
+          expiresAt: now() + FAILURE_COOLDOWN_MS,
+          cachedError: underlying,
+        })
+      } else {
+        // Local error: evict so the next call retries immediately.
+        scanCache.delete(key)
+      }
+      throw underlying
     },
   )
   scanCache.set(key, { kind: 'inflight', promise })
@@ -492,7 +540,16 @@ async function runMarketScan(
 
   const swarmOn = deps.swarmOn ?? true
   const runLLM = deps.runLLM ?? runDecisionLLM
-  const llmResult = await runLLM(swarmOn, sysPrompt, userMessage)
+  // Wrap the LLM call only — local validation/contract errors above and
+  // the response-shaping below are NOT eligible for the negative-cache
+  // cooldown. Anything thrown out of the provider call is a candidate
+  // for retry-storm protection; anything else surfaces immediately.
+  let llmResult: Awaited<ReturnType<typeof runDecisionLLM>>
+  try {
+    llmResult = await runLLM(swarmOn, sysPrompt, userMessage)
+  } catch (e) {
+    throw new LLMScanError(e)
+  }
 
   // Capture the raw action BEFORE any downgrade, so the per-agent layer
   // can act on a CLOSE signal when that agent actually holds a position
@@ -501,25 +558,23 @@ async function runMarketScan(
   // sit through a breakdown.
   const sharedActionRaw: AgentDecision['action'] = llmResult.decision.action
 
-  // Defensive: enforce the size/leverage = null contract regardless of
-  // what the model returned. Cheap insurance against prompt drift.
-  const decision: AgentDecision = {
+  // Defensive: enforce the size/leverage = null AND no-CLOSE contract
+  // regardless of what the model returned. Cheap insurance against prompt
+  // drift; the SharedMarketDecision type encodes the same invariants at
+  // compile time so per-agent code can pattern-match safely.
+  const baseAction: SharedAction =
+    llmResult.decision.action === 'CLOSE' ? 'HOLD' : llmResult.decision.action
+  const decision: SharedMarketDecision = {
     ...llmResult.decision,
     pair: inputs.pair,
+    action: baseAction,
     size: null,
     leverage: null,
-    // The decision.action surface stays {OPEN_LONG, OPEN_SHORT, HOLD} —
-    // CLOSE is preserved on `sharedActionRaw` for per-agent exit logic
-    // but downgraded here so callers that don't yet read sharedActionRaw
-    // (e.g. existing AgentLog writers) get a safe default.
-    ...(llmResult.decision.action === 'CLOSE'
-      ? {
-          action: 'HOLD' as const,
-          holdReason:
-            llmResult.decision.holdReason ??
-            'Shared scan downgraded CLOSE → HOLD; per-agent layer decides exits via sharedActionRaw.',
-        }
-      : {}),
+    holdReason:
+      llmResult.decision.action === 'CLOSE'
+        ? (llmResult.decision.holdReason ??
+          'Shared scan downgraded CLOSE → HOLD; per-agent layer decides exits via sharedActionRaw.')
+        : llmResult.decision.holdReason,
   }
 
   return {

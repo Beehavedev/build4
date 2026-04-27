@@ -350,3 +350,74 @@ test('returned decision.pair is always the requested pair, regardless of LLM out
   const r = await getSharedMarketScan(inputs('SOLUSDT'), deps(llm))
   assert.equal(r.decision.pair, 'SOLUSDT')
 })
+
+// ─── narrow-action contract enforced at runtime ──────────────────────────────
+test('decision.action is never CLOSE — always {OPEN_LONG, OPEN_SHORT, HOLD}', async () => {
+  _resetMarketScanCacheForTest()
+  // Even if the LLM returns CLOSE for some reason, the shared decision
+  // surface MUST narrow it to HOLD. Per-agent layer reads sharedActionRaw
+  // for the true verdict.
+  const llm = makeStubLLM({ action: 'CLOSE' })
+  const r = await getSharedMarketScan(inputs('BTCUSDT'), deps(llm))
+
+  const ok = r.decision.action === 'OPEN_LONG' ||
+             r.decision.action === 'OPEN_SHORT' ||
+             r.decision.action === 'HOLD'
+  assert.ok(ok, `decision.action must be in narrowed set, got ${r.decision.action}`)
+  assert.equal(r.decision.size, null, 'decision.size must be null per contract')
+  assert.equal(r.decision.leverage, null, 'decision.leverage must be null per contract')
+})
+
+// ─── local errors are NOT negative-cached ────────────────────────────────────
+test('local errors (not from the LLM call) are NOT negative-cached', async () => {
+  _resetMarketScanCacheForTest({ failureCooldownMs: 60_000 })
+
+  // We simulate a non-LLM failure by injecting a fetchPredictionBlock
+  // that throws synchronously — production catches its rejection and
+  // returns '', but a synchronous throw inside the call expression
+  // bubbles up before the .catch() can attach. This proves the
+  // negative-cache is gated on LLMScanError specifically.
+  let llmCalls = 0
+  const localFailingDeps: MarketScanDeps = {
+    runLLM: async () => {
+      llmCalls += 1
+      return {
+        decision: {
+          regime: 'UPTREND', setupScore: 6,
+          timeframeAlignment: { '4h': 'BULLISH', '1h': 'BULLISH', '15m': 'BULLISH', volume: 'CONFIRMING' },
+          action: 'HOLD', pair: 'BTCUSDT',
+          entryZone: null, stopLoss: null, takeProfit: null,
+          size: null, leverage: null, riskRewardRatio: null,
+          confidence: 0.5, reasoning: 'r', keyRisks: [],
+          memoryUpdate: null, drawdownMode: false, holdReason: 'h',
+        } satisfies AgentDecision,
+        rawResponse: '{}',
+        providersTelemetry: null,
+      }
+    },
+    fetchNewsBlock: async () => '',
+    fetchPredictionBlock: (() => {
+      // Synchronous throw — bypasses the .catch() that wraps the call.
+      throw new Error('local prediction-fetch bug')
+    }) as MarketScanDeps['fetchPredictionBlock'],
+    swarmOn: false,
+  }
+
+  // First call: local error bubbles up.
+  await assert.rejects(
+    () => getSharedMarketScan(inputs('BTCUSDT'), localFailingDeps),
+    /local prediction-fetch bug/,
+  )
+  assert.equal(llmCalls, 0, 'LLM not reached because local error fires first')
+
+  // Replace the bad dep with a working one. If the previous failure had
+  // been negative-cached, this would re-throw the cached error for the
+  // full 60s cooldown. With local-error eviction it must succeed.
+  const goodDeps: MarketScanDeps = {
+    ...localFailingDeps,
+    fetchPredictionBlock: async () => '',
+  }
+  const r = await getSharedMarketScan(inputs('BTCUSDT'), goodDeps)
+  assert.equal(r.decision.action, 'HOLD', 'second call must succeed — local error must not have poisoned the cache')
+  assert.equal(llmCalls, 1, 'LLM fires exactly once on the recovery call')
+})
