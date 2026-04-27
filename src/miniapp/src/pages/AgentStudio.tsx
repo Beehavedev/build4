@@ -153,12 +153,20 @@ export default function AgentStudio(_props: AgentStudioProps) {
     return <div style={{ paddingTop: 60, textAlign: 'center', color: '#64748b' }}>Loading agents...</div>
   }
 
+  // Set of venues the user already has at least one agent on. Used to
+  // suppress the "connect in Wallet" hint for venues that already have
+  // a working agent — the onboarded flag in the DB lags reality for some
+  // legacy users, so the presence of a real agent row is a stronger
+  // signal that setup is effectively done.
+  const venuesWithAgent = new Set<string>(agents.map(a => venueOf(a.exchange)))
+
   // Render a single platform allow-list row. Toggling a venue enables /
   // disables agent trading on it for THIS user, regardless of how many
   // agents the user has — toggles are permissions, not per-agent groups.
   const renderVenueRow = (v: VenueConfig) => {
     const enabled = perms ? perms[v.id] : false
     const isOnboarded = onboarded ? onboarded[v.id] : false
+    const hasAgentHere = venuesWithAgent.has(v.id)
     const busy = busyVenue === v.id
     // Always interactive once permissions have loaded — even if not yet
     // onboarded. Flipping ON without onboarding is harmless (the runner
@@ -199,9 +207,13 @@ export default function AgentStudio(_props: AgentStudioProps) {
           </div>
           <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
             {v.sub}
-            {!isOnboarded && v.id !== 'fortytwo' && (
+            {/* Hint suppressed when the user already has an agent on this
+                venue — a working agent is a stronger signal than the DB
+                flag, which can lag for legacy users. Only nudge truly
+                unconnected venues. */}
+            {!isOnboarded && !hasAgentHere && v.id !== 'fortytwo' && (
               <span style={{ color: '#f59e0b' }}>
-                {' · '}finish setup in <span style={{ fontWeight: 600 }}>Wallet</span> to start
+                {' · '}open <span style={{ fontWeight: 600 }}>Wallet</span> tab and connect {v.label} to start
               </span>
             )}
           </div>
