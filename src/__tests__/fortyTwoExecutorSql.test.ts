@@ -403,9 +403,11 @@ test('settleResolvedPositions SELECT with both opts binds [agentId, userId] in t
 // ── settleResolvedPositions: UPDATE clause when a position resolves ──────
 test('settleResolvedPositions UPDATE writes status, exitPrice, payoutUsdt, pnl with [status, exitPrice, payout, pnl, id]', async () => {
   // Mock the on-chain read so we drive the function past the SELECT and into
-  // the per-position UPDATE. The market is finalised and the position wins
-  // → 1 USDT redemption per token; with 4 outcome tokens & usdtIn=2, that's
-  // payout=4 and pnl=2.
+  // the per-position UPDATE. The market is finalised and the position wins.
+  // For wins we deliberately leave payoutUsdt and pnl NULL — the actual
+  // amount is only known when the user claims and the on-chain receipt is
+  // parsed. The previous behaviour (1:1 token→USDT estimate) was wrong
+  // because 42.space outcome tokens redeem at the curve-implied price.
   const pos = stubPosition({
     id: 'pos_win', tokenId: 1, usdtIn: 2, entryPrice: 0.5, outcomeTokenAmount: 4,
   })
@@ -433,7 +435,7 @@ test('settleResolvedPositions UPDATE writes status, exitPrice, payoutUsdt, pnl w
     assert.match(n, /pnl\s*=\s*\$4/i)
     assert.match(n, /"closedAt"\s*=\s*NOW\(\)/i, 'closedAt always set to NOW(), not from a parameter')
     assert.match(n, /WHERE\s+id\s*=\s*\$5/i)
-    assert.deepEqual(update.params, ['resolved_win', 1, 4, 2, 'pos_win'])
+    assert.deepEqual(update.params, ['resolved_win', 1, null, null, 'pos_win'])
   } finally {
     spy.restore()
     restore()
