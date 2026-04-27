@@ -22,6 +22,7 @@ import {
 import { buildMemoryContext, getRecentMemories, saveMemory } from './memory'
 import { getSharedMarketScan } from './marketScan'
 import { shouldVetoOnMemory, applyDrawdownSizeCut } from './perAgentOverlays'
+import { executeOpen, executeClose, isLiveVenueRejection } from './exchangeAdapter'
 
 // Wrap agentLog.create so that a stale Prisma client (one missing the new
 // pair/adx/rsi/score/regime/reason/price columns, e.g. on a Render box that
@@ -942,33 +943,38 @@ export async function runAgentTick(agent: Agent): Promise<void> {
         const allOpen = await db.trade.findMany({
           where: { agentId: agent.id, status: 'open' }
         })
+        // Hoist the user lookup out of the per-position loop — N positions
+        // used to mean N identical user/wallet queries; one is enough.
+        const dbUserEmerg = await db.user.findUnique({
+          where: { id: agent.userId },
+          include: { wallets: { where: { isActive: true }, take: 1 } }
+        })
+        const userAddrEmerg = dbUserEmerg?.wallets?.[0]?.address ?? ''
+        let emergFailed = 0
         for (const pos of allOpen) {
           try {
-            const { closePosition: asterClose, getMarkPrice } = await import('../services/aster')
-            const dbUser = await db.user.findUnique({
-              where: { id: agent.userId },
-              include: { wallets: { where: { isActive: true }, take: 1 } }
+            const closeResult = await executeClose({
+              agent,
+              dbUser:        dbUserEmerg,
+              userAddress:   userAddrEmerg,
+              openPos:       pos as any,
+              fallbackPrice: pos.entryPrice,  // adapter tries getMarkPrice internally
             })
-            const userAddr = dbUser?.wallets?.[0]?.address ?? ''
-            const { resolveAgentCreds } = await import('../services/aster')
-            const creds = dbUser ? await resolveAgentCreds(dbUser, userAddr) : null
-            let exitPx = pos.entryPrice
-            try {
-              const mp = await getMarkPrice(pos.pair)
-              exitPx = mp.markPrice
-            } catch {}
-            if (creds && agent.exchange !== 'mock') {
-              const sym = pos.pair.replace('/', '')
-              const contractSize = parseFloat((pos.size / pos.entryPrice).toFixed(6))
-              try {
-                // closePosition signature: (symbol, side, size, creds).
-                // It internally inverts side ('LONG' -> SELL, 'SHORT' -> BUY)
-                // and sets reduceOnly=true, so pass the position side as-is.
-                await asterClose(sym, pos.side as 'LONG' | 'SHORT', contractSize, creds)
-              } catch (e: any) {
-                console.error(`[Agent ${agent.name}] Aster close failed in emergency:`, e?.message)
-              }
+            if (!closeResult.ok && isLiveVenueRejection(closeResult, agent.exchange)) {
+              // Venue did NOT execute the emergency close. We can't lie
+              // about it being closed — leaving the row open lets the
+              // next emergency tick (or the next news event) retry, and
+              // ensures the user's UI keeps showing real exposure.
+              emergFailed++
+              const reason = closeResult.reason
+              const detail = closeResult.detail ? ` — ${closeResult.detail}` : ''
+              console.warn(
+                `[Agent ${agent.name}] Emergency close FAILED on ${agent.exchange} for trade ${pos.id} ` +
+                `(${reason})${detail}; leaving DB row OPEN`
+              )
+              continue
             }
+            const exitPx = closeResult.ok ? closeResult.exitPrice : pos.entryPrice
             const dirMult = pos.side === 'LONG' ? 1 : -1
             const pnl = ((exitPx - pos.entryPrice) / pos.entryPrice) * pos.size * pos.leverage * dirMult
             await db.trade.update({
@@ -976,16 +982,21 @@ export async function runAgentTick(agent: Agent): Promise<void> {
               data: { status: 'closed', exitPrice: exitPx, pnl, closedAt: new Date() }
             })
           } catch (e: any) {
+            emergFailed++
             console.error(`[Agent ${agent.name}] Emergency close error on trade ${pos.id}:`, e?.message)
           }
         }
+        const emergClosed = allOpen.length - emergFailed
         const _bot2 = getBot()
         if (_bot2 && telegramId) {
           _bot2.api
             .sendMessage(
               telegramId,
-              `🚨 *EMERGENCY: ${escapeMd(agent.name)} closed ${allOpen.length} position(s)*\n\n` +
+              `🚨 *EMERGENCY: ${escapeMd(agent.name)} closed ${emergClosed} of ${allOpen.length} position(s)*\n\n` +
                 `Breaking: ${newsSignal.topHeadline}\n\n` +
+                (emergFailed > 0
+                  ? `${emergFailed} position(s) could not be closed and will be retried automatically.\n\n`
+                  : '') +
                 `Protecting your funds from news impact.`,
               { parse_mode: 'Markdown' }
             )
@@ -997,7 +1008,8 @@ export async function runAgentTick(agent: Agent): Promise<void> {
             userId: agent.userId,
             action: 'EMERGENCY_CLOSE',
             parsedAction: 'CLOSE',
-            executionResult: `Closed ${allOpen.length} positions on news`,
+            executionResult: `Closed ${emergClosed} of ${allOpen.length} positions on news` +
+              (emergFailed > 0 ? ` (${emergFailed} pending retry)` : ''),
             pair,
             reason: newsSignal.topHeadline.slice(0, 240),
             score: newsSignal.score
@@ -1738,141 +1750,60 @@ If you would not put real money in this trade right now, action = HOLD.`
           ? ohlcv['15m'].close[ohlcv['15m'].close.length - 1]
           : snapshot.price
 
-        // ── Real Aster execution ──────────────────────────────────────────
+        // ── Per-exchange execution (see src/agents/exchangeAdapter.ts) ────
+        // The adapter dispatches to Aster or Hyperliquid based on
+        // `agent.exchange`, runs venue-specific pre-flight (balance check,
+        // builder-fee fallback, no-agent-found self-heal), and returns
+        // the unified { fillPrice, orderIdStr } shape. We fall through
+        // with a synthetic fill for mock-mode agents and for users
+        // missing creds for their selected venue (preserves prior
+        // behaviour: a phantom paper trade rather than a hard error).
         let fillPrice = currentPrice
         let orderIdStr = 'mock_' + Date.now()
 
-        // Build EIP-712 credentials for this user
         const dbUser = await db.user.findUnique({
           where: { id: agent.userId },
           include: { wallets: { where: { isActive: true }, take: 1 } }
         })
         const userAddress = dbUser?.wallets?.[0]?.address ?? ''
-        const { resolveAgentCreds } = await import('../services/aster')
-        const creds = dbUser ? await resolveAgentCreds(dbUser, userAddress) : null
 
-        if (creds && agent.exchange !== 'mock') {
-          try {
-            // ── Pre-flight balance check — never open a new position with
-            // a negative or zero Aster balance. Realized losses, funding,
-            // or commission can drag walletBalance below 0 and any further
-            // OPEN order will be rejected by Aster anyway. Closing existing
-            // positions is unaffected (this branch only runs for OPEN_*).
-            const { getAccountBalanceStrict } = await import('../services/aster')
-            try {
-              const bal = await getAccountBalanceStrict(creds)
-              const asterBalance = bal.usdt
-              if (asterBalance <= 0) {
-                console.log(`[Agent ${agent.name}] Skipping ${pair} ${side} — negative Aster balance: ${asterBalance.toFixed(4)} USDT`)
-                continue
-              }
-            } catch (balErr: any) {
-              // If the balance check itself fails (RPC down, not onboarded
-              // yet, etc.) we let the order attempt proceed — Aster will
-              // reject it with a clearer error than we can synthesize here.
-              console.warn(`[Agent ${agent.name}] Balance pre-check failed (${balErr?.message}), proceeding anyway`)
-            }
-
-            const { placeOrder, placeOrderWithBuilderCode, placeBracketOrders } = await import('../services/aster')
-            const sym = pair.replace(/[\/\s]/g, '').toUpperCase()
-            const qty = parseFloat((finalSize / currentPrice).toFixed(6))
-
-            const builderAddress = process.env.ASTER_BUILDER_ADDRESS
-            const feeRate        = process.env.ASTER_BUILDER_FEE_RATE ?? '0.0001'
-
-            let result
-            if (builderAddress && dbUser?.asterOnboarded) {
-              // ── Builder route (fee attribution to your wallet) ─────────
-              result = await placeOrderWithBuilderCode({
-                symbol:         sym,
-                side:           side === 'LONG' ? 'BUY' : 'SELL',
-                type:           'MARKET',
-                quantity:       qty,
-                builderAddress,
-                feeRate,
-                creds
-              })
-            } else {
-              // ── Standard v3 route (no builder fee) ────────────────────
-              result = await placeOrder({
-                symbol:   sym,
-                side:     side === 'LONG' ? 'BUY' : 'SELL',
-                type:     'MARKET',
-                quantity: qty,
-                leverage: decision.leverage ?? 1,
-                creds
-              })
-            }
-
-            fillPrice  = result.avgPrice > 0 ? result.avgPrice : currentPrice
-            orderIdStr = String(result.orderId)
-
-            // SL + TP bracket orders. Pass the builder address through so
-            // the closing fills also route through BUILD4 — without this
-            // the entry collects the broker fee but the exit fill (SL/TP)
-            // bypasses it, leaking ~50% of fee revenue per trade.
-            if (decision.stopLoss && decision.takeProfit) {
-              await placeBracketOrders({
-                symbol:     sym,
-                side,
-                stopLoss:   decision.stopLoss,
-                takeProfit: decision.takeProfit,
-                quantity:   qty,
-                creds,
-                builderAddress,
-                feeRate,
-              })
-            }
-          } catch (execErr: any) {
-            // Aster's signedPOST uses axios; on a 4xx the actual rejection
-            // reason (e.g. "Account has insufficient balance", "Filter failure:
-            // MIN_NOTIONAL", "Order would immediately liquidate") lives in
-            // err.response.data — NOT in err.message (which is just the
-            // generic "Request failed with status code 400"). Without
-            // unwrapping it, every order failure looks identical in logs and
-            // diagnosis is impossible. Hoist the body into execMsg so the
-            // existing log line + memory note + auto-heal regex all see the
-            // real Aster error string.
-            const respBody = execErr?.response?.data
-            const respDetail = respBody
-              ? (typeof respBody === 'string' ? respBody : JSON.stringify(respBody))
-              : ''
-            const execMsg = respDetail
-              ? `${execErr?.message ?? 'request failed'} — Aster: ${respDetail}`
-              : String(execErr?.message ?? '')
-            // Self-heal: when Aster returns -1000 "No agent found", the
-            // user's on-file agent address isn't recognised by Aster
-            // anymore (broker rotation, partial earlier flow, etc).
-            // Without intervention this user is silently stuck — every
-            // future tick re-fails identically. Fire reapproveAsterForUser
-            // once now so the NEXT tick (≤60s) uses fresh creds and the
-            // order succeeds. We don't retry the order in-tick because
-            // we'd need to re-derive position sizing, balance check, and
-            // bracket math — far simpler to let the next tick re-evaluate
-            // from scratch with the same fresh signal.
-            if (/no agent found|-1000/i.test(execMsg) && dbUser) {
-              console.warn(
-                `[Agent ${agent.name}] Aster reports "No agent found" — auto-reapproving for user=${dbUser.id} ` +
-                `so next tick recovers without user intervention`
-              )
-              try {
-                const { reapproveAsterForUser } = await import('../services/asterReapprove')
-                const r = await reapproveAsterForUser(dbUser as any)
-                console.log(
-                  `[Agent ${agent.name}] auto-reapprove → success=${r.success} ` +
-                  `agent=${r.agentAddress ?? 'n/a'} builder=${r.builderEnrolled ?? false} ` +
-                  `error=${r.error ?? 'none'}`
-                )
-              } catch (healErr: any) {
-                console.error(`[Agent ${agent.name}] auto-reapprove threw:`, healErr?.message)
-              }
-            }
-            console.error(`[Agent ${agent.name}] Order execution failed:`, execErr.message)
-            await saveMemory(agent.id, 'correction',
-              `Order execution failed for ${pair} ${side}: ${execErr.message}`, null)
-            return
-          }
+        const execResult = await executeOpen({
+          agent, dbUser, userAddress,
+          side, pair, finalSize, currentPrice,
+          decision: {
+            leverage:   decision.leverage,
+            stopLoss:   decision.stopLoss,
+            takeProfit: decision.takeProfit,
+          },
+        })
+        if (execResult.ok) {
+          fillPrice  = execResult.fillPrice
+          orderIdStr = execResult.orderIdStr
+        } else if (execResult.reason === 'no-balance') {
+          const detail = execResult.detail ? ` — ${execResult.detail}` : ''
+          console.log(
+            `[Agent ${agent.name}] Skipping ${pair} ${side} — insufficient balance: ` +
+            `${(execResult.balance ?? 0).toFixed(4)} (${agent.exchange})${detail}`
+          )
+          continue
+        } else if (execResult.reason === 'rejected') {
+          console.error(`[Agent ${agent.name}] Order execution failed: ${execResult.detail}`)
+          await saveMemory(agent.id, 'correction',
+            `Order execution failed for ${pair} ${side}: ${execResult.detail ?? 'unknown'}`, null)
+          return
+        } else if (execResult.reason === 'no-creds' && agent.exchange !== 'mock') {
+          // Live venue but the user's agent credentials aren't on file
+          // (e.g. handshake half-finished, encryption key rotated). Falling
+          // through to a synthetic fill would create a phantom DB position
+          // the user can never close on the real exchange. Skip and wait
+          // for the next tick — onboarding flow will repair the creds.
+          console.warn(
+            `[Agent ${agent.name}] Skipping ${pair} ${side} — no execution credentials for ${agent.exchange}`
+          )
+          continue
         }
+        // reason === 'mock' (or 'no-creds' on a mock-mode agent) → fall
+        // through with a synthetic fill so paper-trading still works.
         // ─────────────────────────────────────────────────────────────────
 
         const trade = await db.trade.create({
@@ -1941,33 +1872,37 @@ If you would not put real money in this trade right now, action = HOLD.`
           ? ohlcv['15m'].close[ohlcv['15m'].close.length - 1]
           : snapshot.price
 
-        // ── Real Aster close (v3 EIP-712) ────────────────────────────────
+        // ── Per-exchange close (see src/agents/exchangeAdapter.ts) ───────
         const dbUserClose = await db.user.findUnique({
           where: { id: agent.userId },
           include: { wallets: { where: { isActive: true }, take: 1 } }
         })
-        const { resolveAgentCreds: resolveAgentCredsClose } = await import('../services/aster')
-        const credsClose = dbUserClose
-          ? await resolveAgentCredsClose(dbUserClose, dbUserClose.wallets?.[0]?.address ?? '')
-          : null
-
-        if (credsClose && agent.exchange !== 'mock') {
-          try {
-            const { closePosition, getMarkPrice } = await import('../services/aster')
-            const markData = await getMarkPrice(pair)
-            exitPrice = markData.markPrice
-
-            const contractSize = parseFloat((openPos.size / openPos.entryPrice).toFixed(6))
-            await closePosition(
-              pair,
-              openPos.side as 'LONG' | 'SHORT',
-              contractSize,
-              credsClose
-            )
-          } catch (closeErr: any) {
-            console.error(`[Agent ${agent.name}] Close failed:`, closeErr.message)
-          }
+        const closeResult = await executeClose({
+          agent,
+          dbUser:        dbUserClose,
+          userAddress:   dbUserClose?.wallets?.[0]?.address ?? '',
+          openPos:       openPos as any,
+          fallbackPrice: exitPrice,
+        })
+        if (closeResult.ok) {
+          exitPrice = closeResult.exitPrice
+        } else if (isLiveVenueRejection(closeResult, agent.exchange)) {
+          // Live venue did NOT execute the close (rejected / no-creds).
+          // Marking the DB row closed here would lie to the user — their
+          // UI says "closed" but the position is still live on the
+          // exchange. Skip the update; the next tick will retry.
+          const reason = closeResult.reason
+          const detail = closeResult.detail ? ` — ${closeResult.detail}` : ''
+          console.warn(
+            `[Agent ${agent.name}] Close NOT confirmed on ${agent.exchange} (${reason})${detail}; ` +
+            `leaving DB trade ${openPos.id} OPEN for retry`
+          )
+          await saveMemory(agent.id, 'correction',
+            `Close failed for ${openPos.pair}: ${reason}${detail}. Will retry next tick.`, null)
+          continue
         }
+        // mock-mode (or live + ok already handled): proceed to mark the
+        // row closed using the resolved exitPrice.
         // ─────────────────────────────────────────────────────────────────
 
         const priceDiff = exitPrice - openPos.entryPrice
