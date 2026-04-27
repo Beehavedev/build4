@@ -3840,6 +3840,16 @@ app.get('/api/me/positions', requireTgUser, async (req, res) => {
     // job — listUserPositions just shows whatever is in the DB.
 
     const rows = await exec.listUserPositions(user.id, 50)
+
+    // Fire-and-forget: rewrite stale payout/pnl on already-claimed and
+    // already-closed rows from the receipt's USDT Transfer (truth), and
+    // null out any pre-claim 1:1 estimate the old settle path stamped on
+    // resolved_win rows. Bounded to 25 rows per call, runs entirely in
+    // background — never blocks the positions response.
+    void exec.backfillReceiptPayoutsForUser(user.id).catch((err) => {
+      console.warn('[positions] backfill failed:', (err as Error).message)
+    })
+
     const positions = rows.map((p) => ({
       id: p.id,
       marketTitle: p.marketTitle,

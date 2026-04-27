@@ -923,18 +923,21 @@ export async function closePredictionPosition(
   }
   const txHash = receiptHash(receipt);
 
-  // Payout estimate: when we got an exact curve quote it's the post-fee USDT
-  // delta. Otherwise we fall back to marginal-price * tokens (the same
-  // approximation we used before — close enough for cosmetic PnL display
-  // until we read the wallet's USDT delta from the receipt logs).
-  const pnl = expectedPayoutFloat - pos.usdtIn;
+  // Source of truth for what the user actually received: the receipt's
+  // USDT Transfer to the user's wallet. The curve quote is only the
+  // pre-trade promise (used for slippage). Falls back to the quote in
+  // paper-trade mode (no real receipt) or if log parsing fails.
+  const recipient = (trader as any)?.wallet?.address as string | undefined;
+  const onchainPayout = paperTrade ? null : parseUsdtInflowFromReceipt(receipt, recipient);
+  const realisedPayout = onchainPayout ?? expectedPayoutFloat;
+  const pnl = realisedPayout - pos.usdtIn;
   await db.$executeRawUnsafe(
     `UPDATE "OutcomePosition"
      SET status='closed', "exitPrice"=$1, "payoutUsdt"=$2, pnl=$3,
          "txHashClose"=$4, "closedAt"=NOW(), "paperTrade"=$5
      WHERE id=$6`,
     exitPriceFloat,
-    expectedPayoutFloat,
+    realisedPayout,
     pnl,
     txHash,
     paperTrade,
@@ -1192,12 +1195,15 @@ export async function settleResolvedPositions(opts: { agentId?: string; userId?:
 
     for (const pos of positions) {
       const win = __testDeps.isWinningTokenId(state.resolvedAnswer, pos.tokenId);
-      // Token amount: use stored on-chain value if we captured it at open,
-      // otherwise the entry-price estimate. Winners redeem 1:1 for USDT.
-      const tokens = pos.outcomeTokenAmount ?? pos.usdtIn / pos.entryPrice;
-      const payout = win ? tokens : 0;
-      const pnl = payout - pos.usdtIn;
+      // For losses: payout=0, pnl=-stake (definitive). For wins: leave
+      // payoutUsdt and pnl NULL — the actual amount is only known when
+      // claimUserResolvedForMarket reads it from the on-chain receipt.
+      // We previously wrote a 1:1 token→USDT estimate here, but 42.space
+      // outcome tokens redeem at the curve-implied resolution price (not
+      // 1:1), which produced wildly inflated "you won $X" displays.
       const status = win ? 'resolved_win' : 'resolved_loss';
+      const payout = win ? null : 0;
+      const pnl = win ? null : -pos.usdtIn;
       await db.$executeRawUnsafe(
         `UPDATE "OutcomePosition"
          SET status=$1, "exitPrice"=$2, "payoutUsdt"=$3, pnl=$4, "closedAt"=NOW()
@@ -1337,14 +1343,22 @@ export async function closeUserPredictionPosition(
   }
   const txHash = receiptHash(receipt);
 
-  const pnl = expectedPayoutFloat - pos.usdtIn;
+  // Prefer the actual on-chain USDT inflow over the curve quote estimate.
+  // The quote is what the curve PROMISED at the slippage check; the
+  // receipt is what the wallet ACTUALLY received after fees + impact.
+  // Falls back to the quote when the receipt can't be parsed (paper-trade
+  // dry runs, malformed logs).
+  const recipient = (trader as any)?.wallet?.address as string | undefined;
+  const onchainPayout = paperTrade ? null : parseUsdtInflowFromReceipt(receipt, recipient);
+  const realisedPayout = onchainPayout ?? expectedPayoutFloat;
+  const pnl = realisedPayout - pos.usdtIn;
   await db.$executeRawUnsafe(
     `UPDATE "OutcomePosition"
      SET status='closed', "exitPrice"=$1, "payoutUsdt"=$2, pnl=$3,
          "txHashClose"=$4, "closedAt"=NOW(), "paperTrade"=$5
      WHERE id=$6`,
     exitPriceFloat,
-    expectedPayoutFloat,
+    realisedPayout,
     pnl,
     txHash,
     paperTrade,
@@ -1428,14 +1442,18 @@ export async function claimUserResolvedForMarket(
     };
   }
 
-  // Sanity log: compare DB-estimated payout (1:1 token→USDT) to the actual
-  // amount the contract paid. If these diverge significantly on the user's
-  // first real claim it points at a settle-time accounting bug we want to
-  // catch fast. Cheap to compute — receipt logs are already in memory.
-  const payoutUsdt = wins.reduce((s, p) => s + (p.payoutUsdt ?? 0), 0);
+  // Read the ACTUAL on-chain payout from the receipt's USDT Transfer event
+  // and write that as the truth (overriding any pre-claim 1:1 estimate the
+  // settle path may have stored). 42.space outcome tokens do NOT redeem
+  // 1:1 with USDT — they redeem at the curve-implied resolution price,
+  // which can be 100×+ less than (token_count × $1). Trusting the
+  // 1:1 estimate produced bug reports like "$1 stake → $297 claim" when
+  // the wallet really received $1.14. Source of truth is the receipt.
+  let payoutUsdt = wins.reduce((s, p) => s + (p.payoutUsdt ?? 0), 0); // pre-claim estimate, kept only for the drift log
+  let onchainPayout: number | null = null;
   if (!isDryRun) {
     try {
-      const onchainPayout = parseClaimPayoutFromReceipt(r, marketAddress);
+      onchainPayout = parseClaimPayoutFromReceipt(r, marketAddress);
       if (onchainPayout !== null) {
         const drift = Math.abs(onchainPayout - payoutUsdt);
         const log = drift > Math.max(0.01, payoutUsdt * 0.02) ? console.warn : console.log;
@@ -1446,49 +1464,212 @@ export async function claimUserResolvedForMarket(
         );
       }
     } catch (e) {
-      // best-effort logging only — never fail the claim because the log parse threw
+      // best-effort — never fail the claim because the receipt parse threw
       console.warn('[fortyTwo] claim payout parse failed:', (e as Error)?.message);
     }
   }
 
-  await db.$executeRawUnsafe(
-    `UPDATE "OutcomePosition"
-     SET status='claimed', "txHashClose"=COALESCE("txHashClose", $1), "closedAt"=NOW()
-     WHERE "userId" = $2 AND "marketAddress" = $3 AND status = 'resolved_win'`,
-    txHash,
-    userId,
-    marketAddress,
-  );
+  if (onchainPayout !== null) {
+    // Allocate the single on-chain payout across the N rows we're claiming
+    // for this market. Allocation is proportional to each row's recorded
+    // outcomeTokenAmount (each token contributes equally to the redemption);
+    // fall back to usdtIn for legacy rows missing tokenAmount; equal split
+    // if neither is available. This makes per-position pnl sane even when
+    // claimAllSimple settles multiple positions in one tx.
+    const weights = wins.map((p) => {
+      if (p.outcomeTokenAmount && p.outcomeTokenAmount > 0) return p.outcomeTokenAmount;
+      if (p.usdtIn && p.usdtIn > 0) return p.usdtIn;
+      return 1;
+    });
+    const totalWeight = weights.reduce((a, b) => a + b, 0);
+    for (let i = 0; i < wins.length; i++) {
+      const pos = wins[i];
+      const share = (weights[i] / totalWeight) * onchainPayout;
+      const pnl = share - pos.usdtIn;
+      await db.$executeRawUnsafe(
+        `UPDATE "OutcomePosition"
+         SET status='claimed', "txHashClose"=COALESCE("txHashClose", $1),
+             "payoutUsdt"=$2, pnl=$3, "closedAt"=NOW()
+         WHERE id=$4`,
+        txHash,
+        share,
+        pnl,
+        pos.id,
+      );
+    }
+    payoutUsdt = onchainPayout;
+  } else {
+    // Dry-run (paper) or unparseable receipt — keep the previous behaviour
+    // of stamping status/txHash without rewriting the per-row payout.
+    await db.$executeRawUnsafe(
+      `UPDATE "OutcomePosition"
+       SET status='claimed', "txHashClose"=COALESCE("txHashClose", $1), "closedAt"=NOW()
+       WHERE "userId" = $2 AND "marketAddress" = $3 AND status = 'resolved_win'`,
+      txHash,
+      userId,
+      marketAddress,
+    );
+  }
   return { ok: true, claimedPositions: wins.length, payoutUsdt, txHash };
 }
 
-// USDT (BSC) ERC-20 Transfer event topic. Used to recover the actual claim
-// payout from the receipt logs by summing every Transfer log whose `to` is
-// the user's wallet — which on a successful `claimSimple` is the receiver
-// argument we passed (=== signer.address).
+// USDT (BSC) ERC-20 Transfer event topic. Used to recover the actual USDT
+// flow from a receipt's logs — the only source of truth for what the user
+// actually received from a claim or sell. We do NOT trust quote-time
+// estimates (curve quotes, 1:1 redemption assumptions) anymore: a real
+// claim on 42.space's bonding-curve markets paid $1.14 on a position the
+// system had estimated at $297, because outcome tokens redeem at the
+// curve-implied price at resolution, NOT 1 token = 1 USDT.
 const USDT_BSC_ADDRESS = '0x55d398326f99059fF775485246999027B3197955';
 const ERC20_TRANSFER_TOPIC =
   '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
 
-function parseClaimPayoutFromReceipt(
+/**
+ * Sum every USDT inflow to `recipient` (a user wallet) inside the receipt.
+ * Pass recipient=undefined to sum all USDT Transfers (legacy behaviour;
+ * fine for `claimSimple` where the only USDT movement is the payout).
+ *
+ * The `recipient` filter is required for sell receipts that may include
+ * intermediate hop transfers (router → market → router → user) so we
+ * count only what actually landed in the user's wallet.
+ */
+function parseUsdtInflowFromReceipt(
   receipt: any,
-  _marketAddress: string,
+  recipient?: string,
 ): number | null {
   if (!receipt?.logs || !Array.isArray(receipt.logs)) return null;
+  const recipientLower = recipient ? recipient.toLowerCase() : null;
   let totalRaw = 0n;
   for (const log of receipt.logs) {
     if (!log?.address || !log?.topics || log.topics.length < 3) continue;
     if (log.address.toLowerCase() !== USDT_BSC_ADDRESS.toLowerCase()) continue;
     if (log.topics[0] !== ERC20_TRANSFER_TOPIC) continue;
-    // topics[2] = `to` padded to 32 bytes; receiver is the user wallet, which
-    // is the only Transfer destination we care about. We don't filter further
-    // because the only USDT inflow on a claimSimple tx is the payout itself.
+    if (recipientLower) {
+      // topics[2] = `to` padded to 32 bytes (left-padded address)
+      const to = '0x' + log.topics[2].slice(26).toLowerCase();
+      if (to !== recipientLower) continue;
+    }
     try {
       totalRaw += BigInt(log.data);
     } catch { /* malformed log, skip */ }
   }
   if (totalRaw === 0n) return null;
   return Number(totalRaw) / 1e18; // USDT BSC has 18 decimals
+}
+
+// Back-compat alias — old callsite name. Same semantics: sum all USDT
+// transfers in the receipt (claim flows have exactly one, to the user).
+function parseClaimPayoutFromReceipt(
+  receipt: any,
+  _marketAddress: string,
+): number | null {
+  return parseUsdtInflowFromReceipt(receipt);
+}
+
+/**
+ * Backfill payoutUsdt + pnl on historical rows that were settled before
+ * we started reading the on-chain truth. Called in the background from
+ * /api/me/positions so a user opening the Predictions tab gets their
+ * stale numbers corrected without blocking the response.
+ *
+ * Targets:
+ *   1. status='claimed' rows with txHashClose set — read the claim tx
+ *      receipt's USDT Transfer to the user wallet, write the truth.
+ *   2. status='closed' rows with txHashClose set — same, for sells.
+ *   3. status='resolved_win' rows with non-null payoutUsdt — these were
+ *      stamped with the broken 1:1 estimate by the old settle path; null
+ *      them out so the UI shows "Won — claim to see payout" until the
+ *      user actually claims.
+ *
+ * Idempotent: only updates a row when the parsed truth differs by >$0.01
+ * from what's stored, or to clear the bad pre-claim estimate.
+ *
+ * Bounded: at most `maxRows` per call, prioritising the rows with the
+ * largest absolute drift (most likely to be confusing the user).
+ */
+export async function backfillReceiptPayoutsForUser(
+  userId: string,
+  maxRows = 25,
+): Promise<{ checked: number; rewritten: number; cleared: number }> {
+  // 1+2: rows that have a close tx hash whose USDT inflow we can re-read
+  const settled = await db.$queryRawUnsafe<Array<{
+    id: string;
+    status: string;
+    usdtIn: number;
+    payoutUsdt: number | null;
+    txHashClose: string;
+    paperTrade: boolean;
+  }>>(
+    `SELECT id, status, "usdtIn", "payoutUsdt", "txHashClose", "paperTrade"
+     FROM "OutcomePosition"
+     WHERE "userId" = $1
+       AND status IN ('claimed', 'closed')
+       AND "txHashClose" IS NOT NULL
+       AND "paperTrade" = false
+     ORDER BY "closedAt" DESC NULLS LAST
+     LIMIT $2`,
+    userId,
+    maxRows,
+  );
+
+  // 3: resolved_win rows with the broken pre-claim 1:1 estimate still on them
+  const staleEstimates = await db.$executeRawUnsafe(
+    `UPDATE "OutcomePosition"
+     SET "payoutUsdt" = NULL, pnl = NULL
+     WHERE "userId" = $1
+       AND status = 'resolved_win'
+       AND "payoutUsdt" IS NOT NULL`,
+    userId,
+  );
+
+  let rewritten = 0;
+  if (settled.length > 0) {
+    const wallet = await db.$queryRawUnsafe<Array<{ address: string }>>(
+      `SELECT address FROM "Wallet" WHERE "userId" = $1 LIMIT 1`,
+      userId,
+    );
+    const walletAddr = wallet[0]?.address;
+    if (walletAddr) {
+      // Reuse the prediction module's BSC provider (same fallback list the
+      // rest of the executor uses). Lazy import keeps the module graph tidy.
+      const { buildBscProvider } = await import('./bscProvider');
+      const rpc = buildBscProvider(process.env.BSC_RPC_URL);
+      for (const row of settled) {
+        try {
+          const receipt = await rpc.getTransactionReceipt(row.txHashClose);
+          if (!receipt || receipt.status !== 1) continue;
+          const onchain = parseUsdtInflowFromReceipt(receipt, walletAddr);
+          if (onchain === null) continue;
+          const stored = row.payoutUsdt ?? 0;
+          const drift = Math.abs(onchain - stored);
+          if (drift < 0.01) continue;
+          const pnl = onchain - row.usdtIn;
+          await db.$executeRawUnsafe(
+            `UPDATE "OutcomePosition"
+             SET "payoutUsdt" = $1, pnl = $2
+             WHERE id = $3`,
+            onchain,
+            pnl,
+            row.id,
+          );
+          rewritten++;
+          console.log(
+            `[backfill] rewrote position ${row.id} status=${row.status} ` +
+            `stored=${stored.toFixed(4)} onchain=${onchain.toFixed(4)} ` +
+            `tx=${row.txHashClose}`,
+          );
+        } catch (err) {
+          console.warn(`[backfill] receipt fetch failed for ${row.txHashClose}:`, (err as Error).message);
+        }
+      }
+    }
+  }
+
+  return {
+    checked: settled.length,
+    rewritten,
+    cleared: typeof staleEstimates === 'number' ? staleEstimates : 0,
+  };
 }
 
 /**
