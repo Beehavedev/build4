@@ -73,6 +73,7 @@ interface MyPositionRow {
   usdtIn: number
   entryPrice: number
   exitPrice: number | null
+  outcomeTokenAmount: number | null
   payoutUsdt: number | null
   pnl: number | null
   status: 'open' | 'closed' | 'resolved_win' | 'resolved_loss' | 'claimed'
@@ -1502,6 +1503,23 @@ function MyPositionsList({
         const pnlColor = pnl >= 0 ? '#10b981' : '#ef4444'
         const titleShort = p.marketTitle.length > 56 ? p.marketTitle.slice(0, 54) + '…' : p.marketTitle
         const busy = busyId === p.id
+        // Tokens actually held (from on-chain delta when available, else
+        // estimate from stake/marginal-price). Each winning outcome token
+        // redeems 1:1 for USDT, so tokens === maximum payout if it wins.
+        const tokens = p.outcomeTokenAmount ?? (p.entryPrice > 0 ? p.usdtIn / p.entryPrice : 0)
+        // True average fill price = stake ÷ tokens received. This is what
+        // the user actually paid per token, NOT the misleading marginal
+        // pre-trade probability we used to display.
+        const avgFill = tokens > 0 ? p.usdtIn / tokens : p.entryPrice
+        const avgFillPct = avgFill * 100
+        const avgFillStr = avgFillPct < 1
+          ? `${avgFillPct.toFixed(2)}¢`
+          : `${avgFillPct.toFixed(0)}¢`
+        const isEstimate = p.outcomeTokenAmount === null
+        const maxPayout = tokens
+        // Bottom-left "payout" line:
+        //  - terminal states (resolved/closed/claimed) show the locked-in payoutUsdt
+        //  - open positions show "pays up to $X if wins" so the claimable upside is obvious
         return (
           <div
             key={p.id}
@@ -1514,7 +1532,7 @@ function MyPositionsList({
                   {titleShort}
                 </div>
                 <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 3 }}>
-                  {p.outcomeLabel} · ${p.usdtIn.toFixed(2)} in @ {(p.entryPrice * 100).toFixed(0)}¢
+                  {p.outcomeLabel} · ${p.usdtIn.toFixed(2)} → {tokens.toFixed(2)} tokens @ {isEstimate ? '~' : ''}{avgFillStr} avg
                   {p.paperTrade && (
                     <span style={{ marginLeft: 6, color: '#a855f7' }}>· paper</span>
                   )}
@@ -1542,10 +1560,12 @@ function MyPositionsList({
               display: 'flex', justifyContent: 'space-between', alignItems: 'center',
               fontSize: 11, color: '#94a3b8',
             }}>
-              <span style={{ fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace' }}>
+              <span
+                data-testid={`text-payout-${p.id}`}
+                style={{ fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace' }}>
                 {p.payoutUsdt !== null
                   ? `payout $${p.payoutUsdt.toFixed(2)}`
-                  : `current ~$${((p.exitPrice ?? p.entryPrice) * p.usdtIn / Math.max(p.entryPrice, 1e-6)).toFixed(2)}`}
+                  : `pays up to $${maxPayout.toFixed(2)} if wins`}
               </span>
               <span style={{ color: pnlColor, fontWeight: 700,
                              fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace' }}

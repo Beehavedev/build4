@@ -3849,6 +3849,7 @@ app.get('/api/me/positions', requireTgUser, async (req, res) => {
       usdtIn: p.usdtIn,
       entryPrice: p.entryPrice,
       exitPrice: p.exitPrice,
+      outcomeTokenAmount: p.outcomeTokenAmount,
       payoutUsdt: p.payoutUsdt,
       pnl: p.pnl,
       status: p.status, // 'open' | 'closed' | 'resolved_win' | 'resolved_loss' | 'claimed'
