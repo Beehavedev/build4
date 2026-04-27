@@ -82,6 +82,10 @@ interface MyPositionRow {
   txHashClose: string | null
   openedAt: string
   closedAt: string | null
+  // Live curve quote (USDT) for what this position would redeem at right
+  // now via the bonding curve. Populated only for open, non-paper rows.
+  // Null when the quote couldn't be obtained (RPC failure, market closed).
+  currentValueUsdt?: number | null
 }
 
 interface ScannerRow {
@@ -1516,13 +1520,17 @@ function MyPositionsList({
           ? `${avgFillPct.toFixed(2)}¢`
           : `${avgFillPct.toFixed(0)}¢`
         const isEstimate = p.outcomeTokenAmount === null
-        // Bottom-left "payout" line. We deliberately do NOT show a
-        // pre-resolution upside estimate here. 42.space outcome tokens
-        // redeem at the curve-implied resolution price, not 1:1 with USDT,
-        // so "tokens × $1" is wrong by the same factor as the curve's
-        // implied probability. We only ever surface money figures that
-        // come from on-chain truth (the receipt's USDT Transfer to the
-        // user wallet); for everything else we say so plainly.
+        // Bottom-left "payout" line. Numbers shown here are always pulled
+        // from on-chain reads:
+        //   • settled rows → the actual USDT Transfer in the close
+        //     receipt, recorded as payoutUsdt;
+        //   • open rows → the bonding curve's live redeem quote
+        //     (currentValueUsdt), which IS the on-chain parimutuel
+        //     payout: (your tokens / winning supply) × pool, integrated
+        //     across the curve walk and net of fees.
+        // For pre-resolution rows where we couldn't get a live quote
+        // (RPC failure, market just closed), we fall back to the bare
+        // token count rather than guess at a dollar figure.
         let payoutLabel: string
         if (p.payoutUsdt !== null) {
           payoutLabel = `payout $${p.payoutUsdt.toFixed(2)}`
@@ -1530,6 +1538,8 @@ function MyPositionsList({
           payoutLabel = 'won — claim to settle'
         } else if (p.status === 'resolved_loss') {
           payoutLabel = 'lost'
+        } else if (p.status === 'open' && typeof p.currentValueUsdt === 'number') {
+          payoutLabel = `now ~$${p.currentValueUsdt.toFixed(2)}`
         } else {
           payoutLabel = `${tokens.toFixed(2)} tokens`
         }

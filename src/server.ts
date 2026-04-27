@@ -3827,6 +3827,73 @@ app.post('/api/me/predictions-mode', requireTgUser, async (req, res) => {
 // runs settleResolvedPositions(userId) so any newly-finalised markets get
 // their status flipped to resolved_win/_loss before we render claim buttons.
 // ──────────────────────────────────────────────────────────────────────────
+
+// 60s soft cache for the live curve quote per (market|tokenId|amount-bucket).
+// We bucket the token amount to ~3 sig-figs so two users with very similar
+// position sizes can share a cache hit. The quote is purely informational
+// (display-only), so a minute of staleness is fine and saves a lot of RPC.
+const _liveValueCache = new Map<string, { value: number | null; at: number }>()
+const LIVE_VALUE_TTL_MS = 60_000
+function liveValueCacheKey(market: string, tokenId: number, otAmount: number): string {
+  // bucket to 3 sig-figs of token quantity
+  const exp = Math.max(0, Math.floor(Math.log10(otAmount)) - 2)
+  const step = Math.pow(10, exp)
+  const bucket = Math.round(otAmount / step) * step
+  return `${market.toLowerCase()}|${tokenId}|${bucket.toFixed(6)}`
+}
+
+/**
+ * Quote the bonding curve's redeem value for every open, non-paper position
+ * in `rows`. Bounded (max 25), parallel, and cached. Returns a Map of
+ * positionId → USDT value (float) or null if the quote couldn't be obtained.
+ *
+ * For 42.space's curve-driven parimutuel markets this on-chain quote IS
+ * the canonical "(your tokens / winning supply) × pool" calculation,
+ * already integrating fees and curve walk — strictly more accurate than
+ * computing the formula ourselves with separate supply + balance reads.
+ */
+async function quoteCurrentValuesForPositions(
+  rows: Array<{
+    id: string; status: string; paperTrade: boolean;
+    marketAddress: string; tokenId: number; outcomeTokenAmount: number | null;
+    usdtIn: number; entryPrice: number;
+  }>,
+): Promise<Map<string, number | null>> {
+  const out = new Map<string, number | null>()
+  const targets = rows
+    .filter((r) => r.status === 'open' && !r.paperTrade)
+    .map((r) => {
+      const tokens = r.outcomeTokenAmount ?? (r.entryPrice > 0 ? r.usdtIn / r.entryPrice : 0)
+      return { id: r.id, market: r.marketAddress, tokenId: r.tokenId, tokens }
+    })
+    .filter((t) => t.tokens > 0)
+    .slice(0, 25)
+  if (targets.length === 0) return out
+
+  const { quoteRedeemValue } = await import('./services/fortyTwoOnchain')
+  const { ethers } = await import('ethers')
+  const now = Date.now()
+  await Promise.all(targets.map(async (t) => {
+    const key = liveValueCacheKey(t.market, t.tokenId, t.tokens)
+    const cached = _liveValueCache.get(key)
+    if (cached && now - cached.at < LIVE_VALUE_TTL_MS) {
+      out.set(t.id, cached.value)
+      return
+    }
+    try {
+      const otDelta = ethers.parseUnits(t.tokens.toFixed(18).slice(0, 38), 18)
+      const raw = await quoteRedeemValue(t.market, t.tokenId, otDelta)
+      const value = raw === null ? null : Number(ethers.formatUnits(raw, 18))
+      _liveValueCache.set(key, { value, at: now })
+      out.set(t.id, value)
+    } catch (err) {
+      // Quote already logs internally on failure — record null and move on.
+      out.set(t.id, null)
+    }
+  }))
+  return out
+}
+
 app.get('/api/me/positions', requireTgUser, async (req, res) => {
   const user = (req as any).user
   if (!user?.id) return res.status(401).json({ ok: false, error: 'unauthorized' })
@@ -3850,6 +3917,19 @@ app.get('/api/me/positions', requireTgUser, async (req, res) => {
       console.warn('[positions] backfill failed:', (err as Error).message)
     })
 
+    // Live parimutuel-implied current value of each open position. We
+    // call the bonding curve's `calRedeemValueByOtDelta` quote — for a
+    // curve-driven parimutuel like 42.space this is the on-chain truth
+    // of "what would the user receive if they redeemed N tokens RIGHT
+    // NOW". It already integrates pool size, winning-side supply, fees,
+    // and curve walk in a single read, which is more accurate than us
+    // computing `(your tokens / supply) × pool` ourselves and matches
+    // exactly what the contract pays out at claim/sell time.
+    //
+    // Bounded to 25 quotes per request, in parallel, with a soft 60s
+    // cache. Failures fall back to null — the UI renders a clean dash.
+    const valuesByPosition = await quoteCurrentValuesForPositions(rows)
+
     const positions = rows.map((p) => ({
       id: p.id,
       marketTitle: p.marketTitle,
@@ -3868,6 +3948,7 @@ app.get('/api/me/positions', requireTgUser, async (req, res) => {
       txHashClose: p.txHashClose,
       openedAt: p.openedAt,
       closedAt: p.closedAt,
+      currentValueUsdt: valuesByPosition.get(p.id) ?? null,
     }))
     res.setHeader('Cache-Control', 'no-store')
     res.json({ ok: true, positions })
