@@ -183,6 +183,26 @@ test('shared scan preserves an existing holdReason when downgrading CLOSE', asyn
   assert.equal(r.decision.holdReason, 'momentum waning')
 })
 
+// ─── sharedActionRaw preserves the LLM's true verdict ────────────────────────
+test('sharedActionRaw preserves CLOSE so per-agent layer can act on it', async () => {
+  _resetMarketScanCacheForTest()
+  const llm = makeStubLLM({ action: 'CLOSE' })
+  const r = await getSharedMarketScan(inputs('BTCUSDT'), deps(llm))
+
+  // decision.action is downgraded to HOLD for safety …
+  assert.equal(r.decision.action, 'HOLD')
+  // … but the raw signal survives so an agent holding a position knows to exit.
+  assert.equal(r.sharedActionRaw, 'CLOSE')
+})
+
+test('sharedActionRaw mirrors decision.action for non-CLOSE outputs', async () => {
+  _resetMarketScanCacheForTest()
+  const llm = makeStubLLM({ action: 'OPEN_LONG' })
+  const r = await getSharedMarketScan(inputs('BTCUSDT'), deps(llm))
+  assert.equal(r.sharedActionRaw, 'OPEN_LONG')
+  assert.equal(r.decision.action, 'OPEN_LONG')
+})
+
 // ─── peekOrLaunchScan ────────────────────────────────────────────────────────
 test('peekOrLaunchScan returns cached scan as a dedupe (not a hit)', async () => {
   _resetMarketScanCacheForTest()
@@ -210,9 +230,10 @@ test('peekOrLaunchScan triggers a fresh LLM call when nothing cached', async () 
 })
 
 // ─── failure handling ────────────────────────────────────────────────────────
-test('a rejected LLM call evicts the cache so the next tick can retry', async () => {
-  _resetMarketScanCacheForTest()
+test('a rejected LLM call serves a negative-cached error during the cooldown window', async () => {
+  _resetMarketScanCacheForTest({ failureCooldownMs: 10_000 })
   let calls = 0
+  let clock = 1_000_000
   const failingDeps: MarketScanDeps = {
     runLLM: async () => {
       calls += 1
@@ -236,6 +257,7 @@ test('a rejected LLM call evicts the cache so the next tick can retry', async ()
     fetchNewsBlock: async () => '',
     fetchPredictionBlock: async () => '',
     swarmOn: false,
+    now: () => clock,
   }
 
   await assert.rejects(
@@ -243,10 +265,82 @@ test('a rejected LLM call evicts the cache so the next tick can retry', async ()
     /upstream model down/,
   )
 
-  // Second call should NOT serve the rejected promise — it must retry.
+  // Inside the 10s cooldown: must re-throw the same error WITHOUT firing
+  // a new LLM call — protects providers from a retry storm during outages.
+  await assert.rejects(
+    () => getSharedMarketScan(inputs('BTCUSDT'), failingDeps),
+    /upstream model down/,
+  )
+  assert.equal(calls, 1, 'inside negative-cache cooldown the LLM must not be called')
+
+  // After the cooldown, retry actually fires the LLM.
+  clock += 10_001
   const r = await getSharedMarketScan(inputs('BTCUSDT'), failingDeps)
   assert.equal(r.decision.action, 'HOLD')
-  assert.equal(calls, 2, 'failing call must evict cache so retry actually fires the LLM')
+  assert.equal(calls, 2, 'after cooldown the next call must fire the LLM and recover')
+})
+
+// ─── slow LLM call must not trigger duplicate launches ───────────────────────
+test('a slow LLM call (longer than TTL) still dedupes concurrent callers', async () => {
+  _resetMarketScanCacheForTest({ ttlMs: 50 }) // very short TTL
+  let calls = 0
+  let resolveLLM!: (v: unknown) => void
+  const slowDeps: MarketScanDeps = {
+    runLLM: () => {
+      calls += 1
+      return new Promise<any>((resolve) => {
+        resolveLLM = resolve
+      })
+    },
+    fetchNewsBlock: async () => '',
+    fetchPredictionBlock: async () => '',
+    swarmOn: false,
+  }
+
+  // First call kicks off the LLM but never resolves yet.
+  const firstP = getSharedMarketScan(inputs('BTCUSDT'), slowDeps)
+
+  // Wait long enough that the original launch-time TTL would have expired
+  // under the previous (broken) cache state model.
+  await new Promise((r) => setTimeout(r, 80))
+
+  // Second caller arrives AFTER the would-be TTL expiry. With the in-flight
+  // state in place, this MUST dedupe onto the same promise instead of
+  // firing a second LLM call.
+  const secondP = getSharedMarketScan(inputs('BTCUSDT'), slowDeps)
+
+  assert.equal(calls, 1, 'in-flight dedupe must hold even past nominal TTL')
+
+  // Resolve the LLM and let both callers finish on the same value.
+  resolveLLM({
+    decision: {
+      regime: 'UPTREND', setupScore: 6,
+      timeframeAlignment: { '4h': 'BULLISH', '1h': 'BULLISH', '15m': 'BULLISH', volume: 'CONFIRMING' },
+      action: 'HOLD', pair: 'BTCUSDT',
+      entryZone: null, stopLoss: null, takeProfit: null,
+      size: null, leverage: null, riskRewardRatio: null,
+      confidence: 0.5, reasoning: 'r', keyRisks: [],
+      memoryUpdate: null, drawdownMode: false, holdReason: 'h',
+    } satisfies AgentDecision,
+    rawResponse: '{}',
+    providersTelemetry: null,
+  })
+
+  const [a, b] = await Promise.all([firstP, secondP])
+  assert.equal(a.scannedAt, b.scannedAt, 'both callers received the same resolved scan')
+})
+
+// ─── pair canonicalisation ───────────────────────────────────────────────────
+test('pair variants (BTC/USDT, btcusdt, BTCUSDT) all hit the same cache entry', async () => {
+  _resetMarketScanCacheForTest()
+  const llm = makeStubLLM()
+
+  await getSharedMarketScan({ ...inputs('BTCUSDT') }, deps(llm))
+  await getSharedMarketScan({ ...inputs('BTC/USDT') }, deps(llm))
+  await getSharedMarketScan({ ...inputs('btcusdt') }, deps(llm))
+  await getSharedMarketScan({ ...inputs(' btc usdt ') }, deps(llm))
+
+  assert.equal(llm.getCalls(), 1, 'all pair variants must canonicalise to the same key')
 })
 
 // ─── pair always echoed ──────────────────────────────────────────────────────

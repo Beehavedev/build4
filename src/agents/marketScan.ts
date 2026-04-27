@@ -55,15 +55,44 @@ import {
 // 60s default matches the agent runner cron tick. Override in tests via
 // _resetMarketScanCacheForTest({ ttlMs }).
 const DEFAULT_SCAN_TTL_MS = 60_000
+// Negative-cache cooldown: when an LLM call fails, don't allow a fresh
+// retry for this many ms. Prevents retry storms after a provider outage
+// (otherwise N agents racing on a hot pair each fire their own retry on
+// the next tick → exactly the cost spike we built this module to prevent).
+const DEFAULT_FAILURE_COOLDOWN_MS = 10_000
 
 let SCAN_TTL_MS = DEFAULT_SCAN_TTL_MS
+let FAILURE_COOLDOWN_MS = DEFAULT_FAILURE_COOLDOWN_MS
 
 // ─── Cache ───────────────────────────────────────────────────────────────────
-type CacheEntry = {
-  expiresAt: number
-  promise: Promise<MarketScan>
-}
+// Entries can be in three states:
+//   in-flight:   promise pending, expiresAt = +∞ (other callers must
+//                always dedupe onto it regardless of TTL — the whole point
+//                of this module)
+//   fresh:       promise resolved, expiresAt = resolveTime + SCAN_TTL_MS
+//   negative:    promise rejected, expiresAt = failTime + FAILURE_COOLDOWN_MS
+//                cachedError carries the rejection reason. Calls during this
+//                window re-throw without firing a new LLM call.
+//
+// The in-flight invariant matters: previously expiresAt was set at launch,
+// so a slow LLM call (>TTL) would let a later caller see the entry as
+// expired and launch a *second* call while the first was still running —
+// defeating dedupe exactly when providers were degraded and we needed it
+// most.
+type CacheEntry =
+  | { kind: 'inflight'; promise: Promise<MarketScan> }
+  | { kind: 'fresh'; expiresAt: number; promise: Promise<MarketScan> }
+  | { kind: 'negative'; expiresAt: number; cachedError: Error }
 const scanCache = new Map<string, CacheEntry>()
+
+// Pair canonicalisation. Phase 1B's runAgentTick calls us from many code
+// paths (some pass `BTC/USDT`, some `btcusdt`, some `BTCUSDT`). Without
+// normalisation those would become three separate cache entries → 3 LLM
+// calls instead of 1 — silently leaking the cost savings. Mirrors the
+// expandPairs() normalisation in tradingAgent.
+function canonicalPair(pair: string): string {
+  return (pair ?? '').replace(/[\/\s]/g, '').toUpperCase()
+}
 
 // In-memory counters for observability via /scanstats admin endpoint (to be
 // added). hits = served from cache, misses = LLM call actually fired,
@@ -87,12 +116,16 @@ export function getMarketScanCounters(): {
   }
 }
 
-export function _resetMarketScanCacheForTest(opts?: { ttlMs?: number }): void {
+export function _resetMarketScanCacheForTest(opts?: {
+  ttlMs?: number
+  failureCooldownMs?: number
+}): void {
   scanCache.clear()
   _scanHits = 0
   _scanMisses = 0
   _scanDedupes = 0
   SCAN_TTL_MS = opts?.ttlMs ?? DEFAULT_SCAN_TTL_MS
+  FAILURE_COOLDOWN_MS = opts?.failureCooldownMs ?? DEFAULT_FAILURE_COOLDOWN_MS
 }
 
 // ─── Public types ────────────────────────────────────────────────────────────
@@ -128,9 +161,17 @@ export interface MarketScan {
   }
   // Generic market verdict from the LLM. size/leverage are intentionally
   // null — the agent layer fills them from the user's Kelly tier and the
-  // agent's maxLeverage. action ∈ {OPEN_LONG, OPEN_SHORT, HOLD}; CLOSE is
-  // a per-agent decision (depends on whether *that* agent holds a position).
+  // agent's maxLeverage. decision.action ∈ {OPEN_LONG, OPEN_SHORT, HOLD};
+  // CLOSE was downgraded to HOLD here (closing is per-agent and depends on
+  // whether *that* agent holds a position). The original action — including
+  // CLOSE — is preserved in `sharedActionRaw` below so the per-agent layer
+  // can make a real exit decision instead of staring at an empty HOLD.
   decision: AgentDecision
+  // The action the LLM actually returned, before our CLOSE→HOLD safety
+  // downgrade. The agent layer reads this when deciding whether to close
+  // an existing position; e.g. if sharedActionRaw==='CLOSE' AND the agent
+  // holds a position on this pair, that's an exit signal.
+  sharedActionRaw: AgentDecision['action']
   rawResponse: string
   providersTelemetry:
     | import('../services/fortyTwoExecutor').ProviderTelemetry[]
@@ -317,8 +358,9 @@ function buildSnapshot(inputs: MarketScanInputs): MarketScan['snapshot'] {
 }
 
 // ─── Main entry point ────────────────────────────────────────────────────────
-// Returns a cached MarketScan if one is fresh, otherwise fires the LLM call
-// once and shares the in-flight promise with concurrent callers.
+// Returns a cached MarketScan if one is fresh, dedupes onto the in-flight
+// promise if a call is already running, surfaces the cached error during
+// the negative-cooldown window, otherwise fires a new LLM call.
 //
 // NOTE: this function does NOT fetch klines itself. The caller (runAgentTick)
 // already does that via the process-wide aster.getKlines cache, so passing
@@ -329,45 +371,85 @@ export async function getSharedMarketScan(
   deps: MarketScanDeps = {},
 ): Promise<MarketScan> {
   const now = deps.now ?? Date.now
-  const key = `${inputs.pair}:${inputs.mode}`
+  const pair = canonicalPair(inputs.pair)
+  const key = `${pair}:${inputs.mode}`
 
   const existing = scanCache.get(key)
-  if (existing && existing.expiresAt > now()) {
-    _scanHits += 1
-    // If multiple callers race here while the underlying promise hasn't
-    // resolved yet, every one after the first counts as a dedupe — a hit
-    // that didn't have a fully-resolved value to copy.
-    return existing.promise
+  if (existing) {
+    if (existing.kind === 'inflight') {
+      // First-class dedupe: a call is already in flight for this key.
+      // Counts as a hit for stats (it spared us a network call).
+      _scanHits += 1
+      return existing.promise
+    }
+    if (existing.kind === 'fresh' && existing.expiresAt > now()) {
+      _scanHits += 1
+      return existing.promise
+    }
+    if (existing.kind === 'negative' && existing.expiresAt > now()) {
+      _scanHits += 1
+      // Re-throw the cached error rather than re-firing the LLM —
+      // protects providers from a retry storm during outages.
+      throw existing.cachedError
+    }
+    // stale (fresh expired or negative cooldown elapsed) → fall through
   }
 
   _scanMisses += 1
-  const promise = runMarketScan(inputs, deps).catch((err) => {
-    // On failure, evict so the next tick retries instead of serving the
-    // rejected promise for the next 60s.
-    scanCache.delete(key)
-    throw err
-  })
-  scanCache.set(key, {
-    expiresAt: now() + SCAN_TTL_MS,
-    promise,
-  })
+  const launchedAt = now()
+  const promise = runMarketScan({ ...inputs, pair }, deps).then(
+    (scan) => {
+      // Promote in-flight → fresh. TTL counted from completion time, not
+      // launch time, so a slow LLM call doesn't immediately expire on
+      // resolve.
+      scanCache.set(key, {
+        kind: 'fresh',
+        expiresAt: now() + SCAN_TTL_MS,
+        promise: Promise.resolve(scan),
+      })
+      void launchedAt // kept for future latency telemetry
+      return scan
+    },
+    (err: unknown) => {
+      // Promote in-flight → negative. Subsequent calls inside the cooldown
+      // get the cached error without firing the LLM again.
+      const e = err instanceof Error ? err : new Error(String(err))
+      scanCache.set(key, {
+        kind: 'negative',
+        expiresAt: now() + FAILURE_COOLDOWN_MS,
+        cachedError: e,
+      })
+      throw e
+    },
+  )
+  scanCache.set(key, { kind: 'inflight', promise })
   return promise
 }
 
 // Concurrent-caller helper exposed for the runner to dedupe the prefetch
-// pass. If a scan is already in-flight or fresh, returns the existing
-// promise; otherwise fires it. Counts as a dedupe (not a hit) for stats
-// when it serves an in-flight value.
+// pass. Same as getSharedMarketScan but counts cache reuse as a "dedupe"
+// in the stats — useful for distinguishing the prefetch path from
+// per-agent reads when reading /scanstats.
 export function peekOrLaunchScan(
   inputs: MarketScanInputs,
   deps: MarketScanDeps = {},
 ): Promise<MarketScan> {
   const now = deps.now ?? Date.now
-  const key = `${inputs.pair}:${inputs.mode}`
+  const pair = canonicalPair(inputs.pair)
+  const key = `${pair}:${inputs.mode}`
   const existing = scanCache.get(key)
-  if (existing && existing.expiresAt > now()) {
-    _scanDedupes += 1
-    return existing.promise
+  if (existing) {
+    if (
+      existing.kind === 'inflight' ||
+      (existing.kind === 'fresh' && existing.expiresAt > now())
+    ) {
+      _scanDedupes += 1
+      return existing.promise
+    }
+    if (existing.kind === 'negative' && existing.expiresAt > now()) {
+      _scanDedupes += 1
+      return Promise.reject(existing.cachedError)
+    }
   }
   return getSharedMarketScan(inputs, deps)
 }
@@ -412,6 +494,13 @@ async function runMarketScan(
   const runLLM = deps.runLLM ?? runDecisionLLM
   const llmResult = await runLLM(swarmOn, sysPrompt, userMessage)
 
+  // Capture the raw action BEFORE any downgrade, so the per-agent layer
+  // can act on a CLOSE signal when that agent actually holds a position
+  // on this pair. Without this, a swarm consensus of "exit now" would
+  // disappear into the HOLD bucket and every position-holder would just
+  // sit through a breakdown.
+  const sharedActionRaw: AgentDecision['action'] = llmResult.decision.action
+
   // Defensive: enforce the size/leverage = null contract regardless of
   // what the model returned. Cheap insurance against prompt drift.
   const decision: AgentDecision = {
@@ -419,16 +508,16 @@ async function runMarketScan(
     pair: inputs.pair,
     size: null,
     leverage: null,
-    // The shared scan never emits CLOSE — that's a per-agent decision
-    // because it depends on whether this specific agent holds a position
-    // on this pair. If the model produced CLOSE, downgrade to HOLD with
-    // a clear reason so the agent layer still gets a usable snapshot.
+    // The decision.action surface stays {OPEN_LONG, OPEN_SHORT, HOLD} —
+    // CLOSE is preserved on `sharedActionRaw` for per-agent exit logic
+    // but downgraded here so callers that don't yet read sharedActionRaw
+    // (e.g. existing AgentLog writers) get a safe default.
     ...(llmResult.decision.action === 'CLOSE'
       ? {
           action: 'HOLD' as const,
           holdReason:
             llmResult.decision.holdReason ??
-            'Shared scan downgraded CLOSE → HOLD; per-agent layer decides exits.',
+            'Shared scan downgraded CLOSE → HOLD; per-agent layer decides exits via sharedActionRaw.',
         }
       : {}),
   }
@@ -439,6 +528,7 @@ async function runMarketScan(
     scannedAt: (deps.now ?? Date.now)(),
     snapshot,
     decision,
+    sharedActionRaw,
     rawResponse: llmResult.rawResponse,
     providersTelemetry: llmResult.providersTelemetry,
   }
