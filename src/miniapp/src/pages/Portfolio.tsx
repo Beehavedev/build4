@@ -10,8 +10,24 @@ type Range = '7d' | '30d' | 'all'
 
 interface WalletInfo {
   address: string
-  balances: { usdt: number; bnb: number; error: string | null }
-  aster:    { usdt: number; availableMargin: number; onboarded: boolean; error: string | null }
+  balances:    { usdt: number; bnb: number; error: string | null }
+  aster:       { usdt: number; availableMargin: number; onboarded: boolean; error: string | null }
+  hyperliquid?: { usdc: number; accountValue: number; onboarded: boolean; error: string | null }
+}
+
+interface PredictionPosition {
+  id: string
+  marketTitle: string
+  marketAddress: string
+  outcomeLabel: string | null
+  usdtIn: number | null
+  payoutUsdt: number | null
+  pnl: number | null
+  status: string
+  paperTrade?: boolean | null
+  openedAt: string
+  closedAt: string | null
+  currentValueUsdt: number | null
 }
 
 export default function Portfolio({ userId }: PortfolioProps) {
@@ -19,6 +35,7 @@ export default function Portfolio({ userId }: PortfolioProps) {
   const [range, setRange] = useState<Range>('30d')
   const [loading, setLoading] = useState(true)
   const [wallet, setWallet] = useState<WalletInfo | null>(null)
+  const [predictions, setPredictions] = useState<PredictionPosition[]>([])
 
   useEffect(() => {
     if (!userId) { setLoading(false); return }
@@ -32,6 +49,17 @@ export default function Portfolio({ userId }: PortfolioProps) {
     apiFetch<WalletInfo>('/api/me/wallet')
       .then(setWallet)
       .catch(() => { /* silent — balance strip just hides */ })
+  }, [])
+
+  // Pull 42.space prediction positions so Trade History reflects holdings
+  // across ALL platforms — perps (Aster, HL) AND prediction markets — in
+  // a single list. Without this, users had to bounce to the Predict tab
+  // to see their parimutuel exposure, which broke the "single portfolio"
+  // promise of this page.
+  useEffect(() => {
+    apiFetch<{ ok: boolean; positions: PredictionPosition[] }>('/api/me/positions')
+      .then((r) => setPredictions(r?.positions ?? []))
+      .catch(() => { /* silent — predictions section just stays empty */ })
   }, [])
 
   const trades: any[] = data?.trades ?? []
@@ -68,7 +96,53 @@ export default function Portfolio({ userId }: PortfolioProps) {
 
   const chartColor = totalPnl >= 0 ? '#10b981' : '#ef4444'
 
-  const totalEquity = (wallet?.aster.usdt ?? 0) + (wallet?.balances.usdt ?? 0)
+  // Total equity now spans every venue the user can trade from: Aster
+  // perps, Hyperliquid clearinghouse, and BSC wallet USDT (funding capacity
+  // for either venue). Without HL in the sum, users with funds parked on
+  // Hyperliquid saw a misleadingly low "TOTAL EQUITY" headline.
+  const hlEquity = wallet?.hyperliquid?.accountValue ?? 0
+  const totalEquity =
+    (wallet?.aster.usdt ?? 0) +
+    hlEquity +
+    (wallet?.balances.usdt ?? 0)
+
+  // Merge prediction-market positions into the unified Trade History so
+  // every open holding (perp + parimutuel) shows in one place. We tag
+  // each row with its venue so the user can tell at a glance whether a
+  // line is a Hyperliquid perp, an Aster perp, or a 42.space prediction.
+  const predTrades = predictions.map((p) => {
+    const isOpen = p.status === 'open' || p.status === 'resolved_win'
+    // Use payoutUsdt when claimed, currentValueUsdt for live PnL, or
+    // realized pnl on closed/loss rows. Falls back to null so the row
+    // still renders even with incomplete on-chain data.
+    const realizedOrLive =
+      p.status === 'claimed' || p.status === 'closed' || p.status === 'resolved_loss'
+        ? (p.pnl ?? null)
+        : (p.currentValueUsdt != null && p.usdtIn != null
+            ? p.currentValueUsdt - p.usdtIn
+            : null)
+    return {
+      id: `pred_${p.id}`,
+      pair: p.marketTitle.length > 28 ? p.marketTitle.slice(0, 28) + '…' : p.marketTitle,
+      side: p.outcomeLabel ?? '—',
+      pnl: realizedOrLive,
+      status: isOpen ? 'open' : 'closed',
+      openedAt: p.openedAt,
+      closedAt: p.closedAt,
+      exchange: '42space',
+      paperTrade: !!p.paperTrade,
+    }
+  })
+
+  // Open positions float to the top, then closed by recency.
+  const allTrades = [...trades, ...predTrades].sort((a, b) => {
+    const aOpen = a.status === 'open' ? 1 : 0
+    const bOpen = b.status === 'open' ? 1 : 0
+    if (aOpen !== bOpen) return bOpen - aOpen
+    const ta = a.closedAt ? new Date(a.closedAt).getTime() : new Date(a.openedAt ?? 0).getTime()
+    const tb = b.closedAt ? new Date(b.closedAt).getTime() : new Date(b.openedAt ?? 0).getTime()
+    return tb - ta
+  })
 
   return (
     <div style={{ paddingTop: 20 }}>
@@ -188,10 +262,15 @@ export default function Portfolio({ userId }: PortfolioProps) {
             </div>
           </div>
 
+          {/* Two trading-venue cards on top (the venues that actually move
+              the equity headline), wallet capacity (BSC) full-width below.
+              Without HL on this card, users with funds on Hyperliquid had
+              no way to see their HL margin from Portfolio at all. */}
           <div style={{
             display: 'grid',
             gridTemplateColumns: '1fr 1fr',
-            gap: 10
+            gap: 10,
+            marginBottom: 10,
           }}>
             {/* Aster card — primary if onboarded; red if negative */}
             {(() => {
@@ -232,21 +311,63 @@ export default function Portfolio({ userId }: PortfolioProps) {
               )
             })()}
 
-            {/* BSC card */}
-            <div style={{
-              padding: 10,
-              borderRadius: 8,
-              background: '#0f0f17',
-              border: '1px solid #1e1e2e'
-            }}>
-              <div style={{ fontSize: 10, color: '#64748b', marginBottom: 4 }}>BSC · USDT</div>
-              <div style={{ fontSize: 18, fontWeight: 700, color: '#e2e8f0' }}
-                   data-testid="text-portfolio-bsc-usdt">
-                ${wallet.balances.usdt.toFixed(2)}
-              </div>
-              <div style={{ fontSize: 10, color: '#64748b', marginTop: 4 }}>
-                BNB {wallet.balances.bnb.toFixed(5)}
-              </div>
+            {/* Hyperliquid card — mirrors the Aster card layout so users
+                can compare equity across the two perp venues at a glance.
+                Renders a muted "Not activated" state when the user hasn't
+                completed HL onboarding yet — same affordance as Aster. */}
+            {(() => {
+              const hl = wallet.hyperliquid
+              const onboarded = !!hl?.onboarded
+              const accountValue = hl?.accountValue ?? 0
+              const usdc = hl?.usdc ?? 0
+              const accentColor = onboarded
+                ? (accountValue > 0 ? '#06b6d4' : '#64748b')
+                : '#e2e8f0'
+              const cardBg = onboarded && accountValue > 0
+                ? 'linear-gradient(135deg, #06b6d422, #06b6d408)'
+                : '#0f0f17'
+              const cardBorder = onboarded && accountValue > 0
+                ? '#06b6d444'
+                : '#1e1e2e'
+              return (
+                <div style={{
+                  padding: 10,
+                  borderRadius: 8,
+                  background: cardBg,
+                  border: `1px solid ${cardBorder}`
+                }}>
+                  <div style={{ fontSize: 10, color: '#64748b', marginBottom: 4 }}>
+                    HYPERLIQUID · USDC
+                  </div>
+                  <div style={{
+                    fontSize: 18,
+                    fontWeight: 700,
+                    color: accentColor
+                  }} data-testid="text-portfolio-hl-usdc">
+                    ${accountValue.toFixed(2)}
+                  </div>
+                  <div style={{ fontSize: 10, color: '#64748b', marginTop: 4 }}>
+                    {onboarded ? `Avail $${usdc.toFixed(2)}` : 'Not activated'}
+                  </div>
+                </div>
+              )
+            })()}
+          </div>
+
+          {/* BSC card — funding capacity (USDT for both Aster + HL bridges). */}
+          <div style={{
+            padding: 10,
+            borderRadius: 8,
+            background: '#0f0f17',
+            border: '1px solid #1e1e2e'
+          }}>
+            <div style={{ fontSize: 10, color: '#64748b', marginBottom: 4 }}>BSC · USDT (wallet)</div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: '#e2e8f0' }}
+                 data-testid="text-portfolio-bsc-usdt">
+              ${wallet.balances.usdt.toFixed(2)}
+            </div>
+            <div style={{ fontSize: 10, color: '#64748b', marginTop: 4 }}>
+              BNB {wallet.balances.bnb.toFixed(5)}
             </div>
           </div>
         </div>
@@ -296,60 +417,113 @@ export default function Portfolio({ userId }: PortfolioProps) {
         </ResponsiveContainer>
       </div>
 
-      {/* Trade history */}
+      {/* Trade history — every open holding + closed trade across every
+          venue (Aster perps, Hyperliquid perps, 42.space predictions),
+          sorted with open positions on top and closed trades by recency.
+          Each row carries a venue badge so the user can tell at a glance
+          where each trade sits. */}
       <div className="card">
         <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>Trade History</div>
         {loading ? (
           <div style={{ color: '#64748b', fontSize: 13 }}>Loading...</div>
-        ) : trades.length === 0 ? (
+        ) : allTrades.length === 0 ? (
           <div style={{ color: '#64748b', fontSize: 13 }}>No trades yet.</div>
         ) : (
-          trades.slice(0, 10).map((t: any) => (
-            <div key={t.id} style={{
-              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-              padding: '8px 0', borderBottom: '1px solid #1e1e2e'
-            }}>
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ fontSize: 13, fontWeight: 500 }}>{t.pair}</span>
-                  <span style={{
-                    fontSize: 10, padding: '1px 6px', borderRadius: 4,
-                    background: t.side === 'LONG' ? '#10b98115' : '#ef444415',
-                    color: t.side === 'LONG' ? '#10b981' : '#ef4444'
-                  }}>{t.side}</span>
-                </div>
-                <div style={{ fontSize: 11, color: '#64748b', marginTop: 1 }}>
-                  {t.closedAt ? new Date(t.closedAt).toLocaleDateString() : 'Open'}
-                  {t.aiReasoning && (
-                    <span style={{ marginLeft: 6, color: '#7c3aed' }}>· AI</span>
-                  )}
-                </div>
-              </div>
-              {/* Round near-zero PnL (anything within $0.005 of zero, i.e.
-                  pure rounding noise) to a calm muted "$0.00" instead of
-                  painting a green +$0.00 / red -$0.00. The two-cent floor
-                  also catches dust differences from fee math. */}
-              {(() => {
-                const pnl = t.pnl ?? 0
-                const isNearZero = Math.abs(pnl) < 0.005
-                const color = t.status === 'open'
-                  ? '#64748b'
-                  : isNearZero ? 'var(--text-secondary)'
-                  : pnl > 0 ? '#10b981' : '#ef4444'
-                return (
-                  <div style={{ fontSize: 14, fontWeight: 600, color }} data-testid={`text-trade-pnl-${t.id}`}>
-                    {t.status === 'open' ? (
-                      <span style={{ color: '#64748b', fontSize: 12 }}>Open</span>
-                    ) : isNearZero ? (
-                      '$0.00'
-                    ) : (
-                      `${pnl > 0 ? '+' : '-'}$${Math.abs(pnl).toFixed(2)}`
+          allTrades.slice(0, 12).map((t: any) => {
+            // Map exchange → display badge. Colours match each venue's
+            // accent elsewhere in the app: orange Aster, cyan HL, purple 42.
+            const venue = (() => {
+              const ex = String(t.exchange ?? '').toLowerCase()
+              if (ex === 'hyperliquid' || ex === 'hl')
+                return { label: 'HL',    bg: '#06b6d422', fg: '#06b6d4' }
+              if (ex === '42space' || ex === '42' || ex === 'fortytwo')
+                return { label: '42',    bg: '#a855f722', fg: '#a855f7' }
+              if (ex === 'mock')
+                return { label: 'PAPER', bg: '#64748b22', fg: '#94a3b8' }
+              return     { label: 'ASTER', bg: '#f59e0b22', fg: '#f59e0b' }
+            })()
+            // LONG/SHORT colouring stays for perps; predictions show their
+            // outcome label (YES/NO) in neutral blue.
+            const isPerpSide = t.side === 'LONG' || t.side === 'SHORT'
+            const sideStyle = isPerpSide
+              ? {
+                  bg: t.side === 'LONG' ? '#10b98115' : '#ef444415',
+                  fg: t.side === 'LONG' ? '#10b981'   : '#ef4444',
+                }
+              : { bg: '#3b82f615', fg: '#60a5fa' }
+            return (
+              <div key={t.id} style={{
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                padding: '8px 0', borderBottom: '1px solid #1e1e2e'
+              }}>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: 13, fontWeight: 500 }}>{t.pair}</span>
+                    <span style={{
+                      fontSize: 10, padding: '1px 6px', borderRadius: 4,
+                      background: sideStyle.bg, color: sideStyle.fg,
+                    }}>{t.side}</span>
+                    <span
+                      style={{
+                        fontSize: 9, padding: '1px 6px', borderRadius: 4,
+                        background: venue.bg, color: venue.fg, fontWeight: 600,
+                        letterSpacing: 0.4,
+                      }}
+                      data-testid={`badge-venue-${t.id}`}
+                    >
+                      {venue.label}
+                    </span>
+                    {t.paperTrade && (
+                      <span style={{
+                        fontSize: 9, padding: '1px 6px', borderRadius: 4,
+                        background: '#64748b22', color: '#94a3b8',
+                      }}>PAPER</span>
                     )}
                   </div>
-                )
-              })()}
-            </div>
-          ))
+                  <div style={{ fontSize: 11, color: '#64748b', marginTop: 1 }}>
+                    {t.closedAt ? new Date(t.closedAt).toLocaleDateString() : 'Open'}
+                    {t.aiReasoning && (
+                      <span style={{ marginLeft: 6, color: '#7c3aed' }}>· AI</span>
+                    )}
+                  </div>
+                </div>
+                {/* Round near-zero PnL (anything within $0.005 of zero, i.e.
+                    pure rounding noise) to a calm muted "$0.00" instead of
+                    painting a green +$0.00 / red -$0.00. */}
+                {(() => {
+                  const pnl = t.pnl ?? 0
+                  const isNearZero = Math.abs(pnl) < 0.005
+                  const color = t.status === 'open'
+                    ? (pnl > 0 ? '#10b981' : pnl < 0 ? '#ef4444' : '#64748b')
+                    : isNearZero ? 'var(--text-secondary)'
+                    : pnl > 0 ? '#10b981' : '#ef4444'
+                  return (
+                    <div style={{ fontSize: 14, fontWeight: 600, color, textAlign: 'right' }} data-testid={`text-trade-pnl-${t.id}`}>
+                      {t.status === 'open' ? (
+                        // For open positions show live unrealized PnL when
+                        // we have it (HL fills, 42.space curve quote);
+                        // otherwise the calm "Open" pill.
+                        t.pnl != null ? (
+                          <>
+                            <span style={{ fontSize: 14 }}>
+                              {pnl >= 0 ? '+' : '-'}${Math.abs(pnl).toFixed(2)}
+                            </span>
+                            <div style={{ fontSize: 10, color: '#64748b', fontWeight: 400 }}>open</div>
+                          </>
+                        ) : (
+                          <span style={{ color: '#64748b', fontSize: 12 }}>Open</span>
+                        )
+                      ) : isNearZero ? (
+                        '$0.00'
+                      ) : (
+                        `${pnl > 0 ? '+' : '-'}$${Math.abs(pnl).toFixed(2)}`
+                      )}
+                    </div>
+                  )
+                })()}
+              </div>
+            )
+          })
         )}
       </div>
     </div>
