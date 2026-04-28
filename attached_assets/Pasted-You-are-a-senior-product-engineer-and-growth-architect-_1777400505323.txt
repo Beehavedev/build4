@@ -1,0 +1,260 @@
+You are a senior product engineer and growth architect.
+
+Your task is to upgrade and scale an existing live product called Build4.
+
+## Context
+Build4 is a Telegram-based AI trading platform with ~18,300 monthly active users.
+
+Current functionality:
+- Users deploy AI agents via Telegram
+- Agents trade across:
+  - Asterdex (futures)
+  - Hyperliquid (futures)
+  - 42space (prediction markets)
+
+The product works. Users are active.
+
+Your mission is NOT to rebuild — it is to transform Build4 into a scalable, viral, category-leading platform.
+
+---
+
+# CORE VISION
+
+Build4 should evolve from:
+“AI trading bot”
+
+Into:
+“The AI Trading Arena — where AI agents compete to make money for users.”
+
+This means:
+- competition
+- visibility
+- gamification
+- social virality
+- real performance data
+
+---
+
+# PRIORITY FEATURES (BUILD IN THIS ORDER)
+
+## 1. PUBLIC AGENT PROFILES
+Each user/agent must have a public, shareable profile page.
+
+Include:
+- ROI (daily, weekly, all-time)
+- Win rate
+- Total PnL
+- Strategy type (label)
+- Risk level
+- Wallet transparency (if possible)
+
+Requirements:
+- Generate unique public URL
+- Optimized for sharing on Twitter/X
+- Clean, minimal UI
+
+Goal:
+Turn every user into a marketing channel.
+
+---
+
+## 2. LEADERBOARD SYSTEM (CRITICAL)
+Global leaderboard of top agents.
+
+Sort by:
+- Daily ROI
+- Weekly ROI
+- All-time ROI
+
+Include:
+- rank
+- username / agent name
+- % returns
+- badge system (Top 1%, Rising, etc.)
+
+Update:
+- near real-time or frequent intervals
+
+Goal:
+Create competition and status.
+
+---
+
+## 3. COPY TRADING SYSTEM
+Users must be able to copy top-performing agents.
+
+Features:
+- One-click “Copy Agent”
+- Allocate capital
+- Mirror trades automatically
+
+Monetization:
+- Agent owner earns % fee from copiers
+
+Goal:
+Create internal influencers and passive users.
+
+---
+
+## 4. WEEKLY COMPETITIONS
+Automated recurring competitions.
+
+Format:
+- Weekly trading battles
+- Rank top agents
+- Distribute rewards (token or simulated for now)
+
+UI:
+- Countdown timer
+- Prize pool display
+- Winners history
+
+Goal:
+Recurring engagement + content generation.
+
+---
+
+## 5. LIVE PROFIT FEED
+System-wide live activity feed.
+
+Show:
+- “Agent X closed +12.4% trade”
+- “User Y up +32% today”
+
+Requirements:
+- Real-time or near real-time updates
+- Auto-generated shareable cards (image/text)
+
+Goal:
+Social proof + virality.
+
+---
+
+## 6. ONBOARDING OPTIMIZATION
+Reduce friction to near zero.
+
+User flow:
+- Start → Deploy agent in <60 seconds
+
+Add:
+- Pre-set strategies:
+  - Safe
+  - Balanced
+  - Aggressive
+
+- Simple input:
+  - “Start with $X”
+
+No complex UI or trading jargon.
+
+Goal:
+Anyone can start instantly.
+
+---
+
+## 7. TOKEN INTEGRATION LAYER (ABSTRACT IF NOT LIVE)
+Design system hooks for token utility:
+
+- Reduced fees for holders
+- Unlock advanced strategies
+- Access premium agents
+- Staking system (optional placeholder)
+
+Goal:
+Token = utility + ownership (not speculation only)
+
+---
+
+# GROWTH SYSTEMS (IMPORTANT)
+
+## 1. AUTO SHARE SYSTEM
+After key events, generate shareable content:
+
+Examples:
+- “My AI agent made +9% today”
+- “Top 3 agent this week”
+
+Output:
+- formatted tweet text
+- optional image
+
+---
+
+## 2. NOTIFICATION SYSTEM
+Send users:
+- daily PnL updates
+- performance comparisons (“you beat 78% of users today”)
+- leaderboard changes
+
+Goal:
+Retention + habit formation
+
+---
+
+## 3. INFLUENCER MODE
+Allow selected users to:
+- create branded agents
+- earn from followers copying them
+
+Goal:
+Turn influencers into participants, not advertisers.
+
+---
+
+# POSITIONING (IMPORTANT FOR UI COPY)
+
+Do NOT describe Build4 as:
+“a trading bot”
+
+Instead:
+- “AI Trading Arena”
+- “Deploy agents that compete and earn”
+- “Where AI trades for you 24/7”
+
+---
+
+# TECH GUIDELINES
+
+- Keep Telegram as primary interface
+- Build modular backend (agents, leaderboard, copying)
+- Ensure scalability (design for 100k+ users)
+- Use clean APIs for:
+  - agent performance
+  - trade execution
+  - leaderboard data
+
+---
+
+# EXECUTION RULES
+
+- Do NOT over-engineer
+- Ship fast, iterate fast
+- Prioritize visible features over backend perfection
+- Focus on user experience + virality loops
+
+---
+
+# SUCCESS METRICS
+
+Optimize for:
+- Daily active users
+- % users sharing results
+- Copy trading adoption rate
+- Retention (day 1, day 7)
+- Leaderboard engagement
+
+---
+
+# FINAL GOAL
+
+Build4 should feel like:
+- a game
+- a competition
+- a money-making tool
+- a social experience
+
+NOT just software.
+
+---
+
+Execute like a startup trying to dominate a category, not like a dev completing tasks.
