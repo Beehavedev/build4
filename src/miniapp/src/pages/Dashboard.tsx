@@ -3,7 +3,7 @@ import { apiFetch } from '../api'
 
 interface DashboardProps {
   userId: string | null
-  onNavigate?: (page: 'dashboard' | 'agents' | 'wallet' | 'copy' | 'portfolio' | 'predictions' | 'hyperliquid' | 'admin') => void
+  onNavigate?: (page: 'dashboard' | 'agents' | 'wallet' | 'trade' | 'copy' | 'portfolio' | 'predictions' | 'hyperliquid' | 'admin') => void
 }
 
 interface WalletInfo {
@@ -51,17 +51,56 @@ export default function Dashboard({ userId, onNavigate }: DashboardProps) {
 
   useEffect(() => {
     if (!userId) { setLoading(false); return }
+    let cancelled = false
+
+    // First-paint fetch — render the dashboard as soon as we have user +
+    // agents, even if the wallet (and especially the HL leg of it) is
+    // still resolving. This kept the loading skeleton from getting stuck
+    // behind a slow Hyperliquid clearinghouse read.
     Promise.all([
       fetch(`/api/user/${userId}`).then(r => r.json()).catch(() => null),
       fetch(`/api/agents/${userId}`).then(r => r.json()).catch(() => []),
       apiFetch<WalletInfo>('/api/me/wallet').catch(() => null),
     ]).then(([user, agentData, walletData]) => {
+      if (cancelled) return
       if (user?.portfolio) setPortfolio(user.portfolio)
       if (Array.isArray(agentData)) setAgents(agentData)
       if (Array.isArray(user?.recentTrades)) setTrades(user.recentTrades)
       if (walletData) setWallet(walletData)
       setLoading(false)
     })
+
+    // Wallet refresh on a 20s cadence so the dashboard catches any
+    // delayed Hyperliquid clearinghouse read. Symptom this fixes: the
+    // first /api/me/wallet call sometimes returns hyperliquid.onboarded
+    // = false / accountValue = 0 because HL's read endpoint was slow or
+    // dropped — the user then saw "fund to start" until they navigated
+    // away and back, which forced a remount + refetch. With background
+    // polling the dashboard heals itself in place.
+    const id = setInterval(() => {
+      if (cancelled) return
+      apiFetch<WalletInfo>('/api/me/wallet')
+        .then((w) => { if (!cancelled && w) setWallet(w) })
+        .catch(() => { /* keep last good state */ })
+    }, 20_000)
+
+    // Also refetch whenever the tab becomes visible again — switching
+    // to wallet/portfolio and back already triggers the user's mental
+    // model that "balances should be fresh now", so honour that.
+    const onVis = () => {
+      if (document.visibilityState === 'visible' && !cancelled) {
+        apiFetch<WalletInfo>('/api/me/wallet')
+          .then((w) => { if (!cancelled && w) setWallet(w) })
+          .catch(() => { /* keep last good state */ })
+      }
+    }
+    document.addEventListener('visibilitychange', onVis)
+
+    return () => {
+      cancelled = true
+      clearInterval(id)
+      document.removeEventListener('visibilitychange', onVis)
+    }
   }, [userId])
 
   if (loading) {
@@ -94,12 +133,18 @@ export default function Dashboard({ userId, onNavigate }: DashboardProps) {
   const fmtUsd = (n: number) => `${n < 0 ? '-' : ''}$${Math.abs(n).toFixed(2)}`
   const fmtPnl = (n: number) => `${n >= 0 ? '+' : '-'}$${Math.abs(n).toFixed(2)}`
 
+  // All three quick-action buttons jump straight to the venue's TRADE
+  // surface (manual perp ticket / prediction picker), keeping behaviour
+  // parallel across Aster, 42.space, and Hyperliquid. Aster previously
+  // routed to 'agents' (the agent management screen) which broke parity
+  // with HL — users tapping "Aster · Perps" expected the trade ticket,
+  // not an agent list.
   const quickActions: Array<{ label: string; sub: string; testId: string; onClick: () => void; disabled?: boolean }> = [
     {
       label: 'Aster',
       sub: 'Perps',
       testId: 'button-venue-aster',
-      onClick: () => onNavigate?.('agents'),
+      onClick: () => onNavigate?.('trade'),
     },
     {
       label: '42.space',
