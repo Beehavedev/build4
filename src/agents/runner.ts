@@ -355,53 +355,94 @@ async function runAllAgents() {
       return
     }
 
-    console.log(`[Runner] Ticking ${activeAgents.length} agents in batches of ${TICK_BATCH_SIZE}`)
+    // Multi-venue dispatch (Phase 1, 2026-04-28). Each agent now has an
+    // `enabledVenues` array. We expand into (agent × venue) tick units —
+    // each unit is an independent scan + decision + execute pass against
+    // that one venue. The trading agent reads `agent.exchange` for venue
+    // routing throughout, so we clone the agent row per venue with
+    // `exchange` set to the venue being processed. No deeper signature
+    // change required — the cloned read travels naturally through
+    // executeOpen/executeClose's existing branches.
+    //
+    // Backfilled rows have enabledVenues = [exchange] so behaviour is
+    // unchanged for users who haven't opted in to additional venues.
+    type TickUnit = { agent: typeof activeAgents[number]; venue: string }
+    const tickUnits: TickUnit[] = []
+    let skippedNoVenue = 0
+    for (const agent of activeAgents) {
+      const venues = Array.isArray((agent as any).enabledVenues) && (agent as any).enabledVenues.length > 0
+        ? (agent as any).enabledVenues as string[]
+        // Defensive fallback for any row that escaped the boot-time
+        // backfill (NULL or empty enabledVenues): treat as single-venue
+        // on the legacy `exchange` column. Without this an upgrade could
+        // silently mute every legacy agent for one tick.
+        : [agent.exchange]
+      if (venues.length === 0) {
+        skippedNoVenue++
+        continue
+      }
+      for (const venue of venues) {
+        tickUnits.push({ agent, venue })
+      }
+    }
+
+    console.log(`[Runner] Ticking ${activeAgents.length} agents → ${tickUnits.length} (agent×venue) units in batches of ${TICK_BATCH_SIZE}`)
     const tickStart = Date.now()
     let dispatched = 0
     let skippedInflight = 0
     let skippedVenueDisabled = 0
 
-    for (let i = 0; i < activeAgents.length; i += TICK_BATCH_SIZE) {
-      const batch = activeAgents.slice(i, i + TICK_BATCH_SIZE)
+    for (let i = 0; i < tickUnits.length; i += TICK_BATCH_SIZE) {
+      const batch = tickUnits.slice(i, i + TICK_BATCH_SIZE)
 
-      for (const agent of batch) {
-        // Per-venue allow check: a user can pause "all my Hyperliquid
-        // agents" via the platform allow-list in the mini-app without
-        // having to flip every individual isActive switch. Done in JS
-        // (not the WHERE clause) because the gate is venue-specific —
-        // the boolean to consult depends on agent.exchange.
+      for (const { agent, venue } of batch) {
+        // Per-user platform allow check, now indexed by THIS unit's venue
+        // (not agent.exchange). A user pausing "all my Hyperliquid agents"
+        // mutes the HL slice of every dual-venue agent without touching
+        // the Aster slice — exactly the granularity the platform toggles
+        // on the mini app are meant to provide.
         const venueAllowed =
-          (agent.exchange === 'aster'       && agent.user?.asterAgentTradingEnabled       !== false) ||
-          (agent.exchange === 'hyperliquid' && agent.user?.hyperliquidAgentTradingEnabled !== false) ||
-          (agent.exchange !== 'aster' && agent.exchange !== 'hyperliquid')
+          (venue === 'aster'       && agent.user?.asterAgentTradingEnabled       !== false) ||
+          (venue === 'hyperliquid' && agent.user?.hyperliquidAgentTradingEnabled !== false) ||
+          // 42.space and any other non-perp venue have no per-user pause
+          // flag yet — implicit allow until Phase 2 introduces one.
+          (venue !== 'aster' && venue !== 'hyperliquid')
         if (!venueAllowed) {
           skippedVenueDisabled++
           continue
         }
-        if (runningAgents.has(agent.id)) {
+
+        // In-flight key is (agentId, venue) so the Aster slice and HL
+        // slice of the same agent can run concurrently within a tick.
+        // Without this scoping the second venue would be skipped until
+        // the first finished — defeating the parallel-venue model.
+        const inflightKey = `${agent.id}:${venue}`
+        if (runningAgents.has(inflightKey)) {
           skippedInflight++
           continue
         }
-        runningAgents.add(agent.id)
-        // Fire-and-forget — we don't await individual ticks, only the
-        // inter-batch gap. This bounds peak concurrency to TICK_BATCH_SIZE.
-        // Strip the synthetic `user` join before passing to runAgentTick
-        // since downstream code expects a plain Agent row.
+        runningAgents.add(inflightKey)
+
+        // Strip the join + override `exchange` to the per-unit venue.
+        // Downstream tradingAgent.ts reads agent.exchange for routing,
+        // open-trade venue filters, log lines, executeOpen branches —
+        // every one of those resolves naturally to this venue.
         const { user: _u, ...plainAgent } = agent as any
-        runAgentTick(plainAgent)
-          .catch((err) => console.error(`[Runner] Agent ${agent.name} error:`, err?.message ?? err))
-          .finally(() => runningAgents.delete(agent.id))
+        const unitAgent = { ...plainAgent, exchange: venue }
+        runAgentTick(unitAgent)
+          .catch((err) => console.error(`[Runner] Agent ${agent.name} (${venue}) error:`, err?.message ?? err))
+          .finally(() => runningAgents.delete(inflightKey))
         dispatched++
       }
 
       // Pace the next batch only if there is one.
-      if (i + TICK_BATCH_SIZE < activeAgents.length) {
+      if (i + TICK_BATCH_SIZE < tickUnits.length) {
         await new Promise((r) => setTimeout(r, TICK_BATCH_GAP_MS))
       }
     }
 
     const elapsed = ((Date.now() - tickStart) / 1000).toFixed(1)
-    console.log(`[Runner] Dispatched ${dispatched} ticks in ${elapsed}s (${skippedInflight} skipped — still in flight from previous tick, ${skippedVenueDisabled} skipped — venue paused by user)`)
+    console.log(`[Runner] Dispatched ${dispatched} ticks in ${elapsed}s (${skippedInflight} skipped — still in flight, ${skippedVenueDisabled} skipped — venue paused by user, ${skippedNoVenue} skipped — no venues enabled)`)
   } catch (err) {
     console.error('[Runner] Error fetching agents:', err)
   }

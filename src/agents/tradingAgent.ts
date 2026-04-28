@@ -409,7 +409,7 @@ const ALL_PAIRS_UNIVERSE = [
 // 10 pairs PLUS any new listing onboarded within the last 48h. Pairs <2h
 // old skip TA scoring entirely (not enough kline history) and instead get
 // a synthetic high score so they're always considered as momentum candidates.
-const WATCHLIST_MIN_SCORE = 5  // out of 8 — below this, agent HOLDs everything
+export const WATCHLIST_MIN_SCORE = 5  // out of 8 — below this, agent HOLDs everything
 const NEW_LISTING_SYNTHETIC_SCORE = 6  // newly-listed pairs always make the cut
 // AUTO mode now evaluates the top-N scoring pairs per tick instead of just
 // the single winner. BTC and similar majors often range while alts/new
@@ -424,7 +424,7 @@ const WATCHLIST_TOP_N = 3
 //   RSI sweet-spot: 0–2  (avoid extremes)
 //   MACD momentum : 0–2  (histogram expanding either direction)
 //   BB not squeezed: 0–1 (need volatility to capture)
-function scoreSetup(ohlcv15m: OHLCV, ohlcv1h: OHLCV): number {
+export function scoreSetup(ohlcv15m: OHLCV, ohlcv1h: OHLCV): number {
   const adx = calculateADX(ohlcv1h, 14)
   if (adx < 20) return 0  // ranging — skip entirely
 
@@ -784,8 +784,37 @@ export async function runAgentTick(agent: Agent): Promise<void> {
   // Cost stays at one Claude call/tick because only the winner is added.
   if (pairList.includes('AUTO')) {
     pairList = pairList.filter((p) => p !== 'AUTO')
+    // Per-venue AUTO scan (Phase 1, 2026-04-28). Each venue tick (the
+    // runner enumerates one tick per enabled venue per agent and clones
+    // agent.exchange into the slot) sees ONLY its own open positions and
+    // its OWN candle source. This is the explicit fix for "scanning on
+    // Aster opening position on HL is not what we want — orderbooks can
+    // be different even if the ticker is the same".
+    //
+    //   • aster        → Aster getKlines + Aster watchlist (existing path)
+    //   • hyperliquid  → HL candleSnapshot + curated HL focus list
+    //   • fortytwo     → no perp scan; prediction-market participation
+    //                    lands in Phase 2 (next release).
+    //   • mock         → reuses Aster's universe for paper-trading shape
+    //                    (mock has no native price feed of its own).
+    if (agent.exchange === 'fortytwo') {
+      // Skip until the 42.space participation path is wired into the
+      // runner. The chip toggle still works in the UI — this just means
+      // the runner is a no-op for prediction markets right now and the
+      // user sees "scheduled in next release" rather than a silent skip.
+      console.log(
+        `[Agent ${agent.name}] 42.space venue enabled but participation ` +
+        `path ships in Phase 2 — no scan this tick`
+      )
+      return
+    }
     const openHeld = await db.trade.findMany({
-      where: { agentId: agent.id, status: 'open' },
+      // Per-venue scope: only manage trades opened on the same venue we're
+      // ticking now. Without this filter, an HL tick would surface an
+      // open Aster position and try to close it via the HL adapter (which
+      // has no record of it), and vice versa. Each Trade row carries the
+      // venue it was opened on, so the filter is exact.
+      where: { agentId: agent.id, status: 'open', exchange: agent.exchange },
       select: { pair: true },
       distinct: ['pair']
     })
@@ -795,9 +824,14 @@ export async function runAgentTick(agent: Agent): Promise<void> {
     }
     let scanResults: Array<{ symbol: string; score: number }> = []
     try {
-      scanResults = await pickTopWatchlistPairs(WATCHLIST_TOP_N)
+      if (agent.exchange === 'hyperliquid') {
+        const { pickTopHlPairs } = await import('../services/hlWatchlist')
+        scanResults = await pickTopHlPairs(WATCHLIST_TOP_N)
+      } else {
+        scanResults = await pickTopWatchlistPairs(WATCHLIST_TOP_N)
+      }
     } catch (e: any) {
-      console.warn(`[Agent ${agent.name}] AUTO scan failed:`, e?.message)
+      console.warn(`[Agent ${agent.name}] AUTO scan failed (${agent.exchange}):`, e?.message)
     }
     for (const r of scanResults) {
       if (!pairList.includes(r.symbol)) pairList.push(r.symbol)
@@ -922,9 +956,13 @@ export async function runAgentTick(agent: Agent): Promise<void> {
         }
       }
 
-      // 2. Get open positions
+      // 2. Get open positions on THIS venue only. Same agent on dual venues
+      // can hold simultaneous positions on the same pair across Aster + HL;
+      // the per-pair loop here must only see the slice managed by the
+      // venue currently ticking — otherwise an HL tick would surface an
+      // Aster position and try to manage it via HL routing.
       const openPositions = await db.trade.findMany({
-        where: { agentId: agent.id, pair, status: 'open' }
+        where: { agentId: agent.id, pair, status: 'open', exchange: agent.exchange }
       })
 
       // 2a. News intelligence — shared across all agents (1 Claude call/min).
@@ -940,8 +978,12 @@ export async function runAgentTick(agent: Agent): Promise<void> {
         console.log(
           `[Agent ${agent.name}] EMERGENCY CLOSE — ${newsSignal.topHeadline}`
         )
+        // Emergency close runs in the per-venue tick — only flatten
+        // positions on THIS venue. The other venue's tick will run its
+        // own news check (same shared signal cache, near-zero extra cost)
+        // and trigger its own emergency close pass for its own positions.
         const allOpen = await db.trade.findMany({
-          where: { agentId: agent.id, status: 'open' }
+          where: { agentId: agent.id, status: 'open', exchange: agent.exchange }
         })
         // Hoist the user lookup out of the per-position loop — N positions
         // used to mean N identical user/wallet queries; one is enough.
@@ -2002,8 +2044,10 @@ If you would not put real money in this trade right now, action = HOLD.`
       }
 
       if (decision.action === 'CLOSE') {
+        // Same venue scoping rationale as line ~967 — only target the
+        // position this venue's tick is responsible for.
         const openPos = await db.trade.findFirst({
-          where: { agentId: agent.id, pair, status: 'open' }
+          where: { agentId: agent.id, pair, status: 'open', exchange: agent.exchange }
         })
 
         if (!openPos) return

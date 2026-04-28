@@ -114,6 +114,10 @@ model Agent {
   isPaused        Boolean   @default(false)
 
   exchange        String    @default("mock")
+  // See prisma/schema.prisma for the full doc-comment. Per-agent venue
+  // allow-list driven by the new mini-app chip toggles. Backfilled at
+  // boot to [exchange] so existing agents keep behaving identically.
+  enabledVenues   String[]  @default([])
   pairs           String[]  @default(["BTC/USDT"])
   timeframe       String    @default("15m")
   maxPositionSize Float     @default(100)

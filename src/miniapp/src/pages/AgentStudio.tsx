@@ -121,6 +121,47 @@ export default function AgentStudio(_props: AgentStudioProps) {
     fetchAgents()
   }
 
+  // Per-agent venue chip toggle. Optimistic so the chip flips on tap with
+  // zero perceived latency; reverts to the previous state on server error.
+  // Concurrency is keyed by `${agentId}:${venue}` so the user can flip
+  // multiple chips on different agents in parallel without one tap
+  // freezing another.
+  const [busyAgentVenue, setBusyAgentVenue] = useState<Set<string>>(new Set())
+  const toggleAgentVenue = async (agentId: string, venue: VenueId, nextEnabled: boolean) => {
+    const key = `${agentId}:${venue}`
+    if (busyAgentVenue.has(key)) return
+    setBusyAgentVenue(prev => { const n = new Set(prev); n.add(key); return n })
+
+    // Optimistic mutate of the local agents state. We compute the next
+    // enabledVenues array from the previous one (not from the chip's
+    // intended boolean directly) so a stale render can't accidentally
+    // wipe a venue the user just turned on in another chip.
+    const prev = agents
+    setAgents(curr => curr.map(a => {
+      if (a.id !== agentId) return a
+      const cur: string[] = Array.isArray(a.enabledVenues) ? a.enabledVenues : []
+      const set = new Set(cur)
+      if (nextEnabled) set.add(venue); else set.delete(venue)
+      const next = Array.from(set)
+      return { ...a, enabledVenues: next, isActive: next.length > 0 }
+    }))
+
+    try {
+      await apiFetch(`/api/agents/${agentId}/venues/${venue}/toggle`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ enabled: nextEnabled }),
+      })
+      // Refetch in the background to converge any server-side normalisation
+      // (e.g. the master isActive flag flipping when the last venue dropped).
+      fetchAgents()
+    } catch {
+      setAgents(prev)
+    } finally {
+      setBusyAgentVenue(curr => { const n = new Set(curr); n.delete(key); return n })
+    }
+  }
+
   // Flip a single platform allow-flag. Optimistic UI + revert on error so
   // the toggle never lies about the server state.
   const setVenuePermission = async (venue: VenueId, enabled: boolean) => {
@@ -295,26 +336,50 @@ export default function AgentStudio(_props: AgentStudioProps) {
                 : (agent.pairs?.join(', ') ?? '')}
             </div>
           </div>
-          {/* Per-agent toggle */}
-          <button
-            onClick={() => toggleAgent(agent.id)}
-            data-testid={`button-agent-toggle-${agent.id}`}
-            aria-label={agent.isActive ? 'Pause agent' : 'Enable agent'}
-            style={{
-              width: 48, height: 26, borderRadius: 13,
-              background: agent.isActive ? '#7c3aed' : '#1e1e2e',
-              border: 'none', cursor: 'pointer', position: 'relative',
-              transition: 'background 0.2s',
-              flexShrink: 0,
-            }}
-          >
-            <div style={{
-              width: 20, height: 20, borderRadius: '50%', background: 'white',
-              position: 'absolute', top: 3,
-              left: agent.isActive ? 25 : 3,
-              transition: 'left 0.2s'
-            }} />
-          </button>
+        </div>
+
+        {/* Per-agent venue chips (Phase 1, 2026-04-28). Replaces the
+            single Activate toggle. Each chip is an independent on/off
+            for that venue — the agent can run on any subset (e.g. only
+            HL, or Aster + 42.space). Empty = dormant. The chip is
+            disabled (and dimmed) when the user's platform allow-list
+            has that venue paused, so the per-agent UI never lies about
+            why a venue isn't ticking. */}
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}
+             data-testid={`group-agent-venues-${agent.id}`}>
+          {VENUES.map(v => {
+            const enabledHere = Array.isArray(agent.enabledVenues)
+              ? agent.enabledVenues.includes(v.id)
+              : agent.exchange === v.id  // legacy fallback if backfill hasn't run yet
+            const platformOff = perms != null && perms[v.id] === false
+            const busy = busyAgentVenue.has(`${agent.id}:${v.id}`)
+            const disabled = platformOff || busy
+            const tip = platformOff
+              ? `Enable ${v.label} at the top of this page first`
+              : (enabledHere ? `Pause ${v.label} for this agent` : `Run this agent on ${v.label}`)
+            return (
+              <button
+                key={v.id}
+                disabled={disabled}
+                onClick={() => toggleAgentVenue(agent.id, v.id, !enabledHere)}
+                data-testid={`chip-agent-venue-${v.id}-${agent.id}`}
+                aria-pressed={enabledHere}
+                title={tip}
+                style={{
+                  fontSize: 11, fontWeight: 600, letterSpacing: 0.3,
+                  padding: '5px 10px', borderRadius: 999,
+                  border: `1px solid ${enabledHere ? v.accent : '#2a2a3a'}`,
+                  background: enabledHere ? `${v.accent}22` : 'transparent',
+                  color: enabledHere ? v.accent : (platformOff ? '#475569' : '#94a3b8'),
+                  cursor: disabled ? 'not-allowed' : 'pointer',
+                  opacity: platformOff ? 0.55 : (busy ? 0.7 : 1),
+                  transition: 'background 0.15s, color 0.15s, border-color 0.15s',
+                }}
+              >
+                {v.label.toUpperCase()}
+              </button>
+            )
+          })}
         </div>
 
         {/* Stats row */}

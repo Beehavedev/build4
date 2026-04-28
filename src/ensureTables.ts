@@ -107,6 +107,21 @@ export async function ensureNewTables() {
   // AUTO-mode pair scanner state — populated each tick when pairs:['AUTO']
   await run(`ALTER TABLE "Agent" ADD COLUMN IF NOT EXISTS "currentPair" TEXT`)
   await run(`ALTER TABLE "Agent" ADD COLUMN IF NOT EXISTS "lastScanScore" INTEGER`)
+
+  // Per-agent venue allow-list (Phase 1, 2026-04-28). Default empty so
+  // brand-new agents are forced to opt in via the chip toggles. Existing
+  // rows are backfilled below to ARRAY[exchange] so behaviour is
+  // unchanged on first deploy — users see their current venue lit and
+  // can tap to add the others.
+  await run(`ALTER TABLE "Agent" ADD COLUMN IF NOT EXISTS "enabledVenues" TEXT[] DEFAULT ARRAY[]::TEXT[]`)
+  // Backfill: any row whose enabledVenues is NULL or empty inherits its
+  // legacy single venue. Using array_length() IS NULL covers both states
+  // (NULL → length is NULL; empty array → length is also NULL in PG).
+  await run(`UPDATE "Agent"
+             SET "enabledVenues" = ARRAY["exchange"]::TEXT[]
+             WHERE array_length("enabledVenues", 1) IS NULL
+               AND "exchange" IS NOT NULL
+               AND "exchange" <> ''`)
   await run(`CREATE UNIQUE INDEX IF NOT EXISTS "Agent_walletAddress_key" ON "Agent"("walletAddress") WHERE "walletAddress" IS NOT NULL`)
   // Globally unique agent name (case-insensitive) — name is hardcoded on-chain, must be unique
   await run(`CREATE UNIQUE INDEX IF NOT EXISTS "Agent_name_lower_key" ON "Agent"(LOWER("name"))`)

@@ -2607,12 +2607,90 @@ app.post('/api/agents/:id/toggle', requireTgUser, async (req, res) => {
       return res.status(403).json({ error: 'Forbidden' })
     }
 
+    // Master kill-switch behaviour preserved for back-compat. When
+    // turning the agent ON, also seed enabledVenues from the legacy
+    // `exchange` column if it's empty so the runner has at least one
+    // venue to dispatch into. Turning OFF doesn't clear enabledVenues —
+    // the user's per-venue selections persist across master toggles.
+    const turningOn = !agent.isActive
+    const venuesNow = Array.isArray((agent as any).enabledVenues) ? (agent as any).enabledVenues : []
+    const seedVenues = turningOn && venuesNow.length === 0 && agent.exchange
+      ? { enabledVenues: [agent.exchange] }
+      : {}
+
     const updated = await db.agent.update({
       where: { id: agentId },
-      data: { isActive: !agent.isActive, isPaused: false }
+      data: { isActive: turningOn, isPaused: false, ...seedVenues }
     })
     res.json(updated)
   } catch {
+    res.status(500).json({ error: 'Internal error' })
+  }
+})
+
+// Per-agent venue toggle (Phase 1, 2026-04-28). Replaces the single
+// "Activate" button on the agent card with one chip per venue:
+// ASTER / HYPERLIQUID / 42SPACE. The user can enable any subset; the
+// agent runs an independent scan + decision per enabled venue each tick.
+//
+// Body: { enabled: boolean } — explicit set. We don't toggle from the
+// current state because the UI is optimistic and we want the server to
+// be the source of truth for "is this venue on right now". Idempotent
+// by design: setting enabled=true on an already-enabled venue is a
+// no-op, same for disable.
+//
+// Side-effects:
+//   • Adding the FIRST venue auto-flips isActive=true (so the agent
+//     starts ticking immediately after the first chip turn-on).
+//   • Removing the LAST venue auto-flips isActive=false (so the runner
+//     stops dispatching for an empty allow-list).
+// This keeps the master kill-switch behaviour intact for any legacy
+// code path that still gates on isActive (and for the chat bot's
+// existing "agent is active" copy).
+const ALLOWED_VENUE_TOGGLES = new Set(['aster', 'hyperliquid', 'fortytwo'])
+app.post('/api/agents/:id/venues/:venue/toggle', requireTgUser, async (req, res) => {
+  try {
+    const user = (req as any).user
+    if (!user) return res.status(401).json({ error: 'Unauthenticated' })
+
+    const agentId = String(req.params.id)
+    const venue   = String(req.params.venue ?? '').toLowerCase()
+    if (!ALLOWED_VENUE_TOGGLES.has(venue)) {
+      return res.status(400).json({ error: `Unknown venue '${venue}'` })
+    }
+
+    const body = (req.body ?? {}) as { enabled?: unknown }
+    if (typeof body.enabled !== 'boolean') {
+      return res.status(400).json({ error: 'enabled (boolean) is required' })
+    }
+    const enabled = body.enabled
+
+    const agent = await db.agent.findUnique({ where: { id: agentId } })
+    if (!agent) return res.status(404).json({ error: 'Agent not found' })
+    if (agent.userId !== user.id) return res.status(403).json({ error: 'Forbidden' })
+
+    const current: string[] = Array.isArray((agent as any).enabledVenues)
+      ? (agent as any).enabledVenues
+      : []
+    const set = new Set(current)
+    if (enabled) set.add(venue)
+    else         set.delete(venue)
+    const next = Array.from(set)
+
+    // Master switch sync (see header comment): non-empty venues → active,
+    // empty → inactive. Don't touch isPaused — that's reserved for
+    // automated stops (daily-loss tripwires) and the user shouldn't be
+    // able to override one of those by toggling a venue chip.
+    const updated = await db.agent.update({
+      where: { id: agentId },
+      data: {
+        enabledVenues: next,
+        isActive:      next.length > 0,
+      },
+    })
+    res.json({ ok: true, agent: updated })
+  } catch (err: any) {
+    console.error('[API] /agents/:id/venues/:venue/toggle failed:', err?.message ?? err)
     res.status(500).json({ error: 'Internal error' })
   }
 })

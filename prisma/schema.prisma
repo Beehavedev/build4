@@ -114,6 +114,17 @@ model Agent {
   isPaused        Boolean   @default(false)
 
   exchange        String    @default("mock")
+  // Per-agent venue allow-list. Each tick the runner enumerates this list
+  // and dispatches a *separate* scan + decision + execute pass per venue —
+  // i.e. an agent enabled for both Aster and HL gets two independent ticks
+  // (HL's orderbook → HL decision → HL fill, Aster's orderbook → Aster
+  // decision → Aster fill). Empty array = agent is implicitly inactive
+  // even if isActive=true. `exchange` above is retained as the legacy
+  // "primary venue" used for wallet/onchain identity routing; operational
+  // dispatch reads enabledVenues. Backfilled at boot to [exchange] for
+  // existing rows so behaviour is unchanged until users opt in to the
+  // new per-agent venue chips.
+  enabledVenues   String[]  @default([])
   pairs           String[]  @default(["BTC/USDT"])
   timeframe       String    @default("15m")
   maxPositionSize Float     @default(100)
