@@ -371,13 +371,22 @@ export default function Portfolio({ userId }: PortfolioProps) {
                 layout for visual symmetry and uses the same purple accent
                 that 42.space gets in the live feed and venue badges so
                 users get a consistent colour-to-venue mapping across the
-                app. Counts open positions only; the sub-line shows the
-                count of live tickets so a $0 card with positions still
-                tells a story (e.g. "2 open" while resolution pending). */}
+                app.
+
+                IMPORTANT distinction from Aster/HL: 42.space has no
+                separate clearinghouse balance. Predictions are bought
+                directly from the BSC wallet's USDT, so the "card value"
+                here represents OPEN POSITION exposure (mark-to-market),
+                NOT spendable balance. The sub-line surfaces the BSC USDT
+                that's actually available to fund new predictions, so a
+                user looking at "42.SPACE $0.00" doesn't conclude they're
+                unfunded for predictions when they actually have
+                purchasing power sitting on BSC. */}
             {(() => {
               const openCount = predictions.filter(
                 (p) => p.status === 'open' || p.status === 'resolved_win',
               ).length
+              const bscUsdt = wallet.balances.usdt ?? 0
               const hasExposure = fortyTwoEquity > 0.01 || openCount > 0
               const accentColor = hasExposure ? '#a855f7' : '#e2e8f0'
               const cardBg = hasExposure
@@ -402,8 +411,8 @@ export default function Portfolio({ userId }: PortfolioProps) {
                   </div>
                   <div style={{ fontSize: 10, color: '#64748b', marginTop: 4 }}>
                     {openCount > 0
-                      ? `${openCount} open position${openCount === 1 ? '' : 's'}`
-                      : 'No open positions'}
+                      ? `${openCount} open · $${bscUsdt.toFixed(2)} spendable`
+                      : `$${bscUsdt.toFixed(2)} spendable (BSC)`}
                   </div>
                 </div>
               )
