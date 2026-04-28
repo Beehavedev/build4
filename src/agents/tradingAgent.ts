@@ -1708,10 +1708,10 @@ If you would not put real money in this trade right now, action = HOLD.`
       if (
         _bot && telegramId
         && shouldSendSummary(agent.id, hasAction, bestScore)
-        && shouldSendPairNotification(agent.id, pair)
+        && shouldSendPairNotification(agent.id, pair, 'analyzed')
       ) {
         markSummarySent(agent.id)
-        markPairNotificationSent(agent.id, pair)
+        markPairNotificationSent(agent.id, pair, 'analyzed')
         const actionEmoji =
           decision.action === 'HOLD' ? '⏸ HOLD'
             : decision.action === 'OPEN_LONG' ? '🚀 LONG'
@@ -1803,8 +1803,8 @@ If you would not put real money in this trade right now, action = HOLD.`
             // missing on a thin new listing) doesn't carpet-bomb chat.
             // The DB log still records every skip — only the chat noise
             // is dampened.
-            if (_bot2 && telegramId && shouldSendPairNotification(agent.id, pair)) {
-              markPairNotificationSent(agent.id, pair)
+            if (_bot2 && telegramId && shouldSendPairNotification(agent.id, pair, 'skipped')) {
+              markPairNotificationSent(agent.id, pair, 'skipped')
               const sideEmoji = decision.action === 'OPEN_LONG' ? '🚀 LONG' : '🔻 SHORT'
               // Friendly labels per gate so the user sees the cause in
               // plain language rather than the internal gate identifier.
