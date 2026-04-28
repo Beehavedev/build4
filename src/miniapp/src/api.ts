@@ -181,10 +181,25 @@ export function onboardAgent(opts: {
   preset: 'safe' | 'balanced' | 'aggressive'
   startingCapital: number
   chain?: 'bsc' | 'xlayer'
+  // Optional. When omitted the server picks a friendly random name from
+  // its 30-name pool (Falcon, Mantis, Cobalt, ...). When supplied the
+  // server validates the format (3-24 chars, [a-zA-Z0-9_]) and surfaces
+  // an "already taken" error if the name is in use.
+  name?: string
 }) {
   return apiFetch<{ success: true; agent: AgentData }>('/api/me/agents/onboard', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(opts),
+  })
+}
+
+// Hard-delete an agent. Server validates ownership and (in addition to
+// removing the row) flips isActive=false first so the runner stops
+// dispatching mid-loop. There's no undo — UI should confirm before
+// calling. Returns { ok: true } on success.
+export function deleteAgent(agentId: string) {
+  return apiFetch<{ ok: true }>(`/api/agents/${encodeURIComponent(agentId)}`, {
+    method: 'DELETE',
   })
 }

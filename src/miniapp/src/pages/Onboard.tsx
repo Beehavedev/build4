@@ -67,6 +67,10 @@ export default function Onboard({ asterOnboarded, onDone }: OnboardProps) {
   // sensible buffer, small enough that a brand-new user doesn't feel they're
   // committing serious money on the first tap. They can tune this in Studio.
   const [capital, setCapital] = useState('25')
+  // Optional name. Empty → server picks a friendly random one from its
+  // 30-name pool ("Falcon3517"-style). Filled → server validates 3-24
+  // chars [a-zA-Z0-9_] and surfaces a clear error if taken.
+  const [name, setName] = useState('')
   const [busy, setBusy] = useState(false)
   const [step, setStep] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -86,12 +90,19 @@ export default function Onboard({ asterOnboarded, onDone }: OnboardProps) {
     setError(null)
     try {
       setStep('Registering on-chain identity (~30s)…')
+      const trimmedName = name.trim()
       const created = await apiFetch<{ success: true; agent: AgentData }>(
         '/api/me/agents/onboard',
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ preset, startingCapital: capitalNum }),
+          body: JSON.stringify({
+            preset,
+            startingCapital: capitalNum,
+            // Only forward `name` when the user actually typed something,
+            // so the server takes its random-pool path on empty input.
+            ...(trimmedName ? { name: trimmedName } : {}),
+          }),
         },
       )
 
@@ -231,6 +242,35 @@ export default function Onboard({ asterOnboarded, onDone }: OnboardProps) {
           data-testid={`text-preset-blurb-${preset}`}
         >
           {PRESETS.find(p => p.id === preset)!.blurb}
+        </div>
+      </div>
+
+      {/* Optional name — leave blank for a friendly random one. */}
+      <div className="section-label">Agent Name (optional)</div>
+      <div className="card" style={{ marginBottom: 16, padding: 12 }}>
+        <input
+          type="text"
+          value={name}
+          onChange={e => setName(e.target.value)}
+          disabled={busy}
+          placeholder="Leave blank for a random name"
+          maxLength={24}
+          data-testid="input-agent-name"
+          style={{
+            width: '100%',
+            background: 'var(--bg-elevated)',
+            border: '1px solid var(--border)',
+            borderRadius: 10,
+            color: 'var(--text-primary)',
+            padding: '10px 12px',
+            fontSize: 16,
+            fontWeight: 500,
+            outline: 'none',
+            boxSizing: 'border-box',
+          }}
+        />
+        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8 }}>
+          3–24 characters · letters, numbers, underscore. We'll pick one for you if blank.
         </div>
       </div>
 

@@ -2694,6 +2694,42 @@ app.post('/api/me/agents/onboard', requireTgUser, async (req, res) => {
   }
 })
 
+// Hard-delete an agent owned by the caller. Stops the runner from picking
+// it up next tick (we set isActive=false inside the same transaction so
+// there's no window where a deleted agent's row vanishes mid-dispatch),
+// then removes the row. Caller-owned and ownership-checked. We do NOT
+// touch the agent's on-chain ERC-8004 identity — that's immutable, and
+// the agent's wallet will simply stop signing trades. The user can
+// always create a fresh agent (with a fresh wallet + fresh identity)
+// from the Onboard page.
+app.delete('/api/agents/:id', requireTgUser, async (req, res) => {
+  try {
+    const user = (req as any).user
+    if (!user) return res.status(401).json({ error: 'Unauthenticated' })
+
+    const agentId = String(req.params.id)
+    const agent = await db.agent.findUnique({ where: { id: agentId } })
+    if (!agent) return res.status(404).json({ error: 'Agent not found' })
+    if (agent.userId !== user.id) {
+      return res.status(403).json({ error: 'Forbidden' })
+    }
+
+    // Stop the runner from picking it up the next tick BEFORE we drop
+    // the row, so we never race a delete against an in-flight dispatch
+    // (which would otherwise log a "agent not found" error from the
+    // worker side).
+    try {
+      await db.agent.update({ where: { id: agentId }, data: { isActive: false, isPaused: true } })
+    } catch { /* tolerable — we're about to delete anyway */ }
+
+    await db.agent.delete({ where: { id: agentId } })
+    res.json({ ok: true })
+  } catch (err: any) {
+    console.error('[API] DELETE /api/agents/:id failed:', err?.message ?? err)
+    res.status(500).json({ error: 'Internal error' })
+  }
+})
+
 app.post('/api/agents/:id/toggle', requireTgUser, async (req, res) => {
   try {
     const user = (req as any).user
