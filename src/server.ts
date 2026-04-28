@@ -1723,8 +1723,35 @@ app.post('/api/hyperliquid/approve', requireTgUser, async (req, res) => {
       },
     })
 
+    // ── 5) Auto move-to-perps. Most users land here with USDC sitting in
+    //    HL spot (because that's where bridge deposits + L1 deposits go),
+    //    but the agent trades perps and approveAgent doesn't move funds.
+    //    Without this sweep the user gets approved but their first trade
+    //    fails with "insufficient margin" and they have to discover the
+    //    Move-to-Perps button on their own — friction point #4. We sweep
+    //    everything except a $0.10 dust floor so HL doesn't reject zero
+    //    transfers, and swallow the failure so a transient HL error here
+    //    can't fail the activate flow itself.
+    let movedToPerps = 0
+    try {
+      const { transferSpotPerp } = await import('./services/hyperliquid')
+      const spotNow = await getSpotUsdcBalance(wallet.address)
+      const sweep = Math.floor((spotNow - 0.10) * 100) / 100
+      if (sweep >= 1) {
+        const move = await transferSpotPerp(userPk, sweep, true)
+        if (move.success) {
+          movedToPerps = sweep
+          console.log(`[/hyperliquid/approve] auto-move-to-perps user=${user.id} swept $${sweep}`)
+        } else {
+          console.warn(`[/hyperliquid/approve] auto-move-to-perps failed (non-fatal) user=${user.id}: ${move.error}`)
+        }
+      }
+    } catch (e: any) {
+      console.warn(`[/hyperliquid/approve] auto-move-to-perps threw (non-fatal) user=${user.id}: ${e?.message ?? e}`)
+    }
+
     console.log(`[/hyperliquid/approve] user=${user.id} tg=${user.telegramId} agent=${agentAddress} OK`)
-    return res.json({ success: true, agentAddress })
+    return res.json({ success: true, agentAddress, movedToPerps })
   } catch (err: any) {
     console.error('[API] /hyperliquid/approve failed:', err?.message ?? err)
     res.status(500).json({ success: false, error: err?.message ?? 'Internal error' })
@@ -2590,6 +2617,80 @@ app.get('/api/agents/:userId', async (req, res) => {
   } catch (err) {
     console.error('[API] /agents failed:', err)
     res.status(500).json({ error: 'Internal error' })
+  }
+})
+
+// Mini-app one-shot agent creation. Replaces the multi-step bot flow:
+// the FE sends { preset, startingCapital, chain? } and we run the full
+// wallet-gen → fund → ERC-8004 register pipeline via the shared
+// createAgentForUser service. On success we DM the user a confirmation
+// with a deep-link back to the mini app so they get the same kind of
+// "your agent is live" affordance whether they used the bot or the FE.
+app.post('/api/me/agents/onboard', requireTgUser, async (req, res) => {
+  try {
+    const user = (req as any).user
+    if (!user) return res.status(401).json({ error: 'Unauthenticated' })
+
+    const body = (req.body ?? {}) as { preset?: unknown; startingCapital?: unknown; chain?: unknown }
+    const preset = String(body.preset ?? '').toLowerCase()
+    if (!['safe', 'balanced', 'aggressive'].includes(preset)) {
+      return res.status(400).json({ error: 'preset must be one of: safe, balanced, aggressive' })
+    }
+    const capital = Number(body.startingCapital)
+    if (!Number.isFinite(capital) || capital < 5.5) {
+      return res.status(400).json({ error: 'startingCapital must be >= 5.5 USDT' })
+    }
+    // chain is optional — service auto-picks XLayer when registry is configured.
+    const chainStr = body.chain ? String(body.chain).toLowerCase() : undefined
+    if (chainStr && !['bsc', 'xlayer'].includes(chainStr)) {
+      return res.status(400).json({ error: "chain must be 'bsc' or 'xlayer'" })
+    }
+
+    const wallet = await db.wallet.findFirst({ where: { userId: user.id, isActive: true } })
+    if (!wallet) return res.status(404).json({ error: 'No active wallet' })
+
+    const { createAgentForUser } = await import('./services/agentCreation')
+    const result = await createAgentForUser({
+      userId:          user.id,
+      ownerAddress:    wallet.address,
+      preset:          preset as 'safe' | 'balanced' | 'aggressive',
+      startingCapital: capital,
+      chain:           chainStr as 'bsc' | 'xlayer' | undefined,
+    })
+
+    if (!result.ok) {
+      const status = result.partial ? 502 : 400
+      return res.status(status).json({
+        error:   result.reason,
+        partial: !!result.partial,
+        agentId: result.agentId ?? null,
+      })
+    }
+
+    // Best-effort confirmation DM. The user is already seeing the success
+    // state in the mini app; the DM is for when they re-open Telegram and
+    // want a deep-link back. Fire-and-forget so a Telegram outage can't
+    // fail the activation response. Skipped silently for users who have
+    // blocked the bot (botBlocked=true).
+    const token = process.env.TELEGRAM_BOT_TOKEN
+    if (token && user.telegramId && !user.botBlocked) {
+      const miniBase = process.env.MINIAPP_URL
+        || `https://${process.env.REPLIT_DOMAINS?.split(',')[0] || 'build4-1.onrender.com'}/app`
+      tgSendMessage(
+        token,
+        String(user.telegramId),
+        `🚀 ${result.agent.name} is LIVE.\n\n` +
+        `Trading on Aster with the ${preset} preset and $${capital.toFixed(2)} per position. ` +
+        `First scan kicks off in ~60 seconds — open BUILD4 to watch it work.`,
+        null,
+        { text: '📱 Open BUILD4', url: miniBase },
+      ).catch((e) => console.warn('[/api/me/agents/onboard] DM failed (non-fatal):', e?.message ?? e))
+    }
+
+    return res.json({ success: true, agent: result.agent })
+  } catch (err: any) {
+    console.error('[API] /api/me/agents/onboard failed:', err?.message ?? err)
+    res.status(500).json({ error: err?.message ?? 'Internal error' })
   }
 })
 

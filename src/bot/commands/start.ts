@@ -16,81 +16,53 @@ export function registerStart(bot: Bot) {
       return handleAsterConnect(ctx)
     }
 
-    // First-time wallet — show the private key ONCE so user can back it up
-    const newWallet = (ctx as any).newWallet as { address: string; privateKey: string } | undefined
-    if (newWallet) {
-      await ctx.reply(
-        `🔐 *Your new BSC wallet is ready*
-
-*Address:*
-\`${newWallet.address}\`
-
-⚠️ *PRIVATE KEY — SAVE THIS NOW*
-\`${newWallet.privateKey}\`
-
-*Read carefully:*
-• This is the *only time* this key will be shown.
-• Save it somewhere safe (password manager, written down).
-• Anyone with this key can steal your funds — *never share it*.
-• If you lose it and lose access to this Telegram account, your funds are gone forever.
-• BUILD4 stores an encrypted copy so the agent can sign trades, but we cannot recover it for you.
-
-After saving, delete this message from your chat for extra safety.`,
-        { parse_mode: 'Markdown' }
-      )
-    }
+    // Wallet provisioning is silent. The private key is encrypted server-
+    // side and recoverable any time via /wallet → 🔑 Export Private Key
+    // (PIN-gated). We deliberately do NOT dump the PK on screen 1 here —
+    // friction point #1: ~17.5k users opened /start, almost none read the
+    // wall of text, and the PK in plain Telegram chat is a real exfil
+    // risk anyway. New users now get a clean welcome → one CTA flow.
+    //
+    // The `(ctx as any).newWallet` injected by the wallet middleware is
+    // intentionally ignored on this path. If we ever need a "your wallet
+    // is ready" affordance we'll add it as a small notice with a link to
+    // /wallet, not as a PK reveal.
 
     const wallet = await db.wallet.findFirst({
       where: { userId: user.id, isActive: true }
     })
 
-    const miniAppUrl = process.env.MINIAPP_URL || `https://${process.env.REPLIT_DOMAINS?.split(',')[0] || 'build4-1.onrender.com'}/app`
+    // Mini-app URL with ?onboard=1 so first-time users land on the new
+    // preset-chip Onboard page instead of the empty dashboard. Returning
+    // users with agents already deployed will see the Onboard auto-route
+    // skip in App.tsx and fall through to the dashboard normally.
+    const miniAppBase = process.env.MINIAPP_URL || `https://${process.env.REPLIT_DOMAINS?.split(',')[0] || 'build4-1.onrender.com'}/app`
+    const onboardUrl = miniAppBase.includes('?') ? `${miniAppBase}&onboard=1` : `${miniAppBase}?onboard=1`
 
+    // Single primary action — Open BUILD4 — followed by two utility rows.
+    // Wallet, How it works, and Help cover the only places someone might
+    // need to go before they have an agent. Everything else (deposit,
+    // signals, portfolio) is reachable from inside the mini app.
     const keyboard = new InlineKeyboard()
-      .text('💰 Deposit', 'deposit')
+      .webApp('📱 Open BUILD4', onboardUrl)
+      .row()
       .text('💳 Wallet', 'wallet')
-      .row()
-      .webApp('📱 Open BUILD4', miniAppUrl)
-      .row()
-      .text('🤖 Create Agent', 'create_agent')
-      .text('🗂 My Agents', 'my_agents')
-      .row()
-      .text('📊 Signals', 'signals')
-      .text('📈 Portfolio', 'portfolio')
-      .row()
       .text('ℹ️ How it works', 'how_it_works')
+      .row()
       .text('❓ Help', 'help')
 
     const walletLine = wallet
-      ? `\n\n💳 *Your BSC Wallet:* \`${truncateAddress(wallet.address)}\``
+      ? `\n\n💳 Your BSC wallet: \`${truncateAddress(wallet.address)}\``
       : ''
 
     await ctx.reply(
       `⚡ *Welcome to BUILD4*
 
-The AI trading hub on Telegram — perps, predictions, swaps and launches across BSC, xLayer and OKX, all from one chat.${walletLine}
+AI agents that trade perps and predictions on Aster, Hyperliquid and 42.space — all from inside Telegram.${walletLine}
 
-*What you can do here:*
-• 🤖 *AI agents* — describe a strategy in plain English, let it trade 24/7
-• 📈 *Aster perps* — leveraged longs/shorts, signed on-chain with EIP-712
-• 🔮 *42.space predictions* — agents trade live prediction markets on BSC
-• 🔄 *Multi-chain swaps* — BSC, xLayer and OKX OS in one tap
-• 🚀 *Token launches* — launch and trade new tokens from inside the bot
-• 📊 *Signals & copy trading* — whale flow, smart money, top traders
-• 🎁 *$B4 rewards* — earn points on every trade, signal and quest
+*Tap 📱 Open BUILD4* to deploy your first agent. Pick a risk preset, set a starting capital, and your agent is live in under a minute. We cover the gas.
 
-*Get started in 3 steps:*
-
-*1️⃣ Deposit USDT*
-Tap *💰 Deposit* to see your wallet address. Send USDT (BSC) to fund your account.
-
-*2️⃣ Create your AI agent*
-Tap *🤖 Create Agent* and tell it your strategy ("scalp BTC at 3x", "fade overhyped predictions", etc).
-
-*3️⃣ Let it work*
-Your agent runs 24/7 across perps and prediction markets, signs every order itself, and reports PnL straight to this chat. You stay in full control — pause anytime.
-
-Tap *ℹ️ How it works* for the full breakdown.`,
+_Your wallet's private key can be exported any time from 💳 Wallet._`,
       {
         parse_mode: 'Markdown',
         reply_markup: keyboard

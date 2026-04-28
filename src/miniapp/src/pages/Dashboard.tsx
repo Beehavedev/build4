@@ -3,7 +3,7 @@ import { apiFetch } from '../api'
 
 interface DashboardProps {
   userId: string | null
-  onNavigate?: (page: 'dashboard' | 'agents' | 'wallet' | 'trade' | 'copy' | 'portfolio' | 'predictions' | 'hyperliquid' | 'admin') => void
+  onNavigate?: (page: 'dashboard' | 'agents' | 'wallet' | 'trade' | 'copy' | 'portfolio' | 'predictions' | 'hyperliquid' | 'admin' | 'onboard') => void
 }
 
 interface WalletInfo {
@@ -275,6 +275,49 @@ export default function Dashboard({ userId, onNavigate }: DashboardProps) {
           </div>
         </div>
       </div>
+
+      {/* Empty-state hero CTA. First-time users (no agents yet) land on
+          a dashboard full of "$0 / fund to start" cards with nothing to
+          do — friction point #3. The hero CTA gives them one obvious
+          next action that goes straight to the new Onboard flow, which
+          deploys an agent end-to-end in one tap. Hidden once they have
+          at least one agent so returning users never see it. */}
+      {agents.length === 0 && (
+        <div
+          className="card"
+          data-testid="card-empty-state"
+          style={{
+            marginBottom: 16,
+            padding: 16,
+            border: '2px solid var(--purple)',
+            background: 'var(--bg-elevated)',
+          }}
+        >
+          <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 6 }}>
+            🚀 Deploy your first AI agent
+          </div>
+          <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12, lineHeight: 1.4 }}>
+            Pick a risk preset, set your starting capital, and watch your agent trade Aster perps within 60 seconds. Free — BUILD4 covers the gas.
+          </div>
+          <button
+            onClick={() => onNavigate?.('onboard')}
+            data-testid="button-deploy-first-agent"
+            style={{
+              width: '100%',
+              background: 'var(--purple)',
+              color: '#fff',
+              border: 'none',
+              borderRadius: 12,
+              padding: '12px 16px',
+              fontSize: 15,
+              fontWeight: 700,
+              cursor: 'pointer',
+            }}
+          >
+            Deploy Agent
+          </button>
+        </div>
+      )}
 
       {/* Quick actions */}
       <div className="section-label">Quick Actions</div>

@@ -8,7 +8,8 @@ import Predictions, { CrosshairIcon } from './pages/Predictions'
 import { Trade } from './pages/Trade'
 import Hyperliquid from './pages/Hyperliquid'
 import Admin from './pages/Admin'
-import { apiFetch } from './api'
+import Onboard from './pages/Onboard'
+import { apiFetch, type AgentData } from './api'
 
 declare global {
   interface Window {
@@ -16,7 +17,7 @@ declare global {
   }
 }
 
-type Page = 'dashboard' | 'agents' | 'wallet' | 'trade' | 'copy' | 'portfolio' | 'predictions' | 'hyperliquid' | 'admin'
+type Page = 'dashboard' | 'agents' | 'wallet' | 'trade' | 'copy' | 'portfolio' | 'predictions' | 'hyperliquid' | 'admin' | 'onboard'
 
 export default function App() {
   const [page, setPage] = useState<Page>('dashboard')
@@ -25,6 +26,12 @@ export default function App() {
   // Top-right overflow menu — houses Admin (when allow-listed) and any
   // future low-traffic destinations. Keeps the bottom nav at six tabs.
   const [menuOpen, setMenuOpen] = useState(false)
+
+  // Aster onboarding flag is needed by the Onboard page so it knows whether
+  // to chain /api/aster/approve after the agent is registered. We resolve it
+  // once via /api/me/wallet on first paint and pass it down — re-fetched
+  // whenever the user lands on Onboard via the auto-route below.
+  const [asterOnboarded, setAsterOnboarded] = useState(false)
 
   useEffect(() => {
     // Init Telegram WebApp
@@ -35,14 +42,49 @@ export default function App() {
       const telegramId = tg.initDataUnsafe?.user?.id
       if (telegramId) setUserId(telegramId.toString())
     }
+
+    // First-paint routing logic — three sources, evaluated in order:
+    //  1. ?onboard=1 query param (set by the Telegram bot's webApp button
+    //     when the user taps "Deploy in BUILD4") → jump straight to onboard.
+    //  2. start_param via Telegram WebApp init (e.g. when the bot uses
+    //     ?startapp=onboard deep-links) → same destination.
+    //  3. zero agents → onboard (so first-time users never land on a
+    //     dashboard full of "$0 / fund to start" cards with nothing to do).
+    // Otherwise we fall through to the dashboard as before.
+    const params = new URLSearchParams(window.location.search)
+    const wantOnboard = params.get('onboard') === '1'
+      || tg?.initDataUnsafe?.start_param === 'onboard'
+    if (wantOnboard) setPage('onboard')
+
     // Probe admin status — only show the Admin tab to allow-listed telegram IDs.
     apiFetch<{ isAdmin: boolean }>('/api/me/admin')
       .then((r) => setIsAdmin(!!r.isAdmin))
       .catch(() => setIsAdmin(false))
 
+    // Resolve aster onboarding state + agent count for first-paint routing.
+    // We don't block the rest of the app on this — if the wallet endpoint
+    // is slow the user lands on the dashboard and the Onboard auto-route
+    // fires once data arrives. Skipped if the URL already chose onboard.
+    apiFetch<{ aster?: { onboarded?: boolean } }>('/api/me/wallet')
+      .then(w => setAsterOnboarded(!!w?.aster?.onboarded))
+      .catch(() => { /* assume not onboarded */ })
+
+    if (!wantOnboard) {
+      // Auto-route first-time users (zero agents) to Onboard. Fetch is
+      // best-effort — failure leaves them on the dashboard, which still
+      // works.
+      const tgId = tg?.initDataUnsafe?.user?.id
+      if (tgId) {
+        fetch(`/api/agents/${tgId}`).then(r => r.json()).then((agents: AgentData[]) => {
+          if (Array.isArray(agents) && agents.length === 0) setPage('onboard')
+        }).catch(() => { /* leave on dashboard */ })
+      }
+    }
+
     // Cross-page navigation hook — pages can dispatch a CustomEvent('b4-nav',
     // { detail: 'hyperliquid' }) to switch tabs (e.g. the Trade page's venue
-    // switcher uses this to jump into the HL view).
+    // switcher uses this to jump into the HL view, or the Dashboard's empty
+    // state CTA uses 'onboard' to send first-time users into the new flow).
     const onNav = (e: Event) => {
       const dest = (e as CustomEvent).detail as Page
       if (dest) setPage(dest)
@@ -147,6 +189,18 @@ export default function App() {
         {page === 'predictions' && <Predictions />}
         {page === 'hyperliquid' && <Hyperliquid />}
         {page === 'admin' && <Admin />}
+        {page === 'onboard' && (
+          <Onboard
+            asterOnboarded={asterOnboarded}
+            onDone={() => {
+              // After deploy, drop the user on the dashboard so they see
+              // their fresh agent + balances. Refresh aster onboarding
+              // since the deploy flow may have flipped it.
+              setAsterOnboarded(true)
+              setPage('dashboard')
+            }}
+          />
+        )}
       </div>
 
       {/* Bottom nav */}
