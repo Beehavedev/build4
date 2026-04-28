@@ -124,7 +124,11 @@ export interface FeedEntry {
   id: string;
   agentId: string;
   agentName: string;
-  action: string;        // HOLD, OPEN_LONG, OPEN_SHORT, CLOSE
+  action: string;        // HOLD, OPEN_LONG, OPEN_SHORT, CLOSE, SKIP_OPEN
+  // Internal gate identifier when action='SKIP_OPEN' (rr_floor,
+  // confidence_floor, setup_score_floor, risk_guard, twak_risk,
+  // no_balance, venue_rejected, no_creds). Null otherwise.
+  gate?: string | null;
   pair: string | null;
   price: number | null;
   reason: string | null;
@@ -137,6 +141,23 @@ export interface FeedEntry {
 
 export function getMyFeed(limit = 20) {
   return apiFetch<FeedEntry[]>(`/api/me/feed?limit=${limit}`);
+}
+
+// Update an agent's risk-limit settings. Each field is independently
+// optional — only send the ones the user actually changed. Backend
+// returns the updated agent on success or an `ApiError` with the
+// validation message on failure (400).
+export interface AgentSettingsUpdate {
+  maxPositionSize?: number;
+  maxDailyLoss?: number;
+  maxLeverage?: number;
+}
+export function updateAgentSettings(agentId: string, patch: AgentSettingsUpdate) {
+  return apiFetch<AgentData>(`/api/agents/${agentId}/settings`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  });
 }
 
 export function getTelegramUser() {

@@ -145,6 +145,11 @@ type FeedEntry = {
   agentId: string
   agentName: string
   action: string
+  // Internal gate identifier for SKIP_OPEN entries (rr_floor, no_balance,
+  // venue_rejected, …). Null on every other action. The mini app turns
+  // this into a friendly label so the user sees WHICH check killed the
+  // trade in plain language rather than just "skipped".
+  gate: string | null
   pair: string | null
   price: number | null
   reason: string | null
@@ -168,6 +173,10 @@ async function fetchAgentLogFeed(where: any, limit: number, agentNameById: Map<s
       agentId: e.agentId,
       agentName: e.agent?.name ?? agentNameById.get(e.agentId) ?? 'Agent',
       action: e.action,
+      // executionResult is reused on SKIP_OPEN rows to carry the gate
+      // identifier (rr_floor, no_balance, …). On other action types it
+      // may hold an unrelated value, so only surface it for SKIP_OPEN.
+      gate: e.action === 'SKIP_OPEN' ? (e.executionResult ?? null) : null,
       pair: e.pair ?? null,
       price: e.price ?? null,
       reason: e.reason ?? null,
@@ -205,6 +214,7 @@ async function fetchTradeFeed(where: any, limit: number, agentNameById: Map<stri
       agentId: t.agentId ?? '',
       agentName,
       action: t.side === 'LONG' ? 'OPEN_LONG' : 'OPEN_SHORT',
+      gate: null,
       pair: t.pair,
       price: t.entryPrice,
       reason: t.aiReasoning ?? `Executed on ${t.exchange} · size $${Number(t.size).toFixed(2)} · ${t.leverage}x`,
@@ -221,6 +231,7 @@ async function fetchTradeFeed(where: any, limit: number, agentNameById: Map<stri
         agentId: t.agentId ?? '',
         agentName,
         action: 'CLOSE',
+        gate: null,
         pair: t.pair,
         price: t.exitPrice ?? t.entryPrice,
         reason: `Closed ${t.side} ${pnlStr}`.trim(),
@@ -256,6 +267,7 @@ async function fetchAsterTradeFeed(userId: string, limit: number): Promise<FeedE
         agentId: '',
         agentName: 'Aster',
         action: 'CLOSE',
+        gate: null,
         pair: f.symbol,
         price: f.price,
         reason: `Closed ${f.positionSide !== 'BOTH' ? f.positionSide : (f.side === 'SELL' ? 'LONG' : 'SHORT')} ${f.realizedPnl >= 0 ? '+' : ''}${f.realizedPnl.toFixed(2)} USDT`,
@@ -2601,6 +2613,68 @@ app.post('/api/agents/:id/toggle', requireTgUser, async (req, res) => {
     })
     res.json(updated)
   } catch {
+    res.status(500).json({ error: 'Internal error' })
+  }
+})
+
+// Update an agent's risk-limit settings (max position, max daily loss,
+// max leverage). Originally these were only set at agent creation time —
+// users were asking how to change them after the fact and the answer was
+// "delete the agent and create a new one", which is awful. This endpoint
+// lets the mini app surface inline editors on the agent card. All three
+// fields are optional and are validated independently; missing fields
+// keep their current value. Bounds chosen to match the existing agent
+// runner clamps (leverage hard-clamp at 1..50; balance/loss must be
+// strictly positive to avoid degenerate "trade nothing" agents).
+app.patch('/api/agents/:id/settings', requireTgUser, async (req, res) => {
+  try {
+    const user = (req as any).user
+    if (!user) return res.status(401).json({ error: 'Unauthenticated' })
+
+    const agentId = String(req.params.id)
+    const agent = await db.agent.findUnique({ where: { id: agentId } })
+    if (!agent) return res.status(404).json({ error: 'Agent not found' })
+    if (agent.userId !== user.id) return res.status(403).json({ error: 'Forbidden' })
+
+    const body = (req.body ?? {}) as Record<string, unknown>
+    const data: Record<string, number> = {}
+
+    const toNum = (v: unknown): number | null => {
+      if (v === undefined || v === null || v === '') return null
+      const n = typeof v === 'number' ? v : Number(v)
+      return Number.isFinite(n) ? n : null
+    }
+
+    if ('maxPositionSize' in body) {
+      const n = toNum(body.maxPositionSize)
+      if (n === null || n <= 0 || n > 100_000) {
+        return res.status(400).json({ error: 'maxPositionSize must be a positive number ≤ 100000' })
+      }
+      data.maxPositionSize = n
+    }
+    if ('maxDailyLoss' in body) {
+      const n = toNum(body.maxDailyLoss)
+      if (n === null || n <= 0 || n > 100_000) {
+        return res.status(400).json({ error: 'maxDailyLoss must be a positive number ≤ 100000' })
+      }
+      data.maxDailyLoss = n
+    }
+    if ('maxLeverage' in body) {
+      const n = toNum(body.maxLeverage)
+      if (n === null || n < 1 || n > 50) {
+        return res.status(400).json({ error: 'maxLeverage must be between 1 and 50' })
+      }
+      data.maxLeverage = Math.round(n)
+    }
+
+    if (Object.keys(data).length === 0) {
+      return res.status(400).json({ error: 'No editable fields provided' })
+    }
+
+    const updated = await db.agent.update({ where: { id: agentId }, data })
+    res.json(updated)
+  } catch (err: any) {
+    console.error('[API] /agents/:id/settings failed:', err?.message ?? err)
     res.status(500).json({ error: 'Internal error' })
   }
 })
