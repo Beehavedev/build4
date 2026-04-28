@@ -1782,6 +1782,42 @@ If you would not put real money in this trade right now, action = HOLD.`
           finalSize = finalSize * (1 - riskCheck.reduceSizeBy / 100)
         }
 
+        // ── Venue minimum-notional floor ────────────────────────────────
+        // Aster rejects any OPEN order whose notional is below 5 USDT
+        // with -4164 ("Order's notional must be no smaller than 5.0").
+        // Without this guard, low-confidence ticks (kellySize floors at
+        // $1) and risk-guard size reductions can both produce sub-$5
+        // orders that fail every tick — exactly the SKIP loop users have
+        // been seeing on coins like XCNUSDT. We use $5.50 as a safety
+        // buffer so the qty rounding inside executeOpenAster (toFixed(6)
+        // on qty = notional/price) can't shave us back under $5.
+        //
+        // Bump up to the floor IF the agent's risk caps allow it; if
+        // even maxPositionSize is below the floor, skip with a clear
+        // diagnostic so the user knows their max-position setting is
+        // incompatible with Aster.
+        if (agent.exchange === 'aster') {
+          const ASTER_MIN_NOTIONAL = 5.5
+          if (finalSize < ASTER_MIN_NOTIONAL) {
+            if (agent.maxPositionSize >= ASTER_MIN_NOTIONAL) {
+              console.log(
+                `[Agent ${agent.name}] Bumping size $${finalSize.toFixed(2)} → ` +
+                `$${ASTER_MIN_NOTIONAL.toFixed(2)} to clear Aster's $5 minimum notional`
+              )
+              finalSize = ASTER_MIN_NOTIONAL
+            } else {
+              await logSkip(
+                'venue_rejected',
+                `position size $${finalSize.toFixed(2)} below Aster's $5 minimum and ` +
+                `agent max position ($${agent.maxPositionSize}) is too low to bump — ` +
+                `raise Max position to at least $6 in the Agents tab`
+              )
+              return
+            }
+          }
+        }
+        // ────────────────────────────────────────────────────────────────
+
         const currentPrice = ohlcv
           ? ohlcv['15m'].close[ohlcv['15m'].close.length - 1]
           : snapshot.price
