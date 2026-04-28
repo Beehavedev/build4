@@ -23,6 +23,12 @@ export interface AgentData {
   isActive: boolean;
   isPaused: boolean;
   exchange: string;
+  // Per-agent venue allow-list (Phase 1, 2026-04-28). Replaces the
+  // single isActive toggle as the operational control surface — each
+  // venue here gets its own scan + decision pass per tick. Empty array
+  // means the agent is dormant. Backfilled from `exchange` for legacy
+  // rows so single-venue users see no behavioural change.
+  enabledVenues?: string[];
   pairs: string[];
   timeframe: string;
   maxPositionSize: number;
