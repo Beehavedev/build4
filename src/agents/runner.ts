@@ -65,11 +65,20 @@ export function markSummarySent(agentId: string) {
 // because they go through notifyTradeOpened in this same module.
 const lastPairNotifyAt = new Map<string, number>()
 const PAIR_NOTIFY_COOLDOWN_MS = 10 * 60 * 1000
-type PairNotifyKind = 'analyzed' | 'skipped'
+// Heartbeat ("I scanned but nothing scored high enough") gets a longer
+// cooldown than the per-pair analyzed/skipped cap. Without the heartbeat,
+// a venue with a small focus list (e.g. Hyperliquid's 14-pair curated
+// universe) goes completely silent during quiet markets and looks broken
+// from the user's side. With it, the user gets a "still alive, nothing
+// to do" pulse every half hour per (agent, venue) — enough to confirm
+// the runner is dispatching, not so often that it becomes noise.
+const HEARTBEAT_COOLDOWN_MS = 30 * 60 * 1000
+type PairNotifyKind = 'analyzed' | 'skipped' | 'heartbeat'
 export function shouldSendPairNotification(agentId: string, pair: string, kind: PairNotifyKind): boolean {
   const key = `${agentId}:${pair}:${kind}`
   const last = lastPairNotifyAt.get(key) ?? 0
-  if (Date.now() - last < PAIR_NOTIFY_COOLDOWN_MS) return false
+  const cooldown = kind === 'heartbeat' ? HEARTBEAT_COOLDOWN_MS : PAIR_NOTIFY_COOLDOWN_MS
+  if (Date.now() - last < cooldown) return false
   return true
 }
 export function markPairNotificationSent(agentId: string, pair: string, kind: PairNotifyKind): void {
