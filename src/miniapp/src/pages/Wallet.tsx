@@ -552,6 +552,19 @@ function BscPrimaryCard({ w }: { w: WalletInfo }) {
             </div>
           </div>
         </div>
+        {/* Funding-model footnote — this BSC USDT is the SAME pool that
+            funds 42.space prediction buys (42 has no separate
+            clearinghouse, the trader signs directly from this wallet's
+            PK). Without this hint users top up here and then look for a
+            separate "42.space wallet" to fund — there isn't one. */}
+        <div style={{
+          fontSize: 10, color: 'var(--b4-muted)', marginTop: 8,
+          paddingTop: 8, borderTop: '1px solid var(--b4-border, #1e1e2e)',
+          lineHeight: 1.4,
+        }}>
+          Used directly by 42.space — predictions are bought straight from this wallet, no separate top-up needed.
+          Use Transfer to move USDT into Aster or Hyperliquid for perps.
+        </div>
       </div>
       <ArbitrumCard w={w} />
     </>

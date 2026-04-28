@@ -351,20 +351,39 @@ app.get('/api/me/wallet', requireTgUser, async (req, res) => {
     })
     if (!wallet) return res.status(404).json({ error: 'No active wallet' })
 
-    const BSC_RPC = process.env.BSC_RPC_URL ?? 'https://bsc-dataseed.binance.org'
     const USDT_BSC = '0x55d398326f99059fF775485246999027B3197955'
-    const provider = new ethers.JsonRpcProvider(BSC_RPC)
+    // Use the robust multi-endpoint BSC provider with staticNetwork +
+    // FallbackProvider — a single bare JsonRpcProvider against
+    // bsc-dataseed silently returns empty `0x` for balanceOf under
+    // load, which ethers v6 then decodes to 0 (BUFFER_OVERRUN path),
+    // making the user's REAL deposit show as $0.00. The fallback
+    // provider transparently retries against three other public
+    // dataseeds, eliminating that whole class of "I funded my wallet
+    // but the app says zero" reports.
+    const { buildBscProvider } = await import('./services/bscProvider')
+    const provider = buildBscProvider(process.env.BSC_RPC_URL)
 
+    // Each balance is fetched independently so a slow/throttled USDT
+    // contract call can no longer take the BNB read down with it (and
+    // vice-versa). Per-call try/catch surfaces a partial result instead
+    // of zeroing both balances on a single endpoint hiccup.
     let usdt = 0, bnb = 0, balanceError: string | null = null
     try {
-      const [bnbWei, usdtWei] = await Promise.all([
-        provider.getBalance(wallet.address),
-        new ethers.Contract(USDT_BSC, ['function balanceOf(address) view returns (uint256)'], provider).balanceOf(wallet.address)
-      ])
+      const bnbWei = await provider.getBalance(wallet.address)
       bnb = parseFloat(ethers.formatEther(bnbWei))
+    } catch (e: any) {
+      balanceError = `bnb: ${e?.shortMessage ?? e?.message ?? 'rpc_failed'}`
+    }
+    try {
+      const usdtWei = await new ethers.Contract(
+        USDT_BSC,
+        ['function balanceOf(address) view returns (uint256)'],
+        provider,
+      ).balanceOf(wallet.address)
       usdt = parseFloat(ethers.formatUnits(usdtWei, 18))
     } catch (e: any) {
-      balanceError = e?.message ?? 'rpc_failed'
+      const usdtErr = `usdt: ${e?.shortMessage ?? e?.message ?? 'rpc_failed'}`
+      balanceError = balanceError ? `${balanceError}; ${usdtErr}` : usdtErr
     }
 
     const qrDataUrl = await QRCode.toDataURL(wallet.address, {
