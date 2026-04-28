@@ -2631,7 +2631,7 @@ app.post('/api/me/agents/onboard', requireTgUser, async (req, res) => {
     const user = (req as any).user
     if (!user) return res.status(401).json({ error: 'Unauthenticated' })
 
-    const body = (req.body ?? {}) as { preset?: unknown; startingCapital?: unknown; chain?: unknown }
+    const body = (req.body ?? {}) as { preset?: unknown; startingCapital?: unknown; chain?: unknown; name?: unknown }
     const preset = String(body.preset ?? '').toLowerCase()
     if (!['safe', 'balanced', 'aggressive'].includes(preset)) {
       return res.status(400).json({ error: 'preset must be one of: safe, balanced, aggressive' })
@@ -2645,6 +2645,18 @@ app.post('/api/me/agents/onboard', requireTgUser, async (req, res) => {
     if (chainStr && !['bsc', 'xlayer'].includes(chainStr)) {
       return res.status(400).json({ error: "chain must be 'bsc' or 'xlayer'" })
     }
+    // Optional user-supplied agent name. We surface a fast 400 with the
+    // exact rule on bad input rather than letting createAgentForUser throw
+    // a generic error from deep in the pipeline. Empty/missing → service
+    // generates a random one. Same regex as agentCreation.ts for parity.
+    let nameStr: string | undefined
+    if (body.name !== undefined && body.name !== null && String(body.name).trim() !== '') {
+      const trimmed = String(body.name).trim()
+      if (!/^[a-zA-Z0-9_]{3,24}$/.test(trimmed)) {
+        return res.status(400).json({ error: 'name must be 3–24 chars, letters/numbers/underscore only' })
+      }
+      nameStr = trimmed
+    }
 
     const wallet = await db.wallet.findFirst({ where: { userId: user.id, isActive: true } })
     if (!wallet) return res.status(404).json({ error: 'No active wallet' })
@@ -2656,6 +2668,7 @@ app.post('/api/me/agents/onboard', requireTgUser, async (req, res) => {
       preset:          preset as 'safe' | 'balanced' | 'aggressive',
       startingCapital: capital,
       chain:           chainStr as 'bsc' | 'xlayer' | undefined,
+      name:            nameStr,
     })
 
     if (!result.ok) {
@@ -2691,6 +2704,64 @@ app.post('/api/me/agents/onboard', requireTgUser, async (req, res) => {
   } catch (err: any) {
     console.error('[API] /api/me/agents/onboard failed:', err?.message ?? err)
     res.status(500).json({ error: err?.message ?? 'Internal error' })
+  }
+})
+
+// Hard-delete an agent owned by the caller. Caller-owned and
+// ownership-checked. We do NOT touch the agent's on-chain ERC-8004
+// identity — that's immutable, and the agent's wallet will simply stop
+// signing trades. The user can always create a fresh agent (with a
+// fresh wallet + fresh identity) from the Onboard page.
+//
+// Three-step sequence:
+//   1. Pause + deactivate the agent OUTSIDE the delete transaction so
+//      the runner sees the change immediately (the runner's filter
+//      requires isActive=true && isPaused=false). This closes the
+//      window where the row vanishes mid-dispatch.
+//   2. Cascade-clean dependent rows that have ON DELETE RESTRICT FKs
+//      (AgentLog, AgentMemory). Without this, any agent that has
+//      actually run hits a 23503 FK violation. Trade.agentId is
+//      ON DELETE SET NULL so trade history (the financial record)
+//      survives — only the back-reference is nulled.
+//   3. Delete the Agent row in the same transaction as the cleanup so
+//      a partial cleanup never leaves orphaned dependents.
+app.delete('/api/agents/:id', requireTgUser, async (req, res) => {
+  try {
+    const user = (req as any).user
+    if (!user) return res.status(401).json({ error: 'Unauthenticated' })
+
+    const agentId = String(req.params.id)
+    const agent = await db.agent.findUnique({ where: { id: agentId } })
+    if (!agent) return res.status(404).json({ error: 'Agent not found' })
+    if (agent.userId !== user.id) {
+      return res.status(403).json({ error: 'Forbidden' })
+    }
+
+    // Step 1: park the agent. Best-effort — if this update somehow
+    // races and fails, the transaction below still tears the row down
+    // cleanly, the runner just sees an "agent not found" on the very
+    // next tick (which it already tolerates).
+    try {
+      await db.agent.update({ where: { id: agentId }, data: { isActive: false, isPaused: true } })
+    } catch { /* tolerable — we're about to delete anyway */ }
+
+    // Brief drain pause so any tick that already passed the
+    // ACTIVE_AGENTS_FILTER and is currently running for this agent
+    // has a moment to finish writing its log row before we drop it.
+    // 1.2s is comfortably longer than a single trade-decision write.
+    await new Promise((r) => setTimeout(r, 1200))
+
+    // Step 2 + 3: remove dependent rows then the agent itself.
+    await db.$transaction([
+      db.agentLog.deleteMany({   where: { agentId } }),
+      db.agentMemory.deleteMany({ where: { agentId } }),
+      db.agent.delete({           where: { id: agentId } }),
+    ])
+
+    res.json({ ok: true })
+  } catch (err: any) {
+    console.error('[API] DELETE /api/agents/:id failed:', err?.message ?? err)
+    res.status(500).json({ error: 'Internal error' })
   }
 })
 

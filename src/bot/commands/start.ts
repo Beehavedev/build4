@@ -32,19 +32,20 @@ export function registerStart(bot: Bot) {
       where: { userId: user.id, isActive: true }
     })
 
-    // Mini-app URL with ?onboard=1 so first-time users land on the new
-    // preset-chip Onboard page instead of the empty dashboard. Returning
-    // users with agents already deployed will see the Onboard auto-route
-    // skip in App.tsx and fall through to the dashboard normally.
-    const miniAppBase = process.env.MINIAPP_URL || `https://${process.env.REPLIT_DOMAINS?.split(',')[0] || 'build4-1.onrender.com'}/app`
-    const onboardUrl = miniAppBase.includes('?') ? `${miniAppBase}&onboard=1` : `${miniAppBase}?onboard=1`
+    // Plain mini-app URL — NO ?onboard=1 query param. The mini-app's own
+    // first-paint logic (App.tsx) sends users to Onboard when they have
+    // zero agents and to the Dashboard otherwise. Hard-coding ?onboard=1
+    // here used to force the Onboard page on every /start tap, which
+    // meant returning users (who'd already deployed an agent) kept being
+    // dropped on Deploy instead of their Dashboard.
+    const miniAppUrl = process.env.MINIAPP_URL || `https://${process.env.REPLIT_DOMAINS?.split(',')[0] || 'build4-1.onrender.com'}/app`
 
     // Single primary action — Open BUILD4 — followed by two utility rows.
     // Wallet, How it works, and Help cover the only places someone might
     // need to go before they have an agent. Everything else (deposit,
     // signals, portfolio) is reachable from inside the mini app.
     const keyboard = new InlineKeyboard()
-      .webApp('📱 Open BUILD4', onboardUrl)
+      .webApp('📱 Open BUILD4', miniAppUrl)
       .row()
       .text('💳 Wallet', 'wallet')
       .text('ℹ️ How it works', 'how_it_works')

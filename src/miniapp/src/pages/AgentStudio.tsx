@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { apiFetch, getMyFeed, updateAgentSettings, type FeedEntry } from '../api'
+import { apiFetch, deleteAgent, getMyFeed, updateAgentSettings, type FeedEntry } from '../api'
 import { TradingChart } from '../components/TradingChart'
 import { MarketTicker } from '../components/MarketTicker'
 
@@ -197,6 +197,45 @@ export default function AgentStudio(_props: AgentStudioProps) {
   // multiple chips on different agents in parallel without one tap
   // freezing another.
   const [busyAgentVenue, setBusyAgentVenue] = useState<Set<string>>(new Set())
+
+  // Hard-delete confirm modal — keyed by agentId so the user always sees
+  // the agent's name in the dialog and we can't accidentally delete the
+  // wrong row if state shifts between tapping Remove and tapping Confirm.
+  // `deleting` tracks the in-flight DELETE so the Confirm button can show
+  // a busy state and we suppress duplicate taps.
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+  const handleDeleteAgent = async (agentId: string) => {
+    if (deletingId) return
+    setDeletingId(agentId)
+    setDeleteError(null)
+    try {
+      await deleteAgent(agentId)
+      setConfirmDeleteId(null)
+      // Re-fetch so the deleted card disappears immediately and any
+      // dependent UI (Brain feed empty state, "no agents yet" hero)
+      // re-evaluates against the new list.
+      await fetchAgents()
+    } catch (e: any) {
+      setDeleteError(e?.body?.error ?? e?.message ?? 'Delete failed')
+    } finally {
+      setDeletingId(null)
+    }
+  }
+
+  // "+ New Agent" — sets ?onboard=1 on the URL and dispatches the
+  // existing b4-nav event so App.tsx swaps to the Onboard page. The URL
+  // change is purely cosmetic for refresh-friendliness; the page swap
+  // happens via state, not a hard navigation.
+  const goToOnboard = () => {
+    try {
+      const u = new URL(window.location.href)
+      u.searchParams.set('onboard', '1')
+      window.history.replaceState({}, '', u.toString())
+    } catch { /* sandboxed envs without URL — fine to skip */ }
+    window.dispatchEvent(new CustomEvent('b4-nav', { detail: 'onboard' }))
+  }
   const toggleAgentVenue = async (agentId: string, venue: VenueId, nextEnabled: boolean) => {
     const key = `${agentId}:${venue}`
     if (busyAgentVenue.has(key)) return
@@ -541,30 +580,47 @@ export default function AgentStudio(_props: AgentStudioProps) {
           </div>
         </div>
 
-        {/* Status badge — combines the per-agent isActive flag with the
-            platform allow-list so users always see the *real* reason their
-            agent isn't ticking. Order matters: an off agent reads "Inactive"
-            even if its platform is also off (fix the agent first). An on
-            agent whose platform is off reads "Platform paused" with the
-            venue named, so the user knows exactly which switch to flip. */}
+        {/* Status badge + Remove on the same row — Remove sits to the
+            right so it's discoverable without dominating the card. We
+            confirm before deleting to avoid an accidental tap nuking
+            the user's only agent. */}
         <div style={{
           marginTop: 10,
-          display: 'inline-block',
-          fontSize: 11, padding: '3px 10px', borderRadius: 20,
-          background:
-            !agent.isActive   ? '#1e1e2e' :
-            !platformAllowed  ? '#f59e0b15' :
-                                '#10b98115',
-          color:
-            !agent.isActive   ? '#64748b' :
-            !platformAllowed  ? '#f59e0b' :
-                                '#10b981',
-        }} data-testid={`text-agent-status-${agent.id}`}>
-          {!agent.isActive
-            ? '○ Inactive'
-            : !platformAllowed
-              ? `⏸ ${venueLabel} paused — enable above`
-              : '● Active — next tick in ~60s'}
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+        }}>
+          <div style={{
+            display: 'inline-block',
+            fontSize: 11, padding: '3px 10px', borderRadius: 20,
+            background:
+              !agent.isActive   ? '#1e1e2e' :
+              !platformAllowed  ? '#f59e0b15' :
+                                  '#10b98115',
+            color:
+              !agent.isActive   ? '#64748b' :
+              !platformAllowed  ? '#f59e0b' :
+                                  '#10b981',
+          }} data-testid={`text-agent-status-${agent.id}`}>
+            {!agent.isActive
+              ? '○ Inactive'
+              : !platformAllowed
+                ? `⏸ ${venueLabel} paused — enable above`
+                : '● Active — next tick in ~60s'}
+          </div>
+
+          <button
+            onClick={() => { setDeleteError(null); setConfirmDeleteId(agent.id) }}
+            data-testid={`button-remove-agent-${agent.id}`}
+            aria-label={`Remove ${agent.name}`}
+            style={{
+              fontSize: 11, fontWeight: 600, padding: '4px 10px',
+              borderRadius: 6, cursor: 'pointer',
+              background: 'transparent',
+              border: '1px solid #3a1e22',
+              color: '#ef4444',
+            }}
+          >
+            🗑 Remove
+          </button>
         </div>
 
         {/* Live market block — only renders for single-ticker agents.
@@ -628,11 +684,36 @@ export default function AgentStudio(_props: AgentStudioProps) {
 
   return (
     <div style={{ paddingTop: 20 }}>
-      <div style={{ marginBottom: 16 }}>
-        <div style={{ fontSize: 20, fontWeight: 700 }}>🤖 Agent Studio</div>
-        <div style={{ fontSize: 13, color: '#64748b', marginTop: 2 }}>
-          Choose where your agents are allowed to trade — same agent, any platform.
+      <div style={{ marginBottom: 16, display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 20, fontWeight: 700 }}>🤖 Agent Studio</div>
+          <div style={{ fontSize: 13, color: '#64748b', marginTop: 2 }}>
+            Choose where your agents are allowed to trade — same agent, any platform.
+          </div>
         </div>
+        {/* "+ New Agent" — primary affordance for adding more agents from
+            inside Studio (rather than going back to /newagent in the bot
+            or hunting for the empty-state CTA on the Dashboard). Always
+            visible at the top so the action is one tap from anywhere
+            inside Studio. */}
+        <button
+          onClick={goToOnboard}
+          data-testid="button-new-agent"
+          style={{
+            background: 'var(--purple)',
+            color: '#fff',
+            border: 'none',
+            borderRadius: 10,
+            padding: '8px 12px',
+            fontSize: 13,
+            fontWeight: 700,
+            cursor: 'pointer',
+            whiteSpace: 'nowrap',
+            flexShrink: 0,
+          }}
+        >
+          + New Agent
+        </button>
       </div>
 
       {/* Per-user platform allow-list. Sits above the agents list so the
@@ -661,18 +742,25 @@ export default function AgentStudio(_props: AgentStudioProps) {
         <div className="card" style={{ textAlign: 'center', padding: 28 }}>
           <div style={{ fontSize: 36, marginBottom: 10 }}>🤖</div>
           <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 6 }}>No agents yet</div>
-          <div style={{ fontSize: 12, color: '#64748b' }}>
-            Create your first agent with <span style={{ color: '#a78bfa', fontWeight: 600 }}>/newagent</span> in the bot.
-            It will trade on every platform you allow above.
+          <div style={{ fontSize: 12, color: '#64748b', marginBottom: 14 }}>
+            Tap <span style={{ color: '#a78bfa', fontWeight: 600 }}>+ New Agent</span> above to deploy
+            your first agent. It will trade on every platform you allow.
           </div>
+          <button
+            onClick={goToOnboard}
+            data-testid="button-new-agent-empty-state"
+            style={{
+              background: 'var(--purple)', color: '#fff', border: 'none',
+              borderRadius: 10, padding: '10px 16px', fontSize: 13, fontWeight: 700,
+              cursor: 'pointer',
+            }}
+          >
+            🚀 Deploy your first agent
+          </button>
         </div>
       ) : (
         agents.map(renderAgentCard)
       )}
-
-      <div style={{ marginTop: 8, fontSize: 12, color: '#64748b', textAlign: 'center' }}>
-        Use /newagent in the bot to create more agents
-      </div>
 
       {/* Live Brain Feed — shows what the agents are actually doing */}
       <div style={{ marginTop: 24, marginBottom: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -745,6 +833,98 @@ export default function AgentStudio(_props: AgentStudioProps) {
           </div>
         )
       })}
+
+      {/* Confirm-delete modal — keyed to the agent the user just tapped
+          Remove on. Always shows the agent's name (defensively re-looked-
+          up from the latest state) so the user knows exactly what they're
+          deleting, and the Confirm button shows in-flight state during
+          the DELETE round-trip. Tapping the backdrop or Cancel closes. */}
+      {confirmDeleteId && (() => {
+        const target = agents.find(a => a.id === confirmDeleteId)
+        if (!target) {
+          // Agent disappeared mid-flow (e.g. another tab deleted it).
+          // Just close — there's nothing to confirm.
+          setConfirmDeleteId(null)
+          return null
+        }
+        const busy = deletingId === confirmDeleteId
+        return (
+          <div
+            data-testid="modal-confirm-delete"
+            onClick={() => { if (!busy) setConfirmDeleteId(null) }}
+            style={{
+              position: 'fixed', inset: 0, zIndex: 300,
+              background: 'rgba(0,0,0,0.65)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              padding: 16,
+            }}
+          >
+            <div
+              onClick={e => e.stopPropagation()}
+              style={{
+                background: 'var(--bg-card)',
+                border: '1px solid var(--border)',
+                borderRadius: 14,
+                padding: 20,
+                maxWidth: 360, width: '100%',
+                boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
+              }}
+            >
+              <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 8 }}>
+                Remove agent {target.name}?
+              </div>
+              <div style={{ fontSize: 13, color: '#94a3b8', lineHeight: 1.5, marginBottom: 16 }}>
+                The agent will stop trading immediately. Its on-chain identity
+                stays on record but the agent will be removed from your
+                Studio. You can always create a fresh agent from the same
+                page. This cannot be undone.
+              </div>
+              {deleteError && (
+                <div style={{
+                  fontSize: 12, color: '#ef4444', marginBottom: 12,
+                  padding: 8, border: '1px solid #3a1e22', borderRadius: 6,
+                }} data-testid="text-delete-error">
+                  {deleteError}
+                </div>
+              )}
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <button
+                  onClick={() => setConfirmDeleteId(null)}
+                  disabled={busy}
+                  data-testid="button-cancel-delete"
+                  style={{
+                    padding: '8px 14px', borderRadius: 8,
+                    background: 'transparent',
+                    border: '1px solid var(--border)',
+                    color: 'var(--text-primary)',
+                    cursor: busy ? 'not-allowed' : 'pointer',
+                    opacity: busy ? 0.5 : 1,
+                    fontWeight: 600, fontSize: 13,
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => handleDeleteAgent(confirmDeleteId)}
+                  disabled={busy}
+                  data-testid="button-confirm-delete"
+                  style={{
+                    padding: '8px 14px', borderRadius: 8,
+                    background: '#ef4444',
+                    border: 'none',
+                    color: '#fff',
+                    cursor: busy ? 'not-allowed' : 'pointer',
+                    opacity: busy ? 0.6 : 1,
+                    fontWeight: 700, fontSize: 13,
+                  }}
+                >
+                  {busy ? 'Removing…' : 'Remove agent'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       <style>{`
         @keyframes pulse {
