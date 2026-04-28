@@ -59,6 +59,13 @@ export default function AgentStudio(_props: AgentStudioProps) {
   const [loading, setLoading] = useState(true)
   const [feed, setFeed] = useState<FeedEntry[]>([])
   const [feedError, setFeedError] = useState(false)
+  // "Load older" pagination state. `loadingMore` drives the spinner on
+  // the button; `noMoreOlder` flips true the first time a paginated
+  // fetch returns zero new rows so we can swap the button for a "no
+  // more activity" hint instead of letting the user keep tapping a
+  // button that will never produce anything.
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [noMoreOlder, setNoMoreOlder] = useState(false)
   // Per-agent expand state: which agent's full chart is currently shown.
   // Only one chart visible at a time so we don't mount many TradingView
   // iframes for users with lots of agents (memory + scroll cost).
@@ -150,10 +157,65 @@ export default function AgentStudio(_props: AgentStudioProps) {
       .catch(() => { setLoading(false) })
   }
 
+  // Default refresh: pulls the latest 20 entries and merges them with
+  // any older entries the user has already loaded via "Load older". We
+  // dedupe by entry id so the 30s poll never duplicates a row the user
+  // is already looking at, and we keep older loaded entries appended at
+  // the tail so they don't disappear on every poll. Without this the
+  // poll would clobber pagination state every 30 seconds.
   const fetchFeed = () => {
     return getMyFeed(20)
-      .then(f => { setFeed(Array.isArray(f) ? f : []); setFeedError(false) })
+      .then(f => {
+        const fresh = Array.isArray(f) ? f : []
+        setFeed(prev => {
+          if (prev.length === 0) return fresh
+          const seen = new Set(fresh.map(x => x.id))
+          // Keep older loaded entries that the latest poll didn't return
+          // (i.e. anything strictly older than the newest fresh entry's
+          // timestamp, OR anything fresh-window-shaped but missed by the
+          // server's de-jittered ordering — both safe to keep).
+          const tail = prev.filter(x => !seen.has(x.id))
+          return [...fresh, ...tail].sort(
+            (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+          )
+        })
+        setFeedError(false)
+      })
       .catch(() => setFeedError(true))
+  }
+
+  // "Load older entries" cursor pagination. Uses the oldest entry's
+  // createdAt as the cursor so the server returns the next 20 rows
+  // strictly older than what the user is currently looking at. Stops
+  // showing the button (renders an end-marker instead) once the server
+  // returns an empty page so the user knows they've reached the bottom.
+  const loadOlder = async () => {
+    if (loadingMore || noMoreOlder || feed.length === 0) return
+    setLoadingMore(true)
+    try {
+      const oldest = feed[feed.length - 1]
+      const older = await getMyFeed(20, oldest.createdAt)
+      const olderArr = Array.isArray(older) ? older : []
+      if (olderArr.length === 0) { setNoMoreOlder(true); return }
+      // Dedupe: a tick that landed exactly on the cursor boundary could in
+      // rare cases come back again here. Filter by id and append.
+      // Trades virtualise into two entries (`trade-open-*`, `trade-close-*`);
+      // the CLOSE side may belong chronologically NEWER than the cursor but
+      // gets re-emitted by the older-page query (we filter trades by
+      // openedAt). Dedupe by id catches that case too. We sort the merged
+      // result so the CLOSE entry slots into its correct chronological
+      // position rather than appearing at the bottom of the list.
+      const seen = new Set(feed.map(x => x.id))
+      const novel = olderArr.filter(x => !seen.has(x.id))
+      if (novel.length === 0) { setNoMoreOlder(true); return }
+      setFeed(prev => [...prev, ...novel].sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      ))
+    } catch {
+      // Soft fail — leave the button enabled so the user can retry.
+    } finally {
+      setLoadingMore(false)
+    }
   }
 
   const fetchPermissions = () => {
@@ -833,6 +895,49 @@ export default function AgentStudio(_props: AgentStudioProps) {
           </div>
         )
       })}
+
+      {/* "Load older entries" pager. Hidden when the feed is empty (the
+          empty-state hint above already covers that case) or errored.
+          Once the server returns no more rows we swap the button for an
+          end-of-feed marker so users know they've reached the bottom and
+          aren't left tapping a dead button. */}
+      {!feedError && feed.length > 0 && !noMoreOlder && (
+        <button
+          type="button"
+          onClick={loadOlder}
+          disabled={loadingMore}
+          data-testid="button-feed-load-older"
+          style={{
+            width: '100%',
+            marginTop: 8,
+            padding: '10px 14px',
+            background: '#1e293b',
+            border: '1px solid #334155',
+            borderRadius: 8,
+            color: loadingMore ? '#64748b' : '#e2e8f0',
+            fontSize: 13,
+            fontWeight: 500,
+            cursor: loadingMore ? 'wait' : 'pointer',
+          }}
+        >
+          {loadingMore ? 'Loading…' : '↓ Load older entries'}
+        </button>
+      )}
+      {!feedError && feed.length > 0 && noMoreOlder && (
+        <div
+          data-testid="text-feed-end-marker"
+          style={{
+            textAlign: 'center',
+            marginTop: 8,
+            padding: '10px 14px',
+            fontSize: 12,
+            color: '#64748b',
+            fontStyle: 'italic',
+          }}
+        >
+          — no older activity —
+        </div>
+      )}
 
       {/* Confirm-delete modal — keyed to the agent the user just tapped
           Remove on. Always shows the agent's name (defensively re-looked-

@@ -160,10 +160,17 @@ type FeedEntry = {
   createdAt: Date
 }
 
-async function fetchAgentLogFeed(where: any, limit: number, agentNameById: Map<string, string>): Promise<FeedEntry[]> {
+async function fetchAgentLogFeed(where: any, limit: number, agentNameById: Map<string, string>, before?: Date): Promise<FeedEntry[]> {
   try {
     const entries = await db.agentLog.findMany({
-      where: { ...where, pair: { not: null } },
+      where: {
+        ...where,
+        pair: { not: null },
+        // Strict `<` (not `<=`) so a "Load older" call using the oldest
+        // visible entry's timestamp as the cursor never re-includes that
+        // entry — which would render as a duplicate in the feed.
+        ...(before ? { createdAt: { lt: before } } : {}),
+      },
       orderBy: { createdAt: 'desc' },
       take: limit,
       include: { agent: { select: { name: true } } }
@@ -195,12 +202,17 @@ async function fetchAgentLogFeed(where: any, limit: number, agentNameById: Map<s
   }
 }
 
-async function fetchTradeFeed(where: any, limit: number, agentNameById: Map<string, string>): Promise<FeedEntry[]> {
+async function fetchTradeFeed(where: any, limit: number, agentNameById: Map<string, string>, before?: Date): Promise<FeedEntry[]> {
   // Trades are split into two virtual feed entries: one OPEN at openedAt, and
   // one CLOSE at closedAt if the trade has closed. That way the user sees
   // both sides of the lifecycle in chronological order.
+  // The `before` cursor filters on openedAt — close-side virtual rows
+  // anchored at closedAt could in theory still leak through if a trade
+  // opened before the cursor closed after it, but that's the desired
+  // behaviour (the close event IS older than the cursor in those cases
+  // by openedAt and never duplicates a previously-seen entry id).
   const trades = await db.trade.findMany({
-    where,
+    where: { ...where, ...(before ? { openedAt: { lt: before } } : {}) },
     orderBy: { openedAt: 'desc' },
     take: limit,
     include: { agent: { select: { name: true } } }
@@ -293,12 +305,28 @@ app.get('/api/me/feed', requireTgUser, async (req, res) => {
   try {
     const user = (req as any).user
     const limit = Math.min(parseInt(String(req.query.limit ?? '20')) || 20, 100)
+    // `before` is an ISO timestamp cursor for "Load older entries". When
+    // present, only entries strictly older than this time are returned.
+    // Bad timestamps fall through silently as undefined so a stale URL
+    // can't 500 the feed.
+    const beforeStr = req.query.before ? String(req.query.before) : ''
+    const beforeDate = beforeStr ? new Date(beforeStr) : undefined
+    const before = beforeDate && !isNaN(beforeDate.getTime()) ? beforeDate : undefined
     const agents = await db.agent.findMany({ where: { userId: user.id }, select: { id: true, name: true } })
     const nameById = new Map(agents.map((a) => [a.id, a.name]))
     const [logFeed, tradeFeed, asterFeed] = await Promise.all([
-      fetchAgentLogFeed({ userId: user.id }, limit, nameById),
-      fetchTradeFeed({ userId: user.id }, limit, nameById),
-      fetchAsterTradeFeed(user.id, limit)
+      fetchAgentLogFeed({ userId: user.id }, limit, nameById, before),
+      fetchTradeFeed({ userId: user.id }, limit, nameById, before),
+      // Aster fill feed reads the live exchange API and doesn't support
+      // a `before` cursor — skip it on paginated calls so the merged
+      // result doesn't keep reinjecting the latest fills as "older".
+      // Trade-off: Aster fills older than what the live API returned
+      // in the user's first un-paginated fetch will not appear when
+      // the user clicks "Load older". DB-resident agent logs and our
+      // own Trade rows still paginate normally. If this becomes a real
+      // gap users complain about, plumb `endTime`/`fromId` through
+      // fetchAsterTradeFeed → Aster userTrades API.
+      before ? Promise.resolve([]) : fetchAsterTradeFeed(user.id, limit),
     ])
     res.json(mergeFeeds(mergeFeeds(logFeed, tradeFeed, limit * 2), asterFeed, limit))
   } catch (err: any) {
@@ -321,10 +349,13 @@ app.get('/api/agents/:id/feed', requireTgUser, async (req, res) => {
     })
     if (!agent) return res.status(404).json({ error: 'Agent not found' })
     const limit = Math.min(parseInt(String(req.query.limit ?? '20')) || 20, 100)
+    const beforeStr = req.query.before ? String(req.query.before) : ''
+    const beforeDate = beforeStr ? new Date(beforeStr) : undefined
+    const before = beforeDate && !isNaN(beforeDate.getTime()) ? beforeDate : undefined
     const nameById = new Map([[agent.id, agent.name]])
     const [logFeed, tradeFeed] = await Promise.all([
-      fetchAgentLogFeed({ agentId: agent.id }, limit, nameById),
-      fetchTradeFeed({ agentId: agent.id }, limit, nameById)
+      fetchAgentLogFeed({ agentId: agent.id }, limit, nameById, before),
+      fetchTradeFeed({ agentId: agent.id }, limit, nameById, before)
     ])
     res.json(mergeFeeds(logFeed, tradeFeed, limit))
   } catch (err: any) {
@@ -926,6 +957,27 @@ app.post('/api/aster/approve', requireTgUser, async (req, res) => {
       where: { id: user.id },
       data:  { asterOnboarded: true }
     })
+
+    // Symmetric backfill of `enabledVenues` for any pre-existing agents.
+    // Mirrors the HL-approve backfill: a user who created an agent before
+    // ever approving Aster (vanishingly rare today, but possible if HL
+    // approval lands first) would otherwise have an Aster-silent agent.
+    try {
+      const userAgents = await db.agent.findMany({
+        where:  { userId: user.id },
+        select: { id: true, enabledVenues: true, exchange: true },
+      })
+      for (const a of userAgents) {
+        const cur = Array.isArray((a as any).enabledVenues) && (a as any).enabledVenues.length > 0
+          ? (a as any).enabledVenues as string[]
+          : (a.exchange ? [a.exchange] : [])
+        if (cur.includes('aster')) continue
+        const next = Array.from(new Set([...cur, 'aster']))
+        await db.agent.update({ where: { id: a.id }, data: { enabledVenues: next } })
+      }
+    } catch (e: any) {
+      console.warn(`[/aster/approve] enabledVenues backfill failed user=${user.id}:`, e?.message ?? e)
+    }
 
     return res.json({
       success: true,
@@ -1722,6 +1774,37 @@ app.post('/api/hyperliquid/approve', requireTgUser, async (req, res) => {
         hyperliquidOnboarded:        true,
       },
     })
+
+    // Backfill `enabledVenues` on every existing agent owned by this user
+    // so they start scanning Hyperliquid on the next runner tick. Without
+    // this, an agent created before HL approval (e.g. via the new Onboard
+    // page, which only runs Aster approve) stays HL-silent forever — the
+    // user has to dig into Agent Studio and flip a per-agent chip to "fix"
+    // something they never noticed was broken. We only ADD 'hyperliquid'
+    // to whatever the agent already had so we never override a user who
+    // intentionally pruned a venue via the chip toggles.
+    try {
+      const userAgents = await db.agent.findMany({
+        where:  { userId: user.id },
+        select: { id: true, enabledVenues: true, exchange: true },
+      })
+      for (const a of userAgents) {
+        const cur = Array.isArray((a as any).enabledVenues) && (a as any).enabledVenues.length > 0
+          ? (a as any).enabledVenues as string[]
+          : (a.exchange ? [a.exchange] : [])
+        if (cur.includes('hyperliquid')) continue
+        const next = Array.from(new Set([...cur, 'hyperliquid']))
+        await db.agent.update({ where: { id: a.id }, data: { enabledVenues: next } })
+      }
+      if (userAgents.length > 0) {
+        console.log(`[/hyperliquid/approve] backfilled enabledVenues+=hyperliquid on ${userAgents.length} agent(s) for user=${user.id}`)
+      }
+    } catch (e: any) {
+      // Non-fatal: the user can still flip per-agent chips manually if the
+      // bulk backfill races a concurrent edit. We only log so production
+      // ops can spot if the backfill ever wedges.
+      console.warn(`[/hyperliquid/approve] enabledVenues backfill failed user=${user.id}:`, e?.message ?? e)
+    }
 
     // ── 5) Auto move-to-perps. Most users land here with USDC sitting in
     //    HL spot (because that's where bridge deposits + L1 deposits go),

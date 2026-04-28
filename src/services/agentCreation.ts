@@ -109,6 +109,24 @@ export async function createAgentForUser(opts: {
   const { address, privateKey } = generateEVMWallet()
   const encryptedPK = encryptPrivateKey(privateKey, opts.userId, undefined)
 
+  // Derive `enabledVenues` from the user's onboarding flags so a brand-new
+  // agent automatically scans every venue the user is approved on. Without
+  // this the runner falls back to `[agent.exchange]` which is hard-coded to
+  // `'aster'` below — meaning a user who completed both Aster + Hyperliquid
+  // onboarding would get an HL-silent agent and have to flip a per-agent
+  // chip in Studio to "fix" something they never noticed was wrong.
+  // Defaulting to ['aster'] when neither flag is set is defensive — the
+  // mini-app's Onboard endpoint runs aster/approve right after creation,
+  // so the flag will be true on the next runner tick anyway.
+  const flags = await db.user.findUnique({
+    where:  { id: opts.userId },
+    select: { asterOnboarded: true, hyperliquidOnboarded: true },
+  })
+  const venues: string[] = []
+  if (flags?.asterOnboarded       !== false) venues.push('aster')          // default-true if missing
+  if (flags?.hyperliquidOnboarded === true ) venues.push('hyperliquid')    // explicit opt-in
+  if (venues.length === 0) venues.push('aster')
+
   // Concurrency-safe name + create. The name uniqueness check + create is
   // a TOCTOU race when many users onboard at once — two workers can both
   // pre-check "Falcon3517 is free" and one will lose at insert time with
@@ -144,6 +162,7 @@ export async function createAgentForUser(opts: {
           metadataUri: identity.metadataUri,
           identityStandard: identity.standard,
           exchange: 'aster',
+          enabledVenues: venues,
           pairs: ['AUTO'],
           maxPositionSize: capital,
           maxDailyLoss,

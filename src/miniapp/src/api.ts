@@ -145,8 +145,13 @@ export interface FeedEntry {
   createdAt: string;
 }
 
-export function getMyFeed(limit = 20) {
-  return apiFetch<FeedEntry[]>(`/api/me/feed?limit=${limit}`);
+// `before` is an ISO timestamp cursor for "Load older entries" — when
+// supplied the server only returns feed rows strictly older than this
+// time. Omit it (or pass undefined) for the default "latest N" behaviour.
+export function getMyFeed(limit = 20, before?: string) {
+  const qs = new URLSearchParams({ limit: String(limit) });
+  if (before) qs.set('before', before);
+  return apiFetch<FeedEntry[]>(`/api/me/feed?${qs.toString()}`);
 }
 
 // Update an agent's risk-limit settings. Each field is independently
