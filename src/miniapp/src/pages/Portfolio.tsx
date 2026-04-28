@@ -96,14 +96,26 @@ export default function Portfolio({ userId }: PortfolioProps) {
 
   const chartColor = totalPnl >= 0 ? '#10b981' : '#ef4444'
 
+  // 42.space exposure = sum of live mark-to-market value across every
+  // OPEN prediction. We deliberately exclude resolved/claimed rows here
+  // because those funds either already paid out (now sitting in the BSC
+  // wallet, which we count separately) or were lost. Falls back to
+  // usdtIn when on-chain quote isn't available so a fresh-bought ticket
+  // still contributes its principal instead of vanishing from equity.
+  const fortyTwoEquity = predictions
+    .filter((p) => p.status === 'open' || p.status === 'resolved_win')
+    .reduce((s, p) => s + (p.currentValueUsdt ?? p.usdtIn ?? 0), 0)
+
   // Total equity now spans every venue the user can trade from: Aster
-  // perps, Hyperliquid clearinghouse, and BSC wallet USDT (funding capacity
-  // for either venue). Without HL in the sum, users with funds parked on
-  // Hyperliquid saw a misleadingly low "TOTAL EQUITY" headline.
+  // perps, Hyperliquid clearinghouse, 42.space prediction holdings, and
+  // BSC wallet USDT (funding capacity for any venue). Without each of
+  // these in the sum, users with funds parked on a single venue saw a
+  // misleadingly low "TOTAL EQUITY" headline.
   const hlEquity = wallet?.hyperliquid?.accountValue ?? 0
   const totalEquity =
     (wallet?.aster.usdt ?? 0) +
     hlEquity +
+    fortyTwoEquity +
     (wallet?.balances.usdt ?? 0)
 
   // Merge prediction-market positions into the unified Trade History so
@@ -262,10 +274,12 @@ export default function Portfolio({ userId }: PortfolioProps) {
             </div>
           </div>
 
-          {/* Two trading-venue cards on top (the venues that actually move
-              the equity headline), wallet capacity (BSC) full-width below.
-              Without HL on this card, users with funds on Hyperliquid had
-              no way to see their HL margin from Portfolio at all. */}
+          {/* 2x2 grid for the three trading venues (Aster, HL, 42.space)
+              plus BSC wallet capacity. Each venue gets equal visual weight
+              so users can see at a glance where every dollar lives.
+              Without 42.space on this card, users running prediction
+              strategies had no way to see their parimutuel exposure from
+              Portfolio at all. */}
           <div style={{
             display: 'grid',
             gridTemplateColumns: '1fr 1fr',
@@ -352,22 +366,68 @@ export default function Portfolio({ userId }: PortfolioProps) {
                 </div>
               )
             })()}
-          </div>
 
-          {/* BSC card — funding capacity (USDT for both Aster + HL bridges). */}
-          <div style={{
-            padding: 10,
-            borderRadius: 8,
-            background: '#0f0f17',
-            border: '1px solid #1e1e2e'
-          }}>
-            <div style={{ fontSize: 10, color: '#64748b', marginBottom: 4 }}>BSC · USDT (wallet)</div>
-            <div style={{ fontSize: 18, fontWeight: 700, color: '#e2e8f0' }}
-                 data-testid="text-portfolio-bsc-usdt">
-              ${wallet.balances.usdt.toFixed(2)}
-            </div>
-            <div style={{ fontSize: 10, color: '#64748b', marginTop: 4 }}>
-              BNB {wallet.balances.bnb.toFixed(5)}
+            {/* 42.space card — third trading venue. Mirrors the Aster/HL
+                layout for visual symmetry and uses the same purple accent
+                that 42.space gets in the live feed and venue badges so
+                users get a consistent colour-to-venue mapping across the
+                app. Counts open positions only; the sub-line shows the
+                count of live tickets so a $0 card with positions still
+                tells a story (e.g. "2 open" while resolution pending). */}
+            {(() => {
+              const openCount = predictions.filter(
+                (p) => p.status === 'open' || p.status === 'resolved_win',
+              ).length
+              const hasExposure = fortyTwoEquity > 0.01 || openCount > 0
+              const accentColor = hasExposure ? '#a855f7' : '#e2e8f0'
+              const cardBg = hasExposure
+                ? 'linear-gradient(135deg, #a855f722, #a855f708)'
+                : '#0f0f17'
+              const cardBorder = hasExposure ? '#a855f744' : '#1e1e2e'
+              return (
+                <div style={{
+                  padding: 10,
+                  borderRadius: 8,
+                  background: cardBg,
+                  border: `1px solid ${cardBorder}`,
+                }}>
+                  <div style={{ fontSize: 10, color: '#64748b', marginBottom: 4 }}>
+                    42.SPACE · USDT
+                  </div>
+                  <div
+                    style={{ fontSize: 18, fontWeight: 700, color: accentColor }}
+                    data-testid="text-portfolio-42space-usdt"
+                  >
+                    ${fortyTwoEquity.toFixed(2)}
+                  </div>
+                  <div style={{ fontSize: 10, color: '#64748b', marginTop: 4 }}>
+                    {openCount > 0
+                      ? `${openCount} open position${openCount === 1 ? '' : 's'}`
+                      : 'No open positions'}
+                  </div>
+                </div>
+              )
+            })()}
+
+            {/* BSC card — funding capacity (USDT for both Aster + HL
+                bridges and 42.space ticket buys). Now lives inside the
+                grid as the 4th tile so the four venues read as one
+                balanced 2x2 block instead of "two cards + a wide
+                outlier". */}
+            <div style={{
+              padding: 10,
+              borderRadius: 8,
+              background: '#0f0f17',
+              border: '1px solid #1e1e2e',
+            }}>
+              <div style={{ fontSize: 10, color: '#64748b', marginBottom: 4 }}>BSC · USDT (wallet)</div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: '#e2e8f0' }}
+                   data-testid="text-portfolio-bsc-usdt">
+                ${wallet.balances.usdt.toFixed(2)}
+              </div>
+              <div style={{ fontSize: 10, color: '#64748b', marginTop: 4 }}>
+                BNB {wallet.balances.bnb.toFixed(5)}
+              </div>
             </div>
           </div>
         </div>
