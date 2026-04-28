@@ -1716,6 +1716,7 @@ If you would not put real money in this trade right now, action = HOLD.`
 
         if (!riskCheck.allowed) {
           console.log(`[Agent ${agent.name}] Risk guard blocked: ${riskCheck.reason}`)
+          await logSkip('risk_guard', riskCheck.reason ?? 'risk guard blocked')
           return
         }
 
@@ -1729,6 +1730,7 @@ If you would not put real money in this trade right now, action = HOLD.`
           const twakRisk = await checkTradeRisk(baseSymbol)
           if (!twakRisk.allowed) {
             console.log(`[Agent ${agent.name}] TWAK risk gate blocked ${pair}: ${twakRisk.reason}`)
+            await logSkip('twak_risk', twakRisk.reason ?? 'flagged by Trust Wallet risk gate')
             return
           }
           if (twakRisk.riskScore !== undefined) {
@@ -1785,11 +1787,24 @@ If you would not put real money in this trade right now, action = HOLD.`
             `[Agent ${agent.name}] Skipping ${pair} ${side} — insufficient balance: ` +
             `${(execResult.balance ?? 0).toFixed(4)} (${agent.exchange})${detail}`
           )
+          // Surface to the agent feed so the user can see WHY a "🚀 LONG"
+          // decision didn't translate to a fill. Without this, decisions
+          // log as OPEN_LONG and the user has no signal that a balance
+          // floor (or venue rejection further down) killed the order.
+          await logSkip(
+            'no_balance',
+            `${agent.exchange} balance ${(execResult.balance ?? 0).toFixed(2)} ` +
+            `insufficient to open ${side} ${pair}${detail}`
+          )
           continue
         } else if (execResult.reason === 'rejected') {
           console.error(`[Agent ${agent.name}] Order execution failed: ${execResult.detail}`)
           await saveMemory(agent.id, 'correction',
             `Order execution failed for ${pair} ${side}: ${execResult.detail ?? 'unknown'}`, null)
+          await logSkip(
+            'venue_rejected',
+            `${agent.exchange} rejected ${side} ${pair}: ${(execResult.detail ?? 'unknown').slice(0, 200)}`
+          )
           return
         } else if (execResult.reason === 'no-creds' && agent.exchange !== 'mock') {
           // Live venue but the user's agent credentials aren't on file
@@ -1799,6 +1814,10 @@ If you would not put real money in this trade right now, action = HOLD.`
           // for the next tick — onboarding flow will repair the creds.
           console.warn(
             `[Agent ${agent.name}] Skipping ${pair} ${side} — no execution credentials for ${agent.exchange}`
+          )
+          await logSkip(
+            'no_creds',
+            `${agent.exchange} agent credentials missing — re-activate ${agent.exchange} from the Agents tab`
           )
           continue
         }
