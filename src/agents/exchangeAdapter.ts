@@ -40,6 +40,37 @@ import {
   getSpotUsdcBalance as hlGetSpotUsdcBalance,
 } from '../services/hyperliquid'
 
+// ── Per-(user,symbol) execution mutex ────────────────────────────────────────
+//
+// Aster's leverage and order placement are TWO separate API calls. Between
+// them another concurrent open on the same user+symbol can flip the symbol's
+// leverage out from under us — so the position lands at the OTHER agent's
+// chosen leverage instead of ours. The runner dispatches per-agent ticks
+// concurrently, so two agents on the same user+pair can interleave in
+// exactly this window. This mutex serialises the entire setLeverage →
+// placeOrder critical section per (user, symbol) so each open sees the
+// leverage it just set. Cross-process safety is out of scope (single-node
+// deployment); intra-process coverage closes the realistic race.
+const openExecLocks = new Map<string, Promise<unknown>>()
+async function withOpenLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const prev = openExecLocks.get(key) ?? Promise.resolve()
+  let release!: () => void
+  const next = new Promise<void>((r) => { release = r })
+  openExecLocks.set(key, prev.then(() => next))
+  try {
+    await prev
+    return await fn()
+  } finally {
+    release()
+    // Best-effort cleanup so the map doesn't grow unbounded over a long
+    // process lifetime. If a newer waiter has already replaced our entry,
+    // leave it alone.
+    if (openExecLocks.get(key) === prev.then(() => next)) {
+      openExecLocks.delete(key)
+    }
+  }
+}
+
 // ── Shared types ─────────────────────────────────────────────────────────────
 
 /**
@@ -288,9 +319,14 @@ export async function executeOpenAster(
   const qty = parseFloat((finalSize / currentPrice).toFixed(6))
 
   try {
+    // Serialise setLeverage→placeOrder per (user, symbol). Two concurrent
+    // ticks for the same user+pair (different agents, or rapid retries)
+    // would otherwise interleave and let one agent's leverage land on the
+    // other agent's order. See withOpenLock at the top of this file.
+    const lockKey = `aster:${dbUser?.id ?? 'noUser'}:${sym}`
     let result
     if (services.builderAddress && dbUser?.asterOnboarded) {
-      result = await services.placeOrderWithBuilderCode({
+      result = await withOpenLock(lockKey, () => services.placeOrderWithBuilderCode({
         symbol:         sym,
         side:           side === 'LONG' ? 'BUY' : 'SELL',
         type:           'MARKET',
@@ -300,19 +336,19 @@ export async function executeOpenAster(
         // previously on this symbol — which is how Telegram could say
         // "3x" while the actual exchange position ran at 2x.
         leverage:       decision.leverage ?? 1,
-        builderAddress: services.builderAddress,
+        builderAddress: services.builderAddress!,
         feeRate:        services.feeRate ?? '0.0001',
         creds,
-      })
+      }))
     } else {
-      result = await services.placeOrder({
+      result = await withOpenLock(lockKey, () => services.placeOrder({
         symbol:   sym,
         side:     side === 'LONG' ? 'BUY' : 'SELL',
         type:     'MARKET',
         quantity: qty,
         leverage: decision.leverage ?? 1,
         creds,
-      })
+      }))
     }
 
     const fillPrice  = result.avgPrice > 0 ? result.avgPrice : currentPrice

@@ -806,10 +806,16 @@ export async function setLeverage(
   creds: AsterCredentials
 ): Promise<number> {
   const sym = symbol.replace('/', '')
-  // De-duped step-down ladder. Floor to int and drop anything ≥ requested
-  // so we never re-try the same value, and dedupe so 5/2/1 don't repeat.
+  // Strict step-DOWN ladder: start at requested, then try strictly lower
+  // common rungs, then 1x as the always-safe floor. Critically we must
+  // never try a value HIGHER than requested — that would silently open
+  // the position at MORE leverage than the agent asked for, the exact
+  // failure mode this function exists to prevent.
+  const requested = Math.max(1, Math.floor(leverage))
   const ladder = Array.from(new Set(
-    [Math.max(1, Math.floor(leverage)), 5, 2, 1].filter((n) => n >= 1)
+    [requested, 5, 2, 1]
+      .filter((n) => n >= 1 && n <= requested)
+      .sort((a, b) => b - a)
   ))
   for (const lev of ladder) {
     try {
@@ -898,8 +904,13 @@ export async function placeOrder(params: {
   // down on rejection and returns the rung that landed; we propagate
   // that up via OrderResult so notifiers/db rows reflect reality
   // instead of the request.
+  //
+  // Critically we call setLeverage even when the request is exactly 1x.
+  // Without it, an account whose previous trade on this symbol ran at
+  // (say) 5x would silently inherit 5x for a 1x agent, breaking the
+  // very risk constraint the user dialed down to enforce.
   let actualLeverage: number | undefined
-  if (leverage && leverage > 1) {
+  if (leverage && leverage >= 1) {
     actualLeverage = await setLeverage(symbol, leverage, creds)
   }
 
@@ -956,8 +967,11 @@ export async function placeOrderWithBuilderCode(params: {
   const { creds, builderAddress, feeRate, leverage, ...rest } = params
   const symbol = rest.symbol.replace('/', '')
 
+  // Same rationale as placeOrder: enforce leverage even at 1x so a stale
+  // higher symbol-leverage on the account can't override the agent's
+  // intent. See placeOrder() above for the full reasoning.
   let actualLeverage: number | undefined
-  if (leverage && leverage > 1) {
+  if (leverage && leverage >= 1) {
     actualLeverage = await setLeverage(symbol, leverage, creds)
   }
 

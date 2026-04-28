@@ -86,21 +86,42 @@ export default function AgentStudio(_props: AgentStudioProps) {
   }>>({})
   const [riskSaving, setRiskSaving] = useState<Record<string, boolean>>({})
 
-  // Persist a single risk field on blur. Skip when the value is unchanged
-  // or invalid (NaN / ≤ 0). Optimistically updates the local agents list
-  // so the displayed value matches what was sent, and rolls back on error.
+  // Clear the per-agent draft for one field so the input falls back to
+  // showing the persisted value from `agents`. We always do this after a
+  // blur (success, failure, or no-op) so the input visibly reverts to
+  // truth — no more "blank field that's actually saved as 25" confusion
+  // when the user clears a field then tabs away.
+  const clearDraftField = (agentId: string, field: 'maxPositionSize' | 'maxDailyLoss' | 'maxLeverage') => {
+    setRiskDraft(d => {
+      const cur = d[agentId]
+      if (!cur || cur[field] === undefined) return d
+      const nextAgent = { ...cur }
+      delete nextAgent[field]
+      const next = { ...d }
+      if (Object.keys(nextAgent).length === 0) delete next[agentId]
+      else next[agentId] = nextAgent
+      return next
+    })
+  }
+
   const saveRiskField = async (
     agentId: string,
     field: 'maxPositionSize' | 'maxDailyLoss' | 'maxLeverage',
     raw: string,
   ) => {
     const trimmed = raw.trim()
-    if (trimmed === '') return // user cleared then blurred — keep saved value
-    const parsed = Number(trimmed)
-    if (!Number.isFinite(parsed) || parsed <= 0) return
     const current = agents.find(a => a.id === agentId)
-    if (!current) return
-    if (Number(current[field]) === parsed) return // unchanged
+    if (!current) { clearDraftField(agentId, field); return }
+
+    const parsed = Number(trimmed)
+    const valid = trimmed !== '' && Number.isFinite(parsed) && parsed > 0
+    if (!valid || Number(current[field]) === parsed) {
+      // Nothing to do (empty / invalid / unchanged). Clear the draft so
+      // the input visibly reverts to the persisted value instead of
+      // sitting on a blank/invalid string.
+      clearDraftField(agentId, field)
+      return
+    }
 
     const prev = agents
     setRiskSaving(s => ({ ...s, [`${agentId}:${field}`]: true }))
@@ -116,6 +137,10 @@ export default function AgentStudio(_props: AgentStudioProps) {
       setRiskSaving(s => {
         const next = { ...s }; delete next[`${agentId}:${field}`]; return next
       })
+      // Always clear the draft after the round-trip so the input shows the
+      // authoritative value from `agents` (which is now either the new
+      // saved value, or the pre-edit value after rollback).
+      clearDraftField(agentId, field)
     }
   }
 
