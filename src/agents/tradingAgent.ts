@@ -1815,6 +1815,57 @@ If you would not put real money in this trade right now, action = HOLD.`
               return
             }
           }
+        } else if (agent.exchange === 'hyperliquid') {
+          // HL has both a global $10 notional floor AND a per-asset minimum
+          // size derived from szDecimals. The size constraint can dominate
+          // for cheap, low-decimal coins (e.g. szDecimals=0 means min size
+          // is 1 unit, so a coin worth $0.50 needs at least $0.50 just to
+          // place an order — but still must clear the $10 notional too).
+          //
+          // We resolve a fresh price here because currentPrice isn't bound
+          // until the next block; use snapshot.price as a stable fallback.
+          // Either is within fractions of a percent of the actual fill —
+          // good enough for a sizing floor that has its own buffer baked in.
+          try {
+            const { getMinNotional } = await import('../services/hyperliquid')
+            const mins = await getMinNotional(pair)
+            if (mins) {
+              const px = ohlcv ? ohlcv['15m'].close[ohlcv['15m'].close.length - 1] : snapshot.price
+              const sizeFromUnits = px > 0 ? mins.minSizeUnits * px : 0
+              const required = Math.max(mins.minNotionalUsdt, sizeFromUnits)
+              if (finalSize < required) {
+                if (agent.maxPositionSize >= required) {
+                  console.log(
+                    `[Agent ${agent.name}] Bumping size $${finalSize.toFixed(2)} → ` +
+                    `$${required.toFixed(2)} to clear HL minimums ` +
+                    `(notional=$${mins.minNotionalUsdt}, size=${mins.minSizeUnits} units ≈ $${sizeFromUnits.toFixed(2)})`
+                  )
+                  finalSize = required
+                } else {
+                  await logSkip(
+                    'venue_rejected',
+                    `position size $${finalSize.toFixed(2)} below HL minimum ($${required.toFixed(2)}) ` +
+                    `for ${pair} and agent max position ($${agent.maxPositionSize}) is too low to bump — ` +
+                    `raise Max position to at least $${Math.ceil(required + 1)} in the Agents tab`
+                  )
+                  return
+                }
+              }
+            } else {
+              // Meta unreachable or pair not listed: fall back to the bare
+              // $10 floor. Better to make a best-effort sized order than to
+              // skip every tick because HL meta blipped.
+              const HL_FALLBACK_MIN = 10.5
+              if (finalSize < HL_FALLBACK_MIN && agent.maxPositionSize >= HL_FALLBACK_MIN) {
+                console.log(
+                  `[Agent ${agent.name}] Bumping size $${finalSize.toFixed(2)} → $${HL_FALLBACK_MIN} (HL meta unavailable, using $10 fallback)`
+                )
+                finalSize = HL_FALLBACK_MIN
+              }
+            }
+          } catch (e: any) {
+            console.warn(`[Agent ${agent.name}] HL min-notional check threw (ignored):`, e?.message)
+          }
         }
         // ────────────────────────────────────────────────────────────────
 

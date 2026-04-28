@@ -198,6 +198,84 @@ export async function getMarkPrice(coin: string): Promise<{ markPrice: number }>
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Per-asset minimum order size lookup (cached)
+// ─────────────────────────────────────────────────────────────────────────────
+// HL enforces TWO minimum-order constraints that we need to clear before
+// submitting:
+//
+//   1. Global minimum order value: 10 USDC notional. Anything smaller is
+//      rejected with "Order has zero size" or "MinTradeNtl" depending on
+//      which gate it tripped first.
+//   2. Per-asset minimum size: each asset has a `szDecimals` field in
+//      meta.universe. The smallest representable size is 10^(-szDecimals)
+//      coin units. For low-decimal assets (BTC = 5 → 0.00001 BTC, around
+//      ~$1 today; HYPE = 2 → 0.01 HYPE, around ~$0.20) constraint #1 is
+//      the binding one. For high-decimal cheap coins (some shitcoins
+//      with szDecimals=0 or 1) the per-asset min size can DOMINATE the
+//      $10 floor — a coin worth $0.001 with szDecimals=0 has a min size
+//      of 1 coin = $0.001, but you still need to cross the $10 notional.
+//
+// We cache HL's universe meta for 5 minutes so this lookup is essentially
+// free per tick. Cache miss falls through gracefully — caller assumes the
+// global $10 floor and lets the venue reject if the per-asset constraint
+// wasn't actually known.
+//
+// Returned values are USDT-denominated (HL margin asset is USDC, but the
+// agent thinks in USDT — they are 1:1 for our purposes).
+
+export interface HlAssetMinimums {
+  /** USDT notional floor — 10 by HL spec, plus a small safety buffer. */
+  minNotionalUsdt: number
+  /** Smallest tradeable size in coin units, derived from szDecimals. */
+  minSizeUnits:    number
+  /** szDecimals from the meta — useful for downstream rounding. */
+  szDecimals:      number
+}
+
+let _hlMetaCache: { at: number; universe: any[] } | null = null
+const HL_META_TTL_MS = 5 * 60_000
+
+async function loadHlMeta(): Promise<any[]> {
+  const now = Date.now()
+  if (_hlMetaCache && now - _hlMetaCache.at < HL_META_TTL_MS) {
+    return _hlMetaCache.universe
+  }
+  const meta = await infoClient.meta()
+  const universe = Array.isArray((meta as any)?.universe) ? (meta as any).universe : []
+  _hlMetaCache = { at: now, universe }
+  return universe
+}
+
+/**
+ * Look up the minimum order constraints for an HL asset. Coin can be either
+ * the bare symbol ('BTC') or anything we'd hand to executeOpenHl ('BTCUSDT',
+ * 'BTC-PERP', etc.) — we strip suffixes the same way getCandles/getMarkPrice
+ * do so callers don't have to remember which form to use.
+ *
+ * Returns null if HL meta can't be fetched or the asset isn't listed; callers
+ * should fall back to the conservative defaults (10 USDT notional, no
+ * per-asset constraint) so a meta outage never blocks all HL trading.
+ */
+export async function getMinNotional(coin: string): Promise<HlAssetMinimums | null> {
+  const sym = (coin || '').toUpperCase().replace(/USDT?$/, '').replace(/-USD$/, '').replace(/[^A-Z0-9]/g, '')
+  if (!sym) return null
+  try {
+    const universe = await loadHlMeta()
+    const asset = universe.find((u: any) => u?.name === sym)
+    if (!asset) return null
+    const szDecimals = Number.isFinite(asset.szDecimals) ? Number(asset.szDecimals) : 4
+    const minSizeUnits = Math.pow(10, -szDecimals)
+    // 10.5 USDT: HL's spec is $10 flat; the extra $0.50 absorbs the rounding
+    // loss inside formatHlSize (sz.toFixed(szDecimals)) which can shave the
+    // submitted notional just under the line on borderline orders.
+    return { minNotionalUsdt: 10.5, minSizeUnits, szDecimals }
+  } catch (err: any) {
+    console.warn('[HL] getMinNotional meta fetch failed:', sym, err?.message)
+    return null
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Credentials
 // ─────────────────────────────────────────────────────────────────────────────
 
