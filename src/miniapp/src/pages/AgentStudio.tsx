@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { apiFetch, getMyFeed, type FeedEntry } from '../api'
+import { apiFetch, getMyFeed, updateAgentSettings, type FeedEntry } from '../api'
 import { TradingChart } from '../components/TradingChart'
 import { MarketTicker } from '../components/MarketTicker'
 
@@ -73,6 +73,76 @@ export default function AgentStudio(_props: AgentStudioProps) {
   // Per-venue busy flag for the platform toggle so a fast double-tap can't
   // race the optimistic update against the server.
   const [busyVenue, setBusyVenue] = useState<VenueId | null>(null)
+
+  // Per-agent draft of the editable risk settings. Keyed by agentId so
+  // multiple agent cards can be edited independently. Only the field the
+  // user actually touched is patched on blur — any field left as `undefined`
+  // here is sent as-is by the input's defaultValue (so the agent's saved
+  // values stay untouched if the user never focuses that input).
+  const [riskDraft, setRiskDraft] = useState<Record<string, {
+    maxPositionSize?: string
+    maxDailyLoss?: string
+    maxLeverage?: string
+  }>>({})
+  const [riskSaving, setRiskSaving] = useState<Record<string, boolean>>({})
+
+  // Clear the per-agent draft for one field so the input falls back to
+  // showing the persisted value from `agents`. We always do this after a
+  // blur (success, failure, or no-op) so the input visibly reverts to
+  // truth — no more "blank field that's actually saved as 25" confusion
+  // when the user clears a field then tabs away.
+  const clearDraftField = (agentId: string, field: 'maxPositionSize' | 'maxDailyLoss' | 'maxLeverage') => {
+    setRiskDraft(d => {
+      const cur = d[agentId]
+      if (!cur || cur[field] === undefined) return d
+      const nextAgent = { ...cur }
+      delete nextAgent[field]
+      const next = { ...d }
+      if (Object.keys(nextAgent).length === 0) delete next[agentId]
+      else next[agentId] = nextAgent
+      return next
+    })
+  }
+
+  const saveRiskField = async (
+    agentId: string,
+    field: 'maxPositionSize' | 'maxDailyLoss' | 'maxLeverage',
+    raw: string,
+  ) => {
+    const trimmed = raw.trim()
+    const current = agents.find(a => a.id === agentId)
+    if (!current) { clearDraftField(agentId, field); return }
+
+    const parsed = Number(trimmed)
+    const valid = trimmed !== '' && Number.isFinite(parsed) && parsed > 0
+    if (!valid || Number(current[field]) === parsed) {
+      // Nothing to do (empty / invalid / unchanged). Clear the draft so
+      // the input visibly reverts to the persisted value instead of
+      // sitting on a blank/invalid string.
+      clearDraftField(agentId, field)
+      return
+    }
+
+    const prev = agents
+    setRiskSaving(s => ({ ...s, [`${agentId}:${field}`]: true }))
+    setAgents(curr => curr.map(a => a.id === agentId ? { ...a, [field]: parsed } : a))
+    try {
+      await updateAgentSettings(agentId, { [field]: parsed } as any)
+    } catch {
+      // Rollback on rejection so the displayed value matches what's actually
+      // persisted (validation rejection bodies surface in the network tab
+      // for power users; non-blocking for the common edit-too-small case).
+      setAgents(prev)
+    } finally {
+      setRiskSaving(s => {
+        const next = { ...s }; delete next[`${agentId}:${field}`]; return next
+      })
+      // Always clear the draft after the round-trip so the input shows the
+      // authoritative value from `agents` (which is now either the new
+      // saved value, or the pre-edit value after rollback).
+      clearDraftField(agentId, field)
+    }
+  }
 
   const fetchAgents = () => {
     return apiFetch<any[]>('/api/me/agents')
@@ -396,13 +466,67 @@ export default function AgentStudio(_props: AgentStudioProps) {
           ))}
         </div>
 
-        {/* Risk settings */}
-        <div style={{ fontSize: 11, color: '#64748b', lineHeight: 1.8 }}>
-          Max position: <span style={{ color: '#e2e8f0' }}>${agent.maxPositionSize}</span>
-          {' · '}
-          Max loss/day: <span style={{ color: '#e2e8f0' }}>${agent.maxDailyLoss}</span>
-          {' · '}
-          Max leverage: <span style={{ color: '#e2e8f0' }}>{agent.maxLeverage}x</span>
+        {/* Risk settings — editable inline. Each field commits on blur via
+            saveRiskField(); leaving a field untouched preserves the saved
+            value because we only PATCH fields the user actually changed.
+            Aster minimum notional is $5.50; we surface that as a hint on
+            Max position so users sizing down know the floor up front. */}
+        <div style={{ fontSize: 11, color: '#64748b' }}>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr 1fr',
+            gap: 8,
+          }}>
+            {([
+              { key: 'maxPositionSize', label: 'Max position', prefix: '$',  suffix: '',  step: '1',   min: '5.5', hint: 'Aster min $5.50' },
+              { key: 'maxDailyLoss',    label: 'Max loss/day', prefix: '$',  suffix: '',  step: '1',   min: '1',   hint: '' },
+              { key: 'maxLeverage',     label: 'Max leverage', prefix: '',   suffix: 'x', step: '1',   min: '1',   hint: '' },
+            ] as const).map(field => {
+              const draftKey = `${agent.id}:${field.key}`
+              const saving = !!riskSaving[draftKey]
+              const draft  = riskDraft[agent.id]?.[field.key]
+              const live   = draft !== undefined ? draft : String((agent as any)[field.key] ?? '')
+              return (
+                <label key={field.key} style={{ display: 'block' }}>
+                  <div style={{ fontSize: 10, color: '#64748b', marginBottom: 2 }}>{field.label}</div>
+                  <div style={{
+                    display: 'flex', alignItems: 'center',
+                    background: '#0a0a0f', border: '1px solid #1e1e2e', borderRadius: 6,
+                    padding: '4px 6px',
+                  }}>
+                    {field.prefix && <span style={{ color: '#64748b', marginRight: 2 }}>{field.prefix}</span>}
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      step={field.step}
+                      min={field.min}
+                      value={live}
+                      disabled={saving}
+                      onChange={e => setRiskDraft(d => ({
+                        ...d,
+                        [agent.id]: { ...(d[agent.id] ?? {}), [field.key]: e.target.value },
+                      }))}
+                      onBlur={e => saveRiskField(agent.id, field.key, e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur()
+                      }}
+                      data-testid={`input-agent-${agent.id}-${field.key}`}
+                      style={{
+                        flex: 1, minWidth: 0,
+                        background: 'transparent', border: 'none', outline: 'none',
+                        color: '#e2e8f0', fontSize: 13, fontWeight: 600,
+                        padding: 0, WebkitAppearance: 'none', MozAppearance: 'textfield',
+                      }}
+                    />
+                    {field.suffix && <span style={{ color: '#64748b', marginLeft: 2 }}>{field.suffix}</span>}
+                  </div>
+                  {field.hint && (
+                    <div style={{ fontSize: 9, color: '#475569', marginTop: 2 }}>{field.hint}</div>
+                  )}
+                </label>
+              )
+            })}
+          </div>
         </div>
 
         {/* Status badge — combines the per-agent isActive flag with the

@@ -789,19 +789,55 @@ export async function getPositions(
 // Set leverage
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Set leverage on Aster. Returns the leverage Aster ACTUALLY confirmed,
+// not what we requested — the two diverge whenever a low-cap pair has a
+// per-symbol cap below the requested value (e.g. XCNUSDT max 2x, but the
+// agent asked for 3x). Without surfacing the confirmed value, the
+// "🤖 opened a position" Telegram message would say "3x" while the
+// position on the exchange runs at 2x — exactly the discrepancy users
+// have been reporting.
+//
+// On a hard failure we step DOWN through {requested, 5, 2, 1} until one
+// is accepted, and return whichever lands. 1x always succeeds (it's the
+// account default) so this can never throw on the agent path.
 export async function setLeverage(
   symbol: string,
   leverage: number,
   creds: AsterCredentials
-): Promise<void> {
-  try {
-    await signedPOST('/fapi/v3/leverage',
-      { symbol: symbol.replace('/', ''), leverage },
-      creds
-    )
-  } catch (err: any) {
-    console.error('[Aster] setLeverage failed:', err?.response?.data ?? err.message)
+): Promise<number> {
+  const sym = symbol.replace('/', '')
+  // Strict step-DOWN ladder: start at requested, then try strictly lower
+  // common rungs, then 1x as the always-safe floor. Critically we must
+  // never try a value HIGHER than requested — that would silently open
+  // the position at MORE leverage than the agent asked for, the exact
+  // failure mode this function exists to prevent.
+  const requested = Math.max(1, Math.floor(leverage))
+  const ladder = Array.from(new Set(
+    [requested, 5, 2, 1]
+      .filter((n) => n >= 1 && n <= requested)
+      .sort((a, b) => b - a)
+  ))
+  for (const lev of ladder) {
+    try {
+      const res: any = await signedPOST('/fapi/v3/leverage', { symbol: sym, leverage: lev }, creds)
+      // Aster (Binance-shaped) returns { leverage, maxNotionalValue, symbol }.
+      // Trust the server echo when present — it sometimes clamps internally
+      // and reports a different value than the request.
+      const echoed = Number(res?.data?.leverage ?? res?.data?.data?.leverage)
+      const confirmed = Number.isFinite(echoed) && echoed > 0 ? echoed : lev
+      if (confirmed !== leverage) {
+        console.warn(`[Aster] setLeverage ${sym}: requested ${leverage}x → confirmed ${confirmed}x`)
+      }
+      return confirmed
+    } catch (err: any) {
+      const detail = err?.response?.data ?? err?.message
+      console.warn(`[Aster] setLeverage ${sym} ${lev}x rejected:`, detail)
+      // Fall through to next rung. If everything fails (extremely unlikely
+      // — 1x is the account default) we return 1 below.
+    }
   }
+  console.error(`[Aster] setLeverage ${sym}: all ladder steps failed, defaulting to 1x`)
+  return 1
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -817,6 +853,12 @@ export interface OrderResult {
   avgPrice:      number
   executedQty:   number
   clientOrderId: string
+  // Leverage Aster actually applied to this order — populated when the
+  // caller asked us to set leverage as part of placement (placeOrder
+  // path). The builder-code path doesn't run setLeverage internally so
+  // it leaves this undefined; in that case the caller should call
+  // setLeverage explicitly first and surface the returned value itself.
+  actualLeverage?: number
 }
 
 // Internal helper — returns API-ready (qty, price) strings rounded to the
@@ -858,8 +900,18 @@ export async function placeOrder(params: {
   const { creds, leverage, ...rest } = params
   const symbol = rest.symbol.replace('/', '')
 
-  if (leverage && leverage > 1) {
-    await setLeverage(symbol, leverage, creds)
+  // Track what Aster actually agreed to apply. setLeverage step-walks
+  // down on rejection and returns the rung that landed; we propagate
+  // that up via OrderResult so notifiers/db rows reflect reality
+  // instead of the request.
+  //
+  // Critically we call setLeverage even when the request is exactly 1x.
+  // Without it, an account whose previous trade on this symbol ran at
+  // (say) 5x would silently inherit 5x for a 1x agent, breaking the
+  // very risk constraint the user dialed down to enforce.
+  let actualLeverage: number | undefined
+  if (leverage && leverage >= 1) {
+    actualLeverage = await setLeverage(symbol, leverage, creds)
   }
 
   const { qty, px } = await formatOrderParams(symbol, rest.quantity, rest.price)
@@ -885,7 +937,8 @@ export async function placeOrder(params: {
     status:        res.data.status,
     avgPrice:      parseFloat(res.data.avgPrice ?? '0'),
     executedQty:   parseFloat(res.data.executedQty ?? '0'),
-    clientOrderId: res.data.clientOrderId ?? ''
+    clientOrderId: res.data.clientOrderId ?? '',
+    actualLeverage,
   }
 }
 
@@ -900,12 +953,27 @@ export async function placeOrderWithBuilderCode(params: {
   type:           'MARKET' | 'LIMIT'
   quantity:       number
   price?:         number
+  // Optional: when provided, we call setLeverage BEFORE the order so the
+  // position opens at the agent's intended leverage. Without this the
+  // builder-code path silently inherits whatever leverage the account
+  // had previously set on this symbol (often 2x default for low-cap
+  // pairs), creating the "Telegram says 3x, exchange shows 2x" drift
+  // users have seen on new-listing trades.
+  leverage?:      number
   builderAddress: string
   feeRate:        string
   creds:          AsterCredentials
 }): Promise<OrderResult> {
-  const { creds, builderAddress, feeRate, ...rest } = params
+  const { creds, builderAddress, feeRate, leverage, ...rest } = params
   const symbol = rest.symbol.replace('/', '')
+
+  // Same rationale as placeOrder: enforce leverage even at 1x so a stale
+  // higher symbol-leverage on the account can't override the agent's
+  // intent. See placeOrder() above for the full reasoning.
+  let actualLeverage: number | undefined
+  if (leverage && leverage >= 1) {
+    actualLeverage = await setLeverage(symbol, leverage, creds)
+  }
 
   const { qty, px } = await formatOrderParams(symbol, rest.quantity, rest.price)
   const body: Record<string, any> = {
@@ -930,7 +998,8 @@ export async function placeOrderWithBuilderCode(params: {
     status:        res.data.data?.status ?? res.data.status ?? 'NEW',
     avgPrice:      parseFloat(res.data.avgPrice ?? '0'),
     executedQty:   rest.quantity,
-    clientOrderId: ''
+    clientOrderId: '',
+    actualLeverage,
   }
 }
 
