@@ -13,6 +13,18 @@ import {
   registerAgentOnchain, erc8004ScanUrl, erc8004RegistryScanUrl, recoverErc8004AgentId,
   XLAYER_ERC8004_REGISTRY, getScanTxUrl, getScanRegistryUrl, type RegistryChain,
 } from '../../services/erc8004'
+import { createAgentForUser } from '../../services/agentCreation'
+
+// Mini-app URL (used for deep-link buttons that open straight into the
+// onboarding flow). Mirrors the resolution logic in start.ts so changing
+// MINIAPP_URL or REPLIT_DOMAINS in env affects both consistently.
+function miniAppOnboardUrl(): string {
+  const base = process.env.MINIAPP_URL
+    || `https://${process.env.REPLIT_DOMAINS?.split(',')[0] || 'build4-1.onrender.com'}/app`
+  // Use a query param the mini app reads on first paint to jump straight
+  // to the Onboard page without the user having to navigate.
+  return base.includes('?') ? `${base}&onboard=1` : `${base}?onboard=1`
+}
 
 // Per-agent scan-URL helper. Falls back to the BSC helpers for any agent
 // whose `onchainChain` is null/'BSC' so historic agents render exactly as
@@ -118,81 +130,43 @@ async function performMintAndCreate(opts: {
 }) {
   const { ctx, user, name, userAddress, chain } = opts
   const chainLabel = CHAIN_LABEL[chain]
-  const dbChain = chain === 'xlayer' ? 'XLAYER' : 'BSC'
 
   await ctx.reply(`⏳ Registering *${name}* on ERC-8004 IdentityRegistry (${chainLabel})…`, { parse_mode: 'Markdown' })
 
-  const { address, privateKey } = generateEVMWallet()
-  const encryptedPK = encryptPrivateKey(privateKey, user.id, undefined)
-
-  const identity = buildAgentIdentity({
-    name,
-    agentAddress: address,
+  // All wallet/identity/register plumbing now lives in the shared service
+  // so the mini-app onboard endpoint and this bot path stay in lock-step.
+  // The bot defaults to the "balanced" preset to preserve historic risk
+  // values (10x cap, 2%/4% SL/TP) — users tuning further go to Studio.
+  const result = await createAgentForUser({
+    userId: user.id,
     ownerAddress: userAddress,
-    publicBaseUrl: PUBLIC_BASE_URL,
+    preset: 'balanced',
+    startingCapital: 25,   // Balanced default; matches the new mini-app preset.
+    name,
     chain,
   })
 
-  // Create the agent row first so we have an id to attach tx hashes to.
-  const agent = await db.agent.create({
-    data: {
-      userId: user.id,
-      name,
-      walletAddress: address,
-      encryptedPK,
-      onchainChain: dbChain,
-      learningModel: identity.model,
-      learningRoot: identity.learningRoot,
-      metadataUri: identity.metadataUri,
-      identityStandard: identity.standard,
-      exchange: 'aster',
-      pairs: ['AUTO'],
-      maxPositionSize: 100,
-      maxDailyLoss: 50,
-      maxLeverage: 5,
-      stopLossPct: 2,
-      takeProfitPct: 4,
-      isActive: true
-    }
-  })
-
-  const reg = await registerAgentOnchain({
-    chain,
-    agentWalletPK: privateKey,
-    agentAddress: address,
-    metadataURI: identity.metadataUri,
-    onAgentFunded: async (h) => {
-      await setAgentOnchainFields(agent.id, { erc8004FundTxHash: h })
-    },
-    onRegisterTxSent: async (h) => {
-      await setAgentOnchainFields(agent.id, { erc8004TxHash: h, onchainTxHash: h })
-    }
-  })
-
-  if (!reg.success || !reg.agentId) {
-    // If no funding tx went out, nothing was spent → safe to delete the row.
-    const fresh = await db.agent.findUnique({ where: { id: agent.id } })
-    if (!fresh?.erc8004FundTxHash) {
-      await db.agent.delete({ where: { id: agent.id } })
-      await ctx.reply(`❌ Registration failed: ${reg.reason ?? 'unknown error'}\n\nNo agent was created. Try /newagent again.`)
+  if (!result.ok) {
+    if (result.partial) {
+      await ctx.reply(
+        `⚠️ Registration partially failed: ${result.reason}\n\n` +
+        `The agent's wallet was funded but the on-chain register call failed. Run /myagents to retry.`
+      )
     } else {
-      await ctx.reply(`⚠️ Registration partially failed: ${reg.reason ?? 'unknown error'}\n\nThe agent's wallet was funded but the on-chain register call failed. Run /myagents to retry.`)
+      await ctx.reply(`❌ Registration failed: ${result.reason}\n\nNo agent was created. Try /newagent again.`)
     }
     return
   }
 
-  await setAgentOnchainFields(agent.id, {
-    erc8004AgentId: reg.agentId,
-    erc8004TxHash: reg.txHash ?? null,
-    onchainTxHash: reg.txHash ?? null,
-    erc8004Verified: true
-  })
+  const agent = result.agent
+  const onchainAgentId = agent.erc8004AgentId as string
+  const txHash = (agent.onchainTxHash ?? agent.erc8004TxHash) as string
 
-  // Per-chain links: BSC keeps its existing BSCScan helpers; XLayer agents
-  // point at oklink. BAP-578 NFA upgrade is BSC-only (the contract lives
-  // on BSC), so we hide the upgrade button for XLayer agents.
-  const registryLinkUrl = chain === 'bsc' ? erc8004ScanUrl(reg.agentId) : getScanRegistryUrl(chain, reg.agentId)
-  const txLinkUrl       = getScanTxUrl(chain, reg.txHash!)
+  // Per-chain links: BSC keeps its BSCScan helpers; XLayer agents point at
+  // oklink. BAP-578 NFA upgrade is BSC-only (contract lives on BSC), so
+  // we hide the upgrade button for XLayer agents.
+  const registryLinkUrl = chain === 'bsc' ? erc8004ScanUrl(onchainAgentId) : getScanRegistryUrl(chain, onchainAgentId)
+  const txLinkUrl       = getScanTxUrl(chain, txHash)
 
   const upgradeKb = new InlineKeyboard()
   if (chain === 'bsc') {
@@ -202,16 +176,16 @@ async function performMintAndCreate(opts: {
   await ctx.reply(
     `🚀 *${name} is LIVE & on-chain!*
 
-🆔 *ERC-8004 Agent ID:* #${reg.agentId}
+🆔 *ERC-8004 Agent ID:* #${onchainAgentId}
 🌐 *Chain:* ${chainLabel}
-🔐 On-chain identity: \`${address}\`
+🔐 On-chain identity: \`${agent.walletAddress}\`
 
 [View agent on registry](${registryLinkUrl})
 [Registration tx](${txLinkUrl})
 
 ━━━━━━━━━━━━━━
 
-Your agent trades *all perp pairs on Aster DEX* — finding the best opportunities across the market. Tune position sizes, risk limits, and pairs anytime in the *mini-app*.
+Your agent trades *all perp pairs on Aster DEX* — finding the best opportunities across the market. First scan in ~60 seconds. Tune position sizes, risk limits and pairs anytime in the *mini-app*.
 
 ${chain === 'bsc'
   ? `*Optional upgrade:* mint a BAP-578 Non-Fungible Agent NFT (verifiable on NFAScan) for ${TOTAL_USER_FEE_BNB} BNB.`
@@ -311,13 +285,38 @@ async function performBap578Upgrade(opts: {
   )
 }
 
+// Deep-link the user into the mini-app onboarding flow. The mini app reads
+// the `?onboard=1` query param on first paint and jumps straight to the
+// preset-chip Onboard screen so the user goes from "Create Agent" tap →
+// deployed agent in <60 seconds, no name prompt, no chain picker. The
+// legacy text flow (startAgentCreation → reply with a name → chain picker)
+// stays available as a fallback for anyone who has it bookmarked, but is
+// no longer the primary entry point.
+async function sendOnboardDeepLink(ctx: Context) {
+  const url = miniAppOnboardUrl()
+  const kb = new InlineKeyboard().webApp('🚀 Deploy in BUILD4', url)
+  await ctx.reply(
+    `🤖 *Deploy your AI agent*\n\n` +
+    `One screen. Three risk presets. Set how much capital to start with, tap *Deploy* — your agent is live and trading on Aster within 60 seconds.\n\n` +
+    `_Registration is free — BUILD4 covers the on-chain gas._`,
+    { parse_mode: 'Markdown', reply_markup: kb }
+  )
+}
+
 export function registerAgents(bot: Bot) {
   bot.command('newagent', async (ctx) => {
-    await startAgentCreation(ctx)
+    await sendOnboardDeepLink(ctx)
   })
 
   bot.callbackQuery('create_agent', async (ctx) => {
     await ctx.answerCallbackQuery()
+    await sendOnboardDeepLink(ctx)
+  })
+
+  // Legacy text-prompt flow, kept as an escape hatch for power users.
+  // Anyone who types `/newagent_classic` still gets the original name →
+  // chain picker → mint flow. Not advertised in any menu.
+  bot.command('newagent_classic', async (ctx) => {
     await startAgentCreation(ctx)
   })
 

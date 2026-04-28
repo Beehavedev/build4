@@ -170,3 +170,21 @@ export function getTelegramUser() {
   const tg = window.Telegram?.WebApp;
   return tg?.initDataUnsafe?.user || null;
 }
+
+// One-shot agent deployment for the new Onboard mini-app page. Server runs
+// the full wallet-gen → fund → ERC-8004 register pipeline and returns the
+// hydrated agent on success. On failure the body has { error, partial,
+// agentId } — the partial flag means the agent's wallet was funded but
+// the register call failed (so /myagents can offer a retry path) and the
+// row was kept rather than rolled back.
+export function onboardAgent(opts: {
+  preset: 'safe' | 'balanced' | 'aggressive'
+  startingCapital: number
+  chain?: 'bsc' | 'xlayer'
+}) {
+  return apiFetch<{ success: true; agent: AgentData }>('/api/me/agents/onboard', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(opts),
+  })
+}
