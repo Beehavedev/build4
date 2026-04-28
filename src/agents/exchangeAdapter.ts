@@ -79,7 +79,18 @@ export interface OpenInput {
 }
 
 export type OpenResult =
-  | { ok: true;  fillPrice: number; orderIdStr: string }
+  | {
+      ok: true
+      fillPrice: number
+      orderIdStr: string
+      // What the venue actually applied. Differs from decision.leverage on
+      // pairs whose per-symbol cap (e.g. XCNUSDT 2x) is below the agent's
+      // requested leverage. Callers should prefer this for any user-facing
+      // surface (Telegram notifier, DB row) so we never misreport reality.
+      // Undefined for venues/paths that don't (yet) report it back — caller
+      // should fall back to decision.leverage in that case.
+      actualLeverage?: number
+    }
   | { ok: false; reason: 'mock' | 'no-creds' | 'no-balance' | 'rejected'; detail?: string; balance?: number }
 
 export interface ClosePosition {
@@ -284,6 +295,11 @@ export async function executeOpenAster(
         side:           side === 'LONG' ? 'BUY' : 'SELL',
         type:           'MARKET',
         quantity:       qty,
+        // Pass leverage through the builder path too. Without this, Aster
+        // opens the position at whatever leverage the account had set
+        // previously on this symbol — which is how Telegram could say
+        // "3x" while the actual exchange position ran at 2x.
+        leverage:       decision.leverage ?? 1,
         builderAddress: services.builderAddress,
         feeRate:        services.feeRate ?? '0.0001',
         creds,
@@ -301,6 +317,10 @@ export async function executeOpenAster(
 
     const fillPrice  = result.avgPrice > 0 ? result.avgPrice : currentPrice
     const orderIdStr = String(result.orderId)
+    // Surface the leverage Aster actually applied (or fall back to what we
+    // requested when the venue path didn't ack a value). The caller uses
+    // this for the trade row + Telegram message so reality matches the UI.
+    const actualLeverage = result.actualLeverage ?? decision.leverage ?? 1
 
     // SL+TP brackets — pass builder address through so closing fills also
     // route through BUILD4 (without it the entry collects the broker fee
@@ -323,7 +343,7 @@ export async function executeOpenAster(
         console.warn(`[Agent ${agent.name}] Bracket placement failed: ${bracketErr?.message}`)
       }
     }
-    return { ok: true, fillPrice, orderIdStr }
+    return { ok: true, fillPrice, orderIdStr, actualLeverage }
   } catch (execErr: any) {
     // Aster's signedPOST uses axios; on a 4xx the actual rejection reason
     // (e.g. "insufficient balance", "MIN_NOTIONAL", "would liquidate")

@@ -1968,6 +1968,52 @@ If you would not put real money in this trade right now, action = HOLD.`
           ? ohlcv['15m'].close[ohlcv['15m'].close.length - 1]
           : snapshot.price
 
+        // ── SL/TP fallback ────────────────────────────────────────────────
+        // The shared market scan can return stopLoss/takeProfit as null
+        // (e.g. when the swarm consensus drops them, or when momentum-mode
+        // pairs come back with only an entry zone). Without explicit
+        // levels we'd post a position with no brackets AND show "$—"
+        // in the Telegram open message — exactly the blank SL/TP users
+        // have flagged. Derive sane defaults from the agent's configured
+        // stopLossPct / takeProfitPct (defaults: 2% / 4%) anchored on the
+        // fill reference price, so brackets land and notifications are
+        // informative even when the model omits them.
+        if (decision.stopLoss == null || !Number.isFinite(decision.stopLoss)) {
+          const slPct = agent.stopLossPct / 100
+          decision.stopLoss = side === 'LONG'
+            ? currentPrice * (1 - slPct)
+            : currentPrice * (1 + slPct)
+        }
+        if (decision.takeProfit == null || !Number.isFinite(decision.takeProfit)) {
+          const tpPct = agent.takeProfitPct / 100
+          decision.takeProfit = side === 'LONG'
+            ? currentPrice * (1 + tpPct)
+            : currentPrice * (1 - tpPct)
+        }
+        if (decision.riskRewardRatio == null || !Number.isFinite(decision.riskRewardRatio)) {
+          // Derive R:R from the (possibly defaulted) SL/TP so the message
+          // and the trade row stay internally consistent.
+          const slDist = Math.abs(currentPrice - decision.stopLoss)
+          const tpDist = Math.abs(decision.takeProfit - currentPrice)
+          decision.riskRewardRatio = slDist > 0 ? tpDist / slDist : null
+        }
+        if (!decision.reasoning || typeof decision.reasoning !== 'string') {
+          // The model occasionally returns no reasoning string (most often
+          // on swarm-consensus paths where providers disagree). Default to
+          // a brief composite so the Telegram message never reads
+          // "Why: undefined" — that line undermines user trust more than
+          // a generic-but-truthful summary does.
+          const regimeBit = decision.regime ? `${decision.regime} regime` : 'setup'
+          const scoreBit  = typeof decision.setupScore === 'number'
+            ? ` · score ${decision.setupScore}/10`
+            : ''
+          const confBit   = typeof decision.confidence === 'number'
+            ? ` · ${Math.round(decision.confidence * 100)}% confidence`
+            : ''
+          decision.reasoning = `${side} on ${regimeBit}${scoreBit}${confBit}`
+        }
+        // ──────────────────────────────────────────────────────────────────
+
         // ── Per-exchange execution (see src/agents/exchangeAdapter.ts) ────
         // The adapter dispatches to Aster or Hyperliquid based on
         // `agent.exchange`, runs venue-specific pre-flight (balance check,
@@ -1994,9 +2040,27 @@ If you would not put real money in this trade right now, action = HOLD.`
             takeProfit: decision.takeProfit,
           },
         })
+        // Track leverage Aster ACTUALLY applied. Aster sometimes caps the
+        // request below what we asked (e.g. XCNUSDT at 2x when we asked
+        // for 3x), and the position runs at the capped value. Default to
+        // the requested clampedLev for venues / fall-through paths that
+        // don't surface a confirmed value.
+        let appliedLeverage = decision.leverage ?? 1
         if (execResult.ok) {
           fillPrice  = execResult.fillPrice
           orderIdStr = execResult.orderIdStr
+          if (typeof execResult.actualLeverage === 'number' && execResult.actualLeverage > 0) {
+            appliedLeverage = execResult.actualLeverage
+            if (appliedLeverage !== decision.leverage) {
+              console.log(
+                `[Agent ${agent.name}] ${pair} leverage adjusted by venue: ` +
+                `requested ${decision.leverage}x → applied ${appliedLeverage}x`
+              )
+              // Sync decision so downstream code (DB row, notifier) sees
+              // the truth instead of the request.
+              decision.leverage = appliedLeverage
+            }
+          }
         } else if (execResult.reason === 'no-balance') {
           const detail = execResult.detail ? ` — ${execResult.detail}` : ''
           console.log(
@@ -2050,7 +2114,10 @@ If you would not put real money in this trade right now, action = HOLD.`
             side,
             entryPrice: fillPrice,
             size:       finalSize,
-            leverage:   decision.leverage ?? 1,
+            // Persist the leverage the venue actually applied (see
+            // appliedLeverage above) so the mini-app reads truth from
+            // the DB and matches what the user sees on the exchange.
+            leverage:   appliedLeverage,
             status:     'open',
             txHash:     orderIdStr,
             aiReasoning: decision.reasoning,
