@@ -848,6 +848,7 @@ export async function runAgentTick(agent: Agent): Promise<void> {
       if (!pairList.includes(sym)) pairList.push(sym)
     }
     let scanResults: Array<{ symbol: string; score: number }> = []
+    let scanError: string | null = null
     try {
       if (agent.exchange === 'hyperliquid') {
         const { pickTopHlPairs } = await import('../services/hlWatchlist')
@@ -857,6 +858,7 @@ export async function runAgentTick(agent: Agent): Promise<void> {
       }
     } catch (e: any) {
       console.warn(`[Agent ${agent.name}] AUTO scan failed (${agent.exchange}):`, e?.message)
+      scanError = e?.message ?? 'unknown error'
     }
     for (const r of scanResults) {
       if (!pairList.includes(r.symbol)) pairList.push(r.symbol)
@@ -886,6 +888,43 @@ export async function runAgentTick(agent: Agent): Promise<void> {
     } catch {}
     if (pairList.length === 0) {
       console.log(`[Agent ${agent.name}] AUTO scan: no setup ≥${WATCHLIST_MIN_SCORE}/8, no fresh listings, no open positions — HOLD`)
+      // Heartbeat so empty-scan ticks aren't invisible. Hyperliquid in
+      // particular runs against a curated 14-pair focus list — during
+      // calm market hours nothing clears the 5/8 quality bar and the
+      // venue would otherwise produce zero Telegram traffic. The user
+      // then can't tell whether the runner is even dispatching HL
+      // ticks for this agent. The heartbeat fires at most once per
+      // 30 minutes per (agent, venue) — long enough that confirming
+      // "still alive, nothing to do" doesn't itself become noise.
+      try {
+        const { getBot, shouldSendPairNotification, markPairNotificationSent, escapeMd } = await import('./runner')
+        const _bot = getBot()
+        const _u = await db.user.findUnique({ where: { id: agent.userId }, select: { telegramId: true } })
+        const _tg = _u?.telegramId?.toString() ?? null
+        if (_bot && _tg && shouldSendPairNotification(agent.id, '__scan__', 'heartbeat')) {
+          markPairNotificationSent(agent.id, '__scan__', 'heartbeat')
+          const _venue =
+              agent.exchange === 'aster'       ? 'Aster'
+            : agent.exchange === 'hyperliquid' ? 'Hyperliquid'
+            : agent.exchange === 'fortytwo'    ? '42.space'
+            : (agent.exchange ?? 'Aster')
+          // Top score even when below the bar gives the user a cheap
+          // sense of "how close are we" — a steady 4/8 is normal chop,
+          // a 0/8 means the data path itself is empty.
+          const topScore = scanResult?.score ?? 0
+          const topSym   = scanResult?.symbol ?? '—'
+          let body: string
+          if (scanError) {
+            body = `Couldn't fetch market data from ${_venue} this cycle \\(${escapeMd(scanError.slice(0, 80))}\\)\\. Will retry on the next tick\\.`
+          } else {
+            body = `Scanned the watchlist on ${_venue} \\— no setup cleared the ${WATCHLIST_MIN_SCORE}/8 quality bar this cycle\\. Best was ${escapeMd(topSym)} at ${topScore}/8\\.`
+          }
+          const msg = `📡 *${escapeMd(agent.name)} on ${_venue}*\n\n${body}`
+          try { await _bot.api.sendMessage(_tg, msg, { parse_mode: 'MarkdownV2' }) } catch {}
+        }
+      } catch (e: any) {
+        console.warn(`[Agent ${agent.name}] heartbeat send failed:`, e?.message)
+      }
       return
     }
   }
