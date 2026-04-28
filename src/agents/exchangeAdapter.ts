@@ -56,7 +56,12 @@ async function withOpenLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
   const prev = openExecLocks.get(key) ?? Promise.resolve()
   let release!: () => void
   const next = new Promise<void>((r) => { release = r })
-  openExecLocks.set(key, prev.then(() => next))
+  // Store the chained promise in a local so the cleanup-identity check
+  // below compares against the SAME instance we wrote in. (Calling
+  // `prev.then(...)` again would mint a new promise and the equality
+  // would always be false, leaking entries forever.)
+  const queued: Promise<unknown> = prev.then(() => next)
+  openExecLocks.set(key, queued)
   try {
     await prev
     return await fn()
@@ -65,7 +70,7 @@ async function withOpenLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
     // Best-effort cleanup so the map doesn't grow unbounded over a long
     // process lifetime. If a newer waiter has already replaced our entry,
     // leave it alone.
-    if (openExecLocks.get(key) === prev.then(() => next)) {
+    if (openExecLocks.get(key) === queued) {
       openExecLocks.delete(key)
     }
   }
