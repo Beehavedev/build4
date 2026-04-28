@@ -366,10 +366,25 @@ RECENT 5m CANDLES (last ${Math.min(8, ohlcv5m.close.length)}):
 ${formatRecentCandles(ohlcv5m, 8)}`
 }
 
-async function getMomentumOHLCV(pair: string): Promise<{
+// Venue-aware candle fetchers (Phase 1, 2026-04-28). The decision input
+// MUST come from the venue we're about to trade on — same ticker, very
+// different orderbooks. An HL tick reading Aster candles would price-in
+// liquidity, funding, and microstructure that don't exist on the venue
+// where the order will land. `mock` reuses Aster as a stand-in feed
+// because mock has no native price source of its own.
+async function getMomentumOHLCV(pair: string, venue: string = 'aster'): Promise<{
   '1m': OHLCV
   '5m': OHLCV
 }> {
+  if (venue === 'hyperliquid') {
+    const { getCandles } = await import('../services/hyperliquid')
+    const coin = pair.replace(/USDT$/i, '').replace(/[\/\s]/g, '').toUpperCase()
+    const [m1, m5] = await Promise.all([
+      getCandles(coin, '1m', 120),
+      getCandles(coin, '5m', 100),
+    ])
+    return { '1m': m1, '5m': m5 }
+  }
   const { getKlines } = await import('../services/aster')
   const [m1, m5] = await Promise.all([
     getKlines(pair, '1m', 120),  // ~2h of 1m candles
@@ -378,11 +393,21 @@ async function getMomentumOHLCV(pair: string): Promise<{
   return { '1m': m1, '5m': m5 }
 }
 
-async function getMultiTimeframeOHLCV(pair: string): Promise<{
+async function getMultiTimeframeOHLCV(pair: string, venue: string = 'aster'): Promise<{
   '15m': OHLCV
   '1h': OHLCV
   '4h': OHLCV
 }> {
+  if (venue === 'hyperliquid') {
+    const { getCandles } = await import('../services/hyperliquid')
+    const coin = pair.replace(/USDT$/i, '').replace(/[\/\s]/g, '').toUpperCase()
+    const [tf15m, tf1h, tf4h] = await Promise.all([
+      getCandles(coin, '15m', 200),
+      getCandles(coin, '1h', 200),
+      getCandles(coin, '4h', 200),
+    ])
+    return { '15m': tf15m, '1h': tf1h, '4h': tf4h }
+  }
   const { getKlines } = await import('../services/aster')
   const [tf15m, tf1h, tf4h] = await Promise.all([
     getKlines(pair, '15m', 200),
@@ -900,6 +925,19 @@ export async function runAgentTick(agent: Agent): Promise<void> {
   let openedThisTick = 0
   let closedThisTick = 0
 
+  // Defensive guard: 42.space ticks must never enter the perp scan loop.
+  // The AUTO branch already returns early upstream, but if a user pinned
+  // explicit pairs on a fortytwo-venue agent, those pairs would otherwise
+  // fall through into Aster/HL OHLCV calls. Phase 2 will replace this
+  // with the prediction-market participation pass.
+  if (agent.exchange === 'fortytwo') {
+    console.log(
+      `[Agent ${agent.name}] 42.space venue — skipping perp loop ` +
+      `(${pairList.length} pinned pairs ignored until Phase 2)`
+    )
+    return
+  }
+
   for (const pair of pairList) {
     let snapshot: { price: number; rsi: number; adx: number; regime: string } = {
       price: 0, rsi: 0, adx: 0, regime: 'UNKNOWN'
@@ -920,7 +958,12 @@ export async function runAgentTick(agent: Agent): Promise<void> {
       let momentumOhlcv: { '1m': OHLCV; '5m': OHLCV } | null = null
 
       if (isNewListingPair) {
-        momentumOhlcv = await getMomentumOHLCV(pair)
+        // New-listing path is Aster-specific (the listingDetector watches
+        // Aster's pair set). HL doesn't have a parallel feed, so even on
+        // an HL tick we keep the Aster momentum read here — it's an edge
+        // signal that doesn't drive an HL trade decision (Phase-2 work
+        // will give HL its own listing detector).
+        momentumOhlcv = await getMomentumOHLCV(pair, 'aster')
         // Estimate hours-old from the first 1m candle we got back (Aster only
         // serves candles from listing onwards, so the earliest candle ≈ listing).
         const earliestMs = (momentumOhlcv['1m'] as any).openTime?.[0]
@@ -928,7 +971,10 @@ export async function runAgentTick(agent: Agent): Promise<void> {
         const hoursOld = (Date.now() - earliestMs) / (60 * 60 * 1000)
         marketContext = buildMomentumContext(momentumOhlcv['1m'], momentumOhlcv['5m'], pair, hoursOld)
       } else {
-        ohlcv = await getMultiTimeframeOHLCV(pair)
+        // Standard path: read candles from THIS venue. The decision input
+        // must match the venue we'll execute on — same ticker, different
+        // orderbook, different funding, different liquidity.
+        ohlcv = await getMultiTimeframeOHLCV(pair, agent.exchange)
         marketContext = buildMarketContext(ohlcv['15m'], ohlcv['1h'], ohlcv['4h'], pair)
       }
 
@@ -1079,11 +1125,18 @@ export async function runAgentTick(agent: Agent): Promise<void> {
       //   • hard-skip new entries when funding edge is below 0.01%
       //   • combined with ADX to avoid an LLM call when the market is
       //     clearly ranging with no funding edge (cost guard, ~60% savings)
+      // Funding read is venue-specific. Aster surfaces lastFundingRate on
+      // its mark-price endpoint; HL's mark endpoint does not, so we keep
+      // funding=0 there for now (the cost guard below degrades gracefully
+      // — without a funding edge it just leans on the ADX gate alone).
       let fundingRate = 0
       try {
-        const { getMarkPrice } = await import('../services/aster')
-        const mp = await getMarkPrice(pair)
-        fundingRate = mp.lastFundingRate || 0
+        if (agent.exchange === 'aster' || agent.exchange === 'mock') {
+          const { getMarkPrice } = await import('../services/aster')
+          const mp = await getMarkPrice(pair)
+          fundingRate = mp.lastFundingRate || 0
+        }
+        // HL: no funding rate on the mark endpoint; leave at 0.
       } catch {
         fundingRate = 0
       }
