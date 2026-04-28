@@ -46,6 +46,28 @@ export function markSummarySent(agentId: string) {
   lastTickSummaryAt.set(agentId, Date.now())
 }
 
+// Per-(agent, pair) Telegram cooldown for both "analyzed" and "skipped"
+// messages. Without this, an agent whose AUTO scan keeps surfacing the
+// same low-quality pair (e.g. a recently-listed coin with no usable
+// indicator data) spams the user with the *identical* notification
+// every minute. The cooldown lets the first analysis through, then
+// suppresses repeats for the same (agent, pair) for ten minutes —
+// long enough for the market state to actually have changed.
+//
+// Action notifications (trade opened / closed) bypass this entirely
+// because they always go through notifyTradeOpened in this same module.
+const lastPairNotifyAt = new Map<string, number>()
+const PAIR_NOTIFY_COOLDOWN_MS = 10 * 60 * 1000
+export function shouldSendPairNotification(agentId: string, pair: string): boolean {
+  const key = `${agentId}:${pair}`
+  const last = lastPairNotifyAt.get(key) ?? 0
+  if (Date.now() - last < PAIR_NOTIFY_COOLDOWN_MS) return false
+  return true
+}
+export function markPairNotificationSent(agentId: string, pair: string): void {
+  lastPairNotifyAt.set(`${agentId}:${pair}`, Date.now())
+}
+
 export function initRunner(bot: Bot) {
   botRef = bot
 
