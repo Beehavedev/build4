@@ -170,8 +170,13 @@ export default function Dashboard({ userId, onNavigate }: DashboardProps) {
           <div style={{ fontSize: 'var(--text-md)', fontWeight: 700 }} data-testid="text-aster-balance">
             {fmtUsd(asterUsdt)}
           </div>
+          {/* Sub-line is the venue's trading-mode summary, kept identical
+              across all three venue cards so users get one consistent
+              "what can I do here?" hint. Previously this was an agent
+              count which read as a different concept (org chart, not
+              capability) and broke parity with HL / 42.space. */}
           <div style={{ fontSize: 10, color: 'var(--text-secondary)', marginTop: 4 }}>
-            {agents.length} agent{agents.length === 1 ? '' : 's'}
+            {asterOnboarded ? 'manual & AI' : 'not activated'}
           </div>
           <div style={{ marginTop: 6 }}>
             <span className={`pill ${activeAgents > 0 ? 'pill-live' : asterOnboarded ? 'pill-muted' : 'pill-amber'}`}>
@@ -208,8 +213,14 @@ export default function Dashboard({ userId, onNavigate }: DashboardProps) {
           <div style={{ fontSize: 'var(--text-md)', fontWeight: 700 }} data-testid="text-predictions-balance">
             {fmtUsd(predValue)}
           </div>
+          {/* Same trading-mode sub-line as Aster + HL. 42.space requires
+              no separate clearinghouse onboarding (it spends BSC USDT
+              directly), so it is "manual & AI" capable as soon as the
+              wallet exists. The "BSC dry powder" wording previously
+              here was a different concept (capital description, not
+              capability) and broke parity with the other two cards. */}
           <div style={{ fontSize: 10, color: 'var(--text-secondary)', marginTop: 4 }}>
-            BSC dry powder
+            manual & AI
           </div>
           <div style={{ marginTop: 6 }}>
             <span className={`pill ${predValue > 0 ? 'pill-live' : 'pill-muted'}`}>
