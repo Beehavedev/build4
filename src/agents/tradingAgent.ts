@@ -1649,6 +1649,14 @@ If you would not put real money in this trade right now, action = HOLD.`
         // deciding to trade or were deciding to trade and then being
         // gated. Use action='SKIP_OPEN' so the diagnose endpoint can
         // surface the breakdown by reason.
+        //
+        // ALSO sends a Telegram follow-up so the user sees, in chat, why
+        // a "🚀 LONG" / "🔻 SHORT" decision didn't translate to a fill.
+        // Previously the per-tick summary said "Decision: LONG" and then
+        // went silent — the user reported "decisions made but no agent
+        // executed trades" with no indication of why. Now every gate
+        // failure produces a paired "🛑 skipped — <reason>" message in
+        // the same chat, so the decision and its outcome stay together.
         const logSkip = async (gate: string, reason: string) => {
           await safeAgentLogCreate({
             data: {
@@ -1666,6 +1674,32 @@ If you would not put real money in this trade right now, action = HOLD.`
               regime: decision.regime ?? null
             }
           })
+          // Telegram follow-up. Best-effort — never throws (catch + ignore)
+          // because a Telegram outage must not abort the trading tick.
+          try {
+            const _bot2 = getBot()
+            if (_bot2 && telegramId) {
+              const sideEmoji = decision.action === 'OPEN_LONG' ? '🚀 LONG' : '🔻 SHORT'
+              // Friendly labels per gate so the user sees the cause in
+              // plain language rather than the internal gate identifier.
+              const gateLabel: Record<string, string> = {
+                rr_floor:           'risk/reward too low',
+                confidence_floor:   'AI confidence too low',
+                setup_score_floor:  'setup score too low',
+                risk_guard:         'risk guard blocked',
+                twak_risk:          'flagged by Trust Wallet risk gate',
+                no_balance:         'insufficient balance',
+                venue_rejected:     'exchange rejected order',
+                no_creds:           'agent credentials missing',
+              }
+              const label = gateLabel[gate] ?? gate
+              const text =
+                `🛑 *${escapeMd(agent.name)}* skipped ${sideEmoji} ${pair}\n\n` +
+                `*Why:* ${label}\n` +
+                `_${escapeMd(reason.slice(0, 200))}_`
+              _bot2.api.sendMessage(telegramId, text, { parse_mode: 'Markdown' }).catch(() => {})
+            }
+          } catch { /* never let notification failures break the tick */ }
         }
 
         // Validate. New-listing momentum trades use a relaxed R/R floor of
