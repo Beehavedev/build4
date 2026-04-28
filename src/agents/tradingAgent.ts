@@ -896,9 +896,23 @@ export async function runAgentTick(agent: Agent): Promise<void> {
   }
 
   // Lazy-import runner to avoid a circular import (runner imports tradingAgent).
-  const { getBot, noteAgentTicked, shouldSendSummary, markSummarySent, notifyTradeOpened, escapeMd } =
-    await import('./runner')
+  const {
+    getBot, noteAgentTicked, shouldSendSummary, markSummarySent,
+    shouldSendPairNotification, markPairNotificationSent,
+    notifyTradeOpened, escapeMd,
+  } = await import('./runner')
   noteAgentTicked(agent.id)
+
+  // Friendly venue label used in every Telegram analysis/skip message
+  // header so the user can tell at a glance which venue the analysis
+  // is for. Without this the message just said "analyzed XCNUSDT" and
+  // a user with agents on Aster + Hyperliquid + 42.space had no way
+  // to know which one was talking.
+  const venueLabel =
+      agent.exchange === 'aster'       ? 'Aster'
+    : agent.exchange === 'hyperliquid' ? 'Hyperliquid'
+    : agent.exchange === 'fortytwo'    ? '42.space'
+    : (agent.exchange ?? 'Aster')
 
   // Resolve telegramId once per tick for live "Agent Brain" notifications.
   const tickUser = await db.user.findUnique({
@@ -1687,8 +1701,17 @@ If you would not put real money in this trade right now, action = HOLD.`
       const _bot = getBot()
       const hasAction = decision.action !== 'HOLD'
       const bestScore = decision.setupScore ?? 0
-      if (_bot && telegramId && shouldSendSummary(agent.id, hasAction, bestScore)) {
+      // Per-(agent, pair) cooldown stops the same XCNUSDT analysis from
+      // landing in chat every 60 seconds when the AUTO scan keeps
+      // surfacing the same low-quality pair. Trade actions still notify
+      // through notifyTradeOpened, which is independent of this gate.
+      if (
+        _bot && telegramId
+        && shouldSendSummary(agent.id, hasAction, bestScore)
+        && shouldSendPairNotification(agent.id, pair, 'analyzed')
+      ) {
         markSummarySent(agent.id)
+        markPairNotificationSent(agent.id, pair, 'analyzed')
         const actionEmoji =
           decision.action === 'HOLD' ? '⏸ HOLD'
             : decision.action === 'OPEN_LONG' ? '🚀 LONG'
@@ -1702,8 +1725,10 @@ If you would not put real money in this trade right now, action = HOLD.`
         const adxStr = Number.isFinite(snapshot.adx) ? snapshot.adx.toFixed(1) : '—'
         const rsiStr = Number.isFinite(snapshot.rsi) ? snapshot.rsi.toFixed(1) : '—'
         const scoreStr = typeof decision.setupScore === 'number' ? `${decision.setupScore}/10` : '—'
+        // Header now names the venue so the user knows whether this
+        // analysis ran on Aster, Hyperliquid, or 42.space.
         const summary =
-          `🧠 *${escapeMd(agent.name)}* analyzed ${pair}\n\n` +
+          `🧠 *${escapeMd(agent.name)}* analyzed ${pair} on ${venueLabel}\n\n` +
           `*Market Regime:* ${decision.regime ?? snapshot.regime} (ADX ${adxStr})\n` +
           `*Setup Score:* ${scoreStr} | RSI ${rsiStr}\n\n` +
           `*Decision:* ${actionEmoji}\n` +
@@ -1773,7 +1798,13 @@ If you would not put real money in this trade right now, action = HOLD.`
           // because a Telegram outage must not abort the trading tick.
           try {
             const _bot2 = getBot()
-            if (_bot2 && telegramId) {
+            // Same per-(agent, pair) cooldown as the analyzed message,
+            // so a pair that fails the same gate every minute (e.g. R/R
+            // missing on a thin new listing) doesn't carpet-bomb chat.
+            // The DB log still records every skip — only the chat noise
+            // is dampened.
+            if (_bot2 && telegramId && shouldSendPairNotification(agent.id, pair, 'skipped')) {
+              markPairNotificationSent(agent.id, pair, 'skipped')
               const sideEmoji = decision.action === 'OPEN_LONG' ? '🚀 LONG' : '🔻 SHORT'
               // Friendly labels per gate so the user sees the cause in
               // plain language rather than the internal gate identifier.
@@ -1788,8 +1819,10 @@ If you would not put real money in this trade right now, action = HOLD.`
                 no_creds:           'agent credentials missing',
               }
               const label = gateLabel[gate] ?? gate
+              // Include the venue so the user knows which exchange the
+              // skip happened on (Aster vs Hyperliquid vs 42.space).
               const text =
-                `🛑 *${escapeMd(agent.name)}* skipped ${sideEmoji} ${pair}\n\n` +
+                `🛑 *${escapeMd(agent.name)}* skipped ${sideEmoji} ${pair} on ${venueLabel}\n\n` +
                 `*Why:* ${label}\n` +
                 `_${escapeMd(reason.slice(0, 200))}_`
               _bot2.api.sendMessage(telegramId, text, { parse_mode: 'Markdown' }).catch(() => {})

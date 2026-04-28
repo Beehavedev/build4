@@ -46,6 +46,36 @@ export function markSummarySent(agentId: string) {
   lastTickSummaryAt.set(agentId, Date.now())
 }
 
+// Per-(agent, pair, kind) Telegram cooldown. Without this, an agent
+// whose AUTO scan keeps surfacing the same low-quality pair (e.g. a
+// recently-listed coin with no usable indicator data) spams the user
+// with the *identical* notification every minute. The cooldown lets
+// the first analysis through, then suppresses repeats for the same
+// (agent, pair) for ten minutes.
+//
+// `kind` separates "analyzed" from "skipped" so a single tick that
+// produces BOTH messages (an OPEN decision that then trips a risk
+// gate) can still surface both — once. Without separating them, the
+// analyzed message would mark the cooldown and the paired skip
+// reason would be silently swallowed for ten minutes, which exactly
+// reverses the "the user must always see why a decision didn't fill"
+// invariant of the skip notification.
+//
+// Action notifications (trade opened / closed) bypass this entirely
+// because they go through notifyTradeOpened in this same module.
+const lastPairNotifyAt = new Map<string, number>()
+const PAIR_NOTIFY_COOLDOWN_MS = 10 * 60 * 1000
+type PairNotifyKind = 'analyzed' | 'skipped'
+export function shouldSendPairNotification(agentId: string, pair: string, kind: PairNotifyKind): boolean {
+  const key = `${agentId}:${pair}:${kind}`
+  const last = lastPairNotifyAt.get(key) ?? 0
+  if (Date.now() - last < PAIR_NOTIFY_COOLDOWN_MS) return false
+  return true
+}
+export function markPairNotificationSent(agentId: string, pair: string, kind: PairNotifyKind): void {
+  lastPairNotifyAt.set(`${agentId}:${pair}:${kind}`, Date.now())
+}
+
 export function initRunner(bot: Bot) {
   botRef = bot
 

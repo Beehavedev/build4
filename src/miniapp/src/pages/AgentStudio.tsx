@@ -487,12 +487,24 @@ export default function AgentStudio(_props: AgentStudioProps) {
               const draft  = riskDraft[agent.id]?.[field.key]
               const live   = draft !== undefined ? draft : String((agent as any)[field.key] ?? '')
               return (
-                <label key={field.key} style={{ display: 'block' }}>
-                  <div style={{ fontSize: 10, color: '#64748b', marginBottom: 2 }}>{field.label}</div>
+                // minWidth: 0 + overflow: hidden are essential here.
+                // CSS Grid items default to `min-width: auto`, which uses the
+                // child's intrinsic content width — and a number <input>
+                // refuses to shrink below ~3ch by default. On narrow phones
+                // (≤ 360px) that pushed the third cell ("Max leverage")
+                // past the agent card's right edge. Letting the cell shrink
+                // and clipping the inner row to the cell width keeps all
+                // three boxes flush inside the card on every viewport.
+                <label key={field.key} style={{ display: 'block', minWidth: 0, overflow: 'hidden' }}>
+                  <div style={{
+                    fontSize: 10, color: '#64748b', marginBottom: 2,
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  }}>{field.label}</div>
                   <div style={{
                     display: 'flex', alignItems: 'center',
                     background: '#0a0a0f', border: '1px solid #1e1e2e', borderRadius: 6,
                     padding: '4px 6px',
+                    width: '100%', boxSizing: 'border-box', minWidth: 0,
                   }}>
                     {field.prefix && <span style={{ color: '#64748b', marginRight: 2 }}>{field.prefix}</span>}
                     <input
