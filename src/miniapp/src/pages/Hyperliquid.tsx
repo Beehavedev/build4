@@ -587,6 +587,37 @@ export default function Hyperliquid() {
         </div>
       </div>
 
+      {/* Venue switcher — symmetric to the one on the Trade page so the
+          user can hop back to Aster from the same top bar. Without this
+          card, landing on /hyperliquid was a one-way trip and the only
+          way back to Aster was the bottom-nav Trade tab, which is not
+          obvious. HL is the active chip here; Aster is the link. */}
+      <div className="card" style={{ padding: 10, marginBottom: 10 }} data-testid="card-venue-switcher">
+        <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 6 }}>VENUE</div>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <a
+            href="#trade"
+            data-testid="link-venue-aster"
+            onClick={(e) => {
+              e.preventDefault()
+              window.dispatchEvent(new CustomEvent('b4-nav', { detail: 'trade' }))
+            }}
+            style={{
+              flex: 1, padding: '8px 10px', borderRadius: 8, fontSize: 12, fontWeight: 600,
+              background: '#1f2937', color: '#cbd5e1', textAlign: 'center',
+              textDecoration: 'none', boxSizing: 'border-box',
+            }}
+          >← Aster · BSC</a>
+          <div
+            data-testid="venue-hyperliquid-active"
+            style={{
+              flex: 1, padding: '8px 10px', borderRadius: 8, fontSize: 12, fontWeight: 600,
+              background: '#7c3aed', color: '#fff', textAlign: 'center',
+            }}
+          >Hyperliquid · USDC</div>
+        </div>
+      </div>
+
       {error && (
         <div style={{ ...cardStyle, borderColor: '#ef4444', color: '#ef4444' }} data-testid="text-hl-error">
           {error}
