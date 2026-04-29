@@ -30,33 +30,69 @@ function fmtPrice(n: number): string {
   return n.toFixed(6)
 }
 
-// Self-contained per-agent positions panel. Polls every 8 s while
-// mounted so PnL ticks live alongside the Trade page. Kept as an inner
-// component so the parent doesn't need yet another polling loop in its
-// state graph.
+// Self-contained per-agent positions panel.
+//
+// Polls every 3 s while mounted so PnL ticks live alongside the Trade
+// page (which polls 1s mark + 2s positions). Stale DB rows that aren't
+// present on the venue are auto-reconciled server-side now, so anything
+// shown here IS truly open on Aster.
+//
+// Each row gets a manual Close button — same UX as the Trade page so a
+// user watching their agent can intervene without bouncing tabs.
 function AgentPositions({ agentId }: { agentId: string }) {
   const [positions, setPositions] = useState<AgentPositionRow[] | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [closingKey, setClosingKey] = useState<string | null>(null)
+  const [actionMsg, setActionMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
+
+  const load = async () => {
+    try {
+      const res = await apiFetch<{ positions: AgentPositionRow[] }>(
+        `/api/agents/${agentId}/positions`,
+      )
+      setPositions(res.positions)
+      setError(null)
+    } catch (e: any) {
+      setError(e?.message ?? 'load failed')
+    }
+  }
 
   useEffect(() => {
     let alive = true
-    const load = async () => {
-      try {
-        const res = await apiFetch<{ positions: AgentPositionRow[] }>(
-          `/api/agents/${agentId}/positions`
-        )
-        if (!alive) return
-        setPositions(res.positions)
-        setError(null)
-      } catch (e: any) {
-        if (!alive) return
-        setError(e?.message ?? 'load failed')
-      }
+    const tick = async () => {
+      if (!alive) return
+      await load()
     }
-    load()
-    const t = setInterval(load, 8000)
+    tick()
+    // 3s mirrors the Trade page's 2s position refresh — close enough that
+    // PnL feels live without hammering Aster's positionRisk endpoint.
+    const t = setInterval(tick, 3000)
     return () => { alive = false; clearInterval(t) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [agentId])
+
+  const onClose = async (p: AgentPositionRow) => {
+    const key = `${p.pair}|${p.side}`
+    setClosingKey(key)
+    setActionMsg(null)
+    try {
+      await apiFetch('/api/aster/close', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pair: p.pair, side: p.side, size: p.size }),
+      })
+      setActionMsg({ kind: 'ok', text: `Closed ${p.pair} ${p.side}` })
+      // Optimistically drop the row so the user sees the action take
+      // effect before the next poll tick lands.
+      setPositions((prev) => prev?.filter((x) => x.id !== p.id) ?? null)
+      // And kick a refresh right away so any other panel state catches up.
+      load()
+    } catch (e: any) {
+      setActionMsg({ kind: 'err', text: e?.message ?? 'Close failed' })
+    } finally {
+      setClosingKey(null)
+    }
+  }
 
   if (positions == null && !error) {
     return (
@@ -94,18 +130,34 @@ function AgentPositions({ agentId }: { agentId: string }) {
       }}>
         Open positions ({positions.length})
       </div>
+      {actionMsg && (
+        <div
+          data-testid={`text-agent-positions-actionmsg-${agentId}`}
+          style={{
+            marginBottom: 6, fontSize: 11,
+            color: actionMsg.kind === 'ok' ? '#10b981' : '#ef4444',
+          }}
+        >
+          {actionMsg.text}
+        </div>
+      )}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         {positions.map((p) => {
           const sideColor = p.side === 'LONG' ? '#10b981' : '#ef4444'
           const pnl = p.unrealizedPnl
           const pnlColor = pnl == null ? '#64748b' : pnl >= 0 ? '#10b981' : '#ef4444'
+          const key = `${p.pair}|${p.side}`
+          const isClosing = closingKey === key
+          // Close button is Aster-only for now — HL/42space close paths
+          // live behind different endpoints and aren't wired into this
+          // panel yet.
+          const canClose = (p.exchange ?? 'aster') === 'aster'
           return (
             <div
               key={p.id}
               data-testid={`row-agent-position-${agentId}-${p.pair}-${p.side}`}
               style={{
                 padding: 8, borderRadius: 8, background: '#0a0a0f',
-                opacity: p.liveOnVenue ? 1 : 0.55,
                 display: 'flex', flexDirection: 'column', gap: 3,
                 fontSize: 12,
               }}
@@ -120,17 +172,28 @@ function AgentPositions({ agentId }: { agentId: string }) {
                 <span>{p.size} @ ${fmtPrice(p.entryPrice)}</span>
                 <span>mark {p.markPrice != null ? `$${fmtPrice(p.markPrice)}` : '—'}</span>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
                 <span style={{ color: pnlColor, fontWeight: 600 }}
                   data-testid={`text-agent-pnl-${agentId}-${p.pair}-${p.side}`}>
                   {pnl == null
                     ? 'PnL —'
                     : `${pnl >= 0 ? '+' : ''}${pnl.toFixed(4)} USDT`}
                 </span>
-                {!p.liveOnVenue && (
-                  <span style={{ fontSize: 10, color: '#f59e0b' }}>
-                    not live on venue
-                  </span>
+                {canClose && (
+                  <button
+                    type="button"
+                    onClick={() => onClose(p)}
+                    disabled={isClosing}
+                    data-testid={`button-agent-close-${agentId}-${p.pair}-${p.side}`}
+                    style={{
+                      fontSize: 11, padding: '4px 10px', borderRadius: 6,
+                      border: '1px solid #ef4444', background: 'transparent',
+                      color: '#ef4444', cursor: isClosing ? 'wait' : 'pointer',
+                      opacity: isClosing ? 0.6 : 1, fontWeight: 600,
+                    }}
+                  >
+                    {isClosing ? 'Closing…' : 'Close'}
+                  </button>
                 )}
               </div>
             </div>

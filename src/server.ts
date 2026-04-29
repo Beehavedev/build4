@@ -396,7 +396,12 @@ app.get('/api/agents/:id/positions', requireTgUser, async (req, res) => {
     // Best-effort live overlay from Aster. If the user hasn't onboarded
     // yet, or the Aster call fails, we still return the DB rows — the
     // UI just shows entry/size without a live mark instead of erroring.
+    //
+    // We also track `liveLookupOk` separately so the reconciler below
+    // only acts when we ACTUALLY confirmed the venue state. A transient
+    // Aster outage must not silently mark every position closed.
     let livePositions: Array<{ symbol: string; side: string; markPrice: number; unrealizedPnl?: number; size?: number }> = []
+    let liveLookupOk = false
     if (user.asterOnboarded) {
       try {
         const wallet = await db.wallet.findFirst({ where: { userId: user.id, isActive: true } })
@@ -412,6 +417,7 @@ app.get('/api/agents/:id/positions', requireTgUser, async (req, res) => {
               unrealizedPnl: typeof p.unrealizedPnl === 'number' ? p.unrealizedPnl : undefined,
               size: typeof p.size === 'number' ? p.size : undefined,
             }))
+            liveLookupOk = true
           }
         }
       } catch (e: any) {
@@ -420,7 +426,27 @@ app.get('/api/agents/:id/positions', requireTgUser, async (req, res) => {
       }
     }
 
-    const positions = openTrades.map((t) => {
+    // Reconcile DB rows against the live snapshot: any open Aster trade
+    // (older than 60s) that doesn't appear in livePositions has been
+    // closed on the venue (SL/TP/manual/liq) — flip it to status='closed'
+    // so the panel doesn't keep showing ghost rows tagged "not live on
+    // venue". After reconciliation, refetch the open trades so the
+    // response only reflects what's actually still open.
+    let effectiveOpenTrades = openTrades
+    try {
+      const { reconcileStaleAsterTrades } = await import('./services/asterReconcile')
+      const r = await reconcileStaleAsterTrades(user.id, livePositions, liveLookupOk)
+      if (r.closed > 0) {
+        effectiveOpenTrades = await db.trade.findMany({
+          where: { agentId: agent.id, status: 'open' },
+          orderBy: { openedAt: 'desc' },
+        })
+      }
+    } catch (e: any) {
+      console.warn(`[API] /agents/${agent.id}/positions reconcile failed: ${e?.message ?? e}`)
+    }
+
+    const positions = effectiveOpenTrades.map((t) => {
       const live = livePositions.find(
         (lp) => lp.symbol.toUpperCase() === t.pair.toUpperCase() && lp.side === t.side
       )
@@ -3246,6 +3272,30 @@ app.get('/api/portfolio/:userId', async (req, res) => {
     // HL fills (closes — what shows up in Trade History) and HL open
     // positions (so users see live positions in history too without
     // having to switch tabs).
+    //
+    // We additionally try to reconcile stale Aster open-trades against
+    // the live positionRisk snapshot before reading the trades — without
+    // this, the Portfolio Trade History keeps showing closed-on-venue
+    // rows as "Open" until the next agent tick reaches them. Errors
+    // here are non-fatal; we still serve the DB rows below.
+    if (wallet) {
+      try {
+        const u = await db.user.findUnique({ where: { id: internalUserId } })
+        if (u?.asterOnboarded) {
+          const { resolveAgentCreds, getPositions } = await import('./services/aster')
+          const { reconcileStaleAsterTrades } = await import('./services/asterReconcile')
+          const creds = await resolveAgentCreds(u as any, wallet.address)
+          if (creds) {
+            const raw = await getPositions(creds)
+            const live = raw.map((p: any) => ({ symbol: p.symbol, side: p.side }))
+            await reconcileStaleAsterTrades(internalUserId, live, true)
+          }
+        }
+      } catch (e: any) {
+        console.warn(`[API] /portfolio/:userId reconcile skipped: ${e?.message ?? e}`)
+      }
+    }
+
     const [portfolio, dbTrades, hlFills, hlState] = await Promise.all([
       db.portfolio.findUnique({ where: { userId: internalUserId } }),
       db.trade.findMany({
