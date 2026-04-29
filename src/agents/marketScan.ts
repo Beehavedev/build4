@@ -362,11 +362,20 @@ function buildContextForScan(inputs: MarketScanInputs): string {
 // different candles).
 function buildSnapshot(inputs: MarketScanInputs): MarketScan['snapshot'] {
   if (inputs.mode === 'momentum' && inputs.momentumOhlcv) {
-    const closes = inputs.momentumOhlcv['1m'].close
+    // New-listing snapshot. Mirror tradingAgent.ts: compute RSI/ADX from
+    // the 5m series when there's enough history, else fall back to 0
+    // (which the UI treats as "not available" and hides). Keeps shared
+    // scan output identical to the per-agent path so subscribers see
+    // the same numbers as the live brain feed.
+    const closes1m = inputs.momentumOhlcv['1m'].close
+    const closes5m = inputs.momentumOhlcv['5m'].close
+    const price = closes1m[closes1m.length - 1] ?? closes5m[closes5m.length - 1] ?? 0
+    const rsi = closes5m.length >= 15 ? calculateRSI(closes5m, 14) : 0
+    const adx = inputs.momentumOhlcv['5m'].high.length >= 29 ? calculateADX(inputs.momentumOhlcv['5m'], 14) : 0
     return {
-      price: closes[closes.length - 1] ?? 0,
-      rsi: 0,
-      adx: 0,
+      price,
+      rsi,
+      adx,
       regime: 'NEW_LISTING',
     }
   }
