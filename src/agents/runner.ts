@@ -11,11 +11,31 @@ export function getBot(): Bot | null {
   return botRef
 }
 
-// Escape characters Telegram's "Markdown" parse mode treats as control chars.
-// Without this, an agent named e.g. "Algo_v2" or "Best*Trader" causes the
-// entire message to be rejected with a 400 from Telegram.
+// Escape every reserved character for Telegram's MarkdownV2 parser.
+//
+// Per Telegram docs (https://core.telegram.org/bots/api#markdownv2-style),
+// these characters MUST be backslash-escaped anywhere outside an explicit
+// markup token: `_ * [ ] ( ) ~ ` > # + - = | { } . !`. We additionally
+// escape `\` itself so a stray backslash in user data (rare but possible
+// in market titles, error strings, etc.) doesn't accidentally consume
+// the next character.
+//
+// Why this matters: the previous version only escaped 5 chars
+// (_ * ` [ ]), which is enough for hand-written messages but breaks
+// instantly the moment user-supplied data contains a paren, dash, or
+// dot — e.g. a 42.space prediction-market title like "UEFA Champions
+// League Winner 2025/26?" or a Hyperliquid pair like "BTC-PERP". When
+// Telegram rejects the message with 400 the per-call `try { } catch {}`
+// at the send site silently swallows it, and the user sees zero
+// heartbeats from that venue. This was the actual cause behind
+// "Aster heartbeats arrive but HL/42 don't show up in chat".
+//
+// Callers must apply escapeMd ONLY to raw user data — never to strings
+// that already contain intentional MarkdownV2 markup (`*bold*`, `_it_`,
+// etc.). Pre-escaped sequences like `\\.` written into the surrounding
+// template are fine because escapeMd is never called on them.
 export function escapeMd(s: string): string {
-  return (s ?? '').replace(/([_*`\[\]])/g, '\\$1')
+  return (s ?? '').replace(/([\\_*\[\]()~`>#+\-=|{}.!])/g, '\\$1')
 }
 
 // Tracks how many ticks each agent has run since (re-)activation, so we can
