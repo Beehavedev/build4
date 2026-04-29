@@ -37,32 +37,49 @@ export default function Portfolio({ userId }: PortfolioProps) {
   const [wallet, setWallet] = useState<WalletInfo | null>(null)
   const [predictions, setPredictions] = useState<PredictionPosition[]>([])
 
+  // 1s realtime polling on every Portfolio data source. The user's
+  // directive: every venue surface (Aster perps, Hyperliquid clearing,
+  // 42.space prediction holdings, BSC wallet USDT) must reflect live
+  // venue state with a 1-second refresh interval. Each fetch tolerates
+  // its own failures so a stray dropped poll just holds the previous
+  // snapshot — the user never sees a flash of empty state.
   useEffect(() => {
     if (!userId) { setLoading(false); return }
-    fetch(`/api/portfolio/${userId}`)
-      .then(r => r.json())
-      .then(d => { setData(d); setLoading(false) })
-      .catch(() => setLoading(false))
+    let cancelled = false
+    const loadPortfolio = () => {
+      fetch(`/api/portfolio/${userId}`)
+        .then(r => r.json())
+        .then(d => { if (!cancelled) { setData(d); setLoading(false) } })
+        .catch(() => { if (!cancelled) setLoading(false) })
+    }
+    const loadWallet = () => {
+      apiFetch<WalletInfo>('/api/me/wallet')
+        .then((w) => { if (!cancelled && w) setWallet(w) })
+        .catch(() => { /* keep last good state */ })
+    }
+    const loadPredictions = () => {
+      apiFetch<{ ok: boolean; positions: PredictionPosition[] }>('/api/me/positions')
+        .then((r) => { if (!cancelled) setPredictions(r?.positions ?? []) })
+        .catch(() => { /* keep last good state */ })
+    }
+    loadPortfolio()
+    loadWallet()
+    loadPredictions()
+    const t = setInterval(() => {
+      loadPortfolio()
+      loadWallet()
+      loadPredictions()
+    }, 1000)
+    return () => { cancelled = true; clearInterval(t) }
   }, [userId])
 
-  useEffect(() => {
-    apiFetch<WalletInfo>('/api/me/wallet')
-      .then(setWallet)
-      .catch(() => { /* silent — balance strip just hides */ })
-  }, [])
-
-  // Pull 42.space prediction positions so Trade History reflects holdings
-  // across ALL platforms — perps (Aster, HL) AND prediction markets — in
-  // a single list. Without this, users had to bounce to the Predict tab
-  // to see their parimutuel exposure, which broke the "single portfolio"
-  // promise of this page.
-  useEffect(() => {
-    apiFetch<{ ok: boolean; positions: PredictionPosition[] }>('/api/me/positions')
-      .then((r) => setPredictions(r?.positions ?? []))
-      .catch(() => { /* silent — predictions section just stays empty */ })
-  }, [])
-
-  const trades: any[] = data?.trades ?? []
+  // Strip anything that isn't a real, on-venue trade. The user's
+  // directive is "no fakes ever" — paper trades and the legacy `mock`
+  // exchange are filtered out at the seam so they never appear in the
+  // unified Trade History, lifetime PnL, win-rate, or PnL chart.
+  const trades: any[] = (data?.trades ?? []).filter(
+    (t: any) => !t.paperTrade && t.exchange !== 'mock',
+  )
   // Lifetime stats (Total PnL, Win Rate, Best Trade) only count CLOSED
   // trades. Open positions carry unrealized PnL that fluctuates with the
   // market — including them here would make "lifetime" numbers move
@@ -122,7 +139,8 @@ export default function Portfolio({ userId }: PortfolioProps) {
   // every open holding (perp + parimutuel) shows in one place. We tag
   // each row with its venue so the user can tell at a glance whether a
   // line is a Hyperliquid perp, an Aster perp, or a 42.space prediction.
-  const predTrades = predictions.map((p) => {
+  // Paper-trade predictions are filtered first per the "no fakes" rule.
+  const predTrades = predictions.filter((p) => !p.paperTrade).map((p) => {
     const isOpen = p.status === 'open' || p.status === 'resolved_win'
     // Use payoutUsdt when claimed, currentValueUsdt for live PnL, or
     // realized pnl on closed/loss rows. Falls back to null so the row
@@ -507,8 +525,6 @@ export default function Portfolio({ userId }: PortfolioProps) {
                 return { label: 'HL',    bg: '#06b6d422', fg: '#06b6d4' }
               if (ex === '42space' || ex === '42' || ex === 'fortytwo')
                 return { label: '42',    bg: '#a855f722', fg: '#a855f7' }
-              if (ex === 'mock')
-                return { label: 'PAPER', bg: '#64748b22', fg: '#94a3b8' }
               return     { label: 'ASTER', bg: '#f59e0b22', fg: '#f59e0b' }
             })()
             // LONG/SHORT colouring stays for perps; predictions show their
@@ -542,12 +558,6 @@ export default function Portfolio({ userId }: PortfolioProps) {
                     >
                       {venue.label}
                     </span>
-                    {t.paperTrade && (
-                      <span style={{
-                        fontSize: 9, padding: '1px 6px', borderRadius: 4,
-                        background: '#64748b22', color: '#94a3b8',
-                      }}>PAPER</span>
-                    )}
                   </div>
                   <div style={{ fontSize: 11, color: '#64748b', marginTop: 1 }}>
                     {t.closedAt ? new Date(t.closedAt).toLocaleDateString() : 'Open'}

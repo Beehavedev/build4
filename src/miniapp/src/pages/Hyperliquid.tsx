@@ -524,7 +524,7 @@ export default function Hyperliquid() {
   //     the order ticket alive while sizing
   //   - per-position mark prices: every 1s — so PnL on every open
   //     position ticks in real time
-  useEffect(() => { load(); const t = setInterval(load, 2000); return () => clearInterval(t) }, [])
+  useEffect(() => { load(); const t = setInterval(load, 1000); return () => clearInterval(t) }, [])
   useEffect(() => {
     let cancelled = false
     const poll = async () => {

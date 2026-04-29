@@ -64,9 +64,10 @@ function AgentPositions({ agentId }: { agentId: string }) {
       await load()
     }
     tick()
-    // 3s mirrors the Trade page's 2s position refresh — close enough that
-    // PnL feels live without hammering Aster's positionRisk endpoint.
-    const t = setInterval(tick, 3000)
+    // 1s real-time refresh — user wants every venue surface to feel as
+    // live as the Trade page mark. Aster's positionRisk endpoint is
+    // cheap; one user = one client, so polling load is bounded.
+    const t = setInterval(tick, 1000)
     return () => { alive = false; clearInterval(t) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [agentId])
@@ -443,9 +444,9 @@ export default function AgentStudio(_props: AgentStudioProps) {
     fetchAgents()
     fetchFeed()
     fetchPermissions()
-    // Poll the brain feed every 30s so users see new decisions stream in
-    // without leaving and re-entering the mini app.
-    const t = setInterval(fetchFeed, 30_000)
+    // 1s polling — user wants the brain feed to stream new decisions
+    // in near-real time, matching every other live surface in the app.
+    const t = setInterval(fetchFeed, 1000)
     return () => clearInterval(t)
   }, [])
 
@@ -587,11 +588,10 @@ export default function AgentStudio(_props: AgentStudioProps) {
     // hint below the row telling them to finish setup.
     const disabled = perms === null || busy
 
-    // Show "LIVE" for 42.space (matches the rest of the product's
-    // paper-vs-live language) and "ON"/"OFF" for the perps venues.
-    const stateLabel = v.id === 'fortytwo'
-      ? (enabled ? 'LIVE' : 'PAPER')
-      : (enabled ? 'ON'   : 'OFF')
+    // ON/OFF across every venue. We don't surface a "PAPER" state in
+    // the UI any more — the user's directive is "no fakes ever",
+    // venues are either live-traded or off entirely.
+    const stateLabel = enabled ? 'ON' : 'OFF'
 
     return (
       <div

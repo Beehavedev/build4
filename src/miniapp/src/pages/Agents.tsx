@@ -74,14 +74,15 @@ export function Agents() {
     }
     load();
 
-    // Poll the live feed every 30 seconds so users see new decisions appear
-    // without having to leave and come back.
+    // 1s feed polling — every live surface in the app is realtime now,
+    // including the agents-list mini feed. getMyFeed is a single SQL
+    // read against an indexed table; load is bounded per user.
     const t = setInterval(async () => {
       try {
         const f = await getMyFeed(20);
         setFeed(f);
       } catch {}
-    }, 30_000);
+    }, 1000);
     return () => clearInterval(t);
   }, []);
 

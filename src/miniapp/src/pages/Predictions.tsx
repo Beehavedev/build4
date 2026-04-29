@@ -434,7 +434,12 @@ export default function Predictions() {
     load()
     loadMode()
     loadMyPositions()
-    const poll = setInterval(() => { load(true); loadMyPositions() }, 30_000)
+    // 1s real-time refresh — markets, prices and the user's open
+    // positions all repull every second so 42.space (BSC on-chain)
+    // surfaces feel as live as the perps venues. The fetcher already
+    // tolerates BSC RPC rate-limit blips by holding the last-good
+    // snapshot, so a stray dropped poll is invisible to the user.
+    const poll = setInterval(() => { load(true); loadMyPositions() }, 1000)
     const tick = setInterval(() => setNowTick((n) => n + 1), 1000)
     return () => { clearInterval(poll); clearInterval(tick) }
   }, [])
@@ -1136,10 +1141,9 @@ function TradeForm({
           {result.ok ? (
             <>
               <div style={{ fontWeight: 600, marginBottom: 3 }}>
-                {result.paperTrade ? 'Paper trade recorded' : 'Trade placed on-chain'}
-                {' · '}${result.usdtIn?.toFixed(2)} on {result.outcomeLabel}
+                Trade placed on-chain · ${result.usdtIn?.toFixed(2)} on {result.outcomeLabel}
               </div>
-              {!result.paperTrade && result.txHash && (
+              {result.txHash && (
                 <a
                   href={`https://bscscan.com/tx/${result.txHash}`}
                   target="_blank"
@@ -1149,11 +1153,6 @@ function TradeForm({
                            fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace' }}>
                   View on BscScan
                 </a>
-              )}
-              {result.paperTrade && (
-                <div style={{ color: '#94a3b8', fontSize: 10 }}>
-                  Toggle live mode in the Telegram /predictions command to use real USDT.
-                </div>
               )}
             </>
           ) : (
@@ -1556,9 +1555,6 @@ function MyPositionsList({
                 </div>
                 <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 3 }}>
                   {p.outcomeLabel} · ${p.usdtIn.toFixed(2)} → {tokens.toFixed(2)} tokens @ {isEstimate ? '~' : ''}{avgFillStr} avg
-                  {p.paperTrade && (
-                    <span style={{ marginLeft: 6, color: '#a855f7' }}>· paper</span>
-                  )}
                   {!p.paperTrade && p.txHashOpen && (
                     <a
                       href={`https://bscscan.com/tx/${p.txHashOpen}`}
