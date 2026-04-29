@@ -481,6 +481,30 @@ ${formatRecentCandles(ohlcv5m, 8)}`
 // liquidity, funding, and microstructure that don't exist on the venue
 // where the order will land. `mock` reuses Aster as a stand-in feed
 // because mock has no native price source of its own.
+// Convert Hyperliquid's per-candle object array into the parallel-arrays
+// OHLCV shape every indicator + buildMarketContext call expects. Without
+// this, HL agents crashed on every tick for HL-native pairs (HYPE, SUI,
+// TIA) with `TypeError: Cannot read properties of undefined (reading
+// 'length')` at the first `.close.length - 1` access — the array of
+// objects has no `.close` property, so the chained `.length` blew up.
+function hlCandlesToOHLCV(candles: Array<{
+  time: number; open: number; high: number; low: number; close: number; volume: number
+}>): OHLCV {
+  return {
+    open:       candles.map(c => c.open),
+    high:       candles.map(c => c.high),
+    low:        candles.map(c => c.low),
+    close:      candles.map(c => c.close),
+    volume:     candles.map(c => c.volume),
+    // HL candle `time` is already in seconds; the rest of the codebase
+    // uses ms timestamps for Aster, but indicators only ever read
+    // `.length` on this array (never the actual values), so the unit
+    // mismatch is benign here. Still, multiply to ms for consistency
+    // in case future code reaches in for a real timestamp.
+    timestamps: candles.map(c => c.time * 1000),
+  }
+}
+
 async function getMomentumOHLCV(pair: string, venue: string = 'aster'): Promise<{
   '1m': OHLCV
   '5m': OHLCV
@@ -492,7 +516,7 @@ async function getMomentumOHLCV(pair: string, venue: string = 'aster'): Promise<
       getCandles(coin, '1m', 120),
       getCandles(coin, '5m', 100),
     ])
-    return { '1m': m1, '5m': m5 }
+    return { '1m': hlCandlesToOHLCV(m1), '5m': hlCandlesToOHLCV(m5) }
   }
   const { getKlines } = await import('../services/aster')
   const [m1, m5] = await Promise.all([
@@ -515,7 +539,11 @@ async function getMultiTimeframeOHLCV(pair: string, venue: string = 'aster'): Pr
       getCandles(coin, '1h', 200),
       getCandles(coin, '4h', 200),
     ])
-    return { '15m': tf15m, '1h': tf1h, '4h': tf4h }
+    return {
+      '15m': hlCandlesToOHLCV(tf15m),
+      '1h':  hlCandlesToOHLCV(tf1h),
+      '4h':  hlCandlesToOHLCV(tf4h),
+    }
   }
   const { getKlines } = await import('../services/aster')
   const [tf15m, tf1h, tf4h] = await Promise.all([

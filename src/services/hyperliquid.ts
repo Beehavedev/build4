@@ -26,6 +26,57 @@ import * as hl from '@nktkas/hyperliquid'
 const HL_API_URL  = process.env.HYPERLIQUID_API_URL ?? 'https://api.hyperliquid.xyz'
 const AGENT_NAME  = process.env.HYPERLIQUID_AGENT_NAME ?? 'build4-agent'
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Tiny dedupe-cache for HL info reads.
+//
+// Production was hammered with 429s because:
+//   • the mini-app polls 6 mark prices every second (one per coin in the
+//     header strip), and each `getMarkPrice` calls `infoClient.allMids()` —
+//     so we burned 6 full mids requests/sec/user instead of 1.
+//   • multiple components asking for the same `getAccountState(address)` at
+//     the same tick each issued their own clearinghouseState call.
+//
+// We dedupe with a 1.5-second TTL: any concurrent caller during that window
+// shares a single in-flight Promise. That's still "live" by HL UX standards
+// (the venue's own websocket pushes mids ~every 200-400ms; 1.5s on a
+// fall-back HTTP poll is well within tolerance) but cuts upstream calls by
+// 6× per user for mids and ~Nx for repeated account reads. Cache stores the
+// resolved value too so a fresh caller right after settlement skips the
+// network entirely.
+// ─────────────────────────────────────────────────────────────────────────────
+const HL_INFO_TTL_MS = 1_500
+const _infoCache: Map<string, { at: number; value: any }> = new Map()
+const _infoInflight: Map<string, Promise<any>> = new Map()
+async function dedupedInfo<T>(key: string, ttlMs: number, fn: () => Promise<T>): Promise<T> {
+  const now = Date.now()
+  const cached = _infoCache.get(key)
+  if (cached && now - cached.at < ttlMs) return cached.value as T
+  const inflight = _infoInflight.get(key)
+  if (inflight) return inflight as Promise<T>
+  const p = (async () => {
+    try {
+      const v = await fn()
+      _infoCache.set(key, { at: Date.now(), value: v })
+      return v
+    } finally {
+      _infoInflight.delete(key)
+    }
+  })()
+  _infoInflight.set(key, p)
+  return p
+}
+// Drop the cached account-state entries for `userAddress` so the very
+// next read goes to the wire. Called after any successful write that
+// could shift balance/positions (placeOrder, transferSpotPerp). Without
+// this, the user could click "Place Order" → see success → and still
+// see their pre-trade balance for up to 1.5 seconds because the cache
+// hadn't expired. Belt-and-braces: also clear `allMids` so any
+// just-placed price-sensitive UI rerenders against fresh mids.
+function invalidateHlAccountCache(userAddress: string): void {
+  _infoCache.delete(`clearinghouseState:${userAddress}`)
+  _infoCache.delete(`spotClearinghouseState:${userAddress}`)
+}
+
 // ── HL price/size formatting ────────────────────────────────────────────────
 // Exported because the order endpoint preview also needs the same rounding.
 export function formatHlPrice(px: number, szDecimals: number, isSpot = false): string {
@@ -188,7 +239,10 @@ export async function getCandles(
 export async function getMarkPrice(coin: string): Promise<{ markPrice: number }> {
   const sym = coin.toUpperCase().replace(/USDT?$/, '').replace(/-USD$/, '')
   try {
-    const mids = await infoClient.allMids()
+    // Share one allMids() per second across every concurrent caller —
+    // header strip polls 6 coins/sec/user; without dedupe that was 6
+    // upstream calls/sec/user and triggered HL 429s in production.
+    const mids = await dedupedInfo('allMids', HL_INFO_TTL_MS, () => infoClient.allMids())
     const px = parseFloat((mids as any)[sym] ?? '0')
     return { markPrice: Number.isFinite(px) ? px : 0 }
   } catch (err: any) {
@@ -423,8 +477,14 @@ export async function getAccountState(userAddress: string): Promise<{
     // Fan out the two reads in parallel — abstraction is on the same HL
     // host so latency overlaps perfectly. We don't fail the whole call if
     // abstraction errors; null is a valid "unknown" answer.
+    // Both reads are deduped per-address with a 1.5s TTL: the mini-app
+    // wallet card, position list, and slow-poll loop all hit this every
+    // second from the same browser, so without the cache each user paid
+    // 3× the upstream rate budget. With the cache: 1× per second per
+    // address regardless of how many UI panels ask.
     const [state, abstraction] = await Promise.all([
-      infoClient.clearinghouseState({ user: userAddress as `0x${string}` }),
+      dedupedInfo(`clearinghouseState:${userAddress}`, HL_INFO_TTL_MS,
+        () => infoClient.clearinghouseState({ user: userAddress as `0x${string}` })),
       getUserAbstraction(userAddress),
     ])
     // parseFloat protects against null/undefined but happily emits NaN on
@@ -788,6 +848,9 @@ export async function placeOrder(
       }
       return { success: false, error: status.error }
     }
+    // Order accepted — drop cached account state so the very next
+    // /account read returns the fresh post-fill balance + positions.
+    invalidateHlAccountCache(creds.userAddress)
     return { success: true, oid: status?.resting?.oid ?? status?.filled?.oid, status: JSON.stringify(status) }
   } catch (err: any) {
     let dump: any
@@ -957,7 +1020,10 @@ async function placeTriggerOrder(
  */
 export async function getSpotUsdcBalance(userAddress: string): Promise<number> {
   try {
-    const state: any = await infoClient.spotClearinghouseState({ user: userAddress as `0x${string}` })
+    const state: any = await dedupedInfo(
+      `spotClearinghouseState:${userAddress}`, HL_INFO_TTL_MS,
+      () => infoClient.spotClearinghouseState({ user: userAddress as `0x${string}` })
+    )
     // HL returns balances as `{ coin: 'USDC', token: 0, total: '105.0', hold: '0.0' }`.
     // Find the USDC row and parse `total` (which already accounts for any
     // open spot orders via `hold` — but for spot→perps eligibility the
@@ -1002,6 +1068,9 @@ export async function transferSpotPerp(
     // never try to move more than the user actually has.
     const amountStr = (Math.floor(amountUsd * 1_000_000) / 1_000_000).toString()
     await client.usdClassTransfer({ amount: amountStr, toPerp })
+    // Spot ↔ Perps balance just changed — drop both cached account
+    // entries for this address so the next /account read is fresh.
+    invalidateHlAccountCache(userWallet.address)
     return { success: true }
   } catch (err: any) {
     const raw = err?.response?.data ?? err?.message ?? 'usdClassTransfer failed'
