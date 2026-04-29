@@ -65,6 +65,17 @@ async function dedupedInfo<T>(key: string, ttlMs: number, fn: () => Promise<T>):
   _infoInflight.set(key, p)
   return p
 }
+// Drop the cached account-state entries for `userAddress` so the very
+// next read goes to the wire. Called after any successful write that
+// could shift balance/positions (placeOrder, transferSpotPerp). Without
+// this, the user could click "Place Order" → see success → and still
+// see their pre-trade balance for up to 1.5 seconds because the cache
+// hadn't expired. Belt-and-braces: also clear `allMids` so any
+// just-placed price-sensitive UI rerenders against fresh mids.
+function invalidateHlAccountCache(userAddress: string): void {
+  _infoCache.delete(`clearinghouseState:${userAddress}`)
+  _infoCache.delete(`spotClearinghouseState:${userAddress}`)
+}
 
 // ── HL price/size formatting ────────────────────────────────────────────────
 // Exported because the order endpoint preview also needs the same rounding.
@@ -837,6 +848,9 @@ export async function placeOrder(
       }
       return { success: false, error: status.error }
     }
+    // Order accepted — drop cached account state so the very next
+    // /account read returns the fresh post-fill balance + positions.
+    invalidateHlAccountCache(creds.userAddress)
     return { success: true, oid: status?.resting?.oid ?? status?.filled?.oid, status: JSON.stringify(status) }
   } catch (err: any) {
     let dump: any
@@ -1054,6 +1068,9 @@ export async function transferSpotPerp(
     // never try to move more than the user actually has.
     const amountStr = (Math.floor(amountUsd * 1_000_000) / 1_000_000).toString()
     await client.usdClassTransfer({ amount: amountStr, toPerp })
+    // Spot ↔ Perps balance just changed — drop both cached account
+    // entries for this address so the next /account read is fresh.
+    invalidateHlAccountCache(userWallet.address)
     return { success: true }
   } catch (err: any) {
     const raw = err?.response?.data ?? err?.message ?? 'usdClassTransfer failed'
