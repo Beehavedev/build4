@@ -1554,6 +1554,44 @@ If you would not put real money in this trade right now, action = HOLD.`
           decision = { ...decision, action: 'CLOSE', holdReason: null }
         }
 
+        // ── Per-agent overlay 1b: position-flip protection ───────────
+        // The shared scan never sees this agent's existing positions.
+        // The downstream risk guard (riskGuard.ts:56) blocks duplicate
+        // SAME-side opens, but it does NOT block opening an opposite
+        // side while one direction is already open. That's how a single
+        // agent ended up holding both LONG and SHORT XCNUSDT
+        // simultaneously — burning funding both ways and confusing the
+        // user about what its actual conviction was.
+        //
+        // Fix: when the scan wants to flip sides, force a CLOSE first.
+        // The next tick will re-evaluate the freshly-flat pair and may
+        // open the opposite side cleanly (if conviction holds). We do
+        // NOT try to atomically flip-in-one-tick because a partial
+        // failure (close OK, open fails) leaves the user fully exposed
+        // the wrong way; a two-tick flip is safer and the runner cycle
+        // is short enough (≤ 60s) that the user notices no real lag.
+        if (
+          (decision.action === 'OPEN_LONG' || decision.action === 'OPEN_SHORT') &&
+          openPositions.length > 0
+        ) {
+          const wantSide = decision.action === 'OPEN_LONG' ? 'LONG' : 'SHORT'
+          const oppositeOpen = openPositions.find((p) => p.side !== wantSide)
+          if (oppositeOpen) {
+            console.log(
+              `[Agent ${agent.name}] Flip protection: have ${oppositeOpen.side} ${pair} open, ` +
+              `scan wants ${wantSide} — converting to CLOSE first`
+            )
+            decision = {
+              ...decision,
+              action: 'CLOSE',
+              holdReason: null,
+              reasoning:
+                `Closing existing ${oppositeOpen.side} on ${pair} before flipping to ` +
+                `${wantSide} (conviction reversed).`,
+            }
+          }
+        }
+
         // ── Per-agent overlay 2: memory veto ─────────────────────────
         // The shared scan never sees agent memory. Block a fresh OPEN
         // if we lost on this exact pair + side within the lookback

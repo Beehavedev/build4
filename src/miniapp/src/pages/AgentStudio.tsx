@@ -3,6 +3,144 @@ import { apiFetch, deleteAgent, getMyFeed, updateAgentSettings, type FeedEntry }
 import { TradingChart } from '../components/TradingChart'
 import { MarketTicker } from '../components/MarketTicker'
 
+// One open position attributed to an agent. `markPrice` and
+// `unrealizedPnl` are null when the live Aster overlay couldn't be
+// fetched (e.g. user not onboarded yet, or the API call failed).
+// `liveOnVenue` flags rows the venue actually still has open — false
+// means the DB row is stale (closed on the venue, not yet reconciled
+// in our DB) and the UI dims it accordingly.
+interface AgentPositionRow {
+  id: string
+  pair: string
+  side: 'LONG' | 'SHORT'
+  size: number
+  leverage: number
+  entryPrice: number
+  exchange: string
+  openedAt: string
+  markPrice: number | null
+  unrealizedPnl: number | null
+  liveOnVenue: boolean
+}
+
+function fmtPrice(n: number): string {
+  if (!Number.isFinite(n)) return '—'
+  if (n >= 1000) return n.toFixed(2)
+  if (n >= 1) return n.toFixed(4)
+  return n.toFixed(6)
+}
+
+// Self-contained per-agent positions panel. Polls every 8 s while
+// mounted so PnL ticks live alongside the Trade page. Kept as an inner
+// component so the parent doesn't need yet another polling loop in its
+// state graph.
+function AgentPositions({ agentId }: { agentId: string }) {
+  const [positions, setPositions] = useState<AgentPositionRow[] | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let alive = true
+    const load = async () => {
+      try {
+        const res = await apiFetch<{ positions: AgentPositionRow[] }>(
+          `/api/agents/${agentId}/positions`
+        )
+        if (!alive) return
+        setPositions(res.positions)
+        setError(null)
+      } catch (e: any) {
+        if (!alive) return
+        setError(e?.message ?? 'load failed')
+      }
+    }
+    load()
+    const t = setInterval(load, 8000)
+    return () => { alive = false; clearInterval(t) }
+  }, [agentId])
+
+  if (positions == null && !error) {
+    return (
+      <div style={{ marginTop: 12, fontSize: 11, color: '#64748b' }}>
+        Loading positions…
+      </div>
+    )
+  }
+  if (error) {
+    return (
+      <div
+        style={{ marginTop: 12, fontSize: 11, color: '#ef4444' }}
+        data-testid={`text-agent-positions-error-${agentId}`}
+      >
+        Couldn't load positions: {error}
+      </div>
+    )
+  }
+  if (!positions || positions.length === 0) {
+    return (
+      <div
+        style={{ marginTop: 12, fontSize: 11, color: '#64748b' }}
+        data-testid={`text-agent-positions-empty-${agentId}`}
+      >
+        No open positions for this agent.
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ marginTop: 12 }}>
+      <div style={{
+        fontSize: 11, color: '#94a3b8', marginBottom: 6, fontWeight: 600,
+        letterSpacing: 0.3, textTransform: 'uppercase',
+      }}>
+        Open positions ({positions.length})
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {positions.map((p) => {
+          const sideColor = p.side === 'LONG' ? '#10b981' : '#ef4444'
+          const pnl = p.unrealizedPnl
+          const pnlColor = pnl == null ? '#64748b' : pnl >= 0 ? '#10b981' : '#ef4444'
+          return (
+            <div
+              key={p.id}
+              data-testid={`row-agent-position-${agentId}-${p.pair}-${p.side}`}
+              style={{
+                padding: 8, borderRadius: 8, background: '#0a0a0f',
+                opacity: p.liveOnVenue ? 1 : 0.55,
+                display: 'flex', flexDirection: 'column', gap: 3,
+                fontSize: 12,
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ fontWeight: 600 }}>{p.pair}</span>
+                <span style={{ color: sideColor, fontWeight: 600 }}>
+                  {p.side} · {p.leverage}x
+                </span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', color: '#94a3b8', fontSize: 11 }}>
+                <span>{p.size} @ ${fmtPrice(p.entryPrice)}</span>
+                <span>mark {p.markPrice != null ? `$${fmtPrice(p.markPrice)}` : '—'}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ color: pnlColor, fontWeight: 600 }}
+                  data-testid={`text-agent-pnl-${agentId}-${p.pair}-${p.side}`}>
+                  {pnl == null
+                    ? 'PnL —'
+                    : `${pnl >= 0 ? '+' : ''}${pnl.toFixed(4)} USDT`}
+                </span>
+                {!p.liveOnVenue && (
+                  <span style={{ fontSize: 10, color: '#f59e0b' }}>
+                    not live on venue
+                  </span>
+                )}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 interface AgentStudioProps {
   userId: string | null
 }
@@ -740,6 +878,13 @@ export default function AgentStudio(_props: AgentStudioProps) {
             </div>
           )
         })()}
+
+        {/* Per-agent open positions with live PnL. The user reported
+            being unable to see what each agent currently holds — Trade
+            page shows everything pooled, Studio used to show nothing.
+            This panel scopes to the agent's own DB rows so each card
+            tells its own story. */}
+        <AgentPositions agentId={agent.id} />
       </div>
     )
   }
