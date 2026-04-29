@@ -1,10 +1,10 @@
 import { useState, useEffect } from "react";
 import {
   getTelegramUser, getUser, getUserAgents, getMyFeed,
-  updateAgentSettings,
+  updateAgentSettings, apiFetch,
   type AgentData, type FeedEntry
 } from "../api";
-import { venueChip } from "./AgentStudio";
+import { venueChip, isVenueScouting, ScoutBadge, type FeedOnboardedFlags } from "./AgentStudio";
 
 function timeAgo(iso: string): string {
   const ms = Date.now() - new Date(iso).getTime();
@@ -52,6 +52,11 @@ export function Agents() {
   const [agents, setAgents] = useState<AgentData[]>([]);
   const [feed, setFeed] = useState<FeedEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  // Per-venue onboarded flags driving the SCOUT badge in the brain feed.
+  // `null` while in flight so isVenueScouting returns false until we know
+  // the truth — we never want to flash a SCOUT label on a real activated
+  // venue during the first paint.
+  const [onboarded, setOnboarded] = useState<FeedOnboardedFlags | null>(null);
   // Which agent's risk-limit editor is currently open (null = none).
   // Inline rather than a modal because the agent card already has its
   // own visual frame and modals on Telegram mini app feel disconnected
@@ -70,6 +75,24 @@ export function Agents() {
       try {
         const f = await getMyFeed(20);
         setFeed(f);
+      } catch {}
+      // Resolve per-venue onboarded flags so the feed renderer below can
+      // distinguish "scouting" entries (venue not activated, no trade
+      // executes) from real trade decisions. fortytwo defaults true —
+      // it's spend-direct-from-BSC and has no separate clearinghouse
+      // onboarding step. Failure leaves `onboarded` null so badges stay
+      // hidden rather than wrongly applied.
+      try {
+        const w = await apiFetch<{
+          aster?: { onboarded?: boolean }
+          hyperliquid?: { onboarded?: boolean }
+          fortytwo?: { onboarded?: boolean }
+        }>('/api/me/wallet')
+        setOnboarded({
+          aster: !!w?.aster?.onboarded,
+          hyperliquid: !!w?.hyperliquid?.onboarded,
+          fortytwo: w?.fortytwo?.onboarded !== false,
+        })
       } catch {}
       setLoading(false);
     }
@@ -258,6 +281,13 @@ export function Agents() {
                       }} data-testid={`feed-venue-${e.id}`}>{v.label}</span>
                     ) : null
                   })()}
+                  {/* SCOUT badge — agent is scanning this venue but no
+                      trade will fire because the user has not finished
+                      that venue's activation flow. Hidden by default
+                      (onboarded === null while the wallet fetch is in
+                      flight) so we never momentarily mislabel an active
+                      venue on first paint. */}
+                  {isVenueScouting(e.exchange, onboarded) && <ScoutBadge id={e.id} />}
                 </div>
                 <div style={{ fontSize: "11px", color: "var(--text-muted)" }}>{timeAgo(e.createdAt)}</div>
               </div>

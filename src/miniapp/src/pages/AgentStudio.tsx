@@ -259,6 +259,54 @@ export function venueChip(ex: string | null | undefined): { label: string; color
   return null
 }
 
+// Per-venue onboarding flags as returned by /api/me/wallet (subset).
+// We don't import the full type to avoid circular dep — both feed
+// renderers consume only these three booleans.
+export interface FeedOnboardedFlags { aster: boolean; hyperliquid: boolean; fortytwo: boolean }
+
+// True when a feed entry's venue is one the user has NOT yet activated
+// for trading. This is the basis for the "SCOUT" badge: the agent is
+// scanning these venues read-only (public market data) and surfacing
+// decisions in the brain feed, but no orders are placed because the
+// per-venue activation flow (Aster /approve, HL /approve-builder, 42
+// liveTrade toggle) has not run yet. Returns false when the flags are
+// still loading (`null`) so we never falsely mark an entry as "scout"
+// before we know the truth — and false for unknown venues so a missing
+// `exchange` field doesn't get a misleading badge.
+export function isVenueScouting(
+  ex: string | null | undefined,
+  onb: FeedOnboardedFlags | null,
+): boolean {
+  if (!onb) return false
+  const x = (ex ?? '').toLowerCase()
+  if (x === 'aster')       return !onb.aster
+  if (x === 'hyperliquid') return !onb.hyperliquid
+  if (x === 'fortytwo')    return !onb.fortytwo
+  return false
+}
+
+// Inline pill that visually flags a feed row as "the agent is just
+// scouting this venue, no trades will execute until you activate it."
+// Used next to the venue chip in both feed renderers (Agents + Studio).
+// Muted/outline styling so it reads as a status hint rather than a
+// second venue chip — the venue chip itself stays its normal colour so
+// the user still sees which venue produced the decision.
+export function ScoutBadge({ id }: { id: string }) {
+  return (
+    <span
+      title="Agent is scanning this venue but won't trade until you activate it."
+      data-testid={`feed-scout-${id}`}
+      style={{
+        fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 3,
+        background: 'transparent', color: 'var(--text-muted, #94a3b8)',
+        border: '1px solid var(--border, #334155)', letterSpacing: 0.3,
+      }}
+    >
+      SCOUT
+    </span>
+  )
+}
+
 // Map an agent's `exchange` value to a known venue. Lowercased defensively
 // so a stray "Aster"/"HyperLiquid" doesn't fall through to "other".
 function venueOf(exchange: string | undefined): VenueId | 'other' {
@@ -1097,6 +1145,12 @@ export default function AgentStudio(_props: AgentStudioProps) {
                     }} data-testid={`feed-venue-${e.id}`}>{v.label}</span>
                   ) : null
                 })()}
+                {/* SCOUT badge — agent scanned this venue but no order
+                    fired because the user hasn't completed activation
+                    for it. Reuses the page-level `onboarded` state
+                    (already loaded for the venue toggles), so no extra
+                    fetch needed here. */}
+                {isVenueScouting(e.exchange, onboarded) && <ScoutBadge id={e.id} />}
               </div>
               <div style={{ fontSize: 11, color: '#64748b' }}>{timeAgo(e.createdAt)}</div>
             </div>
