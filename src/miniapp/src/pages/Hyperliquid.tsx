@@ -51,9 +51,6 @@ async function copyToClipboard(text: string): Promise<boolean> {
     return false
   }
 }
-import { apiFetch } from '../api'
-import { NativeChart } from '../components/NativeChart'
-import { MarketTicker, fmtUsd, fmtUsdRaw } from '../components/MarketTicker'
 
 const COINS = ['BTC', 'ETH', 'SOL', 'BNB', 'HYPE', 'DOGE']
 
@@ -197,6 +194,13 @@ export default function Hyperliquid() {
   // scroll the page, then unmount the next second — the "page resets and
   // scrolls up every second somehow flickering" symptom the user reported.
   const wasEverOnboardedRef = useRef(false)
+  // Counter for consecutive all-zero polls. The transient-zero guard
+  // suppresses these to avoid balance flicker, but if the user genuinely
+  // emptied their account we must eventually accept the zero — otherwise
+  // the cached positive balance stays on screen forever. After
+  // ZERO_POLL_ACCEPT_THRESHOLD consecutive zero polls we stop suppressing
+  // and let the real (zero) value through.
+  const consecutiveZeroPollsRef = useRef(0)
   // Transient toast under the wallet-address Copy buttons so the user
   // gets clear "Copied!" feedback on success — without it, a successful
   // copy looks identical to a failed one in the Telegram WebView.
@@ -568,12 +572,26 @@ export default function Hyperliquid() {
         // "user moved everything out" zero still propagates eventually
         // (next non-zero poll is a no-op, and on app reload the cache
         // is fresh).
-        const transientZero =
-          prev != null &&
-          (prev.accountValue > 0 || prev.spotUsdc > 0 || (prev.positions?.length ?? 0) > 0) &&
+        const ZERO_POLL_ACCEPT_THRESHOLD = 3 // ~15s at 5s poll interval
+        const incomingIsAllZero =
           acc.accountValue === 0 &&
           acc.spotUsdc === 0 &&
           (acc.positions?.length ?? 0) === 0
+        const prevHadFunds =
+          prev != null &&
+          (prev.accountValue > 0 || prev.spotUsdc > 0 || (prev.positions?.length ?? 0) > 0)
+        if (incomingIsAllZero) {
+          consecutiveZeroPollsRef.current += 1
+        } else {
+          consecutiveZeroPollsRef.current = 0
+        }
+        // Suppress only short bursts of zeros — after N in a row we
+        // accept that the user really did empty the account, otherwise
+        // a stale positive balance would stay on screen forever.
+        const transientZero =
+          prevHadFunds &&
+          incomingIsAllZero &&
+          consecutiveZeroPollsRef.current < ZERO_POLL_ACCEPT_THRESHOLD
         if (transientZero) {
           // Preserve the balance + positions but still update onboarded
           // and walletAddress in case the server self-healed those.

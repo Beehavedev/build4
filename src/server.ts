@@ -2577,7 +2577,15 @@ app.get('/api/hyperliquid/account', requireTgUser, async (req, res) => {
       console.log(`[/hyperliquid/account] self-heal onboarded=true user=${user.id} (agent keys + HL activity present)`)
     }
 
+    // IMPORTANT: spread `...state` FIRST so the explicit fields below
+    // win on collision. `state` from getAccountState() carries its own
+    // `onboarded` (HL-side meaningful: "does this address exist on HL")
+    // which is NOT the same as our DB+self-heal `onboarded` (mini-app
+    // meaningful: "is this user activated for trading"). Spreading it
+    // last would let the HL-side value silently override our self-heal,
+    // re-triggering the "asks to activate again" bug we're fixing.
     res.json({
+      ...state,
       walletAddress:  wallet.address,
       onboarded,
       // True when this user has HL Unified Account enabled. The mini-app
@@ -2586,7 +2594,6 @@ app.get('/api/hyperliquid/account', requireTgUser, async (req, res) => {
       // persisted DB flag as a fallback for HL outages.
       unifiedAccount,
       spotUsdc,
-      ...state,
     })
   } catch (err: any) {
     console.error('[API] /hyperliquid/account failed:', err?.message)
