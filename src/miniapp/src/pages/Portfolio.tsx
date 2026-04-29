@@ -40,32 +40,52 @@ export default function Portfolio({ userId }: PortfolioProps) {
   // 1s realtime polling on every Portfolio data source. The user's
   // directive: every venue surface (Aster perps, Hyperliquid clearing,
   // 42.space prediction holdings, BSC wallet USDT) must reflect live
-  // venue state with a 1-second refresh interval. Each fetch tolerates
-  // its own failures so a stray dropped poll just holds the previous
-  // snapshot — the user never sees a flash of empty state.
+  // venue state with a 1-second refresh interval.
+  //
+  // Operational safeguards:
+  //   - Per-endpoint in-flight mutex so a slow upstream (BSC RPC stall,
+  //     HL clearinghouse latency) cannot stack overlapping requests.
+  //   - Visibility gate: pause polling when the tab/mini-app is hidden
+  //     so we don't burn quota or hammer venues for a screen the user
+  //     can't see; resumes on the next visibility flip.
+  //   - Each fetch tolerates its own failures so a stray dropped poll
+  //     just holds the previous snapshot — no flash of empty state.
   useEffect(() => {
     if (!userId) { setLoading(false); return }
     let cancelled = false
+    let portfolioBusy = false
+    let walletBusy = false
+    let predBusy = false
     const loadPortfolio = () => {
+      if (portfolioBusy || cancelled) return
+      portfolioBusy = true
       fetch(`/api/portfolio/${userId}`)
         .then(r => r.json())
         .then(d => { if (!cancelled) { setData(d); setLoading(false) } })
         .catch(() => { if (!cancelled) setLoading(false) })
+        .finally(() => { portfolioBusy = false })
     }
     const loadWallet = () => {
+      if (walletBusy || cancelled) return
+      walletBusy = true
       apiFetch<WalletInfo>('/api/me/wallet')
         .then((w) => { if (!cancelled && w) setWallet(w) })
         .catch(() => { /* keep last good state */ })
+        .finally(() => { walletBusy = false })
     }
     const loadPredictions = () => {
+      if (predBusy || cancelled) return
+      predBusy = true
       apiFetch<{ ok: boolean; positions: PredictionPosition[] }>('/api/me/positions')
         .then((r) => { if (!cancelled) setPredictions(r?.positions ?? []) })
         .catch(() => { /* keep last good state */ })
+        .finally(() => { predBusy = false })
     }
     loadPortfolio()
     loadWallet()
     loadPredictions()
     const t = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
       loadPortfolio()
       loadWallet()
       loadPredictions()
@@ -114,13 +134,14 @@ export default function Portfolio({ userId }: PortfolioProps) {
   const chartColor = totalPnl >= 0 ? '#10b981' : '#ef4444'
 
   // 42.space exposure = sum of live mark-to-market value across every
-  // OPEN prediction. We deliberately exclude resolved/claimed rows here
-  // because those funds either already paid out (now sitting in the BSC
-  // wallet, which we count separately) or were lost. Falls back to
-  // usdtIn when on-chain quote isn't available so a fresh-bought ticket
-  // still contributes its principal instead of vanishing from equity.
+  // OPEN, REAL prediction. We deliberately exclude resolved/claimed rows
+  // (those funds either already paid out or were lost) AND paper rows
+  // (per "no fakes ever") so equity reflects only real on-chain capital
+  // the user can actually move. Falls back to usdtIn when on-chain quote
+  // isn't available so a fresh-bought ticket still contributes its
+  // principal instead of vanishing from equity.
   const fortyTwoEquity = predictions
-    .filter((p) => p.status === 'open' || p.status === 'resolved_win')
+    .filter((p) => !p.paperTrade && (p.status === 'open' || p.status === 'resolved_win'))
     .reduce((s, p) => s + (p.currentValueUsdt ?? p.usdtIn ?? 0), 0)
 
   // Total equity now spans every venue the user can trade from: Aster

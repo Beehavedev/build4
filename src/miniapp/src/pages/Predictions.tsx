@@ -261,16 +261,29 @@ export default function Predictions() {
   // Sell and discover the same revert again.
   const [sellLocks, setSellLocks] = useState<Record<string, string>>({})
 
+  // Single in-flight guard so the 1s polling tick can never overlap
+  // itself when /api/me/positions takes longer than a second to return.
+  // Without this, a slow BSC RPC stall would queue requests and amplify
+  // load instead of self-healing.
+  const myPosInFlight = useRef(false)
   async function loadMyPositions() {
+    if (myPosInFlight.current) return
+    myPosInFlight.current = true
     try {
       const r = await fetch('/api/me/positions', { headers: tgHeaders() })
       if (r.status === 401) { setMyPositions(null); setMyPosErr(null); return }
       if (!r.ok) throw new Error(`HTTP ${r.status}`)
       const j = await r.json()
-      setMyPositions(Array.isArray(j.positions) ? j.positions : [])
+      // Strip paper rows at the seam — user directive is "no fakes ever".
+      // Filtering once here means every downstream view (counts, badges,
+      // rows, totals) is implicitly live-only without per-call repeats.
+      const all: MyPositionRow[] = Array.isArray(j.positions) ? j.positions : []
+      setMyPositions(all.filter((p) => !p.paperTrade))
       setMyPosErr(null)
     } catch (e) {
       setMyPosErr((e as Error).message)
+    } finally {
+      myPosInFlight.current = false
     }
   }
 
@@ -436,10 +449,15 @@ export default function Predictions() {
     loadMyPositions()
     // 1s real-time refresh — markets, prices and the user's open
     // positions all repull every second so 42.space (BSC on-chain)
-    // surfaces feel as live as the perps venues. The fetcher already
-    // tolerates BSC RPC rate-limit blips by holding the last-good
-    // snapshot, so a stray dropped poll is invisible to the user.
-    const poll = setInterval(() => { load(true); loadMyPositions() }, 1000)
+    // surfaces feel as live as the perps venues. Both `load()` and
+    // `loadMyPositions()` carry their own in-flight mutex so a slow
+    // BSC RPC tick cannot stack overlapping requests, and we skip
+    // polling entirely when the mini-app is hidden so we don't burn
+    // quota for a tab the user isn't looking at.
+    const poll = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
+      load(true); loadMyPositions()
+    }, 1000)
     const tick = setInterval(() => setNowTick((n) => n + 1), 1000)
     return () => { clearInterval(poll); clearInterval(tick) }
   }, [])

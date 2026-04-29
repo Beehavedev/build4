@@ -65,7 +65,11 @@ export default function Dashboard({ userId, onNavigate }: DashboardProps) {
       if (cancelled) return
       if (user?.portfolio) setPortfolio(user.portfolio)
       if (Array.isArray(agentData)) setAgents(agentData)
-      if (Array.isArray(user?.recentTrades)) setTrades(user.recentTrades)
+      // Filter out paper + mock-exchange rows so Recent Activity only
+      // ever shows real, venue-confirmed trades. Per "no fakes ever".
+      if (Array.isArray(user?.recentTrades)) {
+        setTrades(user.recentTrades.filter((t: any) => !t?.paperTrade && t?.exchange !== 'mock'))
+      }
       if (walletData) setWallet(walletData)
       setLoading(false)
     })
