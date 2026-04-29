@@ -44,9 +44,13 @@ async function safeAgentLogCreate(args: { data: any; [k: string]: any }): Promis
       _staleClientWarned = true
     }
     const d = args.data || {}
+    // Preserve the per-tick venue tag in the summary so an HL/42 row
+    // doesn't quietly degrade into "looks like Aster" when the Prisma
+    // client is stale and we have to drop the new `exchange` column.
     const summary = JSON.stringify({
       pair: d.pair, price: d.price, reason: d.reason,
       adx: d.adx, rsi: d.rsi, score: d.score, regime: d.regime,
+      exchange: d.exchange,
     })
     try {
       await safeAgentLogCreate({
@@ -953,6 +957,7 @@ export async function runAgentTick(agent: Agent): Promise<void> {
             data: {
               agentId: agent.id,
               userId: agent.userId,
+              exchange: agent.exchange,
               action: 'HOLD',
               parsedAction: 'HOLD',
               pair: topSym,
@@ -1195,6 +1200,7 @@ export async function runAgentTick(agent: Agent): Promise<void> {
           data: {
             agentId: agent.id,
             userId: agent.userId,
+            exchange: agent.exchange,
             action: 'EMERGENCY_CLOSE',
             parsedAction: 'CLOSE',
             executionResult: `Closed ${emergClosed} of ${allOpen.length} positions on news` +
@@ -1260,6 +1266,7 @@ export async function runAgentTick(agent: Agent): Promise<void> {
           data: {
             agentId: agent.id,
             userId: agent.userId,
+            exchange: agent.exchange,
             action: 'HOLD',
             parsedAction: 'HOLD',
             executionResult: 'No regime edge — LLM call skipped',
@@ -1288,6 +1295,7 @@ export async function runAgentTick(agent: Agent): Promise<void> {
           data: {
             agentId: agent.id,
             userId: agent.userId,
+            exchange: agent.exchange,
             action: 'HOLD',
             parsedAction: 'HOLD',
             executionResult: 'Funding edge too small — LLM call skipped',
@@ -1330,6 +1338,7 @@ export async function runAgentTick(agent: Agent): Promise<void> {
             data: {
               agentId: agent.id,
               userId: agent.userId,
+              exchange: agent.exchange,
               action: 'HOLD',
               parsedAction: 'HOLD',
               executionResult: 'Deterministic HOLD — LLM call skipped',
@@ -1704,6 +1713,7 @@ If you would not put real money in this trade right now, action = HOLD.`
           data: {
             agentId: agent.id,
             userId: agent.userId,
+            exchange: agent.exchange,
             action: 'TICK_ERROR',
             rawResponse: String(aiErr),
             parsedAction: 'HOLD',
@@ -1722,6 +1732,7 @@ If you would not put real money in this trade right now, action = HOLD.`
         data: {
           agentId: agent.id,
           userId: agent.userId,
+          exchange: agent.exchange,
           action: decision.action,
           rawResponse: rawResponse.slice(0, 2000),
           parsedAction: decision.action,
@@ -1775,6 +1786,7 @@ If you would not put real money in this trade right now, action = HOLD.`
                 data: {
                   agentId: agent.id,
                   userId: agent.userId,
+                  exchange: agent.exchange,
                   action: 'OPEN_PREDICTION',
                   parsedAction: 'OPEN_PREDICTION',
                   executionResult: `${mode} | $${res.usdtIn} | ${pt.outcomeLabel ?? pt.tokenId}`,
@@ -1801,6 +1813,7 @@ If you would not put real money in this trade right now, action = HOLD.`
                 data: {
                   agentId: agent.id,
                   userId: agent.userId,
+                  exchange: agent.exchange,
                   action: 'PREDICTION_SKIP',
                   parsedAction: 'HOLD',
                   executionResult: res.reason
@@ -1907,6 +1920,7 @@ If you would not put real money in this trade right now, action = HOLD.`
             data: {
               agentId: agent.id,
               userId: agent.userId,
+              exchange: agent.exchange,
               action: 'SKIP_OPEN',
               parsedAction: decision.action,
               executionResult: gate,
@@ -2447,6 +2461,7 @@ If you would not put real money in this trade right now, action = HOLD.`
         data: {
           agentId: agent.id,
           userId: agent.userId,
+          exchange: agent.exchange,
           action: 'TICK_ERROR',
           error: String(err).slice(0, 500)
         }

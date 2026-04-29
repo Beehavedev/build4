@@ -241,6 +241,14 @@ export async function ensureNewTables() {
   await run(`ALTER TABLE "AgentLog" ADD COLUMN IF NOT EXISTS "rsi"    DOUBLE PRECISION`)
   await run(`ALTER TABLE "AgentLog" ADD COLUMN IF NOT EXISTS "score"  INTEGER`)
   await run(`ALTER TABLE "AgentLog" ADD COLUMN IF NOT EXISTS "regime" TEXT`)
+  // Per-tick venue tag — the runner expands each agent into per-venue
+  // tick units and overrides agent.exchange on a CLONE per tick. Without
+  // this column the brain feed has no way to know whether a row came
+  // from an HL, Aster or 42 tick (the Agent table's `exchange` only
+  // reflects the agent's PRIMARY venue, never changes per tick), so the
+  // mini-app's venue chip would always render the primary value. We
+  // capture the per-tick venue at write time and prefer it in the feed.
+  await run(`ALTER TABLE "AgentLog" ADD COLUMN IF NOT EXISTS "exchange" TEXT`)
   await run(`CREATE INDEX IF NOT EXISTS "AgentLog_userId_createdAt_idx" ON "AgentLog"("userId", "createdAt" DESC)`)
 
   // ─── Security: PIN columns on User + audit log table ───
