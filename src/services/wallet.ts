@@ -199,35 +199,36 @@ export async function importWallet(
 export async function getWalletBalances(
   address: string,
   chain: string
-): Promise<{ usdt: number; native: number; nativeSymbol: string }> {
-  try {
-    // Only support BSC real balances for now
-    if (chain === 'BSC') {
-      const provider = new ethers.JsonRpcProvider(BSC_RPC)
-
-      const [bnbWei, usdtContract] = await Promise.all([
-        provider.getBalance(address),
-        new ethers.Contract(USDT_BSC, ERC20_ABI, provider).balanceOf(address)
-      ])
-
-      const bnb  = parseFloat(ethers.formatEther(bnbWei))
-      const usdt = parseFloat(ethers.formatUnits(usdtContract, 18))
-
-      return { usdt, native: bnb, nativeSymbol: 'BNB' }
-    }
-  } catch (err) {
-    console.error('[Wallet] getWalletBalances RPC failed, using mock:', err)
-  }
-
-  // Fallback: deterministic mock for non-BSC or RPC failures
-  const hash = address.split('').reduce((a, c) => a + c.charCodeAt(0), 0)
+): Promise<{ usdt: number; native: number; nativeSymbol: string; error: string | null }> {
   const nativeSymbols: Record<string, string> = {
     BSC: 'BNB', ETH: 'ETH', BASE: 'ETH', SOL: 'SOL'
   }
-  return {
-    usdt:         Math.round(((hash % 5000) + 100) * 100) / 100,
-    native:       Math.round(((hash % 20) + 0.01) * 10000) / 10000,
-    nativeSymbol: nativeSymbols[chain] ?? 'ETH'
+  const nativeSymbol = nativeSymbols[chain] ?? 'ETH'
+
+  // Only BSC is supported via real on-chain reads. Any other chain returns
+  // zero with an explicit error string so callers can surface a "not
+  // supported" / "rpc unavailable" indicator instead of a fake number.
+  // The project rule is: NEVER fabricate balances. A previous version of
+  // this function returned a deterministic hash-derived mock on RPC
+  // failure, which surfaced fictitious USDT amounts (e.g. $9.41) on the
+  // home screen for users with truly empty wallets — directly violating
+  // the no-mock-data rule.
+  if (chain !== 'BSC') {
+    return { usdt: 0, native: 0, nativeSymbol, error: 'unsupported_chain' }
+  }
+
+  try {
+    const provider = new ethers.JsonRpcProvider(BSC_RPC)
+    const [bnbWei, usdtContract] = await Promise.all([
+      provider.getBalance(address),
+      new ethers.Contract(USDT_BSC, ERC20_ABI, provider).balanceOf(address)
+    ])
+    const bnb  = parseFloat(ethers.formatEther(bnbWei))
+    const usdt = parseFloat(ethers.formatUnits(usdtContract, 18))
+    return { usdt, native: bnb, nativeSymbol, error: null }
+  } catch (err: any) {
+    console.error('[Wallet] getWalletBalances BSC RPC failed for', address, '→', err?.shortMessage ?? err?.message)
+    return { usdt: 0, native: 0, nativeSymbol, error: err?.shortMessage ?? err?.message ?? 'rpc_failed' }
   }
 }
 
