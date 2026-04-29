@@ -2547,9 +2547,39 @@ app.get('/api/hyperliquid/account', requireTgUser, async (req, res) => {
         .catch((e: any) => console.warn(`[/hyperliquid/account] clear unified flag failed user=${user.id}: ${e?.message}`))
     }
 
+    // Onboarded self-heal: when the User row's `hyperliquidOnboarded`
+    // flag is false BUT the user clearly has the artefacts of a
+    // completed activation (an agent wallet address + its encrypted
+    // private key in the DB) AND any sign of life on HL itself (real
+    // perps balance, real spot USDC, or open positions), we treat the
+    // user as onboarded and async-write the flag back so subsequent
+    // requests agree. This protects against the failure mode the user
+    // reported: "I activated before, but the page keeps asking me to
+    // activate again." Causes seen in the wild include a DB rollback
+    // that wiped the flag, a User row recreated by the new-user path
+    // overwriting an existing record, and concurrent writes during
+    // activation racing each other. As long as the agent keys exist
+    // and HL has funds, the user IS onboarded — anything else is the
+    // server's bookkeeping out of sync.
+    const dbOnboarded = Boolean((user as any).hyperliquidOnboarded)
+    const hasAgentKeys = Boolean(
+      (user as any).hyperliquidAgentAddress &&
+      (user as any).hyperliquidAgentEncryptedPK,
+    )
+    const hasHlActivity =
+      (state.accountValue ?? 0) > 0 ||
+      (spotUsdc ?? 0) > 0 ||
+      ((state.positions ?? []) as any[]).some((p: any) => Number(p?.szi ?? 0) !== 0)
+    const onboarded = dbOnboarded || (hasAgentKeys && hasHlActivity)
+    if (onboarded && !dbOnboarded) {
+      db.user.update({ where: { id: user.id }, data: { hyperliquidOnboarded: true } })
+        .catch((e: any) => console.warn(`[/hyperliquid/account] self-heal onboarded flag failed user=${user.id}: ${e?.message}`))
+      console.log(`[/hyperliquid/account] self-heal onboarded=true user=${user.id} (agent keys + HL activity present)`)
+    }
+
     res.json({
       walletAddress:  wallet.address,
-      onboarded:      Boolean((user as any).hyperliquidOnboarded),
+      onboarded,
       // True when this user has HL Unified Account enabled. The mini-app
       // suppresses spot↔perps move CTAs and shows a combined-balance hint
       // when this is true. Resolved live from HL each request, with the
