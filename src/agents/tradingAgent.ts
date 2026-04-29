@@ -53,12 +53,18 @@ async function safeAgentLogCreate(args: { data: any; [k: string]: any }): Promis
       exchange: d.exchange,
     })
     try {
+      // Preserve `pair` on the fallback row so the brain feed still shows
+      // it. fetchAgentLogFeed filters on `pair: { not: null }`, so without
+      // this the stale-client fallback rows would be silently dropped from
+      // the feed entirely — the user would see a sudden gap in their
+      // brain feed every time the deploy was running an old Prisma client.
       await safeAgentLogCreate({
         data: {
           agentId: d.agentId,
           userId: d.userId,
           action: d.action,
           parsedAction: d.parsedAction ?? d.action,
+          pair: d.pair ?? null,
           executionResult: (d.executionResult ?? '') + ' | ' + summary,
         } as any,
       })
