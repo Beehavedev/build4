@@ -925,6 +925,45 @@ export async function runAgentTick(agent: Agent): Promise<void> {
       } catch (e: any) {
         console.warn(`[Agent ${agent.name}] heartbeat send failed:`, e?.message)
       }
+
+      // Brain-feed visibility for empty-scan ticks. Without this, a
+      // venue with a small focus list (notably Hyperliquid's curated
+      // 14-pair universe) leaves NO trace in the in-app brain feed
+      // during quiet markets — users can't tell if their HL toggle
+      // is even being scanned. We write one summary AgentLog row per
+      // (agent, venue) at most every 10 minutes, capped via the
+      // existing pair-notification rate limiter so the feed stays
+      // useful instead of becoming a stream of "scanned, did nothing".
+      try {
+        const { shouldSendPairNotification, markPairNotificationSent } = await import('./runner')
+        const _venueLabel =
+            agent.exchange === 'aster'       ? 'Aster'
+          : agent.exchange === 'hyperliquid' ? 'Hyperliquid'
+          : agent.exchange === 'fortytwo'    ? '42.space'
+          : (agent.exchange ?? 'venue')
+        const scanlogKey = `__scanlog__:${agent.exchange ?? 'venue'}`
+        if (shouldSendPairNotification(agent.id, scanlogKey, 'analyzed')) {
+          markPairNotificationSent(agent.id, scanlogKey, 'analyzed')
+          const topScore = scanResult?.score ?? 0
+          const topSym   = scanResult?.symbol ?? '—'
+          const reason = scanError
+            ? `[${_venueLabel}] Market data unavailable this cycle (${String(scanError).slice(0, 80)}). Will retry on the next tick.`
+            : `[${_venueLabel}] Scanned watchlist — best setup ${topSym} at ${topScore}/8, below the ${WATCHLIST_MIN_SCORE}/8 quality bar. No trade.`
+          await safeAgentLogCreate({
+            data: {
+              agentId: agent.id,
+              userId: agent.userId,
+              action: 'HOLD',
+              parsedAction: 'HOLD',
+              pair: topSym,
+              score: topScore,
+              reason,
+            },
+          })
+        }
+      } catch (e: any) {
+        console.warn(`[Agent ${agent.name}] scan-summary log failed:`, e?.message)
+      }
       return
     }
   }
