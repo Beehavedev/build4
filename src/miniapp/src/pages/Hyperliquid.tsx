@@ -1384,21 +1384,106 @@ export default function Hyperliquid() {
                 )}
               </div>
             )}
-            {(!account.onboarded || forceActivateUi) && (
+            {(!account.onboarded || forceActivateUi) && (() => {
+              // Activation gating mirrors the backend check in
+              // /api/hyperliquid/approve: HL needs ≥ $1 of equity to
+              // accept the approveAgent signature, which we can satisfy
+              // either by (a) auto-bridging ≥ $5 from Arbitrum, or (b)
+              // having ≥ $1 USDC already on HL spot when the master is
+              // in unified-account mode (spot collateralises perps).
+              // When NEITHER path is available there is no way for the
+              // tap to succeed — the server will return the "needs $5
+              // USDC" error every time and the button reappears, which
+              // users perceive as "the button is broken." We disable the
+              // button and relabel it so the next action is obvious:
+              // fund the wallet, then come back.
+              const arbReady   = (arb?.usdc ?? 0) >= 5
+              const spotReady  = !!account.unifiedAccount && (account.spotUsdc ?? 0) >= 1
+              const canActivate = arbReady || spotReady
+              const shortAddr =
+                account.walletAddress.slice(0, 6) + '…' + account.walletAddress.slice(-4)
+              return (
               <div style={{ marginTop: 12 }} data-testid="card-hl-onboard">
                 <button
-                  onClick={activate}
-                  disabled={activating}
+                  onClick={canActivate ? activate : undefined}
+                  disabled={activating || !canActivate}
                   data-testid="button-hl-activate"
+                  title={
+                    canActivate
+                      ? undefined
+                      : `Send ≥ $5 native USDC on Arbitrum to ${account.walletAddress}, then this button will activate.`
+                  }
                   style={{
                     width: '100%', padding: '12px 16px', borderRadius: 10,
-                    background: activating ? '#4c1d95' : 'linear-gradient(90deg,#7c3aed,#a78bfa)',
-                    color: '#fff', border: 'none', fontSize: 14, fontWeight: 600,
-                    cursor: activating ? 'wait' : 'pointer',
+                    background: !canActivate
+                      ? '#1f1f2e'
+                      : activating
+                        ? '#4c1d95'
+                        : 'linear-gradient(90deg,#7c3aed,#a78bfa)',
+                    color: !canActivate ? '#9ca3af' : '#fff',
+                    border: !canActivate ? '1px solid #2a2a3e' : 'none',
+                    fontSize: 14, fontWeight: 600,
+                    cursor: !canActivate
+                      ? 'not-allowed'
+                      : activating
+                        ? 'wait'
+                        : 'pointer',
                   }}
                 >
-                  {activating ? 'Activating…' : 'Activate Hyperliquid Trading'}
+                  {activating
+                    ? 'Activating…'
+                    : canActivate
+                      ? 'Activate Hyperliquid Trading'
+                      : `Add ≥ $5 USDC to Activate`}
                 </button>
+                {!canActivate && (
+                  <div
+                    data-testid="text-hl-activate-funding-hint"
+                    style={{
+                      marginTop: 8, padding: 8, borderRadius: 6,
+                      background: '#1a1530', border: '1px solid #2a2a3e',
+                      fontSize: 11, color: '#fecaca', lineHeight: 1.5,
+                    }}
+                  >
+                    Send <b>native USDC on Arbitrum One</b> (not USDC.e) to
+                    your wallet:
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6 }}>
+                      <code
+                        style={{
+                          flex: 1, color: '#e5e7eb',
+                          fontFamily: 'ui-monospace, Menlo, monospace',
+                          fontSize: 11,
+                          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                          padding: '4px 6px',
+                          background: '#0a0a12', border: '1px solid #1e1e2e', borderRadius: 4,
+                        }}
+                        title={account.walletAddress}
+                      >
+                        {shortAddr}
+                      </code>
+                      <button
+                        data-testid="button-hl-copy-address-onboard"
+                        onClick={() => navigator.clipboard?.writeText(account.walletAddress)}
+                        style={{
+                          padding: '4px 8px', background: 'transparent',
+                          border: '1px solid #2a2a3e', color: '#a78bfa',
+                          borderRadius: 4, fontSize: 10, cursor: 'pointer',
+                        }}
+                      >
+                        Copy
+                      </button>
+                    </div>
+                    <div style={{ marginTop: 6, color: '#cbd5e1' }}>
+                      You currently have <b>${(arb?.usdc ?? 0).toFixed(2)}</b> on
+                      Arbitrum and <b>${(account.spotUsdc ?? 0).toFixed(2)}</b> on
+                      Hyperliquid spot. Hyperliquid needs at least $5 USDC to
+                      seed your account before BUILD4 can authorise its agent
+                      wallet. The button will enable automatically once your
+                      balance is high enough — typically a few seconds after
+                      the transfer confirms.
+                    </div>
+                  </div>
+                )}
                 <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 8, lineHeight: 1.4 }}>
                   {/* Unified-account users with spot USDC don't need any
                       bridging — HL already treats their spot funds as perps
@@ -1460,7 +1545,8 @@ export default function Hyperliquid() {
                   </div>
                 )}
               </div>
-            )}
+              )
+            })()}
           </div>
         ) : (
           <div style={{ fontSize: 12, color: '#9ca3af' }}>No account yet.</div>
