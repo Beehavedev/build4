@@ -95,6 +95,18 @@ export function Trade() {
   // only order with builder fee attribution after the entry fills.
   const [stopLoss, setStopLoss]   = useState('')
   const [leverage, setLeverage]   = useState(5)
+  // Separate string state for the leverage input so the field can be
+  // empty / mid-edit without immediately snapping back to a number. The
+  // previous design clamped to 1..50 on every keystroke, which caused
+  // two user-visible bugs:
+  //   (a) backspacing the only digit instantly reset the value to 1,
+  //       making it impossible to clear and retype the field
+  //   (b) typing "1" while the field already held "5" produced the
+  //       intermediate string "51", which got clamped to 50 mid-keystroke
+  //       — so the user could never reach "10" by typing it
+  // We now let the user type freely (digits only) and only clamp to the
+  // valid 1..50 range on blur or submit.
+  const [leverageInput, setLeverageInput] = useState('5')
   const [mark, setMark]           = useState<MarkPrice | null>(null)
   const [positions, setPositions] = useState<AsterPosition[]>([])
   const [trades, setTrades]       = useState<AsterTrade[]>([])
@@ -692,16 +704,41 @@ export function Trade() {
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 4 }}>Leverage</div>
             <input
-              type="number"
+              // text + inputMode=numeric (instead of type=number) so we
+              // own the value as a free-form string. type=number combined
+              // with mid-keystroke clamping was the source of the
+              // "leverage box rewrites itself" bugs (see comment on
+              // leverageInput state above).
+              type="text"
               inputMode="numeric"
-              value={leverage}
+              pattern="[0-9]*"
+              value={leverageInput}
               onChange={(e) => {
-                const n = parseInt(e.target.value, 10)
-                if (Number.isFinite(n)) setLeverage(Math.min(50, Math.max(1, n)))
-                else setLeverage(1)
+                // Strip non-digits and cap to 2 chars (max valid is 50,
+                // i.e. 2 digits). This prevents a runaway "510" state
+                // ever existing without resorting to clamping during
+                // typing — the user can freely backspace, retype, etc.
+                const cleaned = e.target.value.replace(/\D/g, '').slice(0, 2)
+                setLeverageInput(cleaned)
+                // Mirror to the numeric leverage state when the input
+                // parses to a value in range, so the requiredMargin
+                // calculation and the order summary stay live as the
+                // user types. We do NOT touch leverage when the input
+                // is empty / out-of-range so that mid-edit states don't
+                // pollute downstream calculations.
+                const n = parseInt(cleaned, 10)
+                if (Number.isFinite(n) && n >= 1 && n <= 50) setLeverage(n)
               }}
-              min={1}
-              max={50}
+              onBlur={() => {
+                // On blur, snap the visible field back to the clamped
+                // numeric leverage so the user always leaves the field
+                // in a valid 1..50 state — empty / "0" / "99" all
+                // resolve to a sane value here.
+                const n = parseInt(leverageInput, 10)
+                const clamped = Number.isFinite(n) ? Math.min(50, Math.max(1, n)) : leverage
+                setLeverage(clamped)
+                setLeverageInput(String(clamped))
+              }}
               data-testid="input-leverage"
               style={{
                 width: '100%', padding: '10px', borderRadius: 8, fontSize: 14,
