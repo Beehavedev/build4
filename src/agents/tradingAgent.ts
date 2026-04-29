@@ -30,8 +30,80 @@ import { executeOpen, executeClose, isLiveVenueRejection } from './exchangeAdapt
 // tick. We retry the write with only the fields the client recognises so the
 // trade decision is still recorded — newer fields just get dropped until the
 // client is regenerated.
+// Process-wide flag: once we detect the Prisma client doesn't know about
+// the `exchange` field (deployed Prisma client is stale relative to
+// schema.prisma), every subsequent write skips the typed call entirely
+// and goes straight to raw SQL. Without this latch every brain-feed
+// write would re-throw inside Prisma — Prisma logs every failed query
+// at `prisma:error` level even when the application catches the error,
+// which would flood prod logs with one error block per tick per agent
+// per pair forever, even though the rows are actually being written.
+let _useRawSqlOnly = false
 let _staleClientWarned = false
+
+async function _writeAgentLogRaw(d: any): Promise<void> {
+  // Raw SQL fallback. Bypasses Prisma's typed-client validation entirely
+  // so the new `exchange` column (added by ensureTables on every boot)
+  // can be written even when the deployed Prisma client doesn't know
+  // about the field yet.
+  try {
+    await db.$executeRawUnsafe(
+      `INSERT INTO "AgentLog"
+         ("id", "agentId", "userId", "action", "rawResponse", "parsedAction",
+          "executionResult", "error", "pair", "price", "reason",
+          "adx", "rsi", "score", "regime", "exchange", "createdAt")
+       VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5,
+               $6, $7, $8, $9, $10,
+               $11, $12, $13, $14, $15, CURRENT_TIMESTAMP)`,
+      d.agentId,
+      d.userId,
+      d.action ?? 'HOLD',
+      d.rawResponse ?? null,
+      d.parsedAction ?? d.action ?? null,
+      d.executionResult ?? null,
+      d.error ?? null,
+      d.pair ?? null,
+      d.price ?? null,
+      d.reason ?? null,
+      d.adx ?? null,
+      d.rsi ?? null,
+      d.score ?? null,
+      d.regime ?? null,
+      d.exchange ?? null,
+    )
+  } catch (rawErr: any) {
+    // Last-resort: even raw SQL failed (column truly missing on prod
+    // because boot's ensureTables hasn't run yet). Try a minimal write
+    // without the new columns so the row at least exists.
+    try {
+      await db.$executeRawUnsafe(
+        `INSERT INTO "AgentLog"
+           ("id", "agentId", "userId", "action", "parsedAction",
+            "executionResult", "createdAt")
+         VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5, CURRENT_TIMESTAMP)`,
+        d.agentId,
+        d.userId,
+        d.action ?? 'HOLD',
+        d.parsedAction ?? d.action ?? null,
+        (d.executionResult ?? '') + ' | venue=' + (d.exchange ?? 'unknown'),
+      )
+    } catch (lastErr) {
+      console.error('[agentLog] raw SQL fallback ALSO failed:', rawErr, '→ minimal:', lastErr)
+    }
+  }
+}
+
 async function safeAgentLogCreate(args: { data: any; [k: string]: any }): Promise<void> {
+  const d = args.data || {}
+  // Stale-client latch: once we've seen the validation error once we
+  // skip Prisma entirely on every subsequent write. This is what stops
+  // the prod log spam — without the latch we'd re-trigger Prisma's
+  // `prisma:error` log line on every tick because Prisma logs failed
+  // queries even when the caller catches the exception.
+  if (_useRawSqlOnly) {
+    await _writeAgentLogRaw(d)
+    return
+  }
   try {
     await db.agentLog.create(args as any)
   } catch (err: any) {
@@ -39,11 +111,12 @@ async function safeAgentLogCreate(args: { data: any; [k: string]: any }): Promis
       err?.name === 'PrismaClientValidationError' ||
       /Unknown argument|Unknown field/i.test(String(err?.message ?? ''))
     if (!isValidation) throw err
+    _useRawSqlOnly = true
     if (!_staleClientWarned) {
-      console.warn('[agentLog] stale Prisma client detected — switching to raw SQL writes. Re-run prisma generate on the server to remove this fallback.')
+      console.warn('[agentLog] stale Prisma client detected — switching to raw SQL writes for the rest of this process. Re-run prisma generate on the server to remove this fallback.')
       _staleClientWarned = true
     }
-    const d = args.data || {}
+    await _writeAgentLogRaw(d)
     // Raw SQL fallback. Bypasses Prisma's typed-client validation entirely
     // so the new `exchange` column (added by ensureTables on every boot)
     // can be written even when the deployed Prisma client doesn't know
