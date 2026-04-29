@@ -180,6 +180,44 @@ async function fetchAgentLogFeed(where: any, limit: number, agentNameById: Map<s
       take: limit,
       include: { agent: { select: { name: true, exchange: true } } }
     } as any)
+
+    // ── Per-row venue tag, with raw-SQL backfill for stale Prisma clients.
+    //
+    // The runner writes each brain-feed row with a per-tick `exchange`
+    // value — fortytwo for 42.space scans, hyperliquid for HL ticks,
+    // aster for Aster — so the mini-app can render the right venue chip.
+    // BUT: Prisma's typed `findMany` only SELECTs columns the deployed
+    // Prisma client knows about, and on prod the client is sometimes
+    // stale relative to schema.prisma. When that happens `exchange` is
+    // missing from `entries[i]` even though the column is populated in
+    // Postgres, so the `e.exchange ?? e.agent?.exchange` fallback below
+    // would always lose to the agent's primary venue (typically aster)
+    // and a 42.space row would render with an ASTER chip — the exact
+    // bug we just shipped a fix for on the write path.
+    //
+    // To make the read bulletproof regardless of Prisma client state,
+    // we issue a parallel raw SELECT for just the `exchange` column on
+    // these row IDs and merge it in. One extra round-trip per page,
+    // O(rows) memory; trivial cost for total resilience.
+    const idList = (entries as any[]).map((e) => e.id).filter(Boolean)
+    let rawExchangeById = new Map<string, string | null>()
+    if (idList.length > 0) {
+      try {
+        const placeholders = idList.map((_, i) => `$${i + 1}`).join(', ')
+        const rows = await db.$queryRawUnsafe<Array<{ id: string; exchange: string | null }>>(
+          `SELECT "id", "exchange" FROM "AgentLog" WHERE "id" IN (${placeholders})`,
+          ...idList,
+        )
+        for (const r of rows) rawExchangeById.set(r.id, r.exchange ?? null)
+      } catch (rawErr: any) {
+        // Swallow — column may not exist yet on a brand-new deploy
+        // before ensureTables has finished its first run. Fallback
+        // logic below still produces a sensible chip from the Agent
+        // table; we just lose per-row precision until next tick.
+        console.warn('[API] feed exchange raw-select failed:', rawErr?.message)
+      }
+    }
+
     return (entries as any[]).map((e) => ({
       id: e.id,
       agentId: e.agentId,
@@ -196,18 +234,19 @@ async function fetchAgentLogFeed(where: any, limit: number, agentNameById: Map<s
       rsi: e.rsi ?? null,
       score: e.score ?? null,
       regime: e.regime ?? null,
-      // Venue tag — mini app renders a chip per venue so the user can
-      // tell at a glance which exchange (HL / Aster / 42) the agent was
-      // scanning when this brain-feed line was emitted. We PREFER the
-      // per-row `exchange` column (written by the runner with the
-      // per-tick venue) and only fall back to the Agent table's
-      // primary `exchange` for legacy rows written before this column
-      // existed — the Agent value never changes per tick, so without
-      // this preference HL/42 ticks would always render as the agent's
-      // primary venue (typically Aster), masking which venue actually
-      // ran. This was the actual bug behind "every brain-feed entry
-      // shows ASTER chip even though HL is enabled".
-      exchange: e.exchange ?? e.agent?.exchange ?? null,
+      // Venue tag — preference order:
+      //   1. Raw-SQL backfilled `exchange` column (always trustworthy
+      //      because raw SQL bypasses the typed-client schema cache).
+      //   2. Typed `e.exchange` from Prisma's SELECT — works when the
+      //      deployed Prisma client is up to date.
+      //   3. Agent's primary `exchange` — fallback for legacy rows
+      //      from before the column existed. Loses per-tick venue
+      //      precision but produces a non-null chip.
+      exchange:
+        rawExchangeById.get(e.id) ??
+        e.exchange ??
+        e.agent?.exchange ??
+        null,
       createdAt: e.createdAt
     }))
   } catch (err: any) {
