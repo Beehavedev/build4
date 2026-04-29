@@ -1084,12 +1084,21 @@ export async function runAgentTick(agent: Agent): Promise<void> {
           : 'RANGING'
         snapshot = { price: _price, rsi: _rsi, adx: _adx, regime: _regime }
       } else if (momentumOhlcv) {
-        // New-listing snapshot — no usable RSI/ADX, just price + regime tag.
-        const closes = momentumOhlcv['1m'].close
+        // New-listing snapshot. Standard 15m/1h indicators don't exist
+        // here (the listing is too young for 14×15m = ~3.5h of history),
+        // but the 5m series often has enough samples a few hours in to
+        // give a real RSI/ADX read. Compute them when we have ≥15 5m
+        // candles (RSI(14) needs 15, ADX(14) needs 2*period+1=29 — fall
+        // back to 0 below 29 for ADX so we don't print a bogus reading).
+        const closes5m = momentumOhlcv['5m'].close
+        const closes1m = momentumOhlcv['1m'].close
+        const _price = closes1m[closes1m.length - 1] ?? closes5m[closes5m.length - 1]
+        const _rsi = closes5m.length >= 15 ? calculateRSI(closes5m, 14) : 0
+        const _adx = momentumOhlcv['5m'].high.length >= 29 ? calculateADX(momentumOhlcv['5m'], 14) : 0
         snapshot = {
-          price: closes[closes.length - 1],
-          rsi: 0,
-          adx: 0,
+          price: _price,
+          rsi: _rsi,
+          adx: _adx,
           regime: 'NEW_LISTING'
         }
       }

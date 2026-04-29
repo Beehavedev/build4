@@ -680,7 +680,11 @@ export async function getUserTrades(
     if (opts.startTime) params.startTime = opts.startTime
     const res = await signedGET('/fapi/v3/userTrades', params, creds)
     if (!Array.isArray(res.data)) return []
-    return (res.data as any[]).map((t: any) => ({
+    // Aster's /userTrades returns oldest-first. Every consumer wants
+    // newest-first ("Recent fills" with the latest fill on top), so we
+    // sort DESC at the source — single fix versus repeating it in every
+    // mini-app + API caller.
+    const mapped = (res.data as any[]).map((t: any) => ({
       symbol: t.symbol,
       side: t.side,
       positionSide: t.positionSide ?? 'BOTH',
@@ -693,6 +697,7 @@ export async function getUserTrades(
       time: Number(t.time),
       orderId: Number(t.orderId)
     }))
+    return mapped.sort((a, b) => b.time - a.time)
   } catch (e) {
     console.warn('[Aster] getUserTrades failed:', (e as Error).message)
     return []

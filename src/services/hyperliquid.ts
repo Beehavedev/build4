@@ -545,7 +545,11 @@ function normalizeFill(f: any): HlFillRow {
 export async function getUserFills(userAddress: string): Promise<HlFillRow[]> {
   try {
     const fills = await infoClient.userFills({ user: userAddress as `0x${string}` })
-    return (fills ?? []).map(normalizeFill)
+    // Sort newest-first defensively. HL's `userFills` is documented as
+    // newest-first but every consumer (Recent fills panel, feed merge,
+    // PnL audits) expects DESC, so we enforce it here in one place
+    // rather than scattering `.sort(b.time-a.time)` across every caller.
+    return (fills ?? []).map(normalizeFill).sort((a, b) => b.time - a.time)
   } catch (err: any) {
     console.warn('[HL] getUserFills failed:', userAddress, err?.message)
     return []
@@ -560,7 +564,7 @@ export async function getUserFills(userAddress: string): Promise<HlFillRow[]> {
  */
 export async function getUserFillsStrict(userAddress: string): Promise<HlFillRow[]> {
   const fills = await infoClient.userFills({ user: userAddress as `0x${string}` })
-  return (fills ?? []).map(normalizeFill)
+  return (fills ?? []).map(normalizeFill).sort((a, b) => b.time - a.time)
 }
 
 /**
