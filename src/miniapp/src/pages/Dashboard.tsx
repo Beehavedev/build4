@@ -252,9 +252,18 @@ export default function Dashboard({ userId, onNavigate }: DashboardProps) {
             {hlOnboarded ? 'manual & AI' : 'not activated'}
           </div>
           <div style={{ marginTop: 6 }}>
-            <span className={`pill ${hlValue > 0 ? 'pill-live' : hlOnboarded ? 'pill-muted' : 'pill-amber'}`}>
-              <span className={hlValue > 0 ? 'dot-live' : 'dot-muted'} />
-              {hlValue > 0 ? 'LIVE' : hlOnboarded ? 'idle' : 'fund to start'}
+            {/* Same onboarded-first logic as the Aster pill above. The
+                previous version drove "fund to start" off `!hlOnboarded`,
+                which contradicted the sub-line ("not activated") and let
+                the pill claim "idle" for users who had finished agent
+                approval but had no funds. Now: not onboarded → "not
+                activated"; onboarded but empty → "fund to start";
+                onboarded with funds → "LIVE". */}
+            <span className={`pill ${hlOnboarded && hlValue > 0 ? 'pill-live' : hlOnboarded ? 'pill-muted' : 'pill-amber'}`}>
+              <span className={hlOnboarded && hlValue > 0 ? 'dot-live' : 'dot-muted'} />
+              {hlOnboarded
+                ? (hlValue > 0 ? 'LIVE' : 'fund to start')
+                : 'not activated'}
             </span>
           </div>
         </div>
