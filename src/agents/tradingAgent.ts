@@ -1109,8 +1109,17 @@ export async function runAgentTick(agent: Agent): Promise<void> {
         const _bot = getBot()
         const _u = await db.user.findUnique({ where: { id: agent.userId }, select: { telegramId: true } })
         const _tg = _u?.telegramId?.toString() ?? null
-        if (_bot && _tg && shouldSendPairNotification(agent.id, '__scan__', 'heartbeat')) {
-          markPairNotificationSent(agent.id, '__scan__', 'heartbeat')
+        // Heartbeat key MUST be venue-scoped. Without `:${agent.exchange}`,
+        // Aster always ticks first per agent (runner expansion order is
+        // aster → hyperliquid → fortytwo) and claims the global '__scan__'
+        // throttle slot for the next 30 minutes — so HL's heartbeat is
+        // always silently rate-limited away and the user only ever sees
+        // Aster heartbeats in chat. Per-venue keying gives each venue its
+        // own slot, exactly like the per-pair `:${pair}` keys do for
+        // analyzed/skipped notifications.
+        const heartbeatKey = `__scan__:${agent.exchange ?? 'venue'}`
+        if (_bot && _tg && shouldSendPairNotification(agent.id, heartbeatKey, 'heartbeat')) {
+          markPairNotificationSent(agent.id, heartbeatKey, 'heartbeat')
           const _venue =
               agent.exchange === 'aster'       ? 'Aster'
             : agent.exchange === 'hyperliquid' ? 'Hyperliquid'
