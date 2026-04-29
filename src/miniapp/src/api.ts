@@ -142,6 +142,10 @@ export interface FeedEntry {
   rsi: number | null;
   score: number | null;
   regime: string | null;
+  // Which venue this row belongs to: 'aster' | 'hyperliquid' | 'fortytwo'
+  // (or null on legacy rows). Rendered as a coloured chip per row so the
+  // user always knows which exchange the agent was scanning.
+  exchange?: string | null;
   createdAt: string;
 }
 

@@ -157,6 +157,11 @@ type FeedEntry = {
   rsi: number | null
   score: number | null
   regime: string | null
+  // Which venue this row belongs to: 'aster' | 'hyperliquid' | 'fortytwo'
+  // (or null for rows that legitimately have no venue, e.g. legacy logs).
+  // Mini-app renders a coloured chip per venue so the user can tell at a
+  // glance which exchange a brain-feed line came from.
+  exchange: string | null
   createdAt: Date
 }
 
@@ -173,7 +178,7 @@ async function fetchAgentLogFeed(where: any, limit: number, agentNameById: Map<s
       },
       orderBy: { createdAt: 'desc' },
       take: limit,
-      include: { agent: { select: { name: true } } }
+      include: { agent: { select: { name: true, exchange: true } } }
     } as any)
     return (entries as any[]).map((e) => ({
       id: e.id,
@@ -191,6 +196,10 @@ async function fetchAgentLogFeed(where: any, limit: number, agentNameById: Map<s
       rsi: e.rsi ?? null,
       score: e.score ?? null,
       regime: e.regime ?? null,
+      // Venue tag — mini app renders a chip per venue so the user can
+      // tell at a glance which exchange (HL / Aster / 42) the agent was
+      // scanning when this brain-feed line was emitted.
+      exchange: e.agent?.exchange ?? null,
       createdAt: e.createdAt
     }))
   } catch (err: any) {
@@ -234,6 +243,7 @@ async function fetchTradeFeed(where: any, limit: number, agentNameById: Map<stri
       rsi: sig.rsi ?? null,
       score: sig.setupScore ?? sig.score ?? null,
       regime: sig.regime ?? null,
+      exchange: t.exchange ?? null,
       createdAt: t.openedAt
     })
     if (t.closedAt) {
@@ -251,6 +261,7 @@ async function fetchTradeFeed(where: any, limit: number, agentNameById: Map<stri
         rsi: null,
         score: null,
         regime: null,
+        exchange: t.exchange ?? null,
         createdAt: t.closedAt
       })
     }
@@ -287,6 +298,7 @@ async function fetchAsterTradeFeed(userId: string, limit: number): Promise<FeedE
         rsi: null,
         score: null,
         regime: null,
+        exchange: 'aster',
         createdAt: new Date(f.time)
       }))
   } catch (e) {

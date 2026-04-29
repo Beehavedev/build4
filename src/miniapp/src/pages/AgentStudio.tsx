@@ -248,6 +248,17 @@ function actionMeta(a: string): { emoji: string; label: string; color: string } 
   return { emoji: '🤔', label: 'HOLD', color: '#64748b' }
 }
 
+// Map a feed row's `exchange` to a compact venue chip (label + colour)
+// shown next to the agent name. Returns null when the venue is unknown
+// or absent so the chip is simply omitted rather than rendered blank.
+export function venueChip(ex: string | null | undefined): { label: string; color: string } | null {
+  const x = (ex ?? '').toLowerCase()
+  if (x === 'aster')       return { label: 'ASTER', color: '#f97316' }
+  if (x === 'hyperliquid') return { label: 'HL',    color: '#22d3ee' }
+  if (x === 'fortytwo')    return { label: '42',    color: '#a78bfa' }
+  return null
+}
+
 // Map an agent's `exchange` value to a known venue. Lowercased defensively
 // so a stray "Aster"/"HyperLiquid" doesn't fall through to "other".
 function venueOf(exchange: string | undefined): VenueId | 'other' {
@@ -1074,8 +1085,19 @@ export default function AgentStudio(_props: AgentStudioProps) {
             data-testid={`feed-${e.id}`}
             style={{ marginBottom: 8, borderLeft: `3px solid ${meta.color}`, padding: 12 }}
           >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-              <div style={{ fontSize: 13, fontWeight: 600 }}>🤖 {e.agentName}</div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 600 }}>🤖 {e.agentName}</div>
+                {(() => {
+                  const v = venueChip(e.exchange)
+                  return v ? (
+                    <span style={{
+                      fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 3,
+                      background: `${v.color}22`, color: v.color, letterSpacing: 0.3,
+                    }} data-testid={`feed-venue-${e.id}`}>{v.label}</span>
+                  ) : null
+                })()}
+              </div>
               <div style={{ fontSize: 11, color: '#64748b' }}>{timeAgo(e.createdAt)}</div>
             </div>
             <div style={{ marginTop: 6, fontSize: 13 }}>
@@ -1084,14 +1106,24 @@ export default function AgentStudio(_props: AgentStudioProps) {
               {e.pair ? ` — ${e.pair}` : ''}
               {e.price != null ? ` @ $${e.price.toFixed(e.price > 100 ? 2 : 4)}` : ''}
             </div>
-            {(e.regime || e.adx != null || e.rsi != null || e.score != null) && (
-              <div style={{ marginTop: 4, fontSize: 11, color: '#94a3b8' }}>
-                {e.regime ? `${e.regime}` : ''}
-                {e.adx != null ? ` · ADX ${e.adx.toFixed(1)}` : ''}
-                {e.rsi != null ? ` · RSI ${e.rsi.toFixed(0)}` : ''}
-                {e.score != null ? ` · Score ${e.score}/10` : ''}
-              </div>
-            )}
+            {(() => {
+              // Hide indicator chips when ADX/RSI are 0 — they're set to 0
+              // as a sentinel for "no usable history" (fresh listings, first
+              // candles), not as a real reading. Showing "ADX 0.0 · RSI 0"
+              // looked broken; we just omit them in that case.
+              const hasAdx = e.adx != null && e.adx > 0
+              const hasRsi = e.rsi != null && e.rsi > 0
+              const hasScore = e.score != null
+              if (!e.regime && !hasAdx && !hasRsi && !hasScore) return null
+              return (
+                <div style={{ marginTop: 4, fontSize: 11, color: '#94a3b8' }}>
+                  {e.regime ? `${e.regime}` : ''}
+                  {hasAdx ? ` · ADX ${e.adx!.toFixed(1)}` : ''}
+                  {hasRsi ? ` · RSI ${e.rsi!.toFixed(0)}` : ''}
+                  {hasScore ? ` · Score ${e.score}/10` : ''}
+                </div>
+              )
+            })()}
             {e.reason && (
               <div
                 style={{ marginTop: 6, fontSize: 12, color: '#cbd5e1', fontStyle: 'italic' }}

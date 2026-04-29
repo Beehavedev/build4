@@ -4,6 +4,7 @@ import {
   updateAgentSettings,
   type AgentData, type FeedEntry
 } from "../api";
+import { venueChip } from "./AgentStudio";
 
 function timeAgo(iso: string): string {
   const ms = Date.now() - new Date(iso).getTime();
@@ -245,8 +246,19 @@ export function Agents() {
               data-testid={`feed-${e.id}`}
               style={{ borderLeft: `3px solid ${accent}`, marginBottom: "8px" }}
             >
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-                <div style={{ fontWeight: 600 }}>🤖 {e.agentName}</div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+                  <div style={{ fontWeight: 600 }}>🤖 {e.agentName}</div>
+                  {(() => {
+                    const v = venueChip(e.exchange)
+                    return v ? (
+                      <span style={{
+                        fontSize: 9, fontWeight: 700, padding: "1px 6px", borderRadius: 3,
+                        background: `${v.color}22`, color: v.color, letterSpacing: 0.3,
+                      }} data-testid={`feed-venue-${e.id}`}>{v.label}</span>
+                    ) : null
+                  })()}
+                </div>
                 <div style={{ fontSize: "11px", color: "var(--text-muted)" }}>{timeAgo(e.createdAt)}</div>
               </div>
               <div style={{ marginTop: "6px", fontSize: "14px" }}>
@@ -262,12 +274,24 @@ export function Agents() {
                   {skipIntent}
                 </div>
               )}
-              <div style={{ marginTop: "4px", fontSize: "12px", color: "var(--text-secondary)" }}>
-                {e.regime ? `${e.regime}` : ""}
-                {e.adx !== null ? ` | ADX ${e.adx.toFixed(1)}` : ""}
-                {e.rsi !== null ? ` | RSI ${e.rsi.toFixed(0)}` : ""}
-                {e.score !== null ? ` | Score ${e.score}/10` : ""}
-              </div>
+              {(() => {
+                // Treat ADX/RSI of 0 as "no usable history" (the
+                // new-listing fast path emits 0 as a sentinel) and hide
+                // those chips, otherwise the feed reads "ADX 0.0 | RSI 0"
+                // which looks broken.
+                const hasAdx = e.adx !== null && e.adx > 0
+                const hasRsi = e.rsi !== null && e.rsi > 0
+                const hasScore = e.score !== null
+                if (!e.regime && !hasAdx && !hasRsi && !hasScore) return null
+                return (
+                  <div style={{ marginTop: "4px", fontSize: "12px", color: "var(--text-secondary)" }}>
+                    {e.regime ? `${e.regime}` : ""}
+                    {hasAdx ? ` | ADX ${e.adx!.toFixed(1)}` : ""}
+                    {hasRsi ? ` | RSI ${e.rsi!.toFixed(0)}` : ""}
+                    {hasScore ? ` | Score ${e.score}/10` : ""}
+                  </div>
+                )
+              })()}
               {e.reason && (
                 <div
                   style={{ marginTop: "6px", fontSize: "12px", color: "var(--text-muted)", fontStyle: "italic" }}
