@@ -368,6 +368,95 @@ app.get('/api/agents/:id/feed', requireTgUser, async (req, res) => {
   }
 })
 
+// GET /api/agents/:id/positions  — open positions attributed to this agent
+//
+// Joins DB Trade rows (status='open' for this agent) with live Aster
+// positions for the user's wallet, so each row carries the same live
+// markPrice and unrealized PnL that the Trade page shows. Without this
+// endpoint, Agent Studio had no way to surface what each agent is
+// currently holding (or how much it is up/down right now), which is
+// exactly the data the user needs to trust the agent. We deliberately
+// scope to the agent's own DB rows — not just "any live position
+// matching this pair/side" — so two agents trading the same pair don't
+// each claim the same exposure.
+app.get('/api/agents/:id/positions', requireTgUser, async (req, res) => {
+  try {
+    const user = (req as any).user
+    const agent = await db.agent.findFirst({
+      where: { id: String(req.params.id), userId: user.id },
+      select: { id: true, name: true, exchange: true }
+    })
+    if (!agent) return res.status(404).json({ error: 'Agent not found' })
+
+    const openTrades = await db.trade.findMany({
+      where: { agentId: agent.id, status: 'open' },
+      orderBy: { openedAt: 'desc' }
+    })
+
+    // Best-effort live overlay from Aster. If the user hasn't onboarded
+    // yet, or the Aster call fails, we still return the DB rows — the
+    // UI just shows entry/size without a live mark instead of erroring.
+    let livePositions: Array<{ symbol: string; side: string; markPrice: number; unrealizedPnl?: number; size?: number }> = []
+    if (user.asterOnboarded) {
+      try {
+        const wallet = await db.wallet.findFirst({ where: { userId: user.id, isActive: true } })
+        if (wallet) {
+          const { resolveAgentCreds, getPositions } = await import('./services/aster')
+          const creds = await resolveAgentCreds(user, wallet.address)
+          if (creds) {
+            const raw = await getPositions(creds)
+            livePositions = raw.map((p: any) => ({
+              symbol: p.symbol,
+              side: p.side,
+              markPrice: Number(p.markPrice),
+              unrealizedPnl: typeof p.unrealizedPnl === 'number' ? p.unrealizedPnl : undefined,
+              size: typeof p.size === 'number' ? p.size : undefined,
+            }))
+          }
+        }
+      } catch (e: any) {
+        // Non-fatal — return DB rows without live overlay
+        console.warn(`[API] /agents/${agent.id}/positions live overlay failed: ${e?.message ?? e}`)
+      }
+    }
+
+    const positions = openTrades.map((t) => {
+      const live = livePositions.find(
+        (lp) => lp.symbol.toUpperCase() === t.pair.toUpperCase() && lp.side === t.side
+      )
+      const markPrice = live?.markPrice ?? null
+      // Prefer Aster's authoritative `unrealizedPnl` when present — it
+      // already accounts for any funding adjustments / fees Aster has
+      // applied. Fall back to the standard `(mark - entry) * size * dir`
+      // formula (matches Trade.tsx) so users still see an estimate when
+      // the venue field is missing.
+      const dir = t.side === 'LONG' ? 1 : -1
+      const livePnl =
+        live?.unrealizedPnl != null
+          ? live.unrealizedPnl
+          : (markPrice != null ? (markPrice - t.entryPrice) * t.size * dir : null)
+      return {
+        id: t.id,
+        pair: t.pair,
+        side: t.side,
+        size: t.size,
+        leverage: t.leverage,
+        entryPrice: t.entryPrice,
+        exchange: t.exchange,
+        openedAt: t.openedAt,
+        markPrice,
+        unrealizedPnl: livePnl,
+        liveOnVenue: !!live,
+      }
+    })
+
+    res.json({ positions })
+  } catch (err: any) {
+    console.error('[API] /agents/:id/positions failed:', err?.message ?? err)
+    res.status(500).json({ error: 'Internal error' })
+  }
+})
+
 app.get('/api/me/portfolio', requireTgUser, async (req, res) => {
   try {
     const user = (req as any).user
