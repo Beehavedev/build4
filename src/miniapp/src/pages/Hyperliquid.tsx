@@ -7,10 +7,50 @@
 // onboarding flow (handled in a follow-up — needs approveAgent on-chain
 // signature with the user's BSC PK).
 // ─────────────────────────────────────────────────────────────────────────────
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { apiFetch } from '../api'
 import { NativeChart } from '../components/NativeChart'
 import { MarketTicker, fmtUsd, fmtUsdRaw } from '../components/MarketTicker'
+
+// Copy text to the clipboard, with a fallback for environments where
+// `navigator.clipboard` isn't available — most notably Telegram's
+// in-app WebView, which often blocks the modern Clipboard API in iframes
+// (the silent failure mode of `navigator.clipboard?.writeText(...)` was
+// the actual reason the wallet-address Copy buttons did nothing in chat).
+// Returns `true` when SOMETHING was written to the clipboard, `false`
+// when even the legacy `execCommand('copy')` failed — letting callers
+// distinguish "copied" from "we tried, browser refused".
+async function copyToClipboard(text: string): Promise<boolean> {
+  // Modern path. Wrapped in try/catch because in some embedded WebViews
+  // the property exists but throws "NotAllowedError" on actual write.
+  try {
+    if (navigator?.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text)
+      return true
+    }
+  } catch { /* fall through to execCommand */ }
+  // Legacy path — works in Telegram's WebView via a hidden textarea.
+  // Position offscreen but in viewport (off-DOM-flow `position: fixed`
+  // with `top:0, left:0` keeps the focus selection valid; some browsers
+  // skip the copy if the element is `display:none` or far off-screen).
+  try {
+    const ta = document.createElement('textarea')
+    ta.value = text
+    ta.setAttribute('readonly', '')
+    ta.style.position = 'fixed'
+    ta.style.top = '0'
+    ta.style.left = '0'
+    ta.style.opacity = '0'
+    document.body.appendChild(ta)
+    ta.focus()
+    ta.select()
+    const ok = document.execCommand('copy')
+    document.body.removeChild(ta)
+    return ok
+  } catch {
+    return false
+  }
+}
 
 const COINS = ['BTC', 'ETH', 'SOL', 'BNB', 'HYPE', 'DOGE']
 
@@ -145,6 +185,30 @@ export default function Hyperliquid() {
   // Set when the backend says the user isn't onboarded but our cached
   // account state still says they are (server reboot, DB reset, agent
   // creds invalidated, etc). When true, we override the gating so the
+  // Sticky-onboarded ref. Once we've EVER seen account.onboarded === true
+  // in this session, never let a transient `false` from the server flip
+  // the activate UI back on. The HL info endpoint is intermittently slow
+  // and can return `accountValue:0, spotUsdc:0` on a flaky tick, which
+  // combined with a brief flash of `onboarded:false` (e.g. during a DB
+  // self-heal write race) used to cause the activate panel to mount,
+  // scroll the page, then unmount the next second — the "page resets and
+  // scrolls up every second somehow flickering" symptom the user reported.
+  const wasEverOnboardedRef = useRef(false)
+  // Counter for consecutive all-zero polls. The transient-zero guard
+  // suppresses these to avoid balance flicker, but if the user genuinely
+  // emptied their account we must eventually accept the zero — otherwise
+  // the cached positive balance stays on screen forever. After
+  // ZERO_POLL_ACCEPT_THRESHOLD consecutive zero polls we stop suppressing
+  // and let the real (zero) value through.
+  const consecutiveZeroPollsRef = useRef(0)
+  // Transient toast under the wallet-address Copy buttons so the user
+  // gets clear "Copied!" feedback on success — without it, a successful
+  // copy looks identical to a failed one in the Telegram WebView.
+  const [copyToast, setCopyToast] = useState<string | null>(null)
+  const flashCopyToast = (msg: string) => {
+    setCopyToast(msg)
+    setTimeout(() => setCopyToast(null), 1500)
+  }
   // purple "Activate Hyperliquid Trading" button shows even though
   // account.onboarded === true. Without this, users get permanently
   // stuck staring at an order form that always rejects with no way out.
@@ -491,7 +555,52 @@ export default function Hyperliquid() {
     setError(null)
     try {
       const acc = await apiFetch<AccountState>('/api/hyperliquid/account')
-      setAccount(acc)
+      // Sticky-onboarded latch: once true, never let a flaky tick revert
+      // it. The HL info endpoint occasionally returns onboarded:false on
+      // a transient DB read race even for users with a fully-funded HL
+      // account — the unmount/remount of the activate panel was the
+      // source of the "page resets and scrolls up every second" bug.
+      if (acc.onboarded) wasEverOnboardedRef.current = true
+      setAccount(prev => {
+        // Transient-zero guard. The HL info call sometimes returns
+        // accountValue:0, spotUsdc:0 on a slow / partially-failed
+        // upstream read even when the user genuinely has funds. Without
+        // this guard the balance card flickers $XX → $0 → $XX every
+        // poll cycle — exactly the "balance is sometimes seen, then
+        // disappears" symptom the user reported. We only suppress the
+        // update when we already had a positive reading, so a real
+        // "user moved everything out" zero still propagates eventually
+        // (next non-zero poll is a no-op, and on app reload the cache
+        // is fresh).
+        const ZERO_POLL_ACCEPT_THRESHOLD = 3 // ~15s at 5s poll interval
+        const incomingIsAllZero =
+          acc.accountValue === 0 &&
+          acc.spotUsdc === 0 &&
+          (acc.positions?.length ?? 0) === 0
+        const prevHadFunds =
+          prev != null &&
+          (prev.accountValue > 0 || prev.spotUsdc > 0 || (prev.positions?.length ?? 0) > 0)
+        if (incomingIsAllZero) {
+          consecutiveZeroPollsRef.current += 1
+        } else {
+          consecutiveZeroPollsRef.current = 0
+        }
+        // Suppress only short bursts of zeros — after N in a row we
+        // accept that the user really did empty the account, otherwise
+        // a stale positive balance would stay on screen forever.
+        const transientZero =
+          prevHadFunds &&
+          incomingIsAllZero &&
+          consecutiveZeroPollsRef.current < ZERO_POLL_ACCEPT_THRESHOLD
+        if (transientZero) {
+          // Preserve the balance + positions but still update onboarded
+          // and walletAddress in case the server self-healed those.
+          return { ...prev, onboarded: acc.onboarded || prev.onboarded, walletAddress: acc.walletAddress }
+        }
+        // Apply the sticky-onboarded latch on every state write so a
+        // brief server-side `false` can never demote the cached `true`.
+        return wasEverOnboardedRef.current ? { ...acc, onboarded: true } : acc
+      })
       // Only fetch fills after we know the account exists; pulling without
       // an active wallet would just produce a confusing 404 in the panel.
       if (acc.onboarded) loadFills()
@@ -518,13 +627,25 @@ export default function Hyperliquid() {
   }
 
   // Three-tier polling so the screen feels truly "live":
-  //   - load() (account + all mids + arbitrum): every 2s — picks up new
-  //     positions, balance changes, leverage adjustments quickly
+  //   - load() (account + all mids + arbitrum): every 5s — picks up new
+  //     positions, balance changes, leverage adjustments. PREVIOUSLY 1s,
+  //     which caused two visible bugs:
+  //       (a) the activate panel mounted/unmounted on every transient
+  //           HL info zero, scrolling the page back to the top each
+  //           time → "page resets and scrolls up every second somehow
+  //           flickering" symptom the user reported
+  //       (b) it amplified the chance of a flaky read landing in any
+  //           given second window, so the balance card visibly toggled
+  //           between the real value and $0 → "balance is sometimes
+  //           seen, then disappears"
+  //     5s is fast enough that funding events, position opens, and
+  //     leverage changes still feel instant; the headline mark-price
+  //     and per-position PnL polls below stay at 1s for live ticks.
   //   - selected-coin mid: every 1s — keeps the headline price next to
   //     the order ticket alive while sizing
   //   - per-position mark prices: every 1s — so PnL on every open
   //     position ticks in real time
-  useEffect(() => { load(); const t = setInterval(load, 1000); return () => clearInterval(t) }, [])
+  useEffect(() => { load(); const t = setInterval(load, 5000); return () => clearInterval(t) }, [])
   useEffect(() => {
     let cancelled = false
     const poll = async () => {
@@ -580,6 +701,25 @@ export default function Hyperliquid() {
 
   return (
     <div style={{ paddingTop: 20 }} data-testid="page-hyperliquid">
+      {/* Top-fixed Copy toast. Telegram's WebView can't show OS-level
+          clipboard confirmations, so we paint our own. Pinned to the top
+          so the user sees it even after a copy fired from the activate
+          card lower on the page. Auto-dismisses in 1.5s via flashCopyToast. */}
+      {copyToast && (
+        <div
+          data-testid="text-hl-copy-toast"
+          style={{
+            position: 'fixed', top: 12, left: '50%', transform: 'translateX(-50%)',
+            zIndex: 9999, padding: '8px 14px', borderRadius: 8,
+            background: copyToast.startsWith('Copied') ? '#064e3b' : '#7f1d1d',
+            color: copyToast.startsWith('Copied') ? '#a7f3d0' : '#fecaca',
+            fontSize: 12, fontWeight: 600, maxWidth: 320, textAlign: 'center',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
+          }}
+        >
+          {copyToast}
+        </div>
+      )}
       <div style={{ marginBottom: 14 }}>
         <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.5px' }}>Hyperliquid</div>
         <div style={{ fontSize: 12, color: 'var(--text-secondary, #9ca3af)', marginTop: 2 }}>
@@ -1202,7 +1342,10 @@ export default function Hyperliquid() {
               </code>
               <button
                 data-testid="button-hl-copy-address"
-                onClick={() => navigator.clipboard?.writeText(account.walletAddress)}
+                onClick={async () => {
+                  const ok = await copyToClipboard(account.walletAddress)
+                  flashCopyToast(ok ? 'Copied!' : 'Copy blocked — tap & hold the address to copy manually.')
+                }}
                 style={{
                   padding: '2px 6px', background: 'transparent',
                   border: '1px solid #1e1e2e', color: '#a78bfa',
@@ -1463,7 +1606,10 @@ export default function Hyperliquid() {
                       </code>
                       <button
                         data-testid="button-hl-copy-address-onboard"
-                        onClick={() => navigator.clipboard?.writeText(account.walletAddress)}
+                        onClick={async () => {
+                          const ok = await copyToClipboard(account.walletAddress)
+                          flashCopyToast(ok ? 'Copied!' : 'Copy blocked — tap & hold the address to copy manually.')
+                        }}
                         style={{
                           padding: '4px 8px', background: 'transparent',
                           border: '1px solid #2a2a3e', color: '#a78bfa',
