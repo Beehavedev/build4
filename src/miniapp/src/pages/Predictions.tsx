@@ -261,16 +261,29 @@ export default function Predictions() {
   // Sell and discover the same revert again.
   const [sellLocks, setSellLocks] = useState<Record<string, string>>({})
 
+  // Single in-flight guard so the 1s polling tick can never overlap
+  // itself when /api/me/positions takes longer than a second to return.
+  // Without this, a slow BSC RPC stall would queue requests and amplify
+  // load instead of self-healing.
+  const myPosInFlight = useRef(false)
   async function loadMyPositions() {
+    if (myPosInFlight.current) return
+    myPosInFlight.current = true
     try {
       const r = await fetch('/api/me/positions', { headers: tgHeaders() })
       if (r.status === 401) { setMyPositions(null); setMyPosErr(null); return }
       if (!r.ok) throw new Error(`HTTP ${r.status}`)
       const j = await r.json()
-      setMyPositions(Array.isArray(j.positions) ? j.positions : [])
+      // Strip paper rows at the seam — user directive is "no fakes ever".
+      // Filtering once here means every downstream view (counts, badges,
+      // rows, totals) is implicitly live-only without per-call repeats.
+      const all: MyPositionRow[] = Array.isArray(j.positions) ? j.positions : []
+      setMyPositions(all.filter((p) => !p.paperTrade))
       setMyPosErr(null)
     } catch (e) {
       setMyPosErr((e as Error).message)
+    } finally {
+      myPosInFlight.current = false
     }
   }
 
@@ -434,7 +447,17 @@ export default function Predictions() {
     load()
     loadMode()
     loadMyPositions()
-    const poll = setInterval(() => { load(true); loadMyPositions() }, 30_000)
+    // 1s real-time refresh — markets, prices and the user's open
+    // positions all repull every second so 42.space (BSC on-chain)
+    // surfaces feel as live as the perps venues. Both `load()` and
+    // `loadMyPositions()` carry their own in-flight mutex so a slow
+    // BSC RPC tick cannot stack overlapping requests, and we skip
+    // polling entirely when the mini-app is hidden so we don't burn
+    // quota for a tab the user isn't looking at.
+    const poll = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
+      load(true); loadMyPositions()
+    }, 1000)
     const tick = setInterval(() => setNowTick((n) => n + 1), 1000)
     return () => { clearInterval(poll); clearInterval(tick) }
   }, [])
@@ -1136,10 +1159,9 @@ function TradeForm({
           {result.ok ? (
             <>
               <div style={{ fontWeight: 600, marginBottom: 3 }}>
-                {result.paperTrade ? 'Paper trade recorded' : 'Trade placed on-chain'}
-                {' · '}${result.usdtIn?.toFixed(2)} on {result.outcomeLabel}
+                Trade placed on-chain · ${result.usdtIn?.toFixed(2)} on {result.outcomeLabel}
               </div>
-              {!result.paperTrade && result.txHash && (
+              {result.txHash && (
                 <a
                   href={`https://bscscan.com/tx/${result.txHash}`}
                   target="_blank"
@@ -1149,11 +1171,6 @@ function TradeForm({
                            fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace' }}>
                   View on BscScan
                 </a>
-              )}
-              {result.paperTrade && (
-                <div style={{ color: '#94a3b8', fontSize: 10 }}>
-                  Toggle live mode in the Telegram /predictions command to use real USDT.
-                </div>
               )}
             </>
           ) : (
@@ -1556,9 +1573,6 @@ function MyPositionsList({
                 </div>
                 <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 3 }}>
                   {p.outcomeLabel} · ${p.usdtIn.toFixed(2)} → {tokens.toFixed(2)} tokens @ {isEstimate ? '~' : ''}{avgFillStr} avg
-                  {p.paperTrade && (
-                    <span style={{ marginLeft: 6, color: '#a855f7' }}>· paper</span>
-                  )}
                   {!p.paperTrade && p.txHashOpen && (
                     <a
                       href={`https://bscscan.com/tx/${p.txHashOpen}`}

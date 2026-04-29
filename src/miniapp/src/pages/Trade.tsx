@@ -194,10 +194,11 @@ export function Trade() {
     }
     tick()
     const id = setInterval(tick, 1000)
-    const refreshId = setInterval(loadPositions, 2000)
-    // Poll resting orders too — when a LIMIT fills it disappears from this
-    // list and reappears under positions, so users see the transition live.
-    const ordersId  = setInterval(loadOrders,    2000)
+    // 1s position + order refresh — user wants every live perp surface
+    // to feel realtime. positionRisk + openOrders are cheap endpoints
+    // and one user = one client, so polling load is bounded.
+    const refreshId = setInterval(loadPositions, 1000)
+    const ordersId  = setInterval(loadOrders,    1000)
     return () => { cancelled = true; clearInterval(id); clearInterval(refreshId); clearInterval(ordersId) }
   }, [positions.map(p => p.symbol).join(',')])
 

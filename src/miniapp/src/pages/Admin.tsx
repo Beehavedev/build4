@@ -45,7 +45,7 @@ function BroadcastPanel() {
   }
   useEffect(() => {
     refresh()
-    const t = setInterval(refresh, 2000)
+    const t = setInterval(refresh, 1000)
     return () => clearInterval(t)
   }, [])
 

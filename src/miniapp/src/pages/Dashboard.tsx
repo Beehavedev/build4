@@ -65,24 +65,25 @@ export default function Dashboard({ userId, onNavigate }: DashboardProps) {
       if (cancelled) return
       if (user?.portfolio) setPortfolio(user.portfolio)
       if (Array.isArray(agentData)) setAgents(agentData)
-      if (Array.isArray(user?.recentTrades)) setTrades(user.recentTrades)
+      // Filter out paper + mock-exchange rows so Recent Activity only
+      // ever shows real, venue-confirmed trades. Per "no fakes ever".
+      if (Array.isArray(user?.recentTrades)) {
+        setTrades(user.recentTrades.filter((t: any) => !t?.paperTrade && t?.exchange !== 'mock'))
+      }
       if (walletData) setWallet(walletData)
       setLoading(false)
     })
 
-    // Wallet refresh on a 20s cadence so the dashboard catches any
-    // delayed Hyperliquid clearinghouse read. Symptom this fixes: the
-    // first /api/me/wallet call sometimes returns hyperliquid.onboarded
-    // = false / accountValue = 0 because HL's read endpoint was slow or
-    // dropped — the user then saw "fund to start" until they navigated
-    // away and back, which forced a remount + refetch. With background
-    // polling the dashboard heals itself in place.
+    // 1s wallet refresh — every venue balance (Aster USDT, HL
+    // clearinghouse account value, BSC USDT) is re-pulled live so the
+    // dashboard always shows real-time numbers. Self-heals if the
+    // first /api/me/wallet call returned a stale Hyperliquid read.
     const id = setInterval(() => {
       if (cancelled) return
       apiFetch<WalletInfo>('/api/me/wallet')
         .then((w) => { if (!cancelled && w) setWallet(w) })
         .catch(() => { /* keep last good state */ })
-    }, 20_000)
+    }, 1000)
 
     // Also refetch whenever the tab becomes visible again — switching
     // to wallet/portfolio and back already triggers the user's mental
