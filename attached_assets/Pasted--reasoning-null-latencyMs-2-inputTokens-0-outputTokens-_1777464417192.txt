@@ -1,0 +1,50 @@
+        reasoning: null,
+        latencyMs: 2,
+        inputTokens: 0,
+        outputTokens: 0,
+        tokensUsed: 0
+      },
+      {
+        provider: "xai",
+        model: "",
+        action: null,
+        predictionTrade: null,
+        reasoning: null,
+        latencyMs: 2,
+        inputTokens: 0,
+        outputTokens: 0,
+        tokensUsed: 0
+      },
+      {
+        provider: "hyperbolic",
+        model: "meta-llama/Llama-3.3-70B-Instruct",
+        action: "HOLD",
+        predictionTrade: null,
+        reasoning: "The current regime is UPTREND with an ADX of 41.7, indicating a strong trend. However, the recent candles show a low volume and a contained price within the Bollinger Bands, suggesting a potential breakout but lacking conviction. The funding rate is also positive, indicating a market overleveraged long, which gives shorts a statistical edge. Given these factors, the setup score is 6, which is moderate, but the low volume and lack of momentum make it unfavorable to enter a trade at this time.",
+        latencyMs: 3236,
+        inputTokens: 2430,
+        outputTokens: 330,
+        tokensUsed: 2760
+      },
+      {
+        provider: "akash",
+        model: "deepseek-ai/DeepSeek-V3.2",
+        action: "HOLD",
+        predictionTrade: null,
+        reasoning: "Regime is UPTREND (ADX 41.7) with bullish alignment across 4h, 1h, and 15m EMAs. However, volume is only 5% of its 20-SMA, indicating weak conviction behind the move. MACD on 15m is negative with no cross in 3 bars, and candles show a string of small red bodies with a sharp drop to $84.56, suggesting fading momentum. The nearest resistance at $88.05 is 4.13% away, but the low volume and bearish intraday structure make the risk-reward uncertain. Without volume confirmation or a clean entry near support, the setup score is only 4, and confidence is below 0.55, so HOLD is appropriate.",
+        latencyMs: 33530,
+        inputTokens: 2476,
+Menu
+        outputTokens: 425,
+        tokensUsed: 2901
+      }
+    ],
+?   id?: String,
+?   error?: String | Null,
+?   createdAt?: DateTime
+  }
+}
+Unknown argument `exchange`. Available options are marked with ?.
+[Agent AlphaWolf] HOLD on SOLUSDT — Low volume and lack of momentum, combined with a funding rate favoring shorts, m
+[Agent BNT] HOLD on SOLUSDT — Low volume and lack of momentum, combined with a funding rate favoring shorts, m
+[Agent MineiroTrader] HOLD on SOLUSDT — Low volume and lack of momentum, combined with a funding rate favoring shorts, m

@@ -1,0 +1,87 @@
+?   id?: String,
+?   error?: String | Null,
+?   createdAt?: DateTime
+  }
+}
+Unknown argument `exchange`. Available options are marked with ?.
+[GET]
+build4-1.onrender.com/api/portfolio/1952267381 clientIP="179.84.150.215" requestID="f68f7d2b-bcd4-4a96" responseTimeMS=2042 responseBytes=180 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="179.84.150.215" requestID="a625795a-482f-4fc8" responseTimeMS=1997 responseBytes=1888 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/positions clientIP="179.84.150.215" requestID="1f994a14-1c34-439d" responseTimeMS=377 responseBytes=326 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[Agent SeanBuild4] HOLD on XCNUSDT — Low setup score and lack of clear momentum
+[Agent TENSHI] HOLD on XCNUSDT — Low setup score and lack of clear momentum
+[GET]
+build4-1.onrender.com/api/me/positions clientIP="179.84.150.215" requestID="9a49bfa7-e958-4cc7" responseTimeMS=553 responseBytes=326 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[Aster] /fapi/v3/balance USDT for 0xf7fcea645C2d0cB97F5a3a76d69E38E047EDdaf9 → marginBalance= 8.2579 crossWallet= 8.2759 crossUnPnl= -0.0180 available= 7.2406
+[GET]
+build4-1.onrender.com/api/me/positions clientIP="179.84.150.215" requestID="87a35f41-fe24-4d39" responseTimeMS=376 responseBytes=326 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="179.84.150.215" requestID="bf72c48f-d630-484f" responseTimeMS=1201 responseBytes=1877 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/portfolio/1952267381 clientIP="179.84.150.215" requestID="a8140140-24f6-432b" responseTimeMS=1781 responseBytes=180 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/positions clientIP="179.84.150.215" requestID="da6b230c-eb01-4a28" responseTimeMS=375 responseBytes=326 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[Aster] /fapi/v3/balance USDT for 0xf7fcea645C2d0cB97F5a3a76d69E38E047EDdaf9 → marginBalance= 8.2579 crossWallet= 8.2759 crossUnPnl= -0.0180 available= 7.2405
+[GET]
+build4-1.onrender.com/api/me/positions clientIP="179.84.150.215" requestID="90b34b97-085a-4623" responseTimeMS=378 responseBytes=326 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="179.84.150.215" requestID="37337fe3-9955-41e9" responseTimeMS=1211 responseBytes=1888 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/positions clientIP="179.84.150.215" requestID="c05d6b8d-0cf5-4e9c" responseTimeMS=372 responseBytes=326 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/portfolio/1952267381 clientIP="179.84.150.215" requestID="fafb4e5f-29a4-4976" responseTimeMS=1033 responseBytes=180 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/agents clientIP="179.84.150.215" requestID="f6a6d686-afc7-4bcd" responseTimeMS=566 responseBytes=1469 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/positions clientIP="179.84.150.215" requestID="360bafc2-de7f-4dfd" responseTimeMS=559 responseBytes=326 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="179.84.150.215" requestID="f56d7e07-9c81-473a" responseTimeMS=1576 responseBytes=1888 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[Aster] /fapi/v3/balance USDT for 0xf7fcea645C2d0cB97F5a3a76d69E38E047EDdaf9 → marginBalance= 8.2580 crossWallet= 8.2759 crossUnPnl= -0.0179 available= 7.2405
+[GET]
+build4-1.onrender.com/api/me/venue-permissions clientIP="179.84.150.215" requestID="c9ac73bb-9684-4536" responseTimeMS=726 responseBytes=179 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/portfolio/1952267381 clientIP="179.84.150.215" requestID="742fcde5-9e5f-4648" responseTimeMS=1384 responseBytes=180 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/feed?limit=20 clientIP="179.84.150.215" requestID="80ca783e-07a3-4aef" responseTimeMS=1575 responseBytes=1069 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/agents/cmofef3fq0iovanfhsc29yec0/positions clientIP="179.84.150.215" requestID="d5db2b3b-f021-4764" responseTimeMS=1382 responseBytes=179 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/feed?limit=20 clientIP="179.84.150.215" requestID="804b7e70-6fdf-4fbb" responseTimeMS=1466 responseBytes=1069 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/agents/cmogfxtsx04lz7fc795xy84ql/positions clientIP="179.84.150.215" requestID="3e3be617-dfed-4373" responseTimeMS=1364 responseBytes=459 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/agents/cmofef3fq0iovanfhsc29yec0/positions clientIP="179.84.150.215" requestID="00f25e5b-4209-4696" responseTimeMS=1215 responseBytes=179 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/agents/cmogfxtsx04lz7fc795xy84ql/positions clientIP="179.84.150.215" requestID="fdedf9bf-18a0-4e50" responseTimeMS=1581 responseBytes=467 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/feed?limit=20 clientIP="179.84.150.215" requestID="cb70a48f-0e05-4962" responseTimeMS=1376 responseBytes=1069 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/agents/cmofef3fq0iovanfhsc29yec0/positions clientIP="179.84.150.215" requestID="0958a2d1-3949-47e5" responseTimeMS=1008 responseBytes=179 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/feed?limit=20 clientIP="179.84.150.215" requestID="2baa2984-e477-4b46" responseTimeMS=1293 responseBytes=181 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/agents/cmofef3fq0iovanfhsc29yec0/positions clientIP="179.84.150.215" requestID="7d360130-d7e4-4cd0" responseTimeMS=1011 responseBytes=179 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/agents/cmogfxtsx04lz7fc795xy84ql/positions clientIP="179.84.150.215" requestID="c7fd2c30-3edc-4ff1" responseTimeMS=1750 responseBytes=460 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/agents/cmogfxtsx04lz7fc795xy84ql/positions clientIP="179.84.150.215" requestID="e1476e0e-0092-4883" responseTimeMS=1561 responseBytes=460 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/feed?limit=20 clientIP="179.84.150.215" requestID="d0da9081-b0e1-4466" responseTimeMS=1293 responseBytes=181 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/agents/cmogfxtsx04lz7fc795xy84ql/positions clientIP="179.84.150.215" requestID="c55c695e-4c02-4545" responseTimeMS=1270 responseBytes=460 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/feed?limit=20 clientIP="179.84.150.215" requestID="8f029e43-830b-4f84" responseTimeMS=1268 responseBytes=181 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/agents/cmofef3fq0iovanfhsc29yec0/positions clientIP="179.84.150.215" requestID="ab698828-1951-4c85" responseTimeMS=1379 responseBytes=179 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/agents/cmogfxtsx04lz7fc795xy84ql/positions clientIP="179.84.150.215" requestID="a3b076f3-90a6-43e9" responseTimeMS=1014 responseBytes=179 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/agents/cmofef3fq0iovanfhsc29yec0/positions clientIP="179.84.150.215" requestID="f0810394-2e12-416f" responseTimeMS=1026 responseBytes=179 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/feed?limit=20 clientIP="179.84.150.215" requestID="aad4ec9e-50b6-488f" responseTimeMS=1303 responseBytes=181 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/agents/cmofef3fq0iovanfhsc29yec0/positions clientIP="179.84.150.215" requestID="f79f5063-95e2-4e25" responseTimeMS=1030 responseBytes=179 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/agents/cmogfxtsx04lz7fc795xy84ql/positions clientIP="179.84.150.215" requestID="0b2d07b4-2c3d-482b" responseTimeMS=1024 responseBytes=179 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
