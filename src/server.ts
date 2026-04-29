@@ -198,8 +198,16 @@ async function fetchAgentLogFeed(where: any, limit: number, agentNameById: Map<s
       regime: e.regime ?? null,
       // Venue tag — mini app renders a chip per venue so the user can
       // tell at a glance which exchange (HL / Aster / 42) the agent was
-      // scanning when this brain-feed line was emitted.
-      exchange: e.agent?.exchange ?? null,
+      // scanning when this brain-feed line was emitted. We PREFER the
+      // per-row `exchange` column (written by the runner with the
+      // per-tick venue) and only fall back to the Agent table's
+      // primary `exchange` for legacy rows written before this column
+      // existed — the Agent value never changes per tick, so without
+      // this preference HL/42 ticks would always render as the agent's
+      // primary venue (typically Aster), masking which venue actually
+      // ran. This was the actual bug behind "every brain-feed entry
+      // shows ASTER chip even though HL is enabled".
+      exchange: e.exchange ?? e.agent?.exchange ?? null,
       createdAt: e.createdAt
     }))
   } catch (err: any) {

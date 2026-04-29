@@ -355,6 +355,16 @@ model AgentLog {
   rsi             Float?
   score           Int?
   regime          String?
+  // Which venue this log entry belongs to ('aster' | 'hyperliquid' |
+  // 'fortytwo'). The runner expands each agent into per-venue tick
+  // units and overrides `agent.exchange` on a CLONE per tick — so the
+  // Agent table's `exchange` column does NOT reflect which venue was
+  // actually being scanned when an HL or 42 tick wrote a log row. This
+  // column captures the per-tick venue at write time so the brain feed
+  // can render the correct chip (HL / Aster / 42). Null on legacy rows
+  // written before this column existed (the feed falls back to
+  // agent.exchange in that case).
+  exchange        String?
   // Per-provider swarm telemetry captured at decision time. Shape:
   // [{ provider, model, action, predictionTrade?, reasoning, latencyMs, inputTokens, outputTokens, tokensUsed }]
   // (inputTokens/outputTokens added in Task #24; older rows only carry tokensUsed.)
