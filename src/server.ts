@@ -2637,6 +2637,27 @@ app.get('/api/hyperliquid/account', requireTgUser, async (req, res) => {
 // end-to-end. HL emits a separate fill row per match (a single market
 // order walking the book yields N fills with the same `oid`/`tid`),
 // which we surface as-is — the UI dedupes presentationally if needed.
+//
+// ── Caching & 429 mitigation ─────────────────────────────────────────────
+// HL's /info endpoint is rate-limited per IP and Render gives us a single
+// shared egress IP for all users. With the mini-app polling every 5s plus
+// other concurrent users, the Recent Fills card was flashing "429 Too Many
+// Requests - null" intermittently.
+//
+// We cache the raw fills array per wallet address with a 15s TTL and
+// dedupe concurrent in-flight fetches into a single upstream call. On any
+// HL error (including 429), if we have *any* prior data — even past TTL —
+// we serve it with `cached:true` instead of bubbling a 5xx, so the UI can
+// keep showing the user's last-known fills without a red banner.
+const HL_FILLS_TTL_MS = 15_000
+const HL_FILLS_STALE_MAX_MS = 5 * 60_000 // refuse to serve cache older than 5min
+type HlFillsCacheEntry = {
+  data: any[]              // normalized fills array (as returned by getUserFillsStrict)
+  fetchedAt: number
+  inflight?: Promise<any[]>
+}
+const hlFillsCache = new Map<string, HlFillsCacheEntry>()
+
 app.get('/api/hyperliquid/trades', requireTgUser, async (req, res) => {
   try {
     const user = (req as any).user
@@ -2647,19 +2668,56 @@ app.get('/api/hyperliquid/trades', requireTgUser, async (req, res) => {
     if (!wallet) return res.status(404).json({ error: 'No active wallet' })
 
     const limit = Math.max(1, Math.min(100, parseInt(String(req.query.limit ?? '20'), 10) || 20))
-    // Use the *strict* variant — the silent `getUserFills` would surface an
-    // HL outage as an empty list, which the UI would then render as the
-    // (misleading) "No fills yet" state. We want outages to flow through
-    // to the catch below and become a real 5xx so the panel's error
-    // banner fires, matching Aster's observable behavior.
+    const cacheKey = wallet.address.toLowerCase()
+    const now = Date.now()
+    const cached = hlFillsCache.get(cacheKey)
+
+    // 1. Fresh cache hit → serve immediately, skip HL entirely.
+    if (cached && (now - cached.fetchedAt) < HL_FILLS_TTL_MS) {
+      const trades = [...cached.data].sort((a, b) => b.time - a.time).slice(0, limit)
+      return res.json({ trades, cached: true })
+    }
+
+    // 2. Otherwise refetch — but coalesce concurrent callers onto one
+    //    in-flight promise so a burst of polls (multiple tabs, React
+    //    StrictMode double-mount) only hits HL once.
     const { getUserFillsStrict } = await import('./services/hyperliquid')
-    const all = await getUserFillsStrict(wallet.address)
-    // HL returns fills oldest→newest; the UI wants newest first. Sort
-    // defensively in case that ever changes upstream, then trim.
-    const trades = [...all]
-      .sort((a, b) => b.time - a.time)
-      .slice(0, limit)
-    res.json({ trades })
+    const entry: HlFillsCacheEntry = cached ?? { data: [], fetchedAt: 0 }
+    if (!cached) hlFillsCache.set(cacheKey, entry)
+
+    let promise = entry.inflight
+    if (!promise) {
+      promise = (async () => {
+        try {
+          const fresh = await getUserFillsStrict(wallet.address)
+          entry.data = fresh
+          entry.fetchedAt = Date.now()
+          return fresh
+        } finally {
+          // Clear the in-flight slot so the *next* request triggers a real
+          // fetch. We capture `promise` into a local above so resolved
+          // callers can still read the result after this finally runs.
+          entry.inflight = undefined
+        }
+      })()
+      entry.inflight = promise
+    }
+
+    try {
+      const all = await promise
+      const trades = [...(all ?? [])].sort((a, b) => b.time - a.time).slice(0, limit)
+      return res.json({ trades })
+    } catch (hlErr: any) {
+      // 3. HL upstream failed (typically 429). If we have ANY prior data
+      //    that isn't ancient, return it with cached:true so the panel
+      //    doesn't go red — fills don't change frequently and a 1-2min
+      //    old snapshot is far better UX than a flashing error banner.
+      if (entry.data.length > 0 && (Date.now() - entry.fetchedAt) < HL_FILLS_STALE_MAX_MS) {
+        const trades = [...entry.data].sort((a, b) => b.time - a.time).slice(0, limit)
+        return res.json({ trades, cached: true, stale: true })
+      }
+      throw hlErr
+    }
   } catch (err: any) {
     console.error('[API] /hyperliquid/trades failed:', err?.message)
     res.status(500).json({ error: err?.message ?? 'Internal error' })

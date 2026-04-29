@@ -148,6 +148,13 @@ export default function Hyperliquid() {
   // PnL on close fills without leaving for app.hyperliquid.xyz.
   const [fills, setFills]       = useState<HlFill[]>([])
   const [fillsErr, setFillsErr] = useState<string | null>(null)
+  // Tracks the last time loadFills() succeeded. Used by the error-banner
+  // grace period below: HL's /info endpoint 429s intermittently on
+  // Render's shared egress IP and a single failed poll should NOT show a
+  // big red banner — only sustained failures should. As long as we got a
+  // good read in the last 90s we keep the banner suppressed and continue
+  // showing the last-known fills.
+  const lastFillsOkAtRef = useRef<number>(0)
 
   // Compact relative-time formatter for the fills feed. Matches the
   // formatter on the Aster Trade page so both venues read identically.
@@ -540,13 +547,30 @@ export default function Hyperliquid() {
   const loadFills = async () => {
     try {
       const r = await apiFetch<{ trades: HlFill[] }>('/api/hyperliquid/trades?limit=10')
-      setFills(r.trades); setFillsErr(null)
+      setFills(r.trades)
+      setFillsErr(null)
+      lastFillsOkAtRef.current = Date.now()
     } catch (e: any) {
       // Distinguish "couldn't reach HL" from "no fills yet" — silent
       // fallbacks make outages indistinguishable from a clean account.
       // Suppress the not-onboarded case (handled by the activate UI).
       const msg = e?.message ?? 'Could not load fills'
       if (typeof msg === 'string' && /activate hyperliquid/i.test(msg)) return
+
+      // Grace period: HL's /info endpoint 429s intermittently because
+      // Render gives us a single shared egress IP across all users. A
+      // single failed poll should NOT flash a red banner — only sustained
+      // failures should. Suppress the banner if we either (a) have a
+      // recent success in the last 90s, or (b) already have fills loaded
+      // (so the user keeps seeing real data instead of a flicker).
+      const FAIL_GRACE_MS = 90_000
+      const recentlyOk = (Date.now() - lastFillsOkAtRef.current) < FAIL_GRACE_MS
+      if (recentlyOk || fills.length > 0) {
+        // Swallow silently; the panel stays as-is. The next successful
+        // poll will clear `fillsErr` anyway, and if the failure persists
+        // past the grace window the banner will fire normally.
+        return
+      }
       setFillsErr(msg)
     }
   }
@@ -601,9 +625,11 @@ export default function Hyperliquid() {
         // brief server-side `false` can never demote the cached `true`.
         return wasEverOnboardedRef.current ? { ...acc, onboarded: true } : acc
       })
-      // Only fetch fills after we know the account exists; pulling without
-      // an active wallet would just produce a confusing 404 in the panel.
-      if (acc.onboarded) loadFills()
+      // Fills are polled on their own slower cadence in a dedicated effect
+      // below — we don't piggy-back on the 5s account tick because each
+      // userFills call is expensive on HL's per-IP rate limit and was the
+      // source of the "429 Too Many Requests - null" red banner flickering
+      // on the Recent fills card.
     } catch (e: any) {
       setError(e?.message ?? 'Failed to load account')
     }
@@ -646,6 +672,23 @@ export default function Hyperliquid() {
   //   - per-position mark prices: every 1s — so PnL on every open
   //     position ticks in real time
   useEffect(() => { load(); const t = setInterval(load, 5000); return () => clearInterval(t) }, [])
+
+  // Recent fills polling — kept on its own slow cadence (20s) and gated
+  // on `account.onboarded` so we never call the endpoint for a user that
+  // has no HL account yet (it would 400 with needsApprove). HL's userFills
+  // is one of the heavier `/info` calls (per-IP rate limit) and Render
+  // gives us a single shared egress IP across all users, so polling on
+  // the same 5s tick as the account snapshot was the root cause of the
+  // intermittent "429 Too Many Requests - null" red banner. The server
+  // also caches this response for 15s with serve-stale-on-429, so this
+  // 20s cadence yields ~one real HL call per user per 20-30s.
+  useEffect(() => {
+    if (!account?.onboarded) return
+    loadFills()
+    const t = setInterval(loadFills, 20_000)
+    return () => clearInterval(t)
+  }, [account?.onboarded])
+
   useEffect(() => {
     let cancelled = false
     const poll = async () => {
