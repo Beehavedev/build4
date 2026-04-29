@@ -109,23 +109,25 @@ export async function createAgentForUser(opts: {
   const { address, privateKey } = generateEVMWallet()
   const encryptedPK = encryptPrivateKey(privateKey, opts.userId, undefined)
 
-  // Derive `enabledVenues` from the user's onboarding flags so a brand-new
-  // agent automatically scans every venue the user is approved on. Without
-  // this the runner falls back to `[agent.exchange]` which is hard-coded to
-  // `'aster'` below — meaning a user who completed both Aster + Hyperliquid
-  // onboarding would get an HL-silent agent and have to flip a per-agent
-  // chip in Studio to "fix" something they never noticed was wrong.
-  // Defaulting to ['aster'] when neither flag is set is defensive — the
-  // mini-app's Onboard endpoint runs aster/approve right after creation,
-  // so the flag will be true on the next runner tick anyway.
-  const flags = await db.user.findUnique({
-    where:  { id: opts.userId },
-    select: { asterOnboarded: true, hyperliquidOnboarded: true },
-  })
-  const venues: string[] = []
-  if (flags?.asterOnboarded       !== false) venues.push('aster')          // default-true if missing
-  if (flags?.hyperliquidOnboarded === true ) venues.push('hyperliquid')    // explicit opt-in
-  if (venues.length === 0) venues.push('aster')
+  // Default-include every venue we scan, regardless of the user's
+  // onboarding state. Scanning is read-only (HL/42 public market data;
+  // no per-user creds needed) and the brain feed is the user's primary
+  // way of seeing the agent think — silencing entire venues until the
+  // user finishes a separate onboarding flow leaves them unable to
+  // tell whether the agent is even alive on those venues.
+  //
+  //   • aster        — scan-and-trade (creds required for trade,
+  //                    enforced inside executeOpen / executeClose)
+  //   • hyperliquid  — scan-only until /api/hyperliquid/approve flips
+  //                    the user's onboarding flag; trade-execution
+  //                    paths short-circuit with reason='no-creds'
+  //   • fortytwo     — scan-only by default; trade requires
+  //                    User.fortyTwoLiveTrade=true (separate opt-in)
+  //
+  // The runner expands per (agent, venue) and the trading agent writes
+  // a brain-feed row per tick per venue, so the user sees decisions on
+  // every venue from the very first tick after the agent is created.
+  const venues: string[] = ['aster', 'hyperliquid', 'fortytwo']
 
   // Concurrency-safe name + create. The name uniqueness check + create is
   // a TOCTOU race when many users onboard at once — two workers can both

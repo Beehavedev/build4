@@ -122,6 +122,20 @@ export async function ensureNewTables() {
              WHERE array_length("enabledVenues", 1) IS NULL
                AND "exchange" IS NOT NULL
                AND "exchange" <> ''`)
+  // One-time multi-venue expansion (Phase 1.1, 2026-04-29). Existing
+  // agents were backfilled above to a single-venue array matching their
+  // legacy `exchange` column. That meant the runner only ever dispatched
+  // an Aster tick for them, so the brain feed never showed any HL or
+  // 42.space activity — even though scanning those venues is read-only
+  // and doesn't require user onboarding. We add a flag column to mark
+  // agents that have been expanded so the expansion runs once per
+  // agent (idempotent; never overrides a user who later prunes a
+  // venue via the chip toggles in Agent Studio).
+  await run(`ALTER TABLE "Agent" ADD COLUMN IF NOT EXISTS "venuesAutoExpanded" BOOLEAN DEFAULT false`)
+  await run(`UPDATE "Agent"
+             SET "enabledVenues" = ARRAY['aster', 'hyperliquid', 'fortytwo']::TEXT[],
+                 "venuesAutoExpanded" = true
+             WHERE COALESCE("venuesAutoExpanded", false) = false`)
   await run(`CREATE UNIQUE INDEX IF NOT EXISTS "Agent_walletAddress_key" ON "Agent"("walletAddress") WHERE "walletAddress" IS NOT NULL`)
   // Globally unique agent name (case-insensitive) — name is hardcoded on-chain, must be unique
   await run(`CREATE UNIQUE INDEX IF NOT EXISTS "Agent_name_lower_key" ON "Agent"(LOWER("name"))`)

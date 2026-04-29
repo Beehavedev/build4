@@ -40,36 +40,62 @@ async function safeAgentLogCreate(args: { data: any; [k: string]: any }): Promis
       /Unknown argument|Unknown field/i.test(String(err?.message ?? ''))
     if (!isValidation) throw err
     if (!_staleClientWarned) {
-      console.warn('[agentLog] stale Prisma client detected — falling back to legacy fields. Run prisma generate on the server.')
+      console.warn('[agentLog] stale Prisma client detected — switching to raw SQL writes. Re-run prisma generate on the server to remove this fallback.')
       _staleClientWarned = true
     }
     const d = args.data || {}
-    // Preserve the per-tick venue tag in the summary so an HL/42 row
-    // doesn't quietly degrade into "looks like Aster" when the Prisma
-    // client is stale and we have to drop the new `exchange` column.
-    const summary = JSON.stringify({
-      pair: d.pair, price: d.price, reason: d.reason,
-      adx: d.adx, rsi: d.rsi, score: d.score, regime: d.regime,
-      exchange: d.exchange,
-    })
+    // Raw SQL fallback. Bypasses Prisma's typed-client validation entirely
+    // so the new `exchange` column (added by ensureTables on every boot)
+    // can be written even when the deployed Prisma client doesn't know
+    // about the field yet. Without this every HL/42 brain-feed row on
+    // prod would either fail outright (old fallback path that re-called
+    // db.agentLog.create) or silently lose its venue tag (older fallback
+    // that stripped the field), leaving HL/42 chips broken until the
+    // next manual prisma generate + redeploy.
     try {
-      // Preserve `pair` on the fallback row so the brain feed still shows
-      // it. fetchAgentLogFeed filters on `pair: { not: null }`, so without
-      // this the stale-client fallback rows would be silently dropped from
-      // the feed entirely — the user would see a sudden gap in their
-      // brain feed every time the deploy was running an old Prisma client.
-      await safeAgentLogCreate({
-        data: {
-          agentId: d.agentId,
-          userId: d.userId,
-          action: d.action,
-          parsedAction: d.parsedAction ?? d.action,
-          pair: d.pair ?? null,
-          executionResult: (d.executionResult ?? '') + ' | ' + summary,
-        } as any,
-      })
-    } catch (fallbackErr) {
-      console.error('[agentLog] fallback write also failed:', fallbackErr)
+      await db.$executeRawUnsafe(
+        `INSERT INTO "AgentLog"
+           ("id", "agentId", "userId", "action", "rawResponse", "parsedAction",
+            "executionResult", "error", "pair", "price", "reason",
+            "adx", "rsi", "score", "regime", "exchange", "createdAt")
+         VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5,
+                 $6, $7, $8, $9, $10,
+                 $11, $12, $13, $14, $15, CURRENT_TIMESTAMP)`,
+        d.agentId,
+        d.userId,
+        d.action ?? 'HOLD',
+        d.rawResponse ?? null,
+        d.parsedAction ?? d.action ?? null,
+        d.executionResult ?? null,
+        d.error ?? null,
+        d.pair ?? null,
+        d.price ?? null,
+        d.reason ?? null,
+        d.adx ?? null,
+        d.rsi ?? null,
+        d.score ?? null,
+        d.regime ?? null,
+        d.exchange ?? null,
+      )
+    } catch (fallbackErr: any) {
+      // Last-resort: even raw SQL failed (column truly missing on prod
+      // because boot's ensureTables hasn't run yet). Try a minimal write
+      // without the new columns so the row at least exists. Final guard.
+      try {
+        await db.$executeRawUnsafe(
+          `INSERT INTO "AgentLog"
+             ("id", "agentId", "userId", "action", "parsedAction",
+              "executionResult", "createdAt")
+           VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5, CURRENT_TIMESTAMP)`,
+          d.agentId,
+          d.userId,
+          d.action ?? 'HOLD',
+          d.parsedAction ?? d.action ?? null,
+          (d.executionResult ?? '') + ' | venue=' + (d.exchange ?? 'unknown'),
+        )
+      } catch (lastErr) {
+        console.error('[agentLog] raw SQL fallback ALSO failed:', fallbackErr, '→ minimal:', lastErr)
+      }
     }
   }
 }
@@ -833,14 +859,113 @@ export async function runAgentTick(agent: Agent): Promise<void> {
     //   • mock         → reuses Aster's universe for paper-trading shape
     //                    (mock has no native price feed of its own).
     if (agent.exchange === 'fortytwo') {
-      // Skip until the 42.space participation path is wired into the
-      // runner. The chip toggle still works in the UI — this just means
-      // the runner is a no-op for prediction markets right now and the
-      // user sees "scheduled in next release" rather than a silent skip.
-      console.log(
-        `[Agent ${agent.name}] 42.space venue enabled but participation ` +
-        `path ships in Phase 2 — no scan this tick`
-      )
+      // Real 42.space scan path. Pulls the top live markets (by volume),
+      // writes one brain-feed row per market with the agent's read on
+      // it, and sends one rate-limited Telegram summary per (agent,
+      // venue) per cycle. Trade execution is a separate flow in
+      // fortyTwoExecutor.ts gated on User.fortyTwoLiveTrade — visibility
+      // here is what the user has been asking for and the trade path
+      // can be wired in once they're satisfied with the decisions they
+      // see surfacing.
+      try {
+        const { scanMarketLevelSignals } = await import('../services/fortyTwo')
+        const markets = await scanMarketLevelSignals(8)
+        if (markets.length === 0) {
+          console.log(`[Agent ${agent.name}] 42.space scan: no live markets returned`)
+        } else {
+          console.log(`[Agent ${agent.name}] 42.space scan: ${markets.length} live markets`)
+        }
+        // Per-market brain-feed rows. We write at most 5 rows per tick
+        // (the top markets by volume) so a single tick doesn't flood
+        // the feed. The decision itself is HOLD for now — we surface
+        // the market + reasoning so the user can SEE the agent
+        // considering each one. Conviction-based OPEN_PREDICTION rows
+        // ship alongside the trade-execution wiring.
+        const top = markets.slice(0, 5)
+        for (const m of top) {
+          // Convert "Will BTC hit $100k by end of April?" → BTC100KAPR
+          // style short tag for the pair column. Keep it human-readable
+          // by collapsing whitespace + non-alphanumerics, capping at
+          // 24 chars (matches Aster pair-tag length budget).
+          const pairTag = (m.title || m.marketAddress)
+            .replace(/[^a-zA-Z0-9]+/g, '')
+            .slice(0, 24)
+            .toUpperCase() || m.marketAddress.slice(2, 14).toUpperCase()
+          const elapsedHumanPct = Math.round((m.elapsedPct ?? 0) * 100)
+          const reason =
+            `42.space "${m.title.slice(0, 80)}" ` +
+            `(${m.category}, ${elapsedHumanPct}% elapsed, ends ${m.endDate}). ` +
+            `No conviction edge yet — monitoring.`
+          await safeAgentLogCreate({
+            data: {
+              agentId:        agent.id,
+              userId:         agent.userId,
+              action:         'HOLD',
+              parsedAction:   'HOLD',
+              executionResult: 'paper',
+              pair:           pairTag,
+              price:          null,
+              reason,
+              adx:            null,
+              rsi:            null,
+              score:          null,
+              regime:         'PREDICTION_MARKET',
+              exchange:       agent.exchange,
+            } as any,
+          })
+        }
+        // Telegram heartbeat. Rate-limited to once every ~10 minutes per
+        // (agent, venue) via the same shouldSendPairNotification hook
+        // used by the Aster/HL no-setup heartbeat below — keeps the
+        // chat tidy while still giving the user a steady "yes, I am
+        // scanning 42.space" signal alongside the brain-feed rows.
+        try {
+          const { getBot, shouldSendPairNotification, markPairNotificationSent, escapeMd } =
+            await import('./runner')
+          const _bot = getBot()
+          const _u = await db.user.findUnique({
+            where: { id: agent.userId },
+            select: { telegramId: true },
+          })
+          const _tg = _u?.telegramId?.toString() ?? null
+          const heartbeatKey = '__scanlog__:fortytwo'
+          if (_bot && _tg && shouldSendPairNotification(agent.id, heartbeatKey, 'heartbeat')) {
+            markPairNotificationSent(agent.id, heartbeatKey, 'heartbeat')
+            const lines = top
+              .slice(0, 3)
+              .map((m) => `• ${escapeMd(m.title.slice(0, 60))} \\(${Math.round((m.elapsedPct ?? 0) * 100)}% elapsed\\)`)
+              .join('\n')
+            const body = top.length === 0
+              ? `Scanned 42\\.space — no live markets returned\\.`
+              : `Scanned ${top.length} live 42\\.space markets:\n${lines}`
+            const msg = `🧠 *${escapeMd(agent.name)} on 42\\.space*\n\n${body}`
+            try { await _bot.api.sendMessage(_tg, msg, { parse_mode: 'MarkdownV2' }) } catch {}
+          }
+        } catch (e: any) {
+          console.warn(`[Agent ${agent.name}] 42.space heartbeat send failed:`, e?.message)
+        }
+      } catch (e: any) {
+        console.warn(`[Agent ${agent.name}] 42.space scan failed:`, e?.message)
+        // Even on scan failure, write a brain-feed row so the user can
+        // see the venue was attempted (and why it failed). Without this
+        // a 42.space outage would look identical to "the agent isn't
+        // scanning 42.space at all" — exactly the symptom we're fixing.
+        try {
+          await safeAgentLogCreate({
+            data: {
+              agentId:        agent.id,
+              userId:         agent.userId,
+              action:         'HOLD',
+              parsedAction:   'HOLD',
+              executionResult: 'scan-error',
+              pair:           '42SPACE',
+              reason:         `42.space scan failed: ${(e?.message ?? 'unknown').slice(0, 200)}`,
+              regime:         'PREDICTION_MARKET',
+              exchange:       agent.exchange,
+            } as any,
+          })
+        } catch {}
+      }
       return
     }
     const openHeld = await db.trade.findMany({
