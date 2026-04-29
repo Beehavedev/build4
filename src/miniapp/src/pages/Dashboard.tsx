@@ -225,9 +225,17 @@ export default function Dashboard({ userId, onNavigate }: DashboardProps) {
             {asterOnboarded ? 'manual & AI' : 'not activated'}
           </div>
           <div style={{ marginTop: 6 }}>
-            <span className={`pill ${activeAgents > 0 ? 'pill-live' : asterOnboarded ? 'pill-muted' : 'pill-amber'}`}>
-              <span className={activeAgents > 0 ? 'dot-live' : 'dot-muted'} />
-              {activeAgents > 0 ? 'LIVE' : asterOnboarded ? 'idle' : 'not funded'}
+            {/* Pill must agree with the sub-line text above. We previously
+                drove "LIVE" off `activeAgents > 0` while the sub-line used
+                `asterOnboarded`, which produced the contradictory state
+                "not activated · LIVE" for users who had an agent record
+                but had never run /aster/approve. Now both surfaces are
+                derived from the same onboarded + funded state. */}
+            <span className={`pill ${asterOnboarded && activeAgents > 0 ? 'pill-live' : asterOnboarded ? 'pill-muted' : 'pill-amber'}`}>
+              <span className={asterOnboarded && activeAgents > 0 ? 'dot-live' : 'dot-muted'} />
+              {asterOnboarded
+                ? (activeAgents > 0 ? 'LIVE' : asterUsdt > 0 ? 'idle' : 'fund to start')
+                : 'not activated'}
             </span>
           </div>
         </div>

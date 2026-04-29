@@ -622,14 +622,43 @@ app.get('/api/me/wallet', requireTgUser, async (req, res) => {
     } = { usdt: 0, availableMargin: 0, onboarded: !!user.asterOnboarded, error: null }
 
     try {
+      // CRITICAL: only make a SIGNED Aster balance call if this user has
+      // their OWN per-user agent on file (set during /activate). For brand-
+      // new / not-onboarded users, `resolveAgentCreds` would otherwise fall
+      // back to the shared platform agent (env ASTER_AGENT_PRIVATE_KEY) and
+      // signed `/fapi/v3/balance` can return USDT held by that shared agent
+      // — which then surfaced on the home screen as a fictitious balance
+      // (e.g. "$9.41 ASTER" + "not activated") for users who had genuinely
+      // never deposited. We instead use the address-scoped public RPC,
+      // which only reads the user's own on-chain Aster account.
       const asterMod = await import('./services/aster')
-      const creds = await asterMod.resolveAgentCreds(user, wallet.address)
-      if (!creds) {
-        aster.error = 'no_agent_credentials'
+      const hasOwnAgent = !!(user as any).asterAgentEncryptedPK
+      const isOnboarded = !!user.asterOnboarded
+
+      if (hasOwnAgent && isOnboarded) {
+        const creds = await asterMod.resolveAgentCreds(user, wallet.address)
+        if (!creds) {
+          aster.error = 'no_agent_credentials'
+        } else {
+          const bal = await asterMod.getAccountBalanceStrict(creds)
+          aster.usdt = bal.usdt
+          aster.availableMargin = bal.availableMargin
+        }
       } else {
-        const bal = await asterMod.getAccountBalanceStrict(creds)
+        // Pre-activation path: address-scoped public RPC only. If the user
+        // has never opened an Aster futures account this returns an
+        // "account does not exist" error which we translate to
+        // not_onboarded so the UI shows the activation flow.
+        const bal = await asterMod.getAccountBalance({
+          userAddress: wallet.address,
+          signerAddress: wallet.address, // unused by RPC path
+          signerPrivKey: '0x' + '0'.repeat(64), // unused by RPC path
+        } as any)
         aster.usdt = bal.usdt
         aster.availableMargin = bal.availableMargin
+        if (bal.usdt === 0 && bal.availableMargin === 0) {
+          aster.error = 'not_onboarded'
+        }
       }
     } catch (e: any) {
       const msg = String(e?.message ?? 'aster_unavailable').toLowerCase()
@@ -3377,7 +3406,17 @@ app.get('/api/portfolio/:userId', async (req, res) => {
     if (wallet) {
       try {
         const u = await db.user.findUnique({ where: { id: internalUserId } })
-        if (u?.asterOnboarded) {
+        // Same shared-agent-leak guard as /api/me/wallet: only call
+        // resolveAgentCreds (which falls back to the platform agent PK
+        // when asterAgentEncryptedPK is null) for users who have BOTH
+        // completed onboarding AND have their own per-user agent on
+        // file. Without this gate, /api/portfolio for a legacy user
+        // with asterOnboarded=true but asterAgentEncryptedPK=null would
+        // sign with the platform agent and reconcile against the
+        // platform agent's positions — leaking shared state across
+        // users (the same root cause as the "$9.41 ASTER" bug on
+        // /api/me/wallet).
+        if (u?.asterOnboarded && (u as any).asterAgentEncryptedPK) {
           const { resolveAgentCreds, getPositions } = await import('./services/aster')
           const { reconcileStaleAsterTrades } = await import('./services/asterReconcile')
           const creds = await resolveAgentCreds(u as any, wallet.address)
