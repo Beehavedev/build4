@@ -1,16 +1,18 @@
 import { useEffect, useRef, useState } from 'react'
 
 // ─────────────────────────────────────────────────────────────────────────
-// PredictionsPolymarket — Phase 1 read-only surface for the Polymarket
-// venue, mounted inside Predictions.tsx alongside the existing 42.space
-// section. Two server endpoints back this view:
-//   GET /api/polymarket/events             → trending events (15s server cache)
-//   GET /api/polymarket/orderbook/:tokenId → CLOB book on expand (1s cache)
+// PredictionsPolymarket — full Polymarket venue surface. Mounted inside
+// Predictions.tsx alongside the 42.space section. Backed by:
+//   GET  /api/polymarket/events             → trending events (15s cache)
+//   GET  /api/polymarket/orderbook/:tokenId → CLOB book on expand (1s cache)
+//   GET  /api/polymarket/wallet             → user's Polygon wallet + creds
+//   GET  /api/polymarket/positions          → open + closed positions
+//   POST /api/polymarket/setup              → enroll creds + USDC allowance
+//   POST /api/polymarket/order              → manual buy/sell (builder-tagged)
 //
-// No auth required — all data shown here is already public on
-// polymarket.com. Phase 2 will add manual buy/sell + Safe-relayer onboarding;
-// Phase 3 the autonomous "polymarket" agent. Builder-code attribution will
-// thread through both.
+// Public endpoints (events / orderbook) need no auth. Trading endpoints
+// require Telegram auth and route through the user's custodial Polygon
+// EOA with our Builder Program code attached to every order.
 // ─────────────────────────────────────────────────────────────────────────
 
 interface PolyMarket {
@@ -623,7 +625,7 @@ export default function PredictionsPolymarket() {
 
   return (
     <div style={{ paddingTop: 4, paddingBottom: 8 }}>
-      {/* Header bar with refresh + builder attribution. */}
+      {/* Header bar with refresh control. */}
       <div
         style={{
           display: 'flex',
@@ -670,37 +672,6 @@ export default function PredictionsPolymarket() {
         </div>
       </div>
 
-      {/* Phase-1 banner — sets expectations and surfaces our Builder Program
-          attribution. The visible builder code is what reviewers look for
-          when validating our integration. */}
-      <div
-        style={{
-          marginBottom: 12,
-          padding: '8px 10px',
-          borderRadius: 6,
-          background: '#3b82f608',
-          border: '1px solid #3b82f622',
-          fontSize: 10,
-          color: '#94a3b8',
-          lineHeight: 1.5,
-        }}
-        data-testid="banner-poly-builder"
-      >
-        <strong style={{ color: '#60a5fa' }}>Read-only preview.</strong>{' '}
-        Trading and AI agents land in Phase 2/3 — every order will route through Polymarket's
-        CLOB v2 with our builder code attached for{' '}
-        <a
-          href="https://docs.polymarket.com/builders/overview"
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{ color: '#60a5fa' }}
-        >Builder Program attribution</a>.
-        {data?.builderCode && (
-          <div style={{ marginTop: 4, fontFamily: 'ui-monospace, monospace', color: '#64748b' }}>
-            builder: <span data-testid="text-builder-code">{data.builderCode.slice(0, 10)}…{data.builderCode.slice(-6)}</span>
-          </div>
-        )}
-      </div>
 
       {err && (
         <div
@@ -737,7 +708,7 @@ export default function PredictionsPolymarket() {
             (a) wallet=null              → user is browsing in a regular browser without
                                           Telegram WebApp init data; nothing to do.
             (b) wallet.hasCreds=false    → "Activate trading" CTA, runs setup once.
-            (c) wallet.ready=true        → balance row + builder code line; Buy buttons
+            (c) wallet.ready=true        → balance row; Buy buttons enabled
                                           on each market row become live. */}
       {wallet && (
         <div
@@ -812,11 +783,6 @@ export default function PredictionsPolymarket() {
             </div>
           )}
 
-          {wallet.builderCode && (
-            <div style={{ marginTop: 6, fontSize: 9, color: '#64748b', fontFamily: 'ui-monospace, monospace' }}>
-              builder: <span data-testid="text-poly-wallet-builder">{wallet.builderCode}</span>
-            </div>
-          )}
         </div>
       )}
 
@@ -1131,7 +1097,7 @@ function TradeModal({
         </div>
 
         <div style={{ marginTop: 10, fontSize: 9, color: '#64748b', lineHeight: 1.4 }}>
-          Order signed with your custodial Polygon key and routed to Polymarket's CLOB v2 with our builder code attached.
+          Order signed with your custodial Polygon key and routed directly to Polymarket.
         </div>
       </div>
     </div>
