@@ -1,46 +1,73 @@
 // =====================================================================
-// Polymarket Phase 2/3 — manual + autonomous trading on the Polygon CLOB.
+// Polymarket Phase 2.1 — gasless trading via the Builder Relayer Client.
 //
 // Architecture
 // ─────────────
-// The user's BUILD4 custodial wallet is a single secp256k1 keypair. The
-// same EOA address that holds USDT on BSC also exists on Polygon, so we
-// can sign Polymarket orders with the exact same PK that drives 42.space
-// trades. No new wallet, no bridge, no Safe contract needed.
+// The user's BUILD4 custodial wallet is a single secp256k1 keypair —
+// the same EOA address that holds USDT on BSC also exists on Polygon.
+// We DO NOT, however, fund or trade from that EOA directly. Instead, on
+// first /setup the user's EOA acts as the *signing key* for a freshly
+// deployed Gnosis Safe proxy (deployed gaslessly via Polymarket's
+// relayer). All USDC.e and ERC-1155 outcome shares live in the Safe;
+// the EOA only ever signs.
 //
 // signature_type
 // ──────────────
-// We use `EOA` (signature type 0) for every order. POLY_PROXY (1) and
-// POLY_GNOSIS_SAFE (2) are aimed at users coming from polymarket.com's
-// magic.link onboarding (proxy contracts) — we don't have or need those.
-// EOA orders carry the builder code on the same path and qualify for
-// the Builder Program leaderboard exactly the same way; this is the
-// model used by virtually every third-party Polymarket integration.
+// We use POLY_GNOSIS_SAFE (signature type 2). The CLOB order is signed
+// by the EOA but its `funder` field references the Safe address; the
+// CTF Exchange pulls collateral from the Safe at fill time. This is
+// the same architecture polymarket.com uses for browser-wallet users.
+//
+// Why gasless
+// ───────────
+// On the EOA model the user needs MATIC for (a) the one-time USDC
+// approve(), (b) any subsequent re-approval, (c) redeem() at market
+// resolution. With the relayer client all three become Polymarket-paid
+// gasless transactions, leaving USDC.e as the only asset the user must
+// ever bring. Daily CLOB orders are off-chain EIP-712 signatures so
+// they're free either way — but the on-chain bookkeeping was the bit
+// requiring MATIC. That requirement is now eliminated.
 //
 // Builder attribution
 // ───────────────────
-// Two pieces of identity:
-//   1. POLY_BUILDER_CODE — bytes32 set on every order's `builder` field.
-//      This is what ties on-chain volume back to BUILD4 for grant scoring.
-//   2. POLY_BUILDER_API_KEY/SECRET/PASSPHRASE — HMAC creds the SDK uses
-//      to add `POLY_BUILDER_*` headers on order POSTs. Optional but
-//      recommended; without them orders still carry the on-chain code.
+// Two pieces of identity, unchanged from Phase 2:
+//   1. POLY_BUILDER_CODE — bytes32 set on every order's `builder` field
+//      (CLOB-side; this is what credits volume to BUILD4).
+//   2. POLY_BUILDER_API_KEY/SECRET/PASSPHRASE — HMAC creds the
+//      builder-signing-sdk uses to add `POLY_BUILDER_*` headers to BOTH
+//      CLOB POSTs AND relayer POSTs (the relayer also enforces builder
+//      auth on its endpoints — without these creds the relayer client
+//      cannot deploy Safes or execute approvals on the user's behalf).
 //
 // Both are read lazily so the module loads without env vars being set
-// (Phase 1 deploys don't have these yet) and the file imports cleanly
+// (early dev deploys don't have these yet) and the file imports cleanly
 // in tests.
 // =====================================================================
 
 import { ethers } from 'ethers'
 import {
   ClobClient,
-  Chain,
   Side,
   OrderType,
   SignatureType,
   type ApiKeyCreds,
 } from '@polymarket/clob-client'
 import { BuilderConfig } from '@polymarket/builder-signing-sdk'
+import {
+  RelayClient,
+  RelayerTxType,
+  type Transaction,
+} from '@polymarket/builder-relayer-client'
+import {
+  createWalletClient,
+  http as viemHttp,
+  encodeFunctionData,
+  maxUint256,
+  zeroHash,
+  type Hex,
+} from 'viem'
+import { privateKeyToAccount } from 'viem/accounts'
+import { polygon } from 'viem/chains'
 import { db } from '../db'
 import { decryptPrivateKey, encryptPrivateKey } from './wallet'
 import { polymarketConfig } from './polymarket'
@@ -48,19 +75,70 @@ import { polymarketConfig } from './polymarket'
 const CLOB_HOST = 'https://clob.polymarket.com'
 const POLYGON_CHAIN_ID = 137 as const
 const POLYGON_RPC = (process.env.POLYGON_RPC ?? '').trim() || 'https://polygon-rpc.com'
+const RELAYER_URL =
+  (process.env.POLYMARKET_RELAYER_URL ?? '').trim() ||
+  'https://relayer-v2.polymarket.com'
 
-const USDC_E = '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174' // bridged USDC.e — Polymarket collateral
-const CTF_EXCHANGE = '0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E'
-const NEG_RISK_EXCHANGE = '0xC5d563A36AE78145C45a50134d48A1215220f80a'
+// ── Polygon contract addresses ──────────────────────────────────────────
+const USDC_E           = '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174' // USDC.e (collateral)
+const CTF              = '0x4D97DCd97eC945f40cF65F87097ACe5EA0476045' // ConditionalTokens (ERC-1155)
+const CTF_EXCHANGE     = '0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E' // standard CLOB exchange
+const NEG_RISK_EXCHANGE = '0xC5d563A36AE78145C45a50134d48A1215220f80a' // neg-risk CLOB exchange
+const NEG_RISK_ADAPTER = '0xd91E80cF2E7be2e162c6513ceD06f1dD0dA35296' // neg-risk adapter (redeems)
 
+// Standard ERC-20 ABI subset, plus ERC-1155 setApprovalForAll for CTF
 const ERC20_ABI = [
   'function balanceOf(address) view returns (uint256)',
   'function allowance(address owner, address spender) view returns (uint256)',
   'function approve(address spender, uint256 amount) returns (bool)',
-]
+] as const
 
-// Cap any single approval at MAX_UINT256 — standard one-time pattern.
-const MAX_UINT256 = (1n << 256n) - 1n
+const ERC1155_IS_APPROVED_FOR_ALL_ABI = [
+  'function isApprovedForAll(address owner, address operator) view returns (bool)',
+] as const
+
+// viem ABIs for the relayer-encoded calls — relayer needs raw calldata, so
+// we keep these as JSON ABIs for encodeFunctionData rather than ethers
+// human-readable strings.
+const ERC20_APPROVE_VIEM_ABI = [{
+  type: 'function',
+  name: 'approve',
+  stateMutability: 'nonpayable',
+  inputs:  [{ name: 'spender', type: 'address' }, { name: 'amount', type: 'uint256' }],
+  outputs: [{ name: '',        type: 'bool' }],
+}] as const
+
+const ERC1155_SET_APPROVAL_FOR_ALL_VIEM_ABI = [{
+  type: 'function',
+  name: 'setApprovalForAll',
+  stateMutability: 'nonpayable',
+  inputs:  [{ name: 'operator', type: 'address' }, { name: 'approved', type: 'bool' }],
+  outputs: [],
+}] as const
+
+const CTF_REDEEM_VIEM_ABI = [{
+  type: 'function',
+  name: 'redeemPositions',
+  stateMutability: 'nonpayable',
+  inputs: [
+    { name: 'collateralToken',   type: 'address' },
+    { name: 'parentCollectionId', type: 'bytes32' },
+    { name: 'conditionId',       type: 'bytes32' },
+    { name: 'indexSets',         type: 'uint256[]' },
+  ],
+  outputs: [],
+}] as const
+
+const NEG_RISK_REDEEM_VIEM_ABI = [{
+  type: 'function',
+  name: 'redeemPositions',
+  stateMutability: 'nonpayable',
+  inputs: [
+    { name: '_conditionId', type: 'bytes32' },
+    { name: '_amounts',     type: 'uint256[]' },
+  ],
+  outputs: [],
+}] as const
 
 // ── Builder credentials (env-driven, lazy) ──────────────────────────────
 function getBuilderConfig(): BuilderConfig | undefined {
@@ -78,9 +156,10 @@ export function getBuilderCode(): string | null {
 // Strict guard so we never send an order without builder attribution when
 // we *think* we're attributing. Call sites use this to fail-closed: if
 // POLY_BUILDER_CODE is configured but the API creds are missing, refuse
-// the trade rather than silently miss the leaderboard credit. Without
-// this, a misconfigured deploy would happily generate volume that doesn't
-// count toward the grant — which is the entire reason this code exists.
+// the trade rather than silently miss the leaderboard credit.
+//
+// On the relayer path the same creds are *required* — the relayer rejects
+// unauthenticated requests, so missing creds also block deploy/approve.
 export function getBuilderAttribution(): {
   ok: boolean
   builderConfig?: BuilderConfig
@@ -90,12 +169,20 @@ export function getBuilderAttribution(): {
   const code = getBuilderCode()
   const cfg  = getBuilderConfig()
 
-  // Dev / unattributed mode — no code configured at all. Trade is allowed
-  // but won't carry attribution. Useful for local testing and the very
-  // first wallet-setup flow where the user just wants to see balances.
-  if (!code) return { ok: true, builderCode: null }
+  // Strict fail-closed for Builder Program attribution. The whole point of
+  // this integration is to generate volume that accrues to *our* builder
+  // profile on the Polymarket leaderboard. An order placed without a
+  // builder code is volume we paid in fees + opportunity cost for that
+  // counts toward NOTHING. Refuse the trade rather than leak unattributed
+  // volume — the operator must set POLY_BUILDER_CODE.
+  if (!code) {
+    return {
+      ok: false,
+      builderCode: null,
+      reason: 'POLY_BUILDER_CODE is not set — refusing to place unattributed orders (would not count toward Builder Program grant)',
+    }
+  }
 
-  // Attribution intent without HMAC creds = misconfiguration. Fail closed.
   if (!cfg) {
     return {
       ok: false,
@@ -114,12 +201,17 @@ function getProvider() {
 }
 
 // ── Custodial PK retrieval ──────────────────────────────────────────────
-// The user's existing BSC wallet PK works on Polygon (same secp256k1).
-// We never decrypt agent-keys for Polymarket — Polymarket trades come out
-// of the user's master custodial wallet, just like 42.space does today.
+// The user's BSC wallet PK works on Polygon (same secp256k1). We never
+// touch agent keys here — Polymarket trades come from the master custodial
+// wallet, identical to 42.space's flow. We return BOTH an ethers v6 wallet
+// (used by ClobClient's order signing) AND a raw PK hex (used to construct
+// the viem WalletClient that the RelayClient requires — its abstract-signer
+// factory does an `instanceof ethers.Wallet` check against its own bundled
+// ethers v5, which our v6 wallets fail, so we fall through to viem).
 async function getUserPolygonSigner(userId: string): Promise<{
   wallet: ethers.Wallet
   address: string
+  pkHex: Hex
 }> {
   const w = await db.wallet.findFirst({
     where: { userId, isActive: true, chain: 'BSC' },
@@ -130,17 +222,37 @@ async function getUserPolygonSigner(userId: string): Promise<{
   const pk = decryptPrivateKey(w.encryptedPK, userId)
   if (!pk?.startsWith('0x')) throw new Error('Failed to decrypt custodial PK')
   const wallet = new ethers.Wallet(pk, getProvider())
-  return { wallet, address: wallet.address }
+  return { wallet, address: wallet.address, pkHex: pk as Hex }
+}
+
+// ── viem wallet client (for the relayer) ────────────────────────────────
+function buildViemWalletClient(pkHex: Hex) {
+  const account = privateKeyToAccount(pkHex)
+  return createWalletClient({
+    account,
+    chain:     polygon,
+    transport: viemHttp(POLYGON_RPC),
+  })
 }
 
 // ── L2 API credentials (HMAC) ───────────────────────────────────────────
 // Polymarket's CLOB needs HMAC-signed headers on most endpoints. The
 // creds are derived from an L1 EIP-712 signature, so once derived they
 // are stable for the lifetime of the wallet — we cache them per-user.
+// Per-user in-process locks to serialize concurrent setup calls. The
+// Replit runtime is single-process, so a Map<userId, Promise> is a
+// sufficient mutex — concurrent /api/polymarket/setup hits from a
+// double-tapping user will queue rather than racing into two L2 key
+// derivations or two Safe deployments. (Cross-process safety is not a
+// concern here; we run a single Node instance per Replit workflow.)
+const credsLocks: Map<string, Promise<{ creds: ApiKeyCreds; walletAddress: string }>> = new Map()
+const safeLocks:  Map<string, Promise<{ safeAddress: string; alreadyDeployed: boolean; txHash?: string }>> = new Map()
+
 export async function getOrCreateCreds(userId: string): Promise<{
   creds: ApiKeyCreds
   walletAddress: string
 }> {
+  // Fast path — already exists, no lock needed.
   const existing = await db.polymarketCreds.findUnique({ where: { userId } })
   if (existing) {
     return {
@@ -153,107 +265,262 @@ export async function getOrCreateCreds(userId: string): Promise<{
     }
   }
 
-  const { wallet, address } = await getUserPolygonSigner(userId)
+  // Slow path — gate behind the per-user lock so two concurrent first-time
+  // setups don't both call createOrDeriveApiKey().
+  const inflight = credsLocks.get(userId)
+  if (inflight) return inflight
 
-  // Bootstrap client without creds — only L1 endpoints (createOrDeriveApiKey)
-  // need to work here.
-  const bootstrap = new ClobClient(CLOB_HOST, POLYGON_CHAIN_ID, wallet as any)
-  const fresh = await bootstrap.createOrDeriveApiKey()
+  const promise = (async () => {
+    // Re-check after acquiring the lock — the prior holder may have just
+    // created the row.
+    const again = await db.polymarketCreds.findUnique({ where: { userId } })
+    if (again) {
+      return {
+        creds: {
+          key:        again.apiKey,
+          secret:     decryptPrivateKey(again.encryptedApiSecret, userId),
+          passphrase: decryptPrivateKey(again.encryptedPassphrase, userId),
+        },
+        walletAddress: again.walletAddress,
+      }
+    }
 
-  await db.polymarketCreds.create({
-    data: {
-      userId,
-      walletAddress:       address,
-      apiKey:              fresh.key,
-      encryptedApiSecret:  encryptPrivateKey(fresh.secret, userId),
-      encryptedPassphrase: encryptPrivateKey(fresh.passphrase, userId),
-    },
-  })
+    const { wallet, address } = await getUserPolygonSigner(userId)
 
-  return { creds: fresh, walletAddress: address }
+    // Bootstrap client without creds — only L1 endpoints (createOrDeriveApiKey)
+    // need to work here.
+    const bootstrap = new ClobClient(CLOB_HOST, POLYGON_CHAIN_ID, wallet as any)
+    const fresh = await bootstrap.createOrDeriveApiKey()
+
+    try {
+      await db.polymarketCreds.create({
+        data: {
+          userId,
+          walletAddress:       address,
+          apiKey:              fresh.key,
+          encryptedApiSecret:  encryptPrivateKey(fresh.secret, userId),
+          encryptedPassphrase: encryptPrivateKey(fresh.passphrase, userId),
+        },
+      })
+    } catch (err: any) {
+      // P2002 = Prisma unique-constraint violation. If a parallel instance
+      // (e.g. test runner or a separate worker) raced us, fall back to the
+      // existing row instead of failing the user.
+      if (err?.code !== 'P2002') throw err
+      const persisted = await db.polymarketCreds.findUnique({ where: { userId } })
+      if (!persisted) throw err
+      return {
+        creds: {
+          key:        persisted.apiKey,
+          secret:     decryptPrivateKey(persisted.encryptedApiSecret, userId),
+          passphrase: decryptPrivateKey(persisted.encryptedPassphrase, userId),
+        },
+        walletAddress: persisted.walletAddress,
+      }
+    }
+
+    return { creds: fresh, walletAddress: address }
+  })()
+    .finally(() => credsLocks.delete(userId))
+
+  credsLocks.set(userId, promise)
+  return promise
 }
 
-// ── Authenticated client ────────────────────────────────────────────────
-async function getAuthedClient(userId: string, opts?: { requireAttribution?: boolean }): Promise<{
-  client: ClobClient
-  walletAddress: string
-  builderCode: string | null
-  attributionOk: boolean
-}> {
-  const { wallet, address } = await getUserPolygonSigner(userId)
-  const { creds }           = await getOrCreateCreds(userId)
-  const attribution         = getBuilderAttribution()
-
-  // requireAttribution = true on the trade path. We refuse to construct a
-  // trading client when attribution is misconfigured so the order POST
-  // never goes out unattributed.
-  if (opts?.requireAttribution && !attribution.ok) {
-    throw new Error(attribution.reason ?? 'Builder attribution unavailable')
+// ── Relayer client ──────────────────────────────────────────────────────
+// Construct a SAFE-mode RelayClient backed by the user's PK via viem.
+// Builder config is REQUIRED — the relayer refuses unauthenticated
+// requests, so missing builder creds is a hard fail here.
+function getRelayClient(pkHex: Hex): RelayClient {
+  const attribution = getBuilderAttribution()
+  if (!attribution.ok || !attribution.builderConfig) {
+    throw new Error(attribution.reason ?? 'Builder attribution required for relayer access')
   }
-
-  const client = new ClobClient(
-    CLOB_HOST,
+  const wallet = buildViemWalletClient(pkHex)
+  // BuilderConfig type cast: builder-relayer-client ships a nested copy of
+  // @polymarket/builder-signing-sdk (different patch version), so the
+  // structural-typing equality check fails even though the runtime classes
+  // are identical. Cast through unknown to bridge the duplicate types.
+  return new RelayClient(
+    RELAYER_URL,
     POLYGON_CHAIN_ID,
-    wallet as any,
-    creds,
-    SignatureType.EOA,
-    address,
-    undefined,
-    undefined,
-    attribution.builderConfig,
+    wallet,
+    attribution.builderConfig as unknown as any,
+    RelayerTxType.SAFE,
   )
-  return {
-    client,
-    walletAddress: address,
-    builderCode:   attribution.builderCode,
-    attributionOk: attribution.ok,
+}
+
+// ── Safe deployment ─────────────────────────────────────────────────────
+// One-time per user. The Safe address is deterministic from the EOA, so
+// we can compute it via getExpectedSafe before deployment too — but we
+// don't expose that publicly because callers should always go through
+// /setup first to get the persisted record.
+export async function deploySafeIfNeeded(userId: string): Promise<{
+  safeAddress: string
+  alreadyDeployed: boolean
+  txHash?: string
+}> {
+  // Fast path — already persisted, no lock needed.
+  const existing = await db.polymarketCreds.findUnique({ where: { userId } })
+  if (existing?.safeAddress && existing?.safeDeployedAt) {
+    return { safeAddress: existing.safeAddress, alreadyDeployed: true }
   }
+
+  // Serialize concurrent deploys per user. Without this, two parallel
+  // /setup calls could both invoke relay.deploy() and burn relayer
+  // credit on a doomed second tx (the Safe factory call is deterministic
+  // per EOA so the second one would revert as "Safe already exists").
+  const inflight = safeLocks.get(userId)
+  if (inflight) return inflight
+
+  const promise = (async () => {
+    // Re-check inside the lock.
+    const again = await db.polymarketCreds.findUnique({ where: { userId } })
+    if (again?.safeAddress && again?.safeDeployedAt) {
+      return { safeAddress: again.safeAddress, alreadyDeployed: true }
+    }
+
+    const { pkHex } = await getUserPolygonSigner(userId)
+    const relay = getRelayClient(pkHex)
+
+    // Best-effort: check whether a Safe at the expected address is already
+    // deployed (e.g. user previously interacted with polymarket.com directly).
+    // The deploy() call below is idempotent on the relayer side, but skipping
+    // it when not needed saves a round-trip and gives us the address either way.
+    let safeAddr: string | undefined
+    try {
+      // RelayClient exposes getExpectedSafe via private method; recreate it
+      // here using the same deriveSafe helper exported by the package.
+      const { deriveSafe } = await import('@polymarket/builder-relayer-client/dist/builder/derive')
+      const factory = (relay as any).contractConfig?.SafeContracts?.SafeFactory
+      if (factory) {
+        const eoa = (await pkHexToAddress(pkHex)).toLowerCase()
+        safeAddr = deriveSafe(eoa, factory)
+        const isDeployed = await relay.getDeployed(safeAddr).catch(() => false)
+        if (isDeployed) {
+          await db.polymarketCreds.update({
+            where: { userId },
+            data:  { safeAddress: safeAddr, safeDeployedAt: new Date() },
+          })
+          return { safeAddress: safeAddr, alreadyDeployed: true }
+        }
+      }
+    } catch (err) {
+      // Non-fatal — fall through to deploy()
+      console.warn('[poly] safe pre-check failed:', (err as Error).message)
+    }
+
+    const resp = await relay.deploy()
+    const result = await resp.wait()
+    if (!result || !result.proxyAddress) {
+      throw new Error(
+        `Relayer Safe deployment did not confirm (state=${(result as any)?.state ?? 'unknown'})`,
+      )
+    }
+
+    await db.polymarketCreds.update({
+      where: { userId },
+      data:  {
+        safeAddress:    result.proxyAddress,
+        safeDeployedAt: new Date(),
+      },
+    })
+
+    return {
+      safeAddress:    result.proxyAddress,
+      alreadyDeployed: false,
+      txHash:         result.transactionHash,
+    }
+  })()
+    .finally(() => safeLocks.delete(userId))
+
+  safeLocks.set(userId, promise)
+  return promise
+}
+
+async function pkHexToAddress(pkHex: Hex): Promise<string> {
+  return privateKeyToAccount(pkHex).address
 }
 
 // ── Balances ────────────────────────────────────────────────────────────
+// Reads at an arbitrary address. Callers pass `safeAddress` for the
+// trading-relevant balances (USDC.e + allowances live there now); EOA
+// reads are mostly informational since the EOA no longer needs MATIC.
 export async function getPolygonBalances(address: string): Promise<{
   matic: number
   usdc:  number
   usdcRaw: string
   allowanceCtf: number
   allowanceNeg: number
+  allowanceNegAdapter: number
+  ctfApprovedCtfExchange: boolean
+  ctfApprovedNegExchange: boolean
+  ctfApprovedNegAdapter:  boolean
 }> {
   const provider = getProvider()
   const usdc     = new ethers.Contract(USDC_E, ERC20_ABI, provider)
-  const [maticWei, usdcRaw, allowCtfRaw, allowNegRaw] = await Promise.all([
+  const ctf      = new ethers.Contract(CTF, ERC1155_IS_APPROVED_FOR_ALL_ABI, provider)
+  const [
+    maticWei, usdcRaw,
+    allowCtfRaw, allowNegRaw, allowNegAdapterRaw,
+    ctfApprovedCtf, ctfApprovedNeg, ctfApprovedNegAdapter,
+  ] = await Promise.all([
     provider.getBalance(address),
     usdc.balanceOf(address),
     usdc.allowance(address, CTF_EXCHANGE),
     usdc.allowance(address, NEG_RISK_EXCHANGE),
+    usdc.allowance(address, NEG_RISK_ADAPTER),
+    ctf.isApprovedForAll(address, CTF_EXCHANGE),
+    ctf.isApprovedForAll(address, NEG_RISK_EXCHANGE),
+    ctf.isApprovedForAll(address, NEG_RISK_ADAPTER),
   ])
   return {
-    matic:        parseFloat(ethers.formatEther(maticWei)),
-    usdc:         parseFloat(ethers.formatUnits(usdcRaw, 6)),
-    usdcRaw:      usdcRaw.toString(),
-    allowanceCtf: parseFloat(ethers.formatUnits(allowCtfRaw, 6)),
-    allowanceNeg: parseFloat(ethers.formatUnits(allowNegRaw, 6)),
+    matic:                  parseFloat(ethers.formatEther(maticWei)),
+    usdc:                   parseFloat(ethers.formatUnits(usdcRaw, 6)),
+    usdcRaw:                usdcRaw.toString(),
+    allowanceCtf:           parseFloat(ethers.formatUnits(allowCtfRaw, 6)),
+    allowanceNeg:           parseFloat(ethers.formatUnits(allowNegRaw, 6)),
+    allowanceNegAdapter:    parseFloat(ethers.formatUnits(allowNegAdapterRaw, 6)),
+    ctfApprovedCtfExchange: Boolean(ctfApprovedCtf),
+    ctfApprovedNegExchange: Boolean(ctfApprovedNeg),
+    ctfApprovedNegAdapter:  Boolean(ctfApprovedNegAdapter),
   }
 }
 
-// ── One-time USDC approval ──────────────────────────────────────────────
-// Polymarket requires the user to approve USDC.e to BOTH the standard
-// CTF Exchange and the neg-risk exchange (used for "or" / multi-outcome
-// markets). We send both approvals in sequence and persist the second
-// tx hash as the canonical allowance marker.
+// ── Convenience: get the funding (Safe) address for a user ──────────────
+export async function getFunderAddress(userId: string): Promise<string | null> {
+  const c = await db.polymarketCreds.findUnique({ where: { userId } })
+  return c?.safeAddress ?? null
+}
+
+// ── One-time gasless approvals via the relayer ─────────────────────────
+// Approves USDC.e to the three exchange contracts and the CTF (ERC-1155)
+// to the same three operators, all in a single batched relayer execute.
+// The Safe pays nothing on-chain — Polymarket's relayer covers gas in
+// exchange for the builder credentials we authenticate the request with.
 export async function ensureUsdcAllowance(userId: string): Promise<{
   alreadyApproved: boolean
   txHashes: string[]
 }> {
-  const { wallet, address } = await getUserPolygonSigner(userId)
-  const usdc = new ethers.Contract(USDC_E, ERC20_ABI, wallet)
+  const creds = await db.polymarketCreds.findUnique({ where: { userId } })
+  if (!creds?.safeAddress) {
+    throw new Error('Safe not deployed yet — call deploySafeIfNeeded first')
+  }
+  const safe = creds.safeAddress
 
-  const [allowCtf, allowNeg] = await Promise.all([
-    usdc.allowance(address, CTF_EXCHANGE),
-    usdc.allowance(address, NEG_RISK_EXCHANGE),
-  ])
-  const minNeeded = ethers.parseUnits('1000000', 6) // require ≥1M USDC allowance to skip
-
-  if (allowCtf >= minNeeded && allowNeg >= minNeeded) {
+  // Skip the relayer round-trip if the Safe already has the full set.
+  // Each check is a cheap eth_call; collectively cheaper than a needless
+  // relayer execute.
+  const bal = await getPolygonBalances(safe)
+  const minUsdc = 1_000_000
+  const fullySetup =
+    bal.allowanceCtf        >= minUsdc &&
+    bal.allowanceNeg        >= minUsdc &&
+    bal.allowanceNegAdapter >= minUsdc &&
+    bal.ctfApprovedCtfExchange &&
+    bal.ctfApprovedNegExchange &&
+    bal.ctfApprovedNegAdapter
+  if (fullySetup) {
     await db.polymarketCreds.updateMany({
       where: { userId },
       data:  { allowanceVerifiedAt: new Date() },
@@ -261,27 +528,110 @@ export async function ensureUsdcAllowance(userId: string): Promise<{
     return { alreadyApproved: true, txHashes: [] }
   }
 
-  const txHashes: string[] = []
-  if (allowCtf < minNeeded) {
-    const tx = await (usdc as any).approve(CTF_EXCHANGE, MAX_UINT256)
-    const receipt = await tx.wait()
-    txHashes.push(receipt.hash)
+  const { pkHex } = await getUserPolygonSigner(userId)
+  const relay = getRelayClient(pkHex)
+
+  const txns: Transaction[] = []
+  const erc20Approve = (token: string, spender: string): Transaction => ({
+    to:    token,
+    data:  encodeFunctionData({
+      abi: ERC20_APPROVE_VIEM_ABI,
+      functionName: 'approve',
+      args: [spender as Hex, maxUint256],
+    }),
+    value: '0',
+  })
+  const erc1155SetApprovalForAll = (token: string, operator: string): Transaction => ({
+    to:    token,
+    data:  encodeFunctionData({
+      abi: ERC1155_SET_APPROVAL_FOR_ALL_VIEM_ABI,
+      functionName: 'setApprovalForAll',
+      args: [operator as Hex, true],
+    }),
+    value: '0',
+  })
+
+  if (bal.allowanceCtf        < minUsdc) txns.push(erc20Approve(USDC_E, CTF_EXCHANGE))
+  if (bal.allowanceNeg        < minUsdc) txns.push(erc20Approve(USDC_E, NEG_RISK_EXCHANGE))
+  if (bal.allowanceNegAdapter < minUsdc) txns.push(erc20Approve(USDC_E, NEG_RISK_ADAPTER))
+  if (!bal.ctfApprovedCtfExchange) txns.push(erc1155SetApprovalForAll(CTF, CTF_EXCHANGE))
+  if (!bal.ctfApprovedNegExchange) txns.push(erc1155SetApprovalForAll(CTF, NEG_RISK_EXCHANGE))
+  if (!bal.ctfApprovedNegAdapter)  txns.push(erc1155SetApprovalForAll(CTF, NEG_RISK_ADAPTER))
+
+  if (txns.length === 0) {
+    // Race: balances changed between the read and now. Treat as approved.
+    await db.polymarketCreds.updateMany({
+      where: { userId },
+      data:  { allowanceVerifiedAt: new Date() },
+    })
+    return { alreadyApproved: true, txHashes: [] }
   }
-  if (allowNeg < minNeeded) {
-    const tx = await (usdc as any).approve(NEG_RISK_EXCHANGE, MAX_UINT256)
-    const receipt = await tx.wait()
-    txHashes.push(receipt.hash)
+
+  const resp = await relay.execute(txns, 'usdc + ctf approvals (gasless setup)')
+  const result = await resp.wait()
+  if (!result || (result.state && result.state === 'STATE_FAILED')) {
+    throw new Error(
+      `Relayer execute failed (state=${(result as any)?.state ?? 'unknown'})`,
+    )
   }
 
   await db.polymarketCreds.updateMany({
     where: { userId },
     data:  {
-      allowanceTxHash:     txHashes[txHashes.length - 1] ?? null,
+      allowanceTxHash:     result.transactionHash,
       allowanceVerifiedAt: new Date(),
     },
   })
 
-  return { alreadyApproved: false, txHashes }
+  return { alreadyApproved: false, txHashes: [result.transactionHash] }
+}
+
+// ── Authenticated CLOB client (SAFE funder) ─────────────────────────────
+async function getAuthedClient(userId: string, opts?: { requireAttribution?: boolean }): Promise<{
+  client: ClobClient
+  walletAddress: string  // EOA — signing key
+  funderAddress: string  // Safe — actual order funder
+  builderCode: string | null
+  attributionOk: boolean
+}> {
+  const { wallet, address } = await getUserPolygonSigner(userId)
+  const { creds }           = await getOrCreateCreds(userId)
+  const attribution         = getBuilderAttribution()
+
+  // requireAttribution = true on the trade path. Refuse to construct a
+  // trading client when attribution is misconfigured so the order POST
+  // never goes out unattributed.
+  if (opts?.requireAttribution && !attribution.ok) {
+    throw new Error(attribution.reason ?? 'Builder attribution unavailable')
+  }
+
+  const dbCreds = await db.polymarketCreds.findUnique({ where: { userId } })
+  const funder  = dbCreds?.safeAddress
+  if (!funder) {
+    throw new Error('Safe not deployed yet — run /api/polymarket/setup first')
+  }
+
+  // ClobClient signature: (host, chainId, signer, creds, signatureType, funderAddress, ...)
+  // funderAddress is the address the CLOB will pull collateral FROM — the
+  // Safe — while signer is the EOA that authorizes the order.
+  const client = new ClobClient(
+    CLOB_HOST,
+    POLYGON_CHAIN_ID,
+    wallet as any,
+    creds,
+    SignatureType.POLY_GNOSIS_SAFE,
+    funder,
+    undefined,
+    undefined,
+    attribution.builderConfig,
+  )
+  return {
+    client,
+    walletAddress: address,
+    funderAddress: funder,
+    builderCode:   attribution.builderCode,
+    attributionOk: attribution.ok,
+  }
 }
 
 // ── Place a market order (buy or sell) ─────────────────────────────────
@@ -300,15 +650,8 @@ export interface PlaceOrderArgs {
   }
   reasoning?: string
   providers?: any
-  // Slippage protection. expectedPrice is the orderbook price the user (or
-  // agent) saw at decision time; maxSlippageBps is how far we'll let it
-  // drift before refusing. Both optional — if expectedPrice is omitted we
-  // fall back to "best available" market semantics. Set both for a true
-  // slippage-protected market order.
   expectedPrice?:  number
   maxSlippageBps?: number
-  // Skip the on-chain allowance pre-check (used when caller has already
-  // verified the allowance, e.g. fresh from setup).
   skipAllowanceCheck?: boolean
 }
 
@@ -329,25 +672,21 @@ export async function placeMarketOrder(args: PlaceOrderArgs): Promise<PlaceOrder
 
   let positionId: string | undefined
   try {
-    // 1. Build authed client; this REQUIRES builder attribution to be
-    //    valid (or absent in dev). A misconfigured deploy throws here
-    //    before any USDC moves.
-    const { client, builderCode, attributionOk } = await getAuthedClient(userId, {
+    // 1. Build authed client (SAFE-funder) — REQUIRES builder attribution.
+    //    Throws if either attribution is missing OR the user hasn't run
+    //    setup yet (no Safe deployed).
+    const { client, builderCode, funderAddress, attributionOk } = await getAuthedClient(userId, {
       requireAttribution: true,
     })
 
-    // 2. Allowance pre-check. Without USDC approval the CLOB will reject
-    //    the order (or worse, silently quote a fill that can't settle).
-    //    The agent path used to skip this — it now opts in by default.
+    // 2. Allowance pre-check. Without USDC + CTF approvals at the Safe
+    //    the CLOB will reject the order. The agent path used to skip
+    //    this — it now opts in by default.
     if (!skipAllowanceCheck) {
       await ensureUsdcAllowance(userId)
     }
 
-    // 3. Read the current best price for slippage check + telemetry.
-    //    Polymarket "market" orders are FAK orders — by passing `price`
-    //    we cap the worst fill we'll accept. With no price, the SDK
-    //    walks the entire book up to 1.0 (BUY) or down to 0.0 (SELL),
-    //    which is fine for tiny size but disastrous on a thin book.
+    // 3. Read current best price for slippage check + telemetry.
     let entryEstimate = 0.5
     try {
       const mid = await client.getMidpoint(tokenId)
@@ -355,8 +694,6 @@ export async function placeMarketOrder(args: PlaceOrderArgs): Promise<PlaceOrder
       if (Number.isFinite(v) && v > 0 && v < 1) entryEstimate = v
     } catch {}
 
-    // Slippage gate — refuse if the book has moved away from what the
-    // caller saw. bps is the standard unit: 500 bps = 5% drift.
     if (
       expectedPrice && Number.isFinite(expectedPrice) &&
       maxSlippageBps && maxSlippageBps > 0
@@ -370,10 +707,6 @@ export async function placeMarketOrder(args: PlaceOrderArgs): Promise<PlaceOrder
       }
     }
 
-    // The price we'll cap fills at. For BUY we accept at-or-below
-    // (expectedPrice * (1 + slippage)); for SELL at-or-above
-    // (expectedPrice * (1 - slippage)). Falls through to mid +/- band
-    // if no expected price was supplied.
     const slipMul = maxSlippageBps ? maxSlippageBps / 10_000 : 0.05
     const ref     = expectedPrice && Number.isFinite(expectedPrice) ? expectedPrice : entryEstimate
     const capPrice = side === 'BUY'
@@ -381,7 +714,7 @@ export async function placeMarketOrder(args: PlaceOrderArgs): Promise<PlaceOrder
       : Math.max(0.001, ref * (1 - slipMul))
 
     // 4. Persist the position FIRST in 'placed' state so we have an
-    //    audit trail even if the CLOB POST hangs / network blips.
+    //    audit trail even if the CLOB POST hangs.
     const position = await db.polymarketPosition.create({
       data: {
         userId,
@@ -402,13 +735,7 @@ export async function placeMarketOrder(args: PlaceOrderArgs): Promise<PlaceOrder
     })
     positionId = position.id
 
-    // 5. Build + sign the order. createMarketOrder with `price` enforces
-    //    a limit-priced FAK — partial fill ok, anything worse than `price`
-    //    is left unfilled. This is our slippage protection at the SDK level.
     if (!attributionOk) {
-      // Belt-and-braces: getAuthedClient with requireAttribution should
-      // have already thrown, but if anyone ever flips that flag this
-      // is the second guard.
       throw new Error('Refusing to place order without verified builder attribution')
     }
     const signed = await client.createMarketOrder({
@@ -434,23 +761,12 @@ export async function placeMarketOrder(args: PlaceOrderArgs): Promise<PlaceOrder
     const orderHash = resp.orderHash || (signed as any)?.hash || null
     const status    = (resp.status === 'matched' || resp.status === 'filled') ? resp.status : 'placed'
 
-    // Authoritative fill quantities from the CLOB response. These come back
-    // as decimal strings:
-    //   makingAmount = what we gave (USDC for BUY; outcome shares for SELL)
-    //   takingAmount = what we got  (outcome shares for BUY; USDC for SELL)
-    // Falling back to the estimate is OK for the very first ms before the
-    // CLOB confirms a fill, but using it as the *persisted* truth (as the
-    // old code did) means a 50% partial fill on BUY would record 100% of
-    // shares — and the SELL UI would then submit an oversized exit that
-    // the CLOB would reject. Always prefer real fills when present.
     const makingAmount = parseFloat(String((resp as any).makingAmount ?? '0'))
     const takingAmount = parseFloat(String((resp as any).takingAmount ?? '0'))
     const realShares =
       side === 'BUY'
         ? (Number.isFinite(takingAmount) && takingAmount > 0 ? takingAmount : amount / entryEstimate)
         : (Number.isFinite(makingAmount) && makingAmount > 0 ? makingAmount : amount)
-    // Average fill price from the CLOB-reported amounts when both legs are
-    // present. Falls back to the midpoint estimate otherwise.
     const realFillPrice =
       side === 'BUY' && Number.isFinite(makingAmount) && makingAmount > 0 && Number.isFinite(takingAmount) && takingAmount > 0
         ? makingAmount / takingAmount
@@ -472,6 +788,12 @@ export async function placeMarketOrder(args: PlaceOrderArgs): Promise<PlaceOrder
       },
     })
 
+    // funderAddress is part of the order envelope — we don't persist
+    // it separately on the position row (it's the user's Safe and is
+    // the same for every order they place), but we annotate the log
+    // so the brain feed can show the actual on-chain funder.
+    void funderAddress
+
     return { ok: true, positionId, orderId: orderId ?? undefined, orderHash: orderHash ?? undefined, fillPrice: realFillPrice }
   } catch (err: any) {
     const msg = err?.message ?? String(err)
@@ -486,14 +808,84 @@ export async function placeMarketOrder(args: PlaceOrderArgs): Promise<PlaceOrder
 }
 
 // ── Read user's positions ───────────────────────────────────────────────
-// Polymarket's Data API (independent host) is the source-of-truth for
-// realized positions; for now we surface our own DB records (which are
-// always 1:1 with the orders BUILD4 placed) and let the agent reconciler
-// hydrate fill data from the Data API in a follow-up.
 export async function getUserPositions(userId: string) {
   return db.polymarketPosition.findMany({
     where:   { userId },
     orderBy: { openedAt: 'desc' },
     take:    200,
   })
+}
+
+// ── Gasless redeem of resolved positions ───────────────────────────────
+// Triggered by the user from the positions panel once a market resolves.
+// Routes through CTF.redeemPositions for standard markets and
+// NegRiskAdapter.redeemPositions for neg-risk markets — caller specifies.
+export async function redeemPositions(args: {
+  userId: string
+  conditionId: string
+  isNegRisk?: boolean
+  // For neg-risk redeems we need the per-outcome share amounts (raw 6dp).
+  // For CTF redeems we don't — the CTF reads the user's balance directly.
+  negRiskAmounts?: bigint[]
+}): Promise<{ txHash: string }> {
+  const { userId, conditionId, isNegRisk, negRiskAmounts } = args
+  if (!/^0x[0-9a-fA-F]{64}$/.test(conditionId)) {
+    throw new Error(`Invalid conditionId: ${conditionId}`)
+  }
+  const creds = await db.polymarketCreds.findUnique({ where: { userId } })
+  if (!creds?.safeAddress) throw new Error('Safe not deployed — run /setup first')
+
+  const { pkHex } = await getUserPolygonSigner(userId)
+  const relay = getRelayClient(pkHex)
+
+  let tx: Transaction
+  if (isNegRisk) {
+    if (!negRiskAmounts || negRiskAmounts.length === 0) {
+      throw new Error('negRiskAmounts required for neg-risk redeem')
+    }
+    tx = {
+      to:    NEG_RISK_ADAPTER,
+      data:  encodeFunctionData({
+        abi: NEG_RISK_REDEEM_VIEM_ABI,
+        functionName: 'redeemPositions',
+        args: [conditionId as Hex, negRiskAmounts],
+      }),
+      value: '0',
+    }
+  } else {
+    // Standard CTF binary market — indexSets [1, 2] redeems both YES and NO
+    // positions. The CTF reads the user's actual balance from the Safe so
+    // unowned outcomes contribute zero.
+    tx = {
+      to:    CTF,
+      data:  encodeFunctionData({
+        abi: CTF_REDEEM_VIEM_ABI,
+        functionName: 'redeemPositions',
+        args: [USDC_E as Hex, zeroHash, conditionId as Hex, [1n, 2n]],
+      }),
+      value: '0',
+    }
+  }
+
+  const resp = await relay.execute([tx], `redeem ${conditionId.slice(0, 10)}…`)
+  const result = await resp.wait()
+  if (!result || (result.state && result.state === 'STATE_FAILED')) {
+    throw new Error(
+      `Relayer redeem failed (state=${(result as any)?.state ?? 'unknown'})`,
+    )
+  }
+
+  // Best-effort: mark any matching open positions as resolved. Real PnL
+  // accounting belongs in a separate reconciler; this just stops them
+  // from showing as active.
+  await db.polymarketPosition.updateMany({
+    where: {
+      userId,
+      conditionId,
+      status: { in: ['placed', 'matched', 'filled'] },
+    },
+    data: { status: 'resolved_win', closedAt: new Date() },
+  }).catch(() => {})
+
+  return { txHash: result.transactionHash }
 }

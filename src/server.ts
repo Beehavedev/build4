@@ -4717,8 +4717,7 @@ app.get('/api/polymarket/wallet', requireTgUser, async (req, res) => {
   try {
     const creds = await db.polymarketCreds.findUnique({ where: { userId: user.id } })
 
-    // If creds aren't set up we still try to surface the user's address
-    // so the UI can show "fund this address" instructions before setup.
+    // EOA — the signing key, derived from the user's BSC wallet PK.
     let walletAddress: string | null = creds?.walletAddress ?? null
     if (!walletAddress) {
       const w = await db.wallet.findFirst({
@@ -4727,18 +4726,37 @@ app.get('/api/polymarket/wallet', requireTgUser, async (req, res) => {
       walletAddress = w?.address ?? null
     }
 
+    // Safe — the funder. This is where users deposit USDC.e and where
+    // Polymarket holds positions. Null until /setup deploys it.
+    const safeAddress: string | null = creds?.safeAddress ?? null
+
+    // Read balances at the SAFE (the relevant trading address). The EOA
+    // reads are not surfaced here because under the gasless model the
+    // EOA holds nothing and needs nothing — Polymarket's relayer pays
+    // for every on-chain action.
     let balances:
-      | { matic: number; usdc: number; allowanceCtf: number; allowanceNeg: number }
+      | {
+          usdc: number
+          allowanceCtf: number
+          allowanceNeg: number
+          allowanceNegAdapter: number
+          ctfApprovedCtfExchange: boolean
+          ctfApprovedNegExchange: boolean
+          ctfApprovedNegAdapter:  boolean
+        }
       | null = null
-    if (walletAddress) {
+    if (safeAddress) {
       try {
         const { getPolygonBalances } = await import('./services/polymarketTrading')
-        const b = await getPolygonBalances(walletAddress)
+        const b = await getPolygonBalances(safeAddress)
         balances = {
-          matic:        b.matic,
-          usdc:         b.usdc,
-          allowanceCtf: b.allowanceCtf,
-          allowanceNeg: b.allowanceNeg,
+          usdc:                    b.usdc,
+          allowanceCtf:            b.allowanceCtf,
+          allowanceNeg:            b.allowanceNeg,
+          allowanceNegAdapter:     b.allowanceNegAdapter,
+          ctfApprovedCtfExchange:  b.ctfApprovedCtfExchange,
+          ctfApprovedNegExchange:  b.ctfApprovedNegExchange,
+          ctfApprovedNegAdapter:   b.ctfApprovedNegAdapter,
         }
       } catch (e) {
         console.warn('[API] polymarket/wallet balances failed:', (e as Error).message)
@@ -4746,13 +4764,21 @@ app.get('/api/polymarket/wallet', requireTgUser, async (req, res) => {
     }
 
     const ready = Boolean(
-      creds && balances && balances.allowanceCtf >= 1_000_000 && balances.allowanceNeg >= 1_000_000,
+      creds && safeAddress && balances &&
+      balances.allowanceCtf        >= 1_000_000 &&
+      balances.allowanceNeg        >= 1_000_000 &&
+      balances.allowanceNegAdapter >= 1_000_000 &&
+      balances.ctfApprovedCtfExchange &&
+      balances.ctfApprovedNegExchange &&
+      balances.ctfApprovedNegAdapter,
     )
 
     res.json({
       ok: true,
-      walletAddress,
-      hasCreds:        Boolean(creds),
+      walletAddress,                                        // EOA (signer)
+      safeAddress,                                          // Gnosis Safe (funder, deposit address)
+      hasCreds:          Boolean(creds),
+      safeDeployed:      Boolean(creds?.safeDeployedAt),
       allowanceVerified: Boolean(creds?.allowanceVerifiedAt),
       ready,
       balances,
@@ -4768,40 +4794,123 @@ app.post('/api/polymarket/setup', requireTgUser, async (req, res) => {
   const user = (req as any).user
   if (!user?.id) return res.status(401).json({ ok: false, error: 'unauthorized' })
   try {
-    const { getOrCreateCreds, ensureUsdcAllowance } = await import('./services/polymarketTrading')
+    const {
+      getOrCreateCreds,
+      deploySafeIfNeeded,
+      ensureUsdcAllowance,
+    } = await import('./services/polymarketTrading')
+
+    // (1) Derive CLOB L2 HMAC creds (one-time, signed by the EOA).
     const { walletAddress } = await getOrCreateCreds(user.id)
+
+    // (2) Deploy the Gnosis Safe via Polymarket's relayer (gasless).
+    //     Idempotent — returns existing safeAddress if already deployed.
+    let safe: { safeAddress: string; alreadyDeployed: boolean; txHash?: string }
+    try {
+      safe = await deploySafeIfNeeded(user.id)
+    } catch (deployErr: any) {
+      const msg = String(deployErr?.message ?? deployErr)
+      await logPolymarketEvent({
+        userId: user.id,
+        action: 'wallet_setup_failed',
+        reason: `Safe deploy failed: ${msg.slice(0, 200)}`,
+      })
+      return res.status(502).json({
+        ok: false,
+        walletAddress,
+        credsReady: true,
+        error: 'safe_deploy_failed',
+        details: msg.slice(0, 300),
+      })
+    }
+
+    // (3) Approve USDC + CTF to the three exchange contracts (gasless,
+    //     batched in one relayer transaction).
     let allowance: { alreadyApproved: boolean; txHashes: string[] } = { alreadyApproved: true, txHashes: [] }
     try {
       allowance = await ensureUsdcAllowance(user.id)
     } catch (allowErr: any) {
-      // Most common failure: not enough MATIC for gas. Surface a clear
-      // message instead of a 500 so the UI can prompt the user to fund.
       const msg = String(allowErr?.message ?? allowErr)
       await logPolymarketEvent({
         userId: user.id,
         action: 'wallet_setup_failed',
         reason: `Allowance tx failed: ${msg.slice(0, 200)}`,
       })
-      return res.status(400).json({
+      return res.status(502).json({
         ok: false,
         walletAddress,
+        safeAddress: safe.safeAddress,
         credsReady: true,
         error: 'allowance_failed',
         details: msg.slice(0, 300),
       })
     }
+
     await logPolymarketEvent({
       userId: user.id,
       action: 'wallet_setup',
-      reason: allowance.alreadyApproved
-        ? 'Polymarket creds derived; USDC allowance already in place'
-        : `Polymarket creds derived; approved USDC (${allowance.txHashes.length} tx)`,
+      reason: [
+        safe.alreadyDeployed
+          ? `Safe already deployed at ${safe.safeAddress.slice(0, 10)}…`
+          : `Safe deployed gaslessly at ${safe.safeAddress.slice(0, 10)}…`,
+        allowance.alreadyApproved
+          ? 'USDC + CTF allowances already in place'
+          : `Approved USDC + CTF gaslessly (${allowance.txHashes.length} relayer tx)`,
+      ].join(' · '),
     })
-    res.json({ ok: true, walletAddress, credsReady: true, allowance })
+
+    res.json({
+      ok: true,
+      walletAddress,
+      safeAddress: safe.safeAddress,
+      safeNewlyDeployed: !safe.alreadyDeployed,
+      credsReady: true,
+      allowance,
+    })
   } catch (err: any) {
     const msg = err?.message ?? String(err)
     console.error('[API] /polymarket/setup failed:', msg)
     res.status(500).json({ ok: false, error: 'setup_failed', details: msg.slice(0, 300) })
+  }
+})
+
+// Gasless redeem of a resolved Polymarket position. Routes through CTF
+// for standard binary markets and the NegRiskAdapter for neg-risk
+// markets. Caller specifies which via `isNegRisk`.
+app.post('/api/polymarket/redeem', requireTgUser, async (req, res) => {
+  const user = (req as any).user
+  if (!user?.id) return res.status(401).json({ ok: false, error: 'unauthorized' })
+  try {
+    const body         = req.body ?? {}
+    const conditionId  = String(body.conditionId ?? '')
+    const isNegRisk    = Boolean(body.isNegRisk)
+    const negRiskAmts  = Array.isArray(body.negRiskAmounts)
+      ? body.negRiskAmounts.map((x: any) => BigInt(String(x)))
+      : undefined
+
+    if (!/^0x[0-9a-fA-F]{64}$/.test(conditionId)) {
+      return res.status(400).json({ ok: false, error: 'invalid_condition_id' })
+    }
+
+    const { redeemPositions } = await import('./services/polymarketTrading')
+    const { txHash } = await redeemPositions({
+      userId:     user.id,
+      conditionId,
+      isNegRisk,
+      negRiskAmounts: negRiskAmts,
+    })
+
+    await logPolymarketEvent({
+      userId: user.id,
+      action: 'redeem',
+      reason: `Redeemed positions for condition ${conditionId.slice(0, 10)}… (gasless via relayer)`,
+    })
+
+    res.json({ ok: true, txHash })
+  } catch (err: any) {
+    const msg = err?.message ?? String(err)
+    console.error('[API] /polymarket/redeem failed:', msg)
+    res.status(502).json({ ok: false, error: 'redeem_failed', details: msg.slice(0, 300) })
   }
 })
 

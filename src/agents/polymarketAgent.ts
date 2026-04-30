@@ -164,10 +164,9 @@ async function tickOneAgent(
     data:  { lastPolymarketTickAt: new Date() },
   })
 
-  // Make sure the user has Polymarket creds + USDC allowance ready —
-  // this is idempotent (no-ops once set up). If they haven't onboarded
-  // (no BSC wallet to derive PK from), getOrCreateCreds throws and we
-  // log + bail for this agent.
+  // Make sure the user has Polymarket creds ready — this is idempotent
+  // (no-ops once set up). If they haven't onboarded (no BSC wallet to
+  // derive PK from), getOrCreateCreds throws and we log + bail.
   let walletAddress: string
   try {
     const c = await getOrCreateCreds(agent.userId)
@@ -182,19 +181,34 @@ async function tickOneAgent(
     return { ordersPlaced, ordersSkipped: ordersSkipped + 1 }
   }
 
-  // Read live USDC balance — the agent will refuse to trade if it can't
-  // afford the configured max size. We do not block on MATIC here:
-  // postOrder is a CLOB POST, not an on-chain tx (settlement is on the
-  // exchange contract via matching, paid by the relayer side). MATIC is
-  // only needed for the one-time USDC approval which `getOrCreateCreds`
-  // routes through `ensureUsdcAllowance` upstream.
+  // Resolve the funder (Safe) address — that's where USDC lives under
+  // the gasless model. If the user hasn't run /setup yet there's no
+  // Safe deployed and we have nothing to trade against.
+  const polyCreds = await db.polymarketCreds.findUnique({
+    where: { userId: agent.userId },
+  })
+  const safeAddress = polyCreds?.safeAddress ?? null
+  if (!safeAddress) {
+    await logDecision(agent, null, null, {
+      action: 'SKIP', side: 'YES', conviction: 0,
+      reasoning: 'safe_not_deployed: user must run /api/polymarket/setup before agent can trade',
+    })
+    return { ordersPlaced, ordersSkipped: ordersSkipped + 1 }
+  }
+
+  // Read live USDC balance at the SAFE — the agent refuses to trade if
+  // it can't afford the configured max size. Under the gasless model
+  // there's no MATIC requirement at all; Polymarket's relayer pays for
+  // every on-chain action (deploy, approve, redeem). Daily order POSTs
+  // are off-chain EIP-712 signatures, free either way.
   let usdcBal = 0
   try {
-    const bals = await getPolygonBalances(walletAddress)
+    const bals = await getPolygonBalances(safeAddress)
     usdcBal = bals.usdc
   } catch (err) {
     console.warn(`[polymarketAgent] balance check failed for ${agent.id}:`, (err as Error).message)
   }
+  void walletAddress
   if (usdcBal < agent.polymarketMaxSizeUsdc) {
     await logDecision(agent, null, null, {
       action: 'SKIP', side: 'YES', conviction: 0,
