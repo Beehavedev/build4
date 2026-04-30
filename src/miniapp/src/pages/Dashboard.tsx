@@ -47,6 +47,15 @@ export default function Dashboard({ userId, onNavigate }: DashboardProps) {
   const [agents, setAgents] = useState<any[]>([])
   const [trades, setTrades] = useState<RecentTrade[]>([])
   const [wallet, setWallet] = useState<WalletInfo | null>(null)
+  // Polymarket wallet block — fetched separately from /api/me/wallet because
+  // it requires hitting Polygon RPC and we don't want to slow the main
+  // wallet refresh down. Soft-fails to null if creds aren't set up yet.
+  const [polyWallet, setPolyWallet] = useState<{
+    walletAddress: string | null
+    hasCreds: boolean
+    ready: boolean
+    balances: { matic: number; usdc: number; allowanceCtf: number; allowanceNeg: number } | null
+  } | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -57,6 +66,27 @@ export default function Dashboard({ userId, onNavigate }: DashboardProps) {
     // agents, even if the wallet (and especially the HL leg of it) is
     // still resolving. This kept the loading skeleton from getting stuck
     // behind a slow Hyperliquid clearinghouse read.
+    // Polymarket refresh helper — used by all three trigger points
+    // (initial fetch, 5s interval, visibility change). Soft-fail rules:
+    //  - hard fetch error (network blip) → keep last good state
+    //  - parsed response with ok===false → reset to null so the card
+    //    falls back to "not activated" instead of showing a stale LIVE
+    //    balance after the user logs out / loses creds.
+    const refreshPoly = () => {
+      if (cancelled) return
+      apiFetch<any>('/api/polymarket/wallet')
+        .then((p) => {
+          if (cancelled) return
+          if (p?.ok) setPolyWallet(p)
+          else setPolyWallet(null)
+        })
+        .catch(() => { /* network blip — keep last good state */ })
+    }
+
+    // First-paint fetch — only the three calls that the dashboard
+    // skeleton actually depends on are gated here. Polymarket is
+    // intentionally fired independently below so a slow Polygon RPC
+    // never delays the dashboard from rendering.
     Promise.all([
       fetch(`/api/user/${userId}`).then(r => r.json()).catch(() => null),
       fetch(`/api/agents/${userId}`).then(r => r.json()).catch(() => []),
@@ -74,6 +104,10 @@ export default function Dashboard({ userId, onNavigate }: DashboardProps) {
       setLoading(false)
     })
 
+    // Polymarket wallet — fire-and-forget independent of the gating
+    // Promise.all so a slow Polygon RPC never blocks first paint.
+    refreshPoly()
+
     // 1s wallet refresh — every venue balance (Aster USDT, HL
     // clearinghouse account value, BSC USDT) is re-pulled live so the
     // dashboard always shows real-time numbers. Self-heals if the
@@ -85,14 +119,22 @@ export default function Dashboard({ userId, onNavigate }: DashboardProps) {
         .catch(() => { /* keep last good state */ })
     }, 1000)
 
+    // Polymarket wallet refresh on a slower 5s cadence — Polygon RPC is
+    // slower + more rate-limited than the BSC reads behind /api/me/wallet
+    // and the user's USDC balance doesn't change every second anyway.
+    const polyId = setInterval(refreshPoly, 5000)
+
     // Also refetch whenever the tab becomes visible again — switching
     // to wallet/portfolio and back already triggers the user's mental
-    // model that "balances should be fresh now", so honour that.
+    // model that "balances should be fresh now", so honour that. We
+    // refresh BOTH the BSC/HL wallet and the Polymarket wallet because
+    // the user may have funded their Polygon address while away.
     const onVis = () => {
       if (document.visibilityState === 'visible' && !cancelled) {
         apiFetch<WalletInfo>('/api/me/wallet')
           .then((w) => { if (!cancelled && w) setWallet(w) })
           .catch(() => { /* keep last good state */ })
+        refreshPoly()
       }
     }
     document.addEventListener('visibilitychange', onVis)
@@ -100,6 +142,7 @@ export default function Dashboard({ userId, onNavigate }: DashboardProps) {
     return () => {
       cancelled = true
       clearInterval(id)
+      clearInterval(polyId)
       document.removeEventListener('visibilitychange', onVis)
     }
   }, [userId])
@@ -126,7 +169,14 @@ export default function Dashboard({ userId, onNavigate }: DashboardProps) {
   // the Predictions tab. This card is the user's BSC pocket / dry powder
   // available for prediction trades.
   const predValue = bscUsdt
-  const totalValue = asterUsdt + bscUsdt + hlValue
+  // Polymarket dry powder = Polygon USDC the user holds at the custodial
+  // address. We treat "ready" (creds exist + allowance approved) as
+  // onboarded so the pill mirrors the other venues' onboarded/funded
+  // logic. If the wallet endpoint hasn't returned yet we soft-fall to
+  // 0 / not-activated rather than hiding the card.
+  const polyUsdc = polyWallet?.balances?.usdc ?? 0
+  const polyOnboarded = !!polyWallet?.ready
+  const totalValue = asterUsdt + bscUsdt + hlValue + polyUsdc
   const todayPnl = portfolio?.dayPnl ?? 0
   const todayPct = totalValue > 0 ? (todayPnl / totalValue) * 100 : 0
 
@@ -140,6 +190,16 @@ export default function Dashboard({ userId, onNavigate }: DashboardProps) {
   // routed to 'agents' (the agent management screen) which broke parity
   // with HL — users tapping "Aster · Perps" expected the trade ticket,
   // not an agent list.
+  // Helper used by the Polymarket card + quick-action: write the venue
+  // preference before navigating to the Predictions page so the user
+  // lands directly on the Polymarket sub-tab. Without this, tapping
+  // "Polymarket" from the dashboard would dump them on 42.space (which
+  // is the saved default) and force a second tap on the venue selector.
+  const goPolymarket = () => {
+    try { window.localStorage.setItem('build4.predict.venue', 'poly') } catch {}
+    onNavigate?.('predictions')
+  }
+
   const quickActions: Array<{ label: string; sub: string; testId: string; onClick: () => void; disabled?: boolean }> = [
     {
       label: 'Aster',
@@ -158,6 +218,12 @@ export default function Dashboard({ userId, onNavigate }: DashboardProps) {
       sub: 'Perps',
       testId: 'button-venue-hyperliquid',
       onClick: () => onNavigate?.('hyperliquid'),
+    },
+    {
+      label: 'Polymarket',
+      sub: 'Predict',
+      testId: 'button-venue-polymarket',
+      onClick: goPolymarket,
     },
   ]
 
@@ -203,11 +269,12 @@ export default function Dashboard({ userId, onNavigate }: DashboardProps) {
         </div>
       </div>
 
-      {/* System split — Aster + Hyperliquid + 42.space.
-          Three venues now that Hyperliquid is live; using a 3-col grid so
-          users see all balances at a glance. Cards are slightly tighter
-          padding than before to fit comfortably on a mobile width. */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 16 }}>
+      {/* System split — Aster + Hyperliquid + 42.space + Polymarket.
+          Four venues now that Polymarket is live (Builder Program). Three
+          columns made the cards comfortable on mobile width but adding a
+          fourth in one row would overflow, so we drop to a 2×2 grid which
+          keeps every card readable while showing all venues at a glance. */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16 }}>
         <div className="card" data-testid="card-aster" style={{ padding: 12 }}>
           <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', fontWeight: 600, letterSpacing: 0.4 }}>
             ASTER
@@ -292,6 +359,53 @@ export default function Dashboard({ userId, onNavigate }: DashboardProps) {
             </span>
           </div>
         </div>
+
+        {/* Polymarket — fourth venue. Mirrors the other cards' shape so
+            the user gets one consistent "balance · capability · status"
+            read across all four venues. Tapping the card jumps to the
+            Predictions tab with the venue selector already pinned to
+            Polymarket (see goPolymarket()). Pill mirrors HL/Aster: not
+            onboarded → "not activated"; onboarded but no USDC → "fund to
+            start"; onboarded with USDC → "LIVE". */}
+        {/* Rendered as role=button + tabIndex=0 + keyboard handler so
+            keyboard / screen-reader users can activate the card the
+            same way mouse users can. We keep the <div className="card">
+            shell so the visual style stays in lockstep with the other
+            three venue cards rather than fighting <button> defaults. */}
+        <div
+          className="card"
+          data-testid="card-polymarket"
+          role="button"
+          tabIndex={0}
+          aria-label="Open Polymarket predictions"
+          style={{ padding: 12, cursor: 'pointer' }}
+          onClick={goPolymarket}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault()
+              goPolymarket()
+            }
+          }}
+        >
+          <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', fontWeight: 600, letterSpacing: 0.4 }}>
+            POLYMARKET
+          </div>
+          <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 6 }}>Predict · Polygon</div>
+          <div style={{ fontSize: 'var(--text-md)', fontWeight: 700 }} data-testid="text-polymarket-balance">
+            {fmtUsd(polyUsdc)}
+          </div>
+          <div style={{ fontSize: 10, color: 'var(--text-secondary)', marginTop: 4 }}>
+            {polyOnboarded ? 'manual & AI' : 'not activated'}
+          </div>
+          <div style={{ marginTop: 6 }}>
+            <span className={`pill ${polyOnboarded && polyUsdc > 0 ? 'pill-live' : polyOnboarded ? 'pill-muted' : 'pill-amber'}`}>
+              <span className={polyOnboarded && polyUsdc > 0 ? 'dot-live' : 'dot-muted'} />
+              {polyOnboarded
+                ? (polyUsdc > 0 ? 'LIVE' : 'fund to start')
+                : 'not activated'}
+            </span>
+          </div>
+        </div>
       </div>
 
       {/* Empty-state hero CTA. First-time users (no agents yet) land on
@@ -337,9 +451,10 @@ export default function Dashboard({ userId, onNavigate }: DashboardProps) {
         </div>
       )}
 
-      {/* Quick actions */}
+      {/* Quick actions — same 2×2 layout as the venue cards above so the
+          fourth (Polymarket) button doesn't overflow the row on mobile. */}
       <div className="section-label">Quick Actions</div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16 }}>
         {quickActions.map(a => (
           <button
             key={a.label + a.sub}
