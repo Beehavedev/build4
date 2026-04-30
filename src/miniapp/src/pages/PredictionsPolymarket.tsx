@@ -615,7 +615,13 @@ export default function PredictionsPolymarket() {
           (j?.details && String(j.details).trim()) ||
           (j?.error   && String(j.error).trim())   ||
           `HTTP ${r.status}`
-        throw new Error(detail.slice(0, 180))
+        // Bumped from 180→500 because the server-side humanizer for
+        // Polymarket SDK errors (humanizeRelayerError in server.ts)
+        // produces actionable messages up to ~320 chars (e.g. the 401
+        // "POLY_BUILDER_* secrets don't match — verify and redeploy"
+        // case). Truncating earlier silently hides the operator
+        // instruction, which defeats the purpose of the humanizer.
+        throw new Error(detail.slice(0, 500))
       }
       flash('ok', 'Wallet ready — USDC allowance set')
       await loadWallet()
