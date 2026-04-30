@@ -345,11 +345,23 @@ export async function getOrCreateCreds(userId: string): Promise<{
       }
     }
 
-    const { wallet, address } = await getUserPolygonSigner(userId)
+    const { address, pkHex } = await getUserPolygonSigner(userId)
 
     // Bootstrap client without creds — only L1 endpoints (createOrDeriveApiKey)
     // need to work here.
-    const bootstrap = new ClobClient(CLOB_HOST, POLYGON_CHAIN_ID, wallet as any)
+    //
+    // We pass a viem WalletClient (NOT an ethers v6 Wallet) because
+    // @polymarket/clob-client@5.8.1 routes signers through duck-typing in
+    // dist/signer.js: `_signTypedData` ⇒ ethers v5, `signTypedData` ⇒ viem
+    // WalletClient. Ethers v6 renamed the v5 method `_signTypedData` to
+    // `signTypedData`, so an ethers v6 wallet now passes the *viem* check
+    // and clob-client then reads `signer.account?.address`, which is
+    // undefined on ethers Wallet, throwing `wallet client is missing
+    // account address`. Passing a real viem WalletClient (with `.account`
+    // populated by privateKeyToAccount) makes the duck-test resolve to
+    // the correct path.
+    const viemWallet = buildViemWalletClient(pkHex)
+    const bootstrap = new ClobClient(CLOB_HOST, POLYGON_CHAIN_ID, viemWallet as any)
     const fresh = await bootstrap.createOrDeriveApiKey()
 
     try {
@@ -768,9 +780,9 @@ async function getAuthedClient(userId: string, opts?: { requireAttribution?: boo
   builderCode: string | null
   attributionOk: boolean
 }> {
-  const { wallet, address } = await getUserPolygonSigner(userId)
-  const { creds }           = await getOrCreateCreds(userId)
-  const attribution         = getBuilderAttribution()
+  const { address, pkHex } = await getUserPolygonSigner(userId)
+  const { creds }          = await getOrCreateCreds(userId)
+  const attribution        = getBuilderAttribution()
 
   // requireAttribution = true on the trade path. Refuse to construct a
   // trading client when attribution is misconfigured so the order POST
@@ -788,10 +800,17 @@ async function getAuthedClient(userId: string, opts?: { requireAttribution?: boo
   // ClobClient signature: (host, chainId, signer, creds, signatureType, funderAddress, ...)
   // funderAddress is the address the CLOB will pull collateral FROM — the
   // Safe — while signer is the EOA that authorizes the order.
+  //
+  // Pass viem WalletClient (not ethers v6 Wallet) — see comment in
+  // getOrCreateCreds for the clob-client@5.8.1 duck-typing bug. Same
+  // surface here: order signing goes through signTypedDataWithSigner,
+  // which would mis-route an ethers v6 wallet to the viem code path
+  // and throw "wallet client is missing account address".
+  const viemWallet = buildViemWalletClient(pkHex)
   const client = new ClobClient(
     CLOB_HOST,
     POLYGON_CHAIN_ID,
-    wallet as any,
+    viemWallet as any,
     creds,
     SignatureType.POLY_GNOSIS_SAFE,
     funder,
