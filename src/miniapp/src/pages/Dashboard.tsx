@@ -83,6 +83,21 @@ export default function Dashboard({ userId, onNavigate }: DashboardProps) {
     if (!userId) { setLoading(false); return }
     let cancelled = false
 
+    // Reset the sticky-onboarded latches when the userId changes.
+    // The Dashboard component normally lives for the entire mini-app
+    // session (one Telegram WebApp = one user) so this is mostly
+    // belt-and-braces, but if a wallet/account ever swapped under us
+    // we'd otherwise keep showing the previous user's HL/Aster/Poly
+    // venues as LIVE — strictly worse than a one-frame re-evaluation.
+    // Refs + state both reset so the next data tick re-latches from
+    // a clean slate against the new user's actual venue status.
+    hlEverOnboardedRef.current    = false
+    asterEverOnboardedRef.current = false
+    polyEverReadyRef.current      = false
+    setHlEverOnboarded(false)
+    setAsterEverOnboarded(false)
+    setPolyEverReady(false)
+
     // First-paint fetch — render the dashboard as soon as we have user +
     // agents, even if the wallet (and especially the HL leg of it) is
     // still resolving. This kept the loading skeleton from getting stuck
