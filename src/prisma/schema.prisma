@@ -162,9 +162,15 @@ model Agent {
   currentPair      String?
   lastScanScore    Int?
 
+  // Polymarket Phase 3 — see prisma/schema.prisma for the full doc-comment.
+  polymarketEnabled       Boolean  @default(false)
+  polymarketMaxSizeUsdc   Float    @default(5)
+  polymarketEdgeThreshold Float    @default(0.10)
+
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @default(now()) @updatedAt
   lastTickAt      DateTime?
+  lastPolymarketTickAt DateTime?
 
   user            User      @relation(fields: [userId], references: [id])
   trades          Trade[]
@@ -295,6 +301,9 @@ model AgentLog {
   // (inputTokens/outputTokens added in Task #24; older rows only carry tokensUsed.)
   // Null when the user is on the single-provider path.
   providers       Json?
+  // Venue tag for the brain feed: 'hyperliquid' | 'aster' | '42' |
+  // 'polymarket'. Older rows are NULL — the UI infers from agent.exchange.
+  exchange        String?
   createdAt       DateTime @default(now())
 
   agent           Agent    @relation(fields: [agentId], references: [id])
@@ -346,4 +355,57 @@ model OutcomePosition {
   @@index([agentId])
   @@index([status])
   @@index([marketAddress])
+}
+
+// Polymarket — Phase 2/3. See prisma/schema.prisma for full doc comments.
+model PolymarketCreds {
+  id                  String   @id @default(cuid())
+  userId              String   @unique
+  walletAddress       String
+  apiKey              String
+  encryptedApiSecret  String
+  encryptedPassphrase String
+  allowanceTxHash     String?
+  allowanceVerifiedAt DateTime?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @default(now()) @updatedAt
+
+  @@index([walletAddress])
+}
+
+model PolymarketPosition {
+  id              String    @id @default(cuid())
+  userId          String
+  agentId         String?
+
+  conditionId     String
+  tokenId         String
+  marketSlug      String?
+  marketTitle     String
+  outcomeLabel    String
+  side            String
+
+  sizeUsdc        Float
+  entryPrice      Float
+  fillSize        Float?
+  exitPrice       Float?
+  payoutUsdc      Float?
+  pnl             Float?
+
+  orderHash       String?
+  orderId         String?
+  status          String    @default("placed")
+  errorMessage    String?
+
+  builderCode     String?
+  reasoning       String?
+  providers       Json?
+
+  openedAt        DateTime  @default(now())
+  closedAt        DateTime?
+
+  @@index([userId])
+  @@index([agentId])
+  @@index([status])
+  @@index([conditionId])
 }
