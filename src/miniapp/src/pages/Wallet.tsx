@@ -668,13 +668,18 @@ function PolygonCard({
   const [fundMsg, setFundMsg] = useState<string | null>(null)
   const [fundErr, setFundErr] = useState<{ code: string; eoa?: string | null; msg: string } | null>(null)
 
-  // If the server didn't return a polygon block (older server, or polygon
-  // RPC was unreachable) silently hide rather than show a confusing empty
-  // card. The Predictions tab will surface any setup errors directly.
+  // If the server didn't return a polygon block (older server) silently
+  // hide rather than show a confusing empty card. The Predictions tab
+  // will surface any setup errors directly.
   if (!poly) return null
   const eoa  = poly.eoa
   const safe = poly.safe
-  const hasEoaUsdc = eoa.usdcE > 0
+  // When Polygon RPC errored server-side the balances default to 0 — a
+  // misleading "you have nothing here" reading. Treat any non-null
+  // eoa.error as authoritative: render the card in error mode instead
+  // of pretending the user has $0.
+  const rpcError   = eoa.error || null
+  const hasEoaUsdc = !rpcError && eoa.usdcE > 0
   const hasMatic   = eoa.matic >= 0.005
   const safeReady  = safe.deployed && !!safe.address
 
@@ -708,10 +713,16 @@ function PolygonCard({
     return (
       <div className="card" style={{ marginBottom: 14, opacity: 0.85 }} data-testid="card-polygon-balance">
         <div style={{ fontSize: 11, color: 'var(--b4-muted)', marginBottom: 6 }}>ON-CHAIN (POLYGON · POLYMARKET)</div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
-          <span data-testid="text-balance-poly-usdce">USDC.e {eoa.usdcE.toFixed(2)}</span>
-          <span data-testid="text-balance-poly-matic">MATIC {eoa.matic.toFixed(4)}</span>
-        </div>
+        {rpcError ? (
+          <div style={{ fontSize: 12, color: 'var(--b4-muted)' }} data-testid="text-poly-rpc-error">
+            <i>balance unavailable — Polygon RPC is busy</i>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+            <span data-testid="text-balance-poly-usdce">USDC.e {eoa.usdcE.toFixed(2)}</span>
+            <span data-testid="text-balance-poly-matic">MATIC {eoa.matic.toFixed(4)}</span>
+          </div>
+        )}
         {safeReady && safe.usdcE > 0 && (
           <div style={{ fontSize: 11, color: 'var(--b4-muted)', marginTop: 4 }} data-testid="text-balance-poly-safe">
             Safe: {safe.usdcE.toFixed(2)} USDC.e
@@ -733,20 +744,51 @@ function PolygonCard({
       <div style={{ fontSize: 11, color: 'var(--b4-muted)', marginBottom: 8 }}>
         ON-CHAIN (POLYGON · POLYMARKET)
       </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-        <div>
-          <div style={{ fontSize: 11, color: 'var(--b4-muted)' }}>USDC.e</div>
-          <div style={{ fontSize: 20, fontWeight: 700 }} data-testid="text-balance-poly-usdce">
-            {eoa.usdcE.toFixed(2)}
+      {rpcError ? (
+        // Surface RPC failures explicitly. Showing 0.00 here would
+        // mislead users who actually have USDC.e at this address into
+        // thinking their funds are missing.
+        <div
+          style={{
+            padding: '10px 12px', borderRadius: 6,
+            background: 'var(--b4-bg-elevated, #181822)',
+            border: '1px solid var(--b4-border, #2a2a3a)',
+            fontSize: 12, color: 'var(--b4-muted)', lineHeight: 1.5,
+          }}
+          data-testid="text-poly-rpc-error"
+        >
+          <div style={{ color: 'var(--b4-red)', fontWeight: 600, marginBottom: 4 }}>
+            ⚠ Couldn't read Polygon balance
+          </div>
+          <div>
+            Public Polygon RPC is rate-limited right now. Tap <b>Refresh</b> in
+            a moment, or check your address directly on{' '}
+            <a
+              href={`https://polygonscan.com/address/${eoa.address}`}
+              target="_blank" rel="noreferrer"
+              style={{ color: 'var(--b4-purple, #8247e5)' }}
+            >
+              Polygonscan
+            </a>
+            .
           </div>
         </div>
-        <div style={{ textAlign: 'right' }}>
-          <div style={{ fontSize: 11, color: 'var(--b4-muted)' }}>MATIC (gas)</div>
-          <div style={{ fontSize: 20, fontWeight: 700 }} data-testid="text-balance-poly-matic">
-            {eoa.matic.toFixed(4)}
+      ) : (
+        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+          <div>
+            <div style={{ fontSize: 11, color: 'var(--b4-muted)' }}>USDC.e</div>
+            <div style={{ fontSize: 20, fontWeight: 700 }} data-testid="text-balance-poly-usdce">
+              {eoa.usdcE.toFixed(2)}
+            </div>
+          </div>
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: 11, color: 'var(--b4-muted)' }}>MATIC (gas)</div>
+            <div style={{ fontSize: 20, fontWeight: 700 }} data-testid="text-balance-poly-matic">
+              {eoa.matic.toFixed(4)}
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {safeReady && (
         <div style={{

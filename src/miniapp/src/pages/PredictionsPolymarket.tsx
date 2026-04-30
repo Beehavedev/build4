@@ -604,8 +604,19 @@ export default function PredictionsPolymarket() {
         headers: { 'Content-Type': 'application/json', ...tgAuthHeaders() },
         body: JSON.stringify({}),
       })
-      const j = await r.json()
-      if (!r.ok || !j.ok) throw new Error(j?.error || `HTTP ${r.status}`)
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok || !j.ok) {
+        // Server returns { error: 'safe_deploy_failed' | 'allowance_failed'
+        // | 'setup_failed', details?: '<underlying message>' }. Show the
+        // human-readable details when present so the user can act on it
+        // (e.g. "Polygon RPC 401" → wait + retry, "no relayer credit" →
+        // contact support) instead of a useless code.
+        const detail =
+          (j?.details && String(j.details).trim()) ||
+          (j?.error   && String(j.error).trim())   ||
+          `HTTP ${r.status}`
+        throw new Error(detail.slice(0, 180))
+      }
       flash('ok', 'Wallet ready — USDC allowance set')
       await loadWallet()
     } catch (e) {
