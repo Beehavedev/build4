@@ -4722,6 +4722,66 @@ function polymarketConfigBuilderCode(): string | null {
 // with a POLY chip alongside HL / Aster / 42.
 // ───────────────────────────────────────────────────────────────────────
 
+// Translate the raw Polymarket relayer/CLOB SDK error string into a
+// user-facing message. The SDKs throw `new Error(JSON.stringify({
+// error, status, statusText, data }))` from their axios catch blocks,
+// which is fine for ops but useless in a toast. We parse the payload
+// and turn the most common failure modes into something the operator
+// can actually act on.
+//
+// IMPORTANT: 401 "invalid authorization" from relayer-v2.polymarket.com
+// almost always means the POLY_BUILDER_API_KEY/SECRET/PASSPHRASE on the
+// running deployment don't match the builder account on Polymarket's
+// side. We have verified locally (with the Replit secret values) that
+// the same code path successfully deploys a Safe and signs the HMAC,
+// so a 401 in production strongly suggests the secrets on the deploy
+// platform (Render, etc.) are stale or different — not a code bug.
+function humanizeRelayerError(rawMsg: string, stepLabel: string): string {
+  let parsed: any = null
+  try { parsed = JSON.parse(rawMsg) } catch { /* not JSON */ }
+
+  if (parsed && typeof parsed === 'object' && (parsed.status || parsed.error)) {
+    const status = Number(parsed.status) || 0
+    const innerErr =
+      (parsed.data && (parsed.data.error || parsed.data.message)) ||
+      parsed.statusText ||
+      parsed.error ||
+      ''
+
+    if (status === 401 || /invalid authorization/i.test(String(innerErr))) {
+      return (
+        `${stepLabel} failed: Polymarket relayer returned 401 (invalid authorization). ` +
+        `This means the POLY_BUILDER_API_KEY / POLY_BUILDER_SECRET / POLY_BUILDER_PASSPHRASE ` +
+        `secrets on this server do not match the builder account on Polymarket. ` +
+        `Verify those env vars match exactly the values issued by Polymarket and redeploy.`
+      )
+    }
+    if (status === 403) {
+      return (
+        `${stepLabel} failed: Polymarket blocked the request (403). ` +
+        `This is usually a region restriction (try without VPN) or the builder ` +
+        `account has been disabled. If you are on the operator side, check that ` +
+        `POLY_BUILDER_* secrets are not for a revoked builder.`
+      )
+    }
+    if (status === 429) {
+      return `${stepLabel} failed: Polymarket rate-limited the request (429). Wait a moment and try again.`
+    }
+    if (status >= 500) {
+      return `${stepLabel} failed: Polymarket relayer is having issues (${status}). Try again in a moment.`
+    }
+    if (status >= 400) {
+      return `${stepLabel} failed: Polymarket rejected the request (${status}${innerErr ? ` — ${innerErr}` : ''}).`
+    }
+    if (parsed.error === 'connection error') {
+      return `${stepLabel} failed: could not reach Polymarket relayer (network error). Try again.`
+    }
+  }
+
+  // Not a JSON SDK error — surface raw, truncated.
+  return `${stepLabel} failed: ${rawMsg}`
+}
+
 // Tiny helper: write a polymarket-tagged brain-feed log row. AgentLog has
 // a hard FK to Agent so we can only log when there's a real agentId
 // (Phase 3 autonomous path). Manual user trades just write a console line
@@ -4881,18 +4941,19 @@ app.post('/api/polymarket/setup', requireTgUser, async (req, res) => {
     try {
       safe = await deploySafeIfNeeded(user.id)
     } catch (deployErr: any) {
-      const msg = String(deployErr?.message ?? deployErr)
+      const rawMsg = String(deployErr?.message ?? deployErr)
+      const friendly = humanizeRelayerError(rawMsg, 'Safe deploy')
       await logPolymarketEvent({
         userId: user.id,
         action: 'wallet_setup_failed',
-        reason: `Safe deploy failed: ${msg.slice(0, 200)}`,
+        reason: `Safe deploy failed: ${rawMsg.slice(0, 300)}`,
       })
       return res.status(502).json({
         ok: false,
         walletAddress,
         credsReady: true,
         error: 'safe_deploy_failed',
-        details: msg.slice(0, 300),
+        details: friendly.slice(0, 500),
       })
     }
 
@@ -4902,11 +4963,12 @@ app.post('/api/polymarket/setup', requireTgUser, async (req, res) => {
     try {
       allowance = await ensureUsdcAllowance(user.id)
     } catch (allowErr: any) {
-      const msg = String(allowErr?.message ?? allowErr)
+      const rawMsg = String(allowErr?.message ?? allowErr)
+      const friendly = humanizeRelayerError(rawMsg, 'USDC + CTF allowance')
       await logPolymarketEvent({
         userId: user.id,
         action: 'wallet_setup_failed',
-        reason: `Allowance tx failed: ${msg.slice(0, 200)}`,
+        reason: `Allowance tx failed: ${rawMsg.slice(0, 300)}`,
       })
       return res.status(502).json({
         ok: false,
@@ -4914,7 +4976,7 @@ app.post('/api/polymarket/setup', requireTgUser, async (req, res) => {
         safeAddress: safe.safeAddress,
         credsReady: true,
         error: 'allowance_failed',
-        details: msg.slice(0, 300),
+        details: friendly.slice(0, 500),
       })
     }
 
