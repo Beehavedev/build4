@@ -61,10 +61,12 @@ import {
 import {
   createWalletClient,
   http as viemHttp,
+  fallback as viemFallback,
   encodeFunctionData,
   maxUint256,
   zeroHash,
   type Hex,
+  type Transport,
 } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 import { polygon } from 'viem/chains'
@@ -74,7 +76,29 @@ import { polymarketConfig } from './polymarket'
 
 const CLOB_HOST = 'https://clob.polymarket.com'
 const POLYGON_CHAIN_ID = 137 as const
-const POLYGON_RPC = (process.env.POLYGON_RPC ?? '').trim() || 'https://polygon-rpc.com'
+
+// We rotate across multiple public Polygon RPC endpoints because the
+// official `polygon-rpc.com` aggressively rate-limits and frequently
+// returns HTTP 401 for cloud egress IPs (Replit, Vercel, Fly, etc.) —
+// which previously surfaced to users as a "401 Unauthorized" message
+// in /wallet and as silent zeros in the mini-app's Polygon card.
+//
+// `POLYGON_RPC` env stays honored as the *first-priority* endpoint for
+// users who have a paid endpoint configured (Alchemy, Infura, Ankr).
+// The remaining endpoints fill in as fallbacks. ethers' FallbackProvider
+// quorums across multiple providers; viem's fallback() picks a healthy
+// transport per request and demotes failing ones automatically.
+const POLYGON_RPC_ENV = (process.env.POLYGON_RPC ?? '').trim()
+// Verified-healthy public Polygon endpoints from cloud egress IPs
+// (Replit, Vercel, etc). Excluded: `polygon-rpc.com` (returns 401 from
+// many cloud providers), `rpc.ankr.com/polygon` (requires API key),
+// `polygon.llamarpc.com` (DNS frequently NXDOMAIN). Tested 2026-04-30.
+const POLYGON_RPC_URLS: string[] = [
+  ...(POLYGON_RPC_ENV ? [POLYGON_RPC_ENV] : []),
+  'https://polygon-bor-rpc.publicnode.com',
+  'https://polygon.drpc.org',
+  'https://1rpc.io/matic',
+]
 const RELAYER_URL =
   (process.env.POLYMARKET_RELAYER_URL ?? '').trim() ||
   'https://relayer-v2.polymarket.com'
@@ -193,11 +217,39 @@ export function getBuilderAttribution(): {
   return { ok: true, builderConfig: cfg, builderCode: code }
 }
 
-// ── Provider (singleton) ────────────────────────────────────────────────
-let _provider: ethers.JsonRpcProvider | null = null
-function getProvider() {
-  if (!_provider) _provider = new ethers.JsonRpcProvider(POLYGON_RPC)
+// ── Provider (singleton, multi-RPC fallback) ────────────────────────────
+// FallbackProvider rotates calls across the configured RPCs and demotes
+// endpoints that error or stall. quorum=1 means "any one healthy reply
+// is good enough" — appropriate for read-only balance/allowance queries
+// where consensus across providers isn't needed (and would only slow us
+// down). Per-endpoint stallTimeout=2.5s caps per-RPC latency before the
+// next is tried; weight=1 distributes load evenly.
+let _provider: ethers.FallbackProvider | null = null
+function getProvider(): ethers.FallbackProvider {
+  if (_provider) return _provider
+  const cfgs = POLYGON_RPC_URLS.map((url, i) => ({
+    // staticNetwork avoids each child provider issuing its own
+    // eth_chainId probe at construction (which would itself be subject
+    // to the failing endpoint).
+    provider: new ethers.JsonRpcProvider(url, POLYGON_CHAIN_ID, {
+      staticNetwork: ethers.Network.from(POLYGON_CHAIN_ID),
+    }),
+    priority:     i + 1,
+    stallTimeout: 2_500,
+    weight:       1,
+  }))
+  _provider = new ethers.FallbackProvider(cfgs, POLYGON_CHAIN_ID, { quorum: 1 })
   return _provider
+}
+
+// Build a viem fallback transport over the same RPC list. Used by the
+// relayer client (deploySafeIfNeeded, ensureUsdcAllowance, executeBatch)
+// so that a single failing public RPC doesn't break Polymarket setup.
+function buildPolygonViemTransport(): Transport {
+  return viemFallback(
+    POLYGON_RPC_URLS.map((url) => viemHttp(url, { timeout: 8_000 })),
+    { rank: false, retryCount: 0 },
+  )
 }
 
 // ── Custodial PK retrieval ──────────────────────────────────────────────
@@ -226,12 +278,14 @@ async function getUserPolygonSigner(userId: string): Promise<{
 }
 
 // ── viem wallet client (for the relayer) ────────────────────────────────
+// Uses the multi-RPC fallback transport so a single down/rate-limited
+// public RPC can't break Safe deployment or USDC allowance setup.
 function buildViemWalletClient(pkHex: Hex) {
   const account = privateKeyToAccount(pkHex)
   return createWalletClient({
     account,
     chain:     polygon,
-    transport: viemHttp(POLYGON_RPC),
+    transport: buildPolygonViemTransport(),
   })
 }
 
