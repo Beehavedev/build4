@@ -247,6 +247,12 @@ function buildViemWalletClient(pkHex: Hex) {
 // concern here; we run a single Node instance per Replit workflow.)
 const credsLocks: Map<string, Promise<{ creds: ApiKeyCreds; walletAddress: string }>> = new Map()
 const safeLocks:  Map<string, Promise<{ safeAddress: string; alreadyDeployed: boolean; txHash?: string }>> = new Map()
+// One-tap fund is a value-moving on-chain transaction; serialize per user
+// to make double-clicks / retries idempotent (the second caller observes
+// the same in-flight promise instead of broadcasting a second transfer
+// that would either revert on insufficient balance or — worse, with an
+// explicit amount — actually move funds twice).
+const fundLocks:  Map<string, Promise<{ txHash: string; fromAddress: string; toAddress: string; amountUsdc: number }>> = new Map()
 
 export async function getOrCreateCreds(userId: string): Promise<{
   creds: ApiKeyCreds
@@ -510,6 +516,27 @@ export async function getFunderAddress(userId: string): Promise<string | null> {
 // and refresh balances. Throws with a descriptive message on any precondition
 // failure so the API layer can surface a clean 4xx (e.g. NEED_MATIC).
 export async function fundSafeFromEoa(opts: {
+  userId: string
+  amountUsdc?: number
+}): Promise<{
+  txHash: string
+  fromAddress: string
+  toAddress: string
+  amountUsdc: number
+}> {
+  const { userId } = opts
+  // Serialize per-user. A second concurrent caller (from a double-tapped
+  // button or a retried API call) joins the in-flight promise — they see
+  // the same tx hash rather than spawning a second value-moving transfer.
+  const inflight = fundLocks.get(userId)
+  if (inflight) return inflight
+  const promise = doFundSafeFromEoa(opts)
+    .finally(() => fundLocks.delete(userId))
+  fundLocks.set(userId, promise)
+  return promise
+}
+
+async function doFundSafeFromEoa(opts: {
   userId: string
   amountUsdc?: number
 }): Promise<{

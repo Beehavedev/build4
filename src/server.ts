@@ -4772,14 +4772,18 @@ app.get('/api/polymarket/wallet', requireTgUser, async (req, res) => {
   try {
     const creds = await db.polymarketCreds.findUnique({ where: { userId: user.id } })
 
-    // EOA — the signing key, derived from the user's BSC wallet PK.
-    let walletAddress: string | null = creds?.walletAddress ?? null
-    if (!walletAddress) {
-      const w = await db.wallet.findFirst({
-        where: { userId: user.id, isActive: true, chain: 'BSC' },
-      })
-      walletAddress = w?.address ?? null
-    }
+    // EOA — the signing key, derived from the user's BSC wallet PK. We
+    // intentionally prefer the *active* BSC wallet over creds.walletAddress:
+    // the fund helper (`getUserPolygonSigner`) signs with the active wallet,
+    // and `/api/me/wallet` also reports on the active wallet, so all three
+    // surfaces (Wallet card, Predictions panel, fund tx) stay consistent.
+    // (creds.walletAddress is preserved as a fallback for users who haven't
+    // initialised an active BSC wallet yet — extremely rare in practice.)
+    const activeBsc = await db.wallet.findFirst({
+      where: { userId: user.id, isActive: true, chain: 'BSC' },
+    })
+    const walletAddress: string | null =
+      activeBsc?.address ?? creds?.walletAddress ?? null
 
     // Safe — the funder. This is where users deposit USDC.e and where
     // Polymarket holds positions. Null until /setup deploys it.

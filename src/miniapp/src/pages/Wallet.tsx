@@ -773,7 +773,11 @@ function PolygonCard({
           {funding ? 'Sending…' : `Fund Polymarket ($${eoa.usdcE.toFixed(2)})`}
         </button>
       )}
-      {hasEoaUsdc && safeReady && !hasMatic && (
+      {/* Show the MATIC-prompt either when the on-chain balance says we
+          don't have enough OR when the server actually rejected the fund
+          attempt with NEED_MATIC (covers the race where balances looked
+          fine client-side but the chain disagreed at tx time). */}
+      {hasEoaUsdc && safeReady && (!hasMatic || fundErr?.code === 'NEED_MATIC') && (
         <div style={{ marginTop: 10, fontSize: 11, lineHeight: 1.5 }}>
           <div style={{ color: 'var(--b4-red)', marginBottom: 6 }}>
             ⚠ Need a tiny amount of MATIC for gas (~$0.01) at:
