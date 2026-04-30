@@ -4445,6 +4445,211 @@ app.get('/api/predictions/market/:address', async (req, res) => {
   }
 })
 
+// ──────────────────────────────────────────────────────────────────────────
+// Polymarket — Builder Program read-only surfaces (Phase 1).
+//
+// We register as a Polymarket Builder so every order routed through the
+// /predict tab in Phase 2+ accrues to our profile for the leaderboard,
+// weekly USDC rewards and grant eligibility:
+//   https://docs.polymarket.com/builders/overview
+//   https://docs.polymarket.com/builders/tiers
+//
+// Phase 1 is read-only — no signing, no env vars required, no per-user
+// state. Two endpoints:
+//   GET /api/polymarket/events           → trending events list (15s cache)
+//   GET /api/polymarket/orderbook/:tokenId → live orderbook for one outcome
+//                                            token (1s TTL + dedup +
+//                                            serve-stale on 429, mirroring
+//                                            the HL fills cache pattern)
+//
+// Public (no auth) — every field rendered is already public on Polymarket.
+// ──────────────────────────────────────────────────────────────────────────
+const POLY_EVENTS_TTL_MS = 15_000
+// Strict allowlist for Gamma sort orders. Any other value is rejected so
+// (a) we never forward attacker-controlled junk to Gamma and (b) the cache
+// key space is bounded — without this, an attacker could create unlimited
+// distinct cache entries by varying the `order` param.
+const POLY_EVENTS_ORDER_ALLOWLIST = new Set([
+  'volume24hr', 'volume', 'liquidity', 'endDate', 'startDate',
+])
+// Hard cap on distinct (limit, tag, order) cache entries. With the
+// allowlist above + numeric clamps on limit/tag, the natural ceiling is
+// already small; the LRU is belt-and-braces against future param growth.
+const POLY_EVENTS_CACHE_MAX = 64
+type PolyEventsCacheKey = string // serialized query params
+const polyEventsCache = new Map<string, {
+  data: any[]
+  fetchedAt: number
+  inflight?: Promise<any[]>
+}>()
+
+app.get('/api/polymarket/events', async (req, res) => {
+  try {
+    const limit = Math.max(1, Math.min(100, parseInt(String(req.query.limit ?? '20'), 10) || 20))
+    const tagId = req.query.tag ? Math.max(0, parseInt(String(req.query.tag), 10) || 0) : undefined
+    const orderRaw = String(req.query.order ?? 'volume24hr')
+    if (!POLY_EVENTS_ORDER_ALLOWLIST.has(orderRaw)) {
+      return res.status(400).json({ error: 'invalid_order' })
+    }
+    const order = orderRaw
+    const cacheKey: PolyEventsCacheKey = `l=${limit}|t=${tagId ?? ''}|o=${order}`
+    const now = Date.now()
+    const cached = polyEventsCache.get(cacheKey)
+
+    if (cached && cached.data.length > 0 && (now - cached.fetchedAt) < POLY_EVENTS_TTL_MS) {
+      // LRU touch — Map preserves insertion order, so re-inserting moves
+      // this key to the most-recently-used position for our eviction.
+      polyEventsCache.delete(cacheKey)
+      polyEventsCache.set(cacheKey, cached)
+      return res.json({
+        events: cached.data,
+        cached: true,
+        fetchedAt: cached.fetchedAt,
+        builderCode: polymarketConfigBuilderCode(),
+      })
+    }
+
+    const entry = cached ?? { data: [] as any[], fetchedAt: 0 }
+
+    let promise = entry.inflight
+    if (!promise) {
+      promise = (async () => {
+        try {
+          const { listEvents } = await import('./services/polymarket')
+          const events = await listEvents({ limit, tagId, order: order as any })
+          entry.data = events
+          entry.fetchedAt = Date.now()
+          return events
+        } finally {
+          entry.inflight = undefined
+        }
+      })()
+      entry.inflight = promise
+    }
+
+    try {
+      const events = await promise
+      // Only commit successful fetches to the cache so failed upstream
+      // calls can never permanently occupy a slot.
+      polyEventsCache.delete(cacheKey)
+      polyEventsCache.set(cacheKey, entry)
+      while (polyEventsCache.size > POLY_EVENTS_CACHE_MAX) {
+        const oldest = polyEventsCache.keys().next().value
+        if (!oldest) break
+        polyEventsCache.delete(oldest)
+      }
+      return res.json({
+        events,
+        cached: false,
+        fetchedAt: entry.fetchedAt,
+        builderCode: polymarketConfigBuilderCode(),
+      })
+    } catch (gammaErr: any) {
+      // Serve last good payload (≤ 5min) on upstream failure so the
+      // /predict tab stays usable through brief Gamma outages.
+      if (cached && cached.data.length > 0 && (Date.now() - cached.fetchedAt) < 5 * 60_000) {
+        return res.json({
+          events: cached.data,
+          cached: true,
+          stale: true,
+          fetchedAt: cached.fetchedAt,
+          builderCode: polymarketConfigBuilderCode(),
+        })
+      }
+      throw gammaErr
+    }
+  } catch (err: any) {
+    console.warn('[polymarket/events] failed:', err?.message)
+    res.status(502).json({ error: err?.message ?? 'gamma_unavailable' })
+  }
+})
+
+// Per-token orderbook cache. Same shape as the HL fills cache: in-flight
+// dedup so a burst of polls only hits CLOB once, and serve-stale on
+// upstream failure. Capped + LRU-evicted so an attacker spamming random
+// valid-shaped uint256s can't grow memory unbounded.
+const POLY_BOOK_TTL_MS = 1_000
+const POLY_BOOK_STALE_MAX_MS = 60_000
+const POLY_BOOK_CACHE_MAX = 512  // ~512 expanded markets across all users
+type PolyBookCacheEntry = {
+  data: any | null
+  fetchedAt: number
+  inflight?: Promise<any>
+}
+const polyBookCache = new Map<string, PolyBookCacheEntry>()
+
+app.get('/api/polymarket/orderbook/:tokenId', async (req, res) => {
+  // Polymarket token ids are very large numeric strings (uint256). Require
+  // the realistic length range so we don't pass crap to CLOB and don't
+  // accept arbitrarily-short numeric noise. Actual Polymarket CTF token
+  // ids are ~76-78 digits; we accept 60-80 to leave a small safety margin.
+  const tokenId = String(req.params.tokenId ?? '')
+  if (!/^[0-9]{60,80}$/.test(tokenId)) {
+    return res.status(400).json({ error: 'invalid_token_id' })
+  }
+  try {
+    const now = Date.now()
+    const cached = polyBookCache.get(tokenId)
+
+    if (cached && cached.data && (now - cached.fetchedAt) < POLY_BOOK_TTL_MS) {
+      // LRU touch
+      polyBookCache.delete(tokenId)
+      polyBookCache.set(tokenId, cached)
+      return res.json({ book: cached.data, cached: true })
+    }
+
+    const entry = cached ?? { data: null, fetchedAt: 0 }
+
+    let promise = entry.inflight
+    if (!promise) {
+      promise = (async () => {
+        try {
+          const { getOrderbook } = await import('./services/polymarket')
+          const book = await getOrderbook(tokenId)
+          entry.data = book
+          entry.fetchedAt = Date.now()
+          return book
+        } finally {
+          entry.inflight = undefined
+        }
+      })()
+      entry.inflight = promise
+    }
+
+    try {
+      const book = await promise
+      // Commit on success only — failed lookups never occupy a cache slot.
+      polyBookCache.delete(tokenId)
+      polyBookCache.set(tokenId, entry)
+      while (polyBookCache.size > POLY_BOOK_CACHE_MAX) {
+        const oldest = polyBookCache.keys().next().value
+        if (!oldest) break
+        polyBookCache.delete(oldest)
+      }
+      return res.json({ book, cached: false })
+    } catch (clobErr: any) {
+      if (cached && cached.data && (Date.now() - cached.fetchedAt) < POLY_BOOK_STALE_MAX_MS) {
+        return res.json({ book: cached.data, cached: true, stale: true })
+      }
+      throw clobErr
+    }
+  } catch (err: any) {
+    console.warn('[polymarket/orderbook]', tokenId.slice(0, 12) + '…', 'failed:', err?.message)
+    res.status(502).json({ error: err?.message ?? 'clob_unavailable' })
+  }
+})
+
+// Helper so the events endpoint can surface our builder code (or null) to
+// the client without importing the polymarket module synchronously at top
+// of file. Returned in the response so the UI can show a "Powered by
+// Polymarket Builder Program" badge with our short builder code.
+function polymarketConfigBuilderCode(): string | null {
+  // Read directly from env (not the cached config object) so test runs and
+  // dynamic env updates are reflected without a server restart.
+  const code = (process.env.POLY_BUILDER_CODE ?? '').trim()
+  return code.length > 0 ? code : null
+}
+
 // Manual user-initiated prediction trade. Triggered when a user taps
 // "Place trade" on a market scanner row in the mini-app. Bypasses the
 // swarm/conviction gating used by autonomous agents (the user's tap IS

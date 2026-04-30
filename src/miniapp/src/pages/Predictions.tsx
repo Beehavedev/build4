@@ -1,4 +1,11 @@
 import { useState, useEffect, useRef } from 'react'
+import PredictionsPolymarket from './PredictionsPolymarket'
+
+// Venue tags shown in the top tab strip. '42' = 42.space (BSC, native AMM-style
+// outcome tokens). 'poly' = Polymarket (Polygon, CLOB v2 via Builder Program).
+// Tabs render mutually-exclusive sub-pages — switching is instant since the
+// inactive section unmounts and stops polling.
+type PredictVenue = '42' | 'poly'
 
 // Telegram WebApp init data must be sent on every protected /api/me/* and
 // /api/predictions/* call — without it, the server's requireTgUser
@@ -232,6 +239,21 @@ const STYLE = `
 `
 
 export default function Predictions() {
+  // Active prediction-market venue. '42' is the original BSC/AMM surface;
+  // 'poly' is the Polymarket CLOB v2 surface (Phase 1 read-only). Persisted
+  // to localStorage so a user who lives on Polymarket doesn't have to
+  // re-tap the tab on every visit.
+  const [venue, setVenue] = useState<PredictVenue>(() => {
+    if (typeof window === 'undefined') return '42'
+    const saved = window.localStorage.getItem('build4.predict.venue')
+    return saved === 'poly' ? 'poly' : '42'
+  })
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('build4.predict.venue', venue)
+    }
+  }, [venue])
+
   const [data, setData] = useState<PredictionsResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -470,6 +492,59 @@ export default function Predictions() {
   return (
     <div style={{ paddingTop: 16, paddingBottom: 8 }}>
       <style>{STYLE}</style>
+
+      {/* ── Venue selector ── shown above every prediction surface so the
+          user can switch between 42.space (default) and Polymarket. Each
+          tab mounts an independent sub-tree so polling/state of the
+          inactive venue is fully released. */}
+      <div
+        style={{
+          display: 'flex',
+          gap: 6,
+          marginBottom: 12,
+          padding: 4,
+          background: '#0a0a13',
+          border: '1px solid #1e1e2e',
+          borderRadius: 8,
+        }}
+        data-testid="tabs-predict-venue"
+      >
+        {(
+          [
+            { key: '42' as const,   label: '42.space',   sub: 'BSC · AMM' },
+            { key: 'poly' as const, label: 'Polymarket', sub: 'Polygon · CLOB' },
+          ]
+        ).map((tab) => {
+          const active = venue === tab.key
+          return (
+            <button
+              key={tab.key}
+              type="button"
+              onClick={() => setVenue(tab.key)}
+              data-testid={`tab-venue-${tab.key}`}
+              style={{
+                flex: 1,
+                padding: '8px 10px',
+                borderRadius: 6,
+                border: '1px solid ' + (active ? '#7c3aed' : 'transparent'),
+                background: active ? '#7c3aed22' : 'transparent',
+                color: active ? '#e2e8f0' : '#94a3b8',
+                fontSize: 12,
+                fontWeight: active ? 700 : 500,
+                cursor: 'pointer',
+                textAlign: 'left',
+                lineHeight: 1.2,
+              }}
+            >
+              <div>{tab.label}</div>
+              <div style={{ fontSize: 9, color: '#64748b', marginTop: 2 }}>{tab.sub}</div>
+            </button>
+          )
+        })}
+      </div>
+
+      {venue === 'poly' && <PredictionsPolymarket />}
+      {venue === '42' && (<>
 
       {/* ── Header bar ── */}
       <div style={{
@@ -843,6 +918,7 @@ export default function Predictions() {
           </>
         )}
       </div>
+      </>)}
     </div>
   )
 }
