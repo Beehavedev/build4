@@ -362,6 +362,8 @@ model PolymarketCreds {
   id                  String   @id @default(cuid())
   userId              String   @unique
   walletAddress       String
+  safeAddress         String?
+  safeDeployedAt      DateTime?
   apiKey              String
   encryptedApiSecret  String
   encryptedPassphrase String
@@ -371,6 +373,7 @@ model PolymarketCreds {
   updatedAt           DateTime @default(now()) @updatedAt
 
   @@index([walletAddress])
+  @@index([safeAddress])
 }
 
 model PolymarketPosition {

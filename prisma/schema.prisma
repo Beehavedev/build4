@@ -408,16 +408,26 @@ model AgentLog {
 model PolymarketCreds {
   id                  String   @id @default(cuid())
   userId              String   @unique
-  walletAddress       String   // Polygon address = same as BSC EOA address
+  walletAddress       String   // Polygon EOA — signs orders. Same key as BSC.
+  // Gnosis Safe proxy deployed by Polymarket's relayer. Holds USDC.e and
+  // ERC-1155 outcome shares. CLOB orders are signed by walletAddress but
+  // the funder field references safeAddress, and the exchange pulls
+  // collateral from the Safe — not the EOA. Populated on first /setup.
+  safeAddress         String?
+  safeDeployedAt      DateTime?
   apiKey              String
   encryptedApiSecret  String
   encryptedPassphrase String
+  // Last relayer transactionHash for the USDC + CTF approval batch.
+  // Distinct from a regular Polygon tx hash but serves the same purpose
+  // here — proof we ran the one-time approve flow successfully.
   allowanceTxHash     String?
   allowanceVerifiedAt DateTime?
   createdAt           DateTime @default(now())
   updatedAt           DateTime @default(now()) @updatedAt
 
   @@index([walletAddress])
+  @@index([safeAddress])
 }
 
 // One row per Polymarket order BUILD4 places on the user's behalf

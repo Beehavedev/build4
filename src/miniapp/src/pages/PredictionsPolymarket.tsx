@@ -93,14 +93,26 @@ interface OrderbookResponse {
   stale?: boolean
 }
 
-// ─── Phase 2 trading types ───
+// ─── Phase 2.1 trading types (gasless via Polymarket relayer) ───
+// walletAddress = EOA, signs orders. safeAddress = Gnosis Safe proxy that
+// holds USDC.e and outcome shares — this is the address the user funds.
 interface PolyWalletStatus {
   ok: boolean
   walletAddress: string | null
+  safeAddress: string | null
   hasCreds: boolean
+  safeDeployed: boolean
   allowanceVerified: boolean
   ready: boolean
-  balances: { matic: number; usdc: number; allowanceCtf: number; allowanceNeg: number } | null
+  balances: {
+    usdc: number
+    allowanceCtf: number
+    allowanceNeg: number
+    allowanceNegAdapter: number
+    ctfApprovedCtfExchange: boolean
+    ctfApprovedNegExchange: boolean
+    ctfApprovedNegAdapter:  boolean
+  } | null
   builderCode: string | null
 }
 
@@ -704,12 +716,18 @@ export default function PredictionsPolymarket() {
         </div>
       )}
 
-      {/* Wallet panel — Phase 2. Three states:
-            (a) wallet=null              → user is browsing in a regular browser without
-                                          Telegram WebApp init data; nothing to do.
-            (b) wallet.hasCreds=false    → "Activate trading" CTA, runs setup once.
-            (c) wallet.ready=true        → balance row; Buy buttons enabled
-                                          on each market row become live. */}
+      {/* Wallet panel — Phase 2.1 (gasless via Polymarket relayer).
+            States:
+            (a) wallet=null              → no Telegram init data; nothing to do.
+            (b) wallet.hasCreds=false    → "Activate trading" CTA. Runs the
+                                          full 3-step setup (creds → deploy
+                                          Safe → 6× allowance approvals).
+                                          All three on-chain txs are paid by
+                                          the Polymarket relayer — user pays
+                                          ZERO gas, ever. No MATIC required.
+            (c) wallet.ready=true        → shows the SAFE address (the deposit
+                                          target). USDC.e sent to the Safe is
+                                          tradable immediately. */}
       {wallet && (
         <div
           style={{
@@ -724,21 +742,35 @@ export default function PredictionsPolymarket() {
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
             <div style={{ minWidth: 0, flex: 1 }}>
               <div style={{ fontSize: 11, fontWeight: 700, color: wallet.ready ? '#10b981' : '#f59e0b', letterSpacing: 0.4 }}>
-                {wallet.ready ? 'POLYGON WALLET · LIVE' : 'POLYGON WALLET · ACTION NEEDED'}
+                {wallet.ready ? 'POLYMARKET SAFE · LIVE' : 'POLYMARKET SAFE · ACTION NEEDED'}
               </div>
-              {wallet.walletAddress && (
+              {/* Show the SAFE address when deployed (that's the deposit target).
+                  Fall back to the EOA address pre-setup so the user knows
+                  something is there. */}
+              {(wallet.safeAddress || wallet.walletAddress) && (
                 <div
                   style={{ fontSize: 10, color: '#64748b', fontFamily: 'ui-monospace, monospace', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
                   data-testid="text-poly-wallet-address"
+                  title={wallet.safeAddress ? 'Polymarket Safe (deposit address)' : 'Signer EOA (Safe not deployed yet)'}
                 >
-                  {wallet.walletAddress}
+                  {wallet.safeAddress
+                    ? `Safe: ${wallet.safeAddress}`
+                    : `EOA: ${wallet.walletAddress}`}
                 </div>
               )}
             </div>
-            {!wallet.ready && wallet.hasCreds && (
-              <span style={{ fontSize: 10, color: '#f59e0b' }}>Approving USDC allowance…</span>
+            {/* Show "Activating…" only while a setup call is actually in
+                flight. Whenever the wallet is not ready (whether the user
+                is brand new OR is a Phase-2 EOA-mode user from before the
+                gasless migration whose Safe was never deployed), we show
+                the setup CTA — the /setup endpoint is fully idempotent
+                and will only do the steps that are still missing. */}
+            {!wallet.ready && setupBusy && (
+              <span style={{ fontSize: 10, color: '#f59e0b' }}>
+                {wallet.safeDeployed ? 'Setting allowances (gasless)…' : 'Deploying Safe (gasless)…'}
+              </span>
             )}
-            {!wallet.hasCreds && (
+            {!wallet.ready && !setupBusy && (
               <button
                 type="button"
                 onClick={setupWallet}
@@ -755,31 +787,29 @@ export default function PredictionsPolymarket() {
                   cursor: setupBusy ? 'wait' : 'pointer',
                 }}
               >
-                {setupBusy ? 'Activating…' : 'Activate trading'}
+                {wallet.hasCreds && !wallet.safeDeployed
+                  ? 'Deploy Safe'
+                  : wallet.safeDeployed
+                    ? 'Finish setup'
+                    : 'Activate trading'}
               </button>
             )}
           </div>
 
           {wallet.balances && (
-            <div style={{ marginTop: 8, display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 6 }}>
+            <div style={{ marginTop: 8, display: 'grid', gridTemplateColumns: '1fr', gap: 6 }}>
               <div style={{ fontSize: 10, color: '#94a3b8' }}>
-                <span style={{ color: '#64748b' }}>USDC: </span>
+                <span style={{ color: '#64748b' }}>USDC.e in Safe: </span>
                 <span data-testid="text-poly-usdc" style={{ fontFamily: 'ui-monospace, monospace', color: wallet.balances.usdc > 0 ? '#10b981' : '#ef4444' }}>
                   ${wallet.balances.usdc.toFixed(2)}
-                </span>
-              </div>
-              <div style={{ fontSize: 10, color: '#94a3b8' }}>
-                <span style={{ color: '#64748b' }}>MATIC: </span>
-                <span data-testid="text-poly-matic" style={{ fontFamily: 'ui-monospace, monospace', color: wallet.balances.matic > 0.01 ? '#10b981' : '#ef4444' }}>
-                  {wallet.balances.matic.toFixed(4)}
                 </span>
               </div>
             </div>
           )}
 
-          {wallet.balances && wallet.ready && wallet.balances.usdc < 1 && (
-            <div style={{ marginTop: 8, padding: 6, borderRadius: 4, background: '#f59e0b11', fontSize: 10, color: '#fbbf24' }}>
-              Send USDC.e (Polygon) and a small amount of MATIC for gas to your wallet address above to start trading.
+          {wallet.ready && wallet.balances && wallet.balances.usdc < 1 && wallet.safeAddress && (
+            <div style={{ marginTop: 8, padding: 6, borderRadius: 4, background: '#10b98111', fontSize: 10, color: '#34d399', lineHeight: 1.4 }}>
+              <strong style={{ color: '#10b981' }}>Gasless trading is active.</strong> Send USDC.e (Polygon) to your Safe above. No MATIC needed — Polymarket pays gas for every transaction.
             </div>
           )}
 
@@ -809,11 +839,21 @@ export default function PredictionsPolymarket() {
           {positions.slice(0, 8).map((p) => {
             const colorOk = p.status === 'filled' || p.status === 'matched'
             const colorBad = p.status === 'failed' || p.status === 'cancelled'
-            const accent = colorOk ? '#10b981' : colorBad ? '#ef4444' : '#f59e0b'
-            // Only allow selling positions that actually filled and where
-            // we have a tokenId to redeem against. A 'failed' row never
-            // entered the book so there's nothing to sell.
+            const isResolvedWin  = p.status === 'resolved_win'
+            const isResolvedLoss = p.status === 'resolved_loss'
+            const accent = isResolvedWin ? '#22d3ee'
+                         : isResolvedLoss ? '#64748b'
+                         : colorOk ? '#10b981'
+                         : colorBad ? '#ef4444'
+                         : '#f59e0b'
+            // SELL = exit a live (still-open) position back to the order book.
+            // Only allow it for filled BUYs that have outcome tokens to sell.
             const canSell = colorOk && !!p.tokenId && p.side === 'BUY' && (p.fillSize ?? 0) > 0
+            // REDEEM = claim USDC from a resolved market via the CTF
+            // (or NegRiskAdapter). Gasless — the relayer pays. Shown for
+            // any winning resolution; losing resolutions have nothing to
+            // claim so we hide the button.
+            const canRedeem = isResolvedWin && !!p.conditionId
             return (
               <div
                 key={p.id}
@@ -834,6 +874,40 @@ export default function PredictionsPolymarket() {
                     <div style={{ fontSize: 9, color: '#ef4444', marginTop: 2 }}>{p.errorMessage}</div>
                   )}
                 </div>
+                {canRedeem && (
+                  <button
+                    type="button"
+                    data-testid={`button-poly-redeem-${p.id}`}
+                    onClick={async () => {
+                      try {
+                        const r = await fetch('/api/polymarket/redeem', {
+                          method:  'POST',
+                          headers: { 'content-type': 'application/json', ...tgAuthHeaders() },
+                          // We don't yet persist isNegRisk on the position
+                          // row; the server defaults to vanilla CTF redeem
+                          // and the relayer reverts cleanly if the market
+                          // is in fact NegRisk — at which point the user
+                          // can retry against the negRisk path. Future
+                          // work: persist isNegRisk on PolymarketPosition.
+                          body: JSON.stringify({ conditionId: p.conditionId }),
+                        })
+                        const j = await r.json().catch(() => ({}))
+                        if (!r.ok || !j.ok) {
+                          throw new Error(j.details ?? j.error ?? `HTTP ${r.status}`)
+                        }
+                        flash('ok', `Redeemed: ${p.outcomeLabel} (gasless)`)
+                        await Promise.all([loadWallet(), loadPositions()])
+                      } catch (err: any) {
+                        flash('err', `Redeem failed: ${String(err?.message ?? err).slice(0, 80)}`)
+                      }
+                    }}
+                    style={{
+                      padding: '4px 10px', fontSize: 10, fontWeight: 700,
+                      background: '#22d3ee', color: '#0b1220', border: 'none',
+                      borderRadius: 4, cursor: 'pointer', flexShrink: 0,
+                    }}
+                  >REDEEM</button>
+                )}
                 {canSell && (
                   <button
                     type="button"

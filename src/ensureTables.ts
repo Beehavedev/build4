@@ -454,6 +454,15 @@ export async function ensureNewTables() {
   await run(`CREATE UNIQUE INDEX IF NOT EXISTS "PolymarketCreds_userId_key" ON "PolymarketCreds"("userId")`)
   await run(`CREATE INDEX IF NOT EXISTS "PolymarketCreds_walletAddress_idx" ON "PolymarketCreds"("walletAddress")`)
 
+  // Phase 2.1 — gasless via Polymarket Builder Relayer Client. The Safe
+  // proxy is the actual funder of CLOB orders (signature_type=2), holds
+  // USDC.e and ERC-1155 outcome shares, and is deployed via the relayer
+  // on first /setup. ALTERs are idempotent so they replay cleanly on every
+  // boot for pre-existing rows that were created under the EOA-funder model.
+  await run(`ALTER TABLE "PolymarketCreds" ADD COLUMN IF NOT EXISTS "safeAddress" TEXT`)
+  await run(`ALTER TABLE "PolymarketCreds" ADD COLUMN IF NOT EXISTS "safeDeployedAt" TIMESTAMP(3)`)
+  await run(`CREATE INDEX IF NOT EXISTS "PolymarketCreds_safeAddress_idx" ON "PolymarketCreds"("safeAddress")`)
+
   await run(`CREATE TABLE IF NOT EXISTS "PolymarketPosition" (
     "id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
     "userId" TEXT NOT NULL,
