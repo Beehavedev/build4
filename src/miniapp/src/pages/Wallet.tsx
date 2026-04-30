@@ -700,7 +700,7 @@ function PolygonCard({
       const body = e?.body ?? null
       const code = body?.code ?? (String(e?.message ?? '').includes('NEED_MATIC') ? 'NEED_MATIC' : null)
       if (code === 'NEED_MATIC') {
-        setFundErr({ code, eoa: body?.eoaAddress ?? eoa.address, msg: 'Add MATIC for gas (~$0.01)' })
+        setFundErr({ code, eoa: body?.eoaAddress ?? eoa.address, msg: 'Add POL (formerly MATIC) for gas (~$0.01)' })
       } else {
         setFundErr({ code: 'ERR', msg: body?.details ?? body?.error ?? String(e?.message ?? 'Failed').slice(0, 140) })
       }
@@ -720,7 +720,7 @@ function PolygonCard({
         ) : (
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
             <span data-testid="text-balance-poly-usdce">USDC.e {eoa.usdcE.toFixed(2)}</span>
-            <span data-testid="text-balance-poly-matic">MATIC {eoa.matic.toFixed(4)}</span>
+            <span data-testid="text-balance-poly-matic" title="POL is the new ticker for MATIC on Polygon (renamed Sept 2024)">POL {eoa.matic.toFixed(4)}</span>
           </div>
         )}
         {safeReady && safe.usdcE > 0 && (
@@ -782,7 +782,7 @@ function PolygonCard({
             </div>
           </div>
           <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: 11, color: 'var(--b4-muted)' }}>MATIC (gas)</div>
+            <div style={{ fontSize: 11, color: 'var(--b4-muted)' }} title="POL is the new ticker for MATIC on Polygon (renamed Sept 2024)">POL (gas)</div>
             <div style={{ fontSize: 20, fontWeight: 700 }} data-testid="text-balance-poly-matic">
               {eoa.matic.toFixed(4)}
             </div>
@@ -822,7 +822,7 @@ function PolygonCard({
       {hasEoaUsdc && safeReady && (!hasMatic || fundErr?.code === 'NEED_MATIC') && (
         <div style={{ marginTop: 10, fontSize: 11, lineHeight: 1.5 }}>
           <div style={{ color: 'var(--b4-red)', marginBottom: 6 }}>
-            ⚠ Need a tiny amount of MATIC for gas (~$0.01) at:
+            ⚠ Need a tiny amount of <strong>POL</strong> (the new name for MATIC on Polygon) for gas (~$0.01) at:
           </div>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
             <code style={{

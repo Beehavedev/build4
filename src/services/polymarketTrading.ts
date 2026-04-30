@@ -112,11 +112,26 @@ const CTF_EXCHANGE     = '0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E' // standar
 const NEG_RISK_EXCHANGE = '0xC5d563A36AE78145C45a50134d48A1215220f80a' // neg-risk CLOB exchange
 const NEG_RISK_ADAPTER = '0xd91E80cF2E7be2e162c6513ceD06f1dD0dA35296' // neg-risk adapter (redeems)
 
-// Standard ERC-20 ABI subset, plus ERC-1155 setApprovalForAll for CTF
-const ERC20_ABI = [
+// MAINTAINER NOTE — Polygon native token rename (Sept 2024):
+// On-chain the native gas token is now POL. We intentionally keep the
+// internal identifier `matic` (variable names, the `NEED_MATIC` error
+// code, comments referencing MATIC) for backwards compatibility — the
+// mini-app branches on `code === 'NEED_MATIC'`, the response shape uses
+// `matic: number`, and breaking those would cascade through every
+// caller. ALL USER-FACING TEXT MUST SAY "POL" (with "(formerly MATIC)"
+// context where useful) — see PredictionsPolymarket.tsx and Wallet.tsx.
+//
+// Standard ERC-20 ABI subset, plus ERC-1155 setApprovalForAll for CTF.
+// `transfer` is required by the EOA→Safe sweep in fundSafeFromEoa(); a
+// previous version omitted it and shipped a "usdc.transfer is not a
+// function" runtime error to users clicking "Fund Polymarket". Exported
+// solely so the regression test polymarketTrading.test.ts can assert
+// the four required selectors are still present.
+export const ERC20_ABI = [
   'function balanceOf(address) view returns (uint256)',
   'function allowance(address owner, address spender) view returns (uint256)',
   'function approve(address spender, uint256 amount) returns (bool)',
+  'function transfer(address to, uint256 amount) returns (bool)',
 ] as const
 
 const ERC1155_IS_APPROVED_FOR_ALL_ABI = [
@@ -796,9 +811,16 @@ async function doFundSafeFromEoa(opts: {
   const minMaticWei = ethers.parseEther('0.005')
   if (maticWei < minMaticWei) {
     const have = ethers.formatEther(maticWei)
+    // Internal error code stays NEED_MATIC (stable API contract for the
+    // mini-app's UI branch), but the human-readable text uses POL — the
+    // current name of Polygon's native gas token (MATIC was renamed to
+    // POL in September 2024). Users searching exchanges/bridges for
+    // "MATIC" today often only find liquid-staking derivatives like
+    // MATICX, leading to confusion.
     throw new Error(
-      `NEED_MATIC: custodial address has ${have} MATIC, ` +
-      `need at least 0.005 MATIC for gas to fund Polymarket`,
+      `NEED_MATIC: custodial address has ${have} POL, ` +
+      `need at least 0.005 POL for gas to fund Polymarket ` +
+      `(POL is the new name for MATIC on Polygon)`,
     )
   }
 
