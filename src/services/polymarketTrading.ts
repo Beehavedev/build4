@@ -45,11 +45,13 @@
 // =====================================================================
 
 import { ethers } from 'ethers'
+import axios from 'axios'
 import {
   ClobClient,
   Side,
   OrderType,
   SignatureType,
+  createL1Headers,
   type ApiKeyCreds,
 } from '@polymarket/clob-client'
 import { BuilderConfig } from '@polymarket/builder-signing-sdk'
@@ -289,6 +291,132 @@ function buildViemWalletClient(pkHex: Hex) {
   })
 }
 
+// Transparent replacement for ClobClient.createOrDeriveApiKey() that does
+// the same two L1-authed HTTP calls (/auth/api-key POST, /auth/derive-api
+// -key GET) but DOES NOT swallow the API errors — clob-client's wrappers
+// destructure the response down to {key,secret,passphrase} which strips
+// the `error`/`status` fields the SDK's own errorHandling injects, so by
+// the time createOrDeriveApiKey resolves both have already lost their
+// diagnostics. We re-implement the flow with raw axios so a meaningful
+// error propagates to the user.
+//
+// Returns the canonical ApiKeyCreds shape on success. Throws an Error
+// with a friendly message on failure (HTTP layer, signature rejection,
+// geo-block, malformed body, etc.).
+async function deriveOrCreateApiKey(
+  signer: any,
+  address: string,
+): Promise<ApiKeyCreds> {
+  const addrLog = address.slice(0, 10) + '…' + address.slice(-4)
+
+  // Match clob-client's User-Agent + headers (see node_modules/@polymarket
+  // /clob-client/dist/http-helpers/index.js → overloadHeaders). Polymarket's
+  // Cloudflare WAF returns 403 (HTML body) to generic axios/User-Agent
+  // strings; @polymarket/clob-client is on their allowlist. Without these
+  // we got 403 + HTML in both POST and GET legs from this network.
+  const SDK_HEADERS = {
+    'User-Agent':   '@polymarket/clob-client',
+    'Accept':       '*/*',
+    'Connection':   'keep-alive',
+    'Content-Type': 'application/json',
+  }
+
+  // Build fresh L1 headers per leg — they include a `POLY_TIMESTAMP` and
+  // signature over the current second, so reusing them across requests
+  // close to a second-rollover risks the server seeing a stale ts.
+  // Try CREATE first. On 4xx the address may already have a key —
+  // fall through to DERIVE. On 5xx / network / Cloudflare, surface
+  // immediately because deriving will hit the same wall.
+  let createBody: any = null
+  let createStatus: number | undefined
+  let createErrText = ''
+  try {
+    const headers = await createL1Headers(signer, POLYGON_CHAIN_ID, 0)
+    const r = await axios.post(`${CLOB_HOST}/auth/api-key`, null, {
+      headers: { ...SDK_HEADERS, ...headers },
+      validateStatus: () => true, // we want to inspect 4xx ourselves
+      timeout: 15_000,
+    })
+    createStatus = r.status
+    createBody = r.data
+    if (r.status >= 200 && r.status < 300 && r.data?.apiKey) {
+      return {
+        key:        r.data.apiKey,
+        secret:     r.data.secret,
+        passphrase: r.data.passphrase,
+      }
+    }
+    createErrText = typeof r.data === 'string'
+      ? r.data
+      : (r.data?.error ?? JSON.stringify(r.data))
+  } catch (e: any) {
+    createErrText = e?.message ?? String(e)
+  }
+
+  // Fall through to DERIVE for the common "key already exists" case.
+  let deriveStatus: number | undefined
+  let deriveBody: any = null
+  let deriveErrText = ''
+  try {
+    const headers2 = await createL1Headers(signer, POLYGON_CHAIN_ID, 0)
+    const r = await axios.get(`${CLOB_HOST}/auth/derive-api-key`, {
+      headers: { ...SDK_HEADERS, ...headers2 },
+      validateStatus: () => true,
+      timeout: 15_000,
+    })
+    deriveStatus = r.status
+    deriveBody = r.data
+    if (r.status >= 200 && r.status < 300 && r.data?.apiKey) {
+      return {
+        key:        r.data.apiKey,
+        secret:     r.data.secret,
+        passphrase: r.data.passphrase,
+      }
+    }
+    deriveErrText = typeof r.data === 'string'
+      ? r.data
+      : (r.data?.error ?? JSON.stringify(r.data))
+  } catch (e: any) {
+    deriveErrText = e?.message ?? String(e)
+  }
+
+  // Both legs failed — choose the most informative status code, but
+  // collapse known patterns to friendly messages.
+  const status   = deriveStatus ?? createStatus
+  const errText  = deriveErrText || createErrText
+  const isHtml   = /<!DOCTYPE|<html|cloudflare|attention required/i.test(errText)
+  const isCfBlock = isHtml || status === 403 || status === 1020
+
+  console.error(
+    `[polymarket] L1 auth failed for ${addrLog}: ` +
+    JSON.stringify({
+      createStatus,
+      createBodyPreview: typeof createBody === 'string' ? createBody.slice(0, 120) : createBody,
+      deriveStatus,
+      deriveBodyPreview: typeof deriveBody === 'string' ? deriveBody.slice(0, 120) : deriveBody,
+    }),
+  )
+
+  if (isCfBlock) {
+    throw new Error(
+      'Polymarket blocked the request (region restriction or VPN). ' +
+      'Polymarket is not available in the US and several other regions.',
+    )
+  }
+  if (status === 401 || /signature|invalid|recover/i.test(errText)) {
+    throw new Error(
+      `Polymarket rejected the wallet signature (HTTP ${status ?? '?'}). ` +
+      'This can happen if your custodial address has been delegated ' +
+      'to a smart contract via EIP-7702 — e.g. by importing the key ' +
+      'into another wallet that enabled smart-account features.',
+    )
+  }
+  const trimmed = (errText || '').slice(0, 200) || 'no error body'
+  throw new Error(
+    `Polymarket API key derivation failed (HTTP ${status ?? 'no response'}): ${trimmed}`,
+  )
+}
+
 // ── L2 API credentials (HMAC) ───────────────────────────────────────────
 // Polymarket's CLOB needs HMAC-signed headers on most endpoints. The
 // creds are derived from an L1 EIP-712 signature, so once derived they
@@ -361,46 +489,20 @@ export async function getOrCreateCreds(userId: string): Promise<{
     // populated by privateKeyToAccount) makes the duck-test resolve to
     // the correct path.
     const viemWallet = buildViemWalletClient(pkHex)
-    const bootstrap = new ClobClient(CLOB_HOST, POLYGON_CHAIN_ID, viemWallet as any)
-    const fresh = await bootstrap.createOrDeriveApiKey()
 
-    // Defensive: clob-client@5.8.1's http-helpers/errorHandling swallows axios
-    // errors into `{ error: string, status: number }` (see node_modules/@polymarket
-    // /clob-client/dist/http-helpers/index.js → errorHandling). When that happens,
-    // createOrDeriveApiKey resolves with key/secret/passphrase all undefined, and
-    // we'd write NULLs into Prisma's required String columns ("Argument apiKey is
-    // missing"). Detect that here and surface the actual API error to the user
-    // — e.g. a Polymarket-side 4xx, signature rejection, or geo block — instead
-    // of an opaque ORM stack trace.
-    if (!fresh?.key || !fresh?.secret || !fresh?.passphrase) {
-      const raw       = fresh as any
-      const rawErr    = typeof raw?.error === 'string' ? raw.error : ''
-      const status    = raw?.status as number | undefined
-      const addrLog   = address.slice(0, 10) + '…' + address.slice(-4)
-      // Cloudflare geo-block / WAF returns an HTML body, which axios surfaces
-      // as a string `error`. Don't spew the full HTML at the user — collapse
-      // to a friendly hint. Polymarket geofences US/sanctioned regions.
-      const looksHtml = /<!DOCTYPE|<html|cloudflare|attention required/i.test(rawErr)
-      let userMsg: string
-      if (status === 403 || looksHtml) {
-        userMsg = 'Polymarket blocked the request (region restriction or VPN). ' +
-                  'Polymarket is not available in the US and several other regions.'
-      } else if (status === 401) {
-        userMsg = 'Polymarket rejected the wallet signature. ' +
-                  'This can happen if your custodial address has been delegated ' +
-                  'to a smart contract via EIP-7702 (e.g. by importing the key ' +
-                  'into another wallet that enabled smart-account features).'
-      } else if (rawErr) {
-        userMsg = `Polymarket API key derivation failed${status ? ` (HTTP ${status})` : ''}: ${rawErr.slice(0, 200)}`
-      } else {
-        userMsg = 'Polymarket API key derivation failed: empty response from CLOB.'
-      }
-      console.error(
-        `[polymarket] createOrDeriveApiKey returned malformed response for ` +
-        `${addrLog}: ${JSON.stringify({ hasKey: !!fresh?.key, hasSecret: !!fresh?.secret, hasPassphrase: !!fresh?.passphrase, status, errPreview: rawErr.slice(0, 120) })}`,
-      )
-      throw new Error(userMsg)
-    }
+    // Bypass clob-client's createOrDeriveApiKey() because its http-helpers
+    // /errorHandling swallows axios errors into { error, status } and then
+    // its createApiKey/deriveApiKey wrappers further DESTRUCTURE that down
+    // to { key: undefined, secret: undefined, passphrase: undefined }, so
+    // the real Polymarket error (HTTP code, body) is completely lost by
+    // the time it reaches us. We do the two L1-authed calls ourselves so
+    // we can show the user what actually broke.
+    //
+    // L1 headers still come from clob-client (so the EIP-712 ClobAuth
+    // signing logic is identical to what they do internally), built off
+    // the viem WalletClient — needed to dodge the v6/viem duck-typing
+    // collision documented in the previous fix.
+    const fresh = await deriveOrCreateApiKey(viemWallet, address)
 
     try {
       await db.polymarketCreds.create({
