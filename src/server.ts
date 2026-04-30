@@ -720,6 +720,60 @@ app.get('/api/me/wallet', requireTgUser, async (req, res) => {
       xlayer.error = e?.shortMessage ?? e?.message ?? 'xlayer_rpc_failed'
     }
 
+    // ── Polygon (chain id 137) — USDC.e + MATIC at custodial EOA + Safe ─
+    // Surfaced so users see Polymarket-relevant balances (USDC.e is the
+    // collateral Polymarket's CTF Exchange uses, MATIC is the gas needed
+    // for the one-tap fund tx that moves USDC.e from the EOA into their
+    // gasless Safe). `safe.usdc` is what's actually tradable on Polymarket.
+    let polygon: {
+      eoa: { address: string; usdcE: number; matic: number; error: string | null }
+      safe: { address: string | null; usdcE: number; deployed: boolean; ready: boolean; error: string | null }
+      hasCreds: boolean
+    } = {
+      eoa:  { address: wallet.address, usdcE: 0, matic: 0, error: null },
+      safe: { address: null, usdcE: 0, deployed: false, ready: false, error: null },
+      hasCreds: false,
+    }
+    try {
+      const { getPolygonBalances, getFunderAddress } = await import('./services/polymarketTrading')
+      const safeAddr = await getFunderAddress(user.id)
+      const creds    = await db.polymarketCreds.findUnique({ where: { userId: user.id } })
+      polygon.hasCreds      = Boolean(creds)
+      polygon.safe.address  = safeAddr
+      polygon.safe.deployed = Boolean(creds?.safeDeployedAt)
+
+      const [eoaBal, safeBal] = await Promise.all([
+        getPolygonBalances(wallet.address).catch((e: any) => {
+          polygon.eoa.error = e?.shortMessage ?? e?.message ?? 'polygon_rpc_failed'
+          return null
+        }),
+        safeAddr
+          ? getPolygonBalances(safeAddr).catch((e: any) => {
+              polygon.safe.error = e?.shortMessage ?? e?.message ?? 'polygon_rpc_failed'
+              return null
+            })
+          : Promise.resolve(null),
+      ])
+      if (eoaBal) {
+        polygon.eoa.usdcE = eoaBal.usdc
+        polygon.eoa.matic = eoaBal.matic
+      }
+      if (safeBal) {
+        polygon.safe.usdcE = safeBal.usdc
+        polygon.safe.ready = Boolean(
+          creds?.allowanceVerifiedAt ||
+          (safeBal.allowanceCtf        >= 1_000_000 &&
+           safeBal.allowanceNeg        >= 1_000_000 &&
+           safeBal.allowanceNegAdapter >= 1_000_000 &&
+           safeBal.ctfApprovedCtfExchange &&
+           safeBal.ctfApprovedNegExchange &&
+           safeBal.ctfApprovedNegAdapter)
+        )
+      }
+    } catch (e: any) {
+      polygon.eoa.error = polygon.eoa.error ?? (e?.message ?? 'polygon_unavailable')
+    }
+
     res.json({
       address: wallet.address,
       chain: wallet.chain,
@@ -730,6 +784,7 @@ app.get('/api/me/wallet', requireTgUser, async (req, res) => {
       aster,
       hyperliquid,
       xlayer,
+      polygon,
       qrDataUrl
     })
   } catch (err: any) {
@@ -4717,23 +4772,29 @@ app.get('/api/polymarket/wallet', requireTgUser, async (req, res) => {
   try {
     const creds = await db.polymarketCreds.findUnique({ where: { userId: user.id } })
 
-    // EOA — the signing key, derived from the user's BSC wallet PK.
-    let walletAddress: string | null = creds?.walletAddress ?? null
-    if (!walletAddress) {
-      const w = await db.wallet.findFirst({
-        where: { userId: user.id, isActive: true, chain: 'BSC' },
-      })
-      walletAddress = w?.address ?? null
-    }
+    // EOA — the signing key, derived from the user's BSC wallet PK. We
+    // intentionally prefer the *active* BSC wallet over creds.walletAddress:
+    // the fund helper (`getUserPolygonSigner`) signs with the active wallet,
+    // and `/api/me/wallet` also reports on the active wallet, so all three
+    // surfaces (Wallet card, Predictions panel, fund tx) stay consistent.
+    // (creds.walletAddress is preserved as a fallback for users who haven't
+    // initialised an active BSC wallet yet — extremely rare in practice.)
+    const activeBsc = await db.wallet.findFirst({
+      where: { userId: user.id, isActive: true, chain: 'BSC' },
+    })
+    const walletAddress: string | null =
+      activeBsc?.address ?? creds?.walletAddress ?? null
 
     // Safe — the funder. This is where users deposit USDC.e and where
     // Polymarket holds positions. Null until /setup deploys it.
     const safeAddress: string | null = creds?.safeAddress ?? null
 
-    // Read balances at the SAFE (the relevant trading address). The EOA
-    // reads are not surfaced here because under the gasless model the
-    // EOA holds nothing and needs nothing — Polymarket's relayer pays
-    // for every on-chain action.
+    // Read balances at the SAFE (the trading address) and the EOA (where
+    // the user's external USDC.e lands and where MATIC for the one-tap
+    // fund transfer lives). EOA balances drive the "Fund Polymarket"
+    // CTA — when the EOA holds USDC.e, the UI shows a one-click button
+    // to sweep it into the Safe; when MATIC is missing, the UI prompts
+    // the user to send a small amount for gas.
     let balances:
       | {
           usdc: number
@@ -4745,6 +4806,16 @@ app.get('/api/polymarket/wallet', requireTgUser, async (req, res) => {
           ctfApprovedNegAdapter:  boolean
         }
       | null = null
+    let eoaBalances: { usdcE: number; matic: number } | null = null
+    if (walletAddress) {
+      try {
+        const { getPolygonBalances } = await import('./services/polymarketTrading')
+        const e = await getPolygonBalances(walletAddress)
+        eoaBalances = { usdcE: e.usdc, matic: e.matic }
+      } catch (e) {
+        console.warn('[API] polymarket/wallet eoa balances failed:', (e as Error).message)
+      }
+    }
     if (safeAddress) {
       try {
         const { getPolygonBalances } = await import('./services/polymarketTrading')
@@ -4782,6 +4853,7 @@ app.get('/api/polymarket/wallet', requireTgUser, async (req, res) => {
       allowanceVerified: Boolean(creds?.allowanceVerifiedAt),
       ready,
       balances,
+      eoaBalances,                                          // Polygon balances at the EOA (for Fund button)
       builderCode: polymarketConfigBuilderCode(),
     })
   } catch (err: any) {
@@ -4911,6 +4983,63 @@ app.post('/api/polymarket/redeem', requireTgUser, async (req, res) => {
     const msg = err?.message ?? String(err)
     console.error('[API] /polymarket/redeem failed:', msg)
     res.status(502).json({ ok: false, error: 'redeem_failed', details: msg.slice(0, 300) })
+  }
+})
+
+// One-tap fund: sweep custodial EOA USDC.e → user's Polymarket Safe.
+// This is the only on-chain action the user themselves pays gas for in
+// the Polymarket flow — every Safe-side action (deploy, approvals, orders,
+// redemptions) is sponsored by Polymarket's relayer. To execute the
+// transfer the user must hold a small amount of MATIC (~0.005) at their
+// custodial EOA; if missing we return a NEED_MATIC code so the UI can
+// show a clear "send MATIC for gas to {address}" prompt.
+app.post('/api/polymarket/fund', requireTgUser, async (req, res) => {
+  const user = (req as any).user
+  if (!user?.id) return res.status(401).json({ ok: false, error: 'unauthorized' })
+  try {
+    const body = req.body ?? {}
+    // Optional explicit amount; absent = sweep entire EOA balance.
+    const amountIn = body.amount === undefined || body.amount === null
+      ? undefined
+      : Number(body.amount)
+    if (amountIn !== undefined && (!Number.isFinite(amountIn) || amountIn <= 0 || amountIn > 100_000)) {
+      return res.status(400).json({ ok: false, error: 'invalid_amount', message: 'amount must be 0..100000' })
+    }
+
+    const { fundSafeFromEoa } = await import('./services/polymarketTrading')
+    const result = await fundSafeFromEoa({ userId: user.id, amountUsdc: amountIn })
+
+    await logPolymarketEvent({
+      userId: user.id,
+      action: 'fund',
+      reason: `Funded Safe with ${result.amountUsdc.toFixed(2)} USDC.e (tx ${result.txHash.slice(0, 10)}…)`,
+    })
+
+    res.json({ ok: true, ...result })
+  } catch (err: any) {
+    const msg = String(err?.message ?? err)
+    // NEED_MATIC is the user-actionable error: surface a structured code
+    // so the UI can show the right prompt instead of an opaque toast.
+    if (msg.includes('NEED_MATIC')) {
+      // EOA address is the user's active BSC wallet address (same secp256k1
+      // key, identical address on every EVM chain). The UI uses this to
+      // show "send MATIC for gas to {address}" with a copy button.
+      const w = await db.wallet.findFirst({
+        where: { userId: user.id, isActive: true, chain: 'BSC' },
+      }).catch(() => null)
+      return res.status(400).json({
+        ok: false, error: 'need_matic', code: 'NEED_MATIC',
+        eoaAddress: w?.address ?? null, details: msg.slice(0, 200),
+      })
+    }
+    if (msg.includes('No USDC.e balance')) {
+      return res.status(400).json({ ok: false, error: 'no_usdc', details: msg.slice(0, 200) })
+    }
+    if (msg.includes('Safe not deployed')) {
+      return res.status(400).json({ ok: false, error: 'no_safe', details: msg.slice(0, 200) })
+    }
+    console.error('[API] /polymarket/fund failed:', msg)
+    res.status(500).json({ ok: false, error: 'fund_failed', details: msg.slice(0, 300) })
   }
 })
 
