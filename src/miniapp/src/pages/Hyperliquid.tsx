@@ -155,6 +155,15 @@ export default function Hyperliquid() {
   // good read in the last 90s we keep the banner suppressed and continue
   // showing the last-known fills.
   const lastFillsOkAtRef = useRef<number>(0)
+  // Same idea as lastFillsOkAtRef but for the main account-state poll.
+  // The big red "429 Too Many Requests - null" banner under the venue
+  // selector was firing on every transient HL `/info` failure, only to
+  // disappear 5s later when the next poll succeeded — exactly the
+  // "errors come and go" symptom the user reported. Suppress the
+  // banner if (a) we've had a successful account read in the last 90s,
+  // or (b) we already have an account snapshot loaded so the user
+  // sees stable data instead of a flicker.
+  const lastAccountOkAtRef = useRef<number>(0)
 
   // Compact relative-time formatter for the fills feed. Matches the
   // formatter on the Aster Trade page so both venues read identically.
@@ -576,9 +585,13 @@ export default function Hyperliquid() {
   }
 
   const load = async () => {
-    setError(null)
+    // NOTE: don't pre-clear `error` here anymore — clearing it on every
+    // poll caused the banner to flash off and back on again every 5s
+    // when HL was in a 429 spell. Instead we clear it on success below.
     try {
       const acc = await apiFetch<AccountState>('/api/hyperliquid/account')
+      lastAccountOkAtRef.current = Date.now()
+      setError(null)
       // Sticky-onboarded latch: once true, never let a flaky tick revert
       // it. The HL info endpoint occasionally returns onboarded:false on
       // a transient DB read race even for users with a fully-funded HL
@@ -631,6 +644,20 @@ export default function Hyperliquid() {
       // source of the "429 Too Many Requests - null" red banner flickering
       // on the Recent fills card.
     } catch (e: any) {
+      // Grace period: only surface the red banner if (a) we have NOT had
+      // a successful read in the last 90s AND (b) we don't already have
+      // an account snapshot to show. A single 429 should be invisible to
+      // the user — they'd see the banner appear, see no other change in
+      // numbers, then watch it disappear 5s later. That's strictly worse
+      // than showing nothing. Mirrors the loadFills() suppression rule.
+      const FAIL_GRACE_MS = 90_000
+      const recentlyOk = (Date.now() - lastAccountOkAtRef.current) < FAIL_GRACE_MS
+      if (recentlyOk || account != null) {
+        // Swallow silently — server-side getAccountState() now serves
+        // a stale snapshot on its end too, so this is the very last
+        // line of defence against a flickering banner.
+        return
+      }
       setError(e?.message ?? 'Failed to load account')
     }
     // Pull arbitrum balance from the wallet endpoint so we can detect when

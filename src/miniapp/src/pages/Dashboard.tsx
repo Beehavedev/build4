@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { apiFetch } from '../api'
 
 interface DashboardProps {
@@ -57,6 +57,27 @@ export default function Dashboard({ userId, onNavigate }: DashboardProps) {
     balances: { matic: number; usdc: number; allowanceCtf: number; allowanceNeg: number } | null
   } | null>(null)
   const [loading, setLoading] = useState(true)
+  // Sticky-onboarded latches — once we have ever seen the venue as
+  // onboarded with funds, we refuse to demote the card back to "not
+  // activated" on subsequent ticks. The /api/me/wallet endpoint can
+  // briefly return `onboarded:false` / `accountValue:0` whenever the
+  // upstream venue API rate-limits or times out (HL's `/info` 429s
+  // intermittently because Render gives us a single shared egress IP),
+  // and without these latches the user sees their HL/Aster cards
+  // visibly toggle LIVE → "not activated" → LIVE every second. The
+  // server-side fix in getAccountState() now serves stale-on-error so
+  // this is mostly belt-and-braces — but the latch also covers the
+  // first-load edge where the server hasn't seen this user yet, plus
+  // any non-HL venue that doesn't have its own stale cache.
+  const hlEverOnboardedRef    = useRef(false)
+  const asterEverOnboardedRef = useRef(false)
+  const polyEverReadyRef      = useRef(false)
+  // Mirror the latch into state so the render reads it (refs don't
+  // trigger re-render). Single boolean per venue to keep the diff
+  // minimal — derived `*Onboarded` consts below OR with these.
+  const [hlEverOnboarded,    setHlEverOnboarded]    = useState(false)
+  const [asterEverOnboarded, setAsterEverOnboarded] = useState(false)
+  const [polyEverReady,      setPolyEverReady]      = useState(false)
 
   useEffect(() => {
     if (!userId) { setLoading(false); return }
@@ -77,10 +98,31 @@ export default function Dashboard({ userId, onNavigate }: DashboardProps) {
       apiFetch<any>('/api/polymarket/wallet')
         .then((p) => {
           if (cancelled) return
-          if (p?.ok) setPolyWallet(p)
-          else setPolyWallet(null)
+          if (p?.ok) {
+            setPolyWallet(p)
+            // Latch the "ever ready" flag so a subsequent flaky Polygon
+            // RPC read can't downgrade the card to "not activated".
+            if (p.ready && !polyEverReadyRef.current) {
+              polyEverReadyRef.current = true
+              setPolyEverReady(true)
+            }
+          } else setPolyWallet(null)
         })
         .catch(() => { /* network blip — keep last good state */ })
+    }
+    // Helper: apply the same "latch on first-true" pattern to wallet
+    // venues. Pulled out so the first-paint fetch and the 1s polling
+    // loop stay in sync.
+    const latchWalletFlags = (w: WalletInfo | null | undefined) => {
+      if (!w) return
+      if (w.hyperliquid?.onboarded && !hlEverOnboardedRef.current) {
+        hlEverOnboardedRef.current = true
+        setHlEverOnboarded(true)
+      }
+      if (w.aster?.onboarded && !asterEverOnboardedRef.current) {
+        asterEverOnboardedRef.current = true
+        setAsterEverOnboarded(true)
+      }
     }
 
     // First-paint fetch — only the three calls that the dashboard
@@ -100,7 +142,10 @@ export default function Dashboard({ userId, onNavigate }: DashboardProps) {
       if (Array.isArray(user?.recentTrades)) {
         setTrades(user.recentTrades.filter((t: any) => !t?.paperTrade && t?.exchange !== 'mock'))
       }
-      if (walletData) setWallet(walletData)
+      if (walletData) {
+        setWallet(walletData)
+        latchWalletFlags(walletData)
+      }
       setLoading(false)
     })
 
@@ -115,7 +160,11 @@ export default function Dashboard({ userId, onNavigate }: DashboardProps) {
     const id = setInterval(() => {
       if (cancelled) return
       apiFetch<WalletInfo>('/api/me/wallet')
-        .then((w) => { if (!cancelled && w) setWallet(w) })
+        .then((w) => {
+          if (cancelled || !w) return
+          setWallet(w)
+          latchWalletFlags(w)
+        })
         .catch(() => { /* keep last good state */ })
     }, 1000)
 
@@ -157,13 +206,22 @@ export default function Dashboard({ userId, onNavigate }: DashboardProps) {
   }
 
   const asterUsdt = wallet?.aster?.usdt ?? 0
-  const asterOnboarded = !!wallet?.aster?.onboarded
+  // OR with the sticky latch so a single flaky tick (Aster API blip,
+  // BSC RPC timeout) can never demote the card from LIVE → "not
+  // activated". Once we have ever seen onboarded:true for this session
+  // we keep showing the venue as activated. See ref declaration above.
+  const asterOnboarded = !!wallet?.aster?.onboarded || asterEverOnboarded
   const bscUsdt = wallet?.balances?.usdt ?? 0
   // Hyperliquid clearinghouse equity (USDC). Falls through to 0 if the
   // server didn't return the hyperliquid block (older clients) or if HL
   // is temporarily unreachable — better than hiding the venue entirely.
   const hlValue = wallet?.hyperliquid?.accountValue ?? 0
-  const hlOnboarded = !!wallet?.hyperliquid?.onboarded
+  // Same sticky-onboarded latch as Aster. The server-side stale-on-
+  // error fallback in getAccountState() handles this for users who've
+  // been read at least once, but the latch also covers the case where
+  // a brand-new mount races against an in-flight 429 before the
+  // server-side cache is populated.
+  const hlOnboarded = !!wallet?.hyperliquid?.onboarded || hlEverOnboarded
   // 42.space "value" — for now we surface BSC USDT here since 42.space
   // positions live on BSC and the mini-app's open-position MTM lives in
   // the Predictions tab. This card is the user's BSC pocket / dry powder
@@ -175,7 +233,9 @@ export default function Dashboard({ userId, onNavigate }: DashboardProps) {
   // logic. If the wallet endpoint hasn't returned yet we soft-fall to
   // 0 / not-activated rather than hiding the card.
   const polyUsdc = polyWallet?.balances?.usdc ?? 0
-  const polyOnboarded = !!polyWallet?.ready
+  // OR with the sticky latch so a transient Polygon RPC blip can't
+  // demote a known-ready Polymarket card to "not activated".
+  const polyOnboarded = !!polyWallet?.ready || polyEverReady
   const totalValue = asterUsdt + bscUsdt + hlValue + polyUsdc
   const todayPnl = portfolio?.dayPnl ?? 0
   const todayPct = totalValue > 0 ? (todayPnl / totalValue) * 100 : 0

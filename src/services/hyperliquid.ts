@@ -520,17 +520,89 @@ export async function getAccountState(userAddress: string): Promise<{
     // the wallet card was hiding a real $58.77 balance behind a "Not
     // activated yet" empty state because we never set this flag.
     const onboarded = accountValue > 0 || !!(state as any).marginSummary
-    return {
+    const result = {
       withdrawableUsdc: parseFloat((state as any).withdrawable ?? '0'),
       accountValue,
       onboarded,
       positions,
       abstraction,
     }
+    // Stash a per-user last-good snapshot so the next failure can serve
+    // stale-but-correct data instead of false-zeros (see catch block).
+    _hlLastGoodAccountState.set(userAddress.toLowerCase(), {
+      at:    Date.now(),
+      value: result,
+    })
+    return result
   } catch (err: any) {
-    console.error('[HL] getAccountState failed:', userAddress, err?.message)
+    // ── Stale-on-error fallback ────────────────────────────────────────────
+    // Hyperliquid's `/info` endpoint 429s intermittently because Render
+    // gives the server a single shared egress IP across all users, and
+    // network blips also surface here. Previously this catch returned
+    // `{ accountValue: 0, onboarded: false, ... }` — which is *identical*
+    // to "user has never funded an HL account". The wallet card and
+    // trade-screen activate banner both consume that and switch the user
+    // from LIVE → "not activated" on every flaky tick, then flip back
+    // when the next call succeeds. From the user's perspective the HL
+    // card visibly toggles once a second. Reported on prod April 2026.
+    //
+    // Fix: serve the last successful snapshot for this address (held in
+    // _hlLastGoodAccountState, no expiry — we'd rather show 5-minute-old
+    // balances than wrongly downgrade a funded account to "not activated").
+    // Only when we have *never* successfully read this user do we surface
+    // the failure as zeros — at that point we genuinely don't know whether
+    // they're onboarded, and the route handler will preserve the DB-cached
+    // `hyperliquidOnboarded` flag in /api/me/wallet via its own catch.
+    const lastGood = _hlLastGoodAccountState.get(userAddress.toLowerCase())
+    if (lastGood) {
+      console.warn('[HL] getAccountState failed, serving stale snapshot:',
+        userAddress, 'age=', Date.now() - lastGood.at, 'ms err=', err?.message)
+      return lastGood.value
+    }
+    console.error('[HL] getAccountState failed (no cached snapshot):', userAddress, err?.message)
     return { withdrawableUsdc: 0, accountValue: 0, onboarded: false, positions: [], abstraction: null }
   }
+}
+
+// ── Per-user account-state cache for stale-on-error fallback ───────────────
+// Held indefinitely (process-lifetime) and updated on every successful
+// getAccountState() call. Returning a stale snapshot is strictly better
+// than returning false-zeros, which would otherwise misrepresent a funded
+// HL account as "not activated" on any transient failure.
+//
+// Memory cost is trivial: each entry is ~a few hundred bytes, and HL
+// account state per user is only added once they've ever loaded the app.
+// Even with 100k users that's <100MB; we'll add an LRU cap if/when scale
+// demands it. Exposed for tests via __resetHlAccountStateCacheForTests.
+const _hlLastGoodAccountState: Map<string, {
+  at: number
+  value: {
+    withdrawableUsdc: number
+    accountValue:     number
+    onboarded:        boolean
+    positions:        any[]
+    abstraction:      'unifiedAccount' | 'portfolioMargin' | 'disabled' | null
+  }
+}> = new Map()
+
+/** Test-only helpers. Do not call from production code paths. */
+export function __resetHlAccountStateCacheForTests(): void {
+  _hlLastGoodAccountState.clear()
+}
+export function __primeHlAccountStateCacheForTests(
+  addr: string,
+  value: {
+    withdrawableUsdc: number
+    accountValue:     number
+    onboarded:        boolean
+    positions:        any[]
+    abstraction:      'unifiedAccount' | 'portfolioMargin' | 'disabled' | null
+  },
+): void {
+  _hlLastGoodAccountState.set(addr.toLowerCase(), { at: Date.now(), value })
+}
+export function __peekHlAccountStateCacheForTests(addr: string) {
+  return _hlLastGoodAccountState.get(addr.toLowerCase())?.value
 }
 
 /**
