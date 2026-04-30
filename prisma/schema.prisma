@@ -169,9 +169,23 @@ model Agent {
   currentPair      String?
   lastScanScore    Int?
 
+  // Polymarket Phase 3 — autonomous prediction-market trading.
+  // When true the polymarketAgent runner picks this agent up on its tick,
+  // scans top events, and places EOA-signed orders against the Polymarket
+  // CLOB (with our builderCode attached for grant attribution).
+  polymarketEnabled Boolean  @default(false)
+  // Per-trade USDC budget the agent may commit to a single Polymarket
+  // position. Capped at maxPositionSize so users have one mental model.
+  polymarketMaxSizeUsdc Float @default(5)
+  // Conviction floor (0..1) — agent only trades when the LLM swarm's
+  // probability estimate diverges from market-implied price by at least
+  // this much. 0.10 = 10pp edge.
+  polymarketEdgeThreshold Float @default(0.10)
+
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @default(now()) @updatedAt
   lastTickAt      DateTime?
+  lastPolymarketTickAt DateTime?
 
   user            User      @relation(fields: [userId], references: [id])
   trades          Trade[]
@@ -356,7 +370,7 @@ model AgentLog {
   score           Int?
   regime          String?
   // Which venue this log entry belongs to ('aster' | 'hyperliquid' |
-  // 'fortytwo'). The runner expands each agent into per-venue tick
+  // 'fortytwo' | 'polymarket'). The runner expands each agent into per-venue tick
   // units and overrides `agent.exchange` on a CLONE per tick — so the
   // Agent table's `exchange` column does NOT reflect which venue was
   // actually being scanned when an HL or 42 tick wrote a log row. This
@@ -377,4 +391,76 @@ model AgentLog {
 
   @@index([agentId])
   @@index([userId, createdAt])
+}
+
+// =====================================================================
+// Polymarket — Phase 2 (manual trading) + Phase 3 (autonomous AI agent).
+// EOA-signed orders against the Polygon CTF Exchange via the official
+// CLOB REST API. Builder code attached to every order for grant-eligible
+// volume attribution under the Polymarket Builder Program.
+// =====================================================================
+
+// Per-user Polymarket L2 API credentials (HMAC key/secret/passphrase),
+// derived once from the custodial PK and persisted encrypted so we don't
+// have to re-derive on every tick. allowanceTxHash records the one-time
+// USDC->CTF Exchange approval — once present we know the user can place
+// orders without an on-chain pre-step.
+model PolymarketCreds {
+  id                  String   @id @default(cuid())
+  userId              String   @unique
+  walletAddress       String   // Polygon address = same as BSC EOA address
+  apiKey              String
+  encryptedApiSecret  String
+  encryptedPassphrase String
+  allowanceTxHash     String?
+  allowanceVerifiedAt DateTime?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @default(now()) @updatedAt
+
+  @@index([walletAddress])
+}
+
+// One row per Polymarket order BUILD4 places on the user's behalf
+// (manual via Phase 2 UI or autonomous via Phase 3 agent). status mirrors
+// the CLOB order lifecycle plus our own resolution states.
+model PolymarketPosition {
+  id              String    @id @default(cuid())
+  userId          String
+  agentId         String?
+
+  conditionId     String    // hex condition id from Gamma
+  tokenId         String    // ERC-1155 outcome token id (decimal string, big)
+  marketSlug      String?
+  marketTitle     String
+  outcomeLabel    String    // 'Yes' | 'No' | other
+  side            String    // 'BUY' | 'SELL'
+
+  // Sizing
+  sizeUsdc        Float     // notional USDC committed at order time
+  entryPrice      Float     // implied probability at fill (0..1)
+  fillSize        Float?    // outcome tokens filled (sizeUsdc / entryPrice if fully filled)
+  exitPrice       Float?
+  payoutUsdc      Float?
+  pnl             Float?
+
+  // CLOB lifecycle
+  orderHash       String?   // EIP-712 hash returned by CLOB
+  orderId         String?   // CLOB order id
+  status          String    @default("placed") // placed | matched | filled | cancelled | failed | resolved_win | resolved_loss
+  errorMessage    String?
+
+  // Attribution
+  builderCode     String?   // bytes32 attached at order time
+
+  // LLM swarm telemetry (Phase 3 agent path)
+  reasoning       String?
+  providers       Json?
+
+  openedAt        DateTime  @default(now())
+  closedAt        DateTime?
+
+  @@index([userId])
+  @@index([agentId])
+  @@index([status])
+  @@index([conditionId])
 }

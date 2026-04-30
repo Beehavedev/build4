@@ -4650,6 +4650,252 @@ function polymarketConfigBuilderCode(): string | null {
   return code.length > 0 ? code : null
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+// Polymarket Phase 2 — manual trading endpoints (custodial PK signing).
+// ───────────────────────────────────────────────────────────────────────
+// These four routes form the full mini-app → Polymarket trading flow:
+//   GET  /api/polymarket/wallet     — wallet status: address, USDC/MATIC
+//                                      balances, allowance flag, has-creds
+//   POST /api/polymarket/setup      — derive L2 API creds + run the
+//                                      one-time USDC->CTF allowance tx
+//   POST /api/polymarket/order      — place a market BUY/SELL on a token
+//   GET  /api/polymarket/positions  — user's Polymarket position history
+//
+// Every order carries our POLY_BUILDER_CODE for grant-eligible volume
+// attribution. Every order also writes an AgentLog row with
+// exchange='polymarket' so the existing brain-feed UI tags the entry
+// with a POLY chip alongside HL / Aster / 42.
+// ───────────────────────────────────────────────────────────────────────
+
+// Tiny helper: write a polymarket-tagged brain-feed log row. AgentLog has
+// a hard FK to Agent so we can only log when there's a real agentId
+// (Phase 3 autonomous path). Manual user trades just write a console line
+// and rely on the PolymarketPosition row itself as the audit trail —
+// the mini-app's positions panel surfaces them directly without going
+// through the brain-feed.
+async function logPolymarketEvent(opts: {
+  userId:    string
+  agentId?:  string
+  action:    string  // 'order_placed' | 'order_failed' | 'wallet_setup' | 'agent_decision'
+  reason:    string
+  pair?:     string
+  price?:    number
+  reasoning?: string
+}) {
+  if (!opts.agentId) {
+    console.log(`[POLY] ${opts.action} user=${opts.userId} ${opts.reason}`)
+    return
+  }
+  try {
+    await db.agentLog.create({
+      data: {
+        agentId:         opts.agentId,
+        userId:          opts.userId,
+        action:          opts.action,
+        rawResponse:     null,
+        parsedAction:    null,
+        executionResult: opts.action,
+        error:           null,
+        pair:            opts.pair ?? null,
+        price:           opts.price ?? null,
+        reason:          opts.reason,
+        adx:             null,
+        rsi:             null,
+        score:           null,
+        regime:          null,
+        exchange:        'polymarket',
+      },
+    })
+  } catch (err) {
+    console.warn('[API] logPolymarketEvent failed:', (err as Error).message)
+  }
+}
+
+app.get('/api/polymarket/wallet', requireTgUser, async (req, res) => {
+  const user = (req as any).user
+  if (!user?.id) return res.status(401).json({ ok: false, error: 'unauthorized' })
+  try {
+    const creds = await db.polymarketCreds.findUnique({ where: { userId: user.id } })
+
+    // If creds aren't set up we still try to surface the user's address
+    // so the UI can show "fund this address" instructions before setup.
+    let walletAddress: string | null = creds?.walletAddress ?? null
+    if (!walletAddress) {
+      const w = await db.wallet.findFirst({
+        where: { userId: user.id, isActive: true, chain: 'BSC' },
+      })
+      walletAddress = w?.address ?? null
+    }
+
+    let balances:
+      | { matic: number; usdc: number; allowanceCtf: number; allowanceNeg: number }
+      | null = null
+    if (walletAddress) {
+      try {
+        const { getPolygonBalances } = await import('./services/polymarketTrading')
+        const b = await getPolygonBalances(walletAddress)
+        balances = {
+          matic:        b.matic,
+          usdc:         b.usdc,
+          allowanceCtf: b.allowanceCtf,
+          allowanceNeg: b.allowanceNeg,
+        }
+      } catch (e) {
+        console.warn('[API] polymarket/wallet balances failed:', (e as Error).message)
+      }
+    }
+
+    const ready = Boolean(
+      creds && balances && balances.allowanceCtf >= 1_000_000 && balances.allowanceNeg >= 1_000_000,
+    )
+
+    res.json({
+      ok: true,
+      walletAddress,
+      hasCreds:        Boolean(creds),
+      allowanceVerified: Boolean(creds?.allowanceVerifiedAt),
+      ready,
+      balances,
+      builderCode: polymarketConfigBuilderCode(),
+    })
+  } catch (err: any) {
+    console.error('[API] /polymarket/wallet failed:', err)
+    res.status(500).json({ ok: false, error: 'wallet_lookup_failed' })
+  }
+})
+
+app.post('/api/polymarket/setup', requireTgUser, async (req, res) => {
+  const user = (req as any).user
+  if (!user?.id) return res.status(401).json({ ok: false, error: 'unauthorized' })
+  try {
+    const { getOrCreateCreds, ensureUsdcAllowance } = await import('./services/polymarketTrading')
+    const { walletAddress } = await getOrCreateCreds(user.id)
+    let allowance: { alreadyApproved: boolean; txHashes: string[] } = { alreadyApproved: true, txHashes: [] }
+    try {
+      allowance = await ensureUsdcAllowance(user.id)
+    } catch (allowErr: any) {
+      // Most common failure: not enough MATIC for gas. Surface a clear
+      // message instead of a 500 so the UI can prompt the user to fund.
+      const msg = String(allowErr?.message ?? allowErr)
+      await logPolymarketEvent({
+        userId: user.id,
+        action: 'wallet_setup_failed',
+        reason: `Allowance tx failed: ${msg.slice(0, 200)}`,
+      })
+      return res.status(400).json({
+        ok: false,
+        walletAddress,
+        credsReady: true,
+        error: 'allowance_failed',
+        details: msg.slice(0, 300),
+      })
+    }
+    await logPolymarketEvent({
+      userId: user.id,
+      action: 'wallet_setup',
+      reason: allowance.alreadyApproved
+        ? 'Polymarket creds derived; USDC allowance already in place'
+        : `Polymarket creds derived; approved USDC (${allowance.txHashes.length} tx)`,
+    })
+    res.json({ ok: true, walletAddress, credsReady: true, allowance })
+  } catch (err: any) {
+    const msg = err?.message ?? String(err)
+    console.error('[API] /polymarket/setup failed:', msg)
+    res.status(500).json({ ok: false, error: 'setup_failed', details: msg.slice(0, 300) })
+  }
+})
+
+app.post('/api/polymarket/order', requireTgUser, async (req, res) => {
+  const user = (req as any).user
+  if (!user?.id) return res.status(401).json({ ok: false, error: 'unauthorized' })
+  try {
+    const body = req.body ?? {}
+    const tokenId      = String(body.tokenId ?? '')
+    const side         = String(body.side ?? '').toUpperCase()
+    // Frontend sends `sizeUsdc` (clearer name); we accept both for back-compat
+    // with any future caller (e.g. CLI scripts) that uses `amount`.
+    const amount       = Number(body.sizeUsdc ?? body.amount)
+    const conditionId  = String(body.conditionId ?? '')
+    const marketTitle  = String(body.marketTitle ?? '')
+    const marketSlug   = body.marketSlug ? String(body.marketSlug) : undefined
+    const outcomeLabel = String(body.outcomeLabel ?? 'Yes')
+    // Price snapshot the user saw at click time. Used for slippage protection
+    // — if the executable price has moved more than SLIPPAGE_BPS from this
+    // snapshot we refuse the order rather than execute against a worse book.
+    const expectedPrice = Number(body.price)
+
+    if (!/^[0-9]{60,80}$/.test(tokenId)) {
+      return res.status(400).json({ ok: false, error: 'invalid_token_id' })
+    }
+    if (side !== 'BUY' && side !== 'SELL') {
+      return res.status(400).json({ ok: false, error: 'invalid_side' })
+    }
+    if (!Number.isFinite(amount) || amount <= 0 || amount > 10_000) {
+      return res.status(400).json({ ok: false, error: 'invalid_amount', message: 'amount must be 0..10000' })
+    }
+    if (!/^0x[0-9a-fA-F]{2,128}$/.test(conditionId) && conditionId.length > 0) {
+      return res.status(400).json({ ok: false, error: 'invalid_condition_id' })
+    }
+    if (!marketTitle || marketTitle.length > 500) {
+      return res.status(400).json({ ok: false, error: 'invalid_market_title' })
+    }
+
+    const { placeMarketOrder } = await import('./services/polymarketTrading')
+    const result = await placeMarketOrder({
+      userId:  user.id,
+      tokenId,
+      side: side as 'BUY' | 'SELL',
+      amount,
+      marketCtx: { conditionId, marketTitle, marketSlug, outcomeLabel },
+      reasoning: 'Manual mini-app trade',
+      // Server-side slippage cap: refuse if price moved >5% from what user
+      // saw at click time. Polymarket markets move slowly, so a 5% band is
+      // generous for normal use; tightens against a moving book during
+      // adverse selection moments (e.g. during a major news event).
+      expectedPrice: Number.isFinite(expectedPrice) && expectedPrice > 0 && expectedPrice < 1
+        ? expectedPrice
+        : undefined,
+      maxSlippageBps: 500,
+    })
+
+    if (!result.ok) {
+      await logPolymarketEvent({
+        userId: user.id,
+        action: 'order_failed',
+        reason: `${side} ${amount} ${outcomeLabel} on "${marketTitle.slice(0, 60)}" — ${result.error?.slice(0, 120) ?? 'unknown error'}`,
+        pair:   marketSlug ?? marketTitle.slice(0, 60),
+      })
+      return res.status(502).json({ ...result, ok: false })
+    }
+
+    await logPolymarketEvent({
+      userId: user.id,
+      action: 'order_placed',
+      reason: `${side} ${amount} USDC on "${marketTitle.slice(0, 60)}" ${outcomeLabel} @ ~${(result.fillPrice ?? 0).toFixed(3)}`,
+      pair:   marketSlug ?? marketTitle.slice(0, 60),
+      price:  result.fillPrice,
+    })
+    res.json({ ...result, ok: true })
+  } catch (err: any) {
+    const msg = err?.message ?? String(err)
+    console.error('[API] /polymarket/order failed:', msg)
+    res.status(500).json({ ok: false, error: 'order_failed', details: msg.slice(0, 300) })
+  }
+})
+
+app.get('/api/polymarket/positions', requireTgUser, async (req, res) => {
+  const user = (req as any).user
+  if (!user?.id) return res.status(401).json({ ok: false, error: 'unauthorized' })
+  try {
+    const { getUserPositions } = await import('./services/polymarketTrading')
+    const positions = await getUserPositions(user.id)
+    res.json({ ok: true, positions })
+  } catch (err: any) {
+    console.error('[API] /polymarket/positions failed:', err?.message ?? err)
+    res.status(500).json({ ok: false, error: 'positions_lookup_failed' })
+  }
+})
+
 // Manual user-initiated prediction trade. Triggered when a user taps
 // "Place trade" on a market scanner row in the mini-app. Bypasses the
 // swarm/conviction gating used by autonomous agents (the user's tap IS

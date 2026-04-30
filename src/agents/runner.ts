@@ -144,8 +144,37 @@ export function initRunner(bot: Bot) {
     await runSwarmDivergenceWatch()
   })
 
+  // Polymarket autonomous agent (Phase 3). Independent of the perp
+  // tick — a Polymarket agent only acts on markets, never on perps. We
+  // tick every 60s; the agent itself enforces a per-row min interval so
+  // an over-eager runner can't double-fire. Single-flight via
+  // `polymarketTickInflight` so a slow LLM round trip can't pile up.
+  setInterval(async () => {
+    if (polymarketTickInflight) {
+      console.log('[polymarketAgent] previous tick still running, skipping')
+      return
+    }
+    polymarketTickInflight = true
+    try {
+      const { tickAllPolymarketAgents } = await import('./polymarketAgent')
+      const r = await tickAllPolymarketAgents()
+      if (r.scanned > 0 || r.errors > 0) {
+        console.log(`[polymarketAgent] scanned=${r.scanned} ticked=${r.ticked} placed=${r.ordersPlaced} skipped=${r.ordersSkipped} errors=${r.errors}`)
+      }
+    } catch (err) {
+      console.error('[polymarketAgent] sweep failed:', (err as Error).message)
+    } finally {
+      polymarketTickInflight = false
+    }
+  }, 60_000)
+
   console.log('[Runner] Agent runner initialized')
 }
+
+// In-flight guard for the Polymarket autonomous sweep. The sweep is
+// parallel-friendly internally, but we never want two concurrent sweeps
+// because they'd contend for the same polymarketCreds rows + LLM quota.
+let polymarketTickInflight = false
 
 // ── Swarm divergence watch ─────────────────────────────────────────
 async function runSwarmDivergenceWatch() {

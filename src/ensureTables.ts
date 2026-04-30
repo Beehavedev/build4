@@ -429,5 +429,62 @@ export async function ensureNewTables() {
     console.log(`[DB] Backfilled ${updated} users to live 42.space trading`)
   }
 
+  // ── Polymarket Phase 2/3 — manual + autonomous prediction-market trading ──
+  // Adds the per-agent toggles that control the polymarketAgent runner and
+  // creates the two Polymarket-specific tables (creds + positions). All
+  // ALTERs are IF NOT EXISTS / safe so they replay cleanly on every boot.
+  await run(`ALTER TABLE "Agent" ADD COLUMN IF NOT EXISTS "polymarketEnabled" BOOLEAN NOT NULL DEFAULT false`)
+  await run(`ALTER TABLE "Agent" ADD COLUMN IF NOT EXISTS "polymarketMaxSizeUsdc" DOUBLE PRECISION NOT NULL DEFAULT 5`)
+  await run(`ALTER TABLE "Agent" ADD COLUMN IF NOT EXISTS "polymarketEdgeThreshold" DOUBLE PRECISION NOT NULL DEFAULT 0.10`)
+  await run(`ALTER TABLE "Agent" ADD COLUMN IF NOT EXISTS "lastPolymarketTickAt" TIMESTAMP(3)`)
+
+  await run(`CREATE TABLE IF NOT EXISTS "PolymarketCreds" (
+    "id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
+    "userId" TEXT NOT NULL,
+    "walletAddress" TEXT NOT NULL,
+    "apiKey" TEXT NOT NULL,
+    "encryptedApiSecret" TEXT NOT NULL,
+    "encryptedPassphrase" TEXT NOT NULL,
+    "allowanceTxHash" TEXT,
+    "allowanceVerifiedAt" TIMESTAMP(3),
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "PolymarketCreds_pkey" PRIMARY KEY ("id")
+  )`)
+  await run(`CREATE UNIQUE INDEX IF NOT EXISTS "PolymarketCreds_userId_key" ON "PolymarketCreds"("userId")`)
+  await run(`CREATE INDEX IF NOT EXISTS "PolymarketCreds_walletAddress_idx" ON "PolymarketCreds"("walletAddress")`)
+
+  await run(`CREATE TABLE IF NOT EXISTS "PolymarketPosition" (
+    "id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
+    "userId" TEXT NOT NULL,
+    "agentId" TEXT,
+    "conditionId" TEXT NOT NULL,
+    "tokenId" TEXT NOT NULL,
+    "marketSlug" TEXT,
+    "marketTitle" TEXT NOT NULL,
+    "outcomeLabel" TEXT NOT NULL,
+    "side" TEXT NOT NULL,
+    "sizeUsdc" DOUBLE PRECISION NOT NULL,
+    "entryPrice" DOUBLE PRECISION NOT NULL,
+    "fillSize" DOUBLE PRECISION,
+    "exitPrice" DOUBLE PRECISION,
+    "payoutUsdc" DOUBLE PRECISION,
+    "pnl" DOUBLE PRECISION,
+    "orderHash" TEXT,
+    "orderId" TEXT,
+    "status" TEXT NOT NULL DEFAULT 'placed',
+    "errorMessage" TEXT,
+    "builderCode" TEXT,
+    "reasoning" TEXT,
+    "providers" JSONB,
+    "openedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "closedAt" TIMESTAMP(3),
+    CONSTRAINT "PolymarketPosition_pkey" PRIMARY KEY ("id")
+  )`)
+  await run(`CREATE INDEX IF NOT EXISTS "PolymarketPosition_userId_idx" ON "PolymarketPosition"("userId")`)
+  await run(`CREATE INDEX IF NOT EXISTS "PolymarketPosition_agentId_idx" ON "PolymarketPosition"("agentId")`)
+  await run(`CREATE INDEX IF NOT EXISTS "PolymarketPosition_status_idx" ON "PolymarketPosition"("status")`)
+  await run(`CREATE INDEX IF NOT EXISTS "PolymarketPosition_conditionId_idx" ON "PolymarketPosition"("conditionId")`)
+
   console.log('[DB] All new tables ready')
 }
