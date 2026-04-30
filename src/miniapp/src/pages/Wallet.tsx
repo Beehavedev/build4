@@ -11,6 +11,11 @@ interface WalletInfo {
   aster: { usdt: number; availableMargin: number; onboarded: boolean; error: string | null }
   hyperliquid?: { usdc: number; accountValue: number; onboarded: boolean; error: string | null }
   xlayer?: { okb: number; error: string | null }
+  polygon?: {
+    eoa:  { address: string; usdcE: number; matic: number; error: string | null }
+    safe: { address: string | null; usdcE: number; deployed: boolean; ready: boolean; error: string | null }
+    hasCreds: boolean
+  }
   qrDataUrl: string
 }
 
@@ -142,11 +147,11 @@ export default function Wallet() {
         <>
           <AsterPrimaryCard w={w} />
           <HyperliquidCard w={w} />
-          <BscSecondaryCard w={w} />
+          <BscSecondaryCard w={w} onChange={load} copy={copy} copied={copied} />
         </>
       ) : (
         <>
-          <BscPrimaryCard w={w} />
+          <BscPrimaryCard w={w} onChange={load} copy={copy} copied={copied} />
           {w.aster.onboarded && <AsterSecondaryCard w={w} onReactivated={load} />}
           <HyperliquidCard w={w} />
         </>
@@ -533,7 +538,7 @@ function BridgeCard({ recipient }: { recipient: string }) {
 
 // ─── Balance cards ───────────────────────────────────────────────────────────
 
-function BscPrimaryCard({ w }: { w: WalletInfo }) {
+function BscPrimaryCard({ w, onChange, copy, copied }: { w: WalletInfo; onChange: () => void; copy: (t: string) => void; copied: boolean }) {
   return (
     <>
       <div className="card" style={{ marginBottom: 10 }}>
@@ -567,11 +572,12 @@ function BscPrimaryCard({ w }: { w: WalletInfo }) {
         </div>
       </div>
       <ArbitrumCard w={w} />
+      <PolygonCard w={w} onChange={onChange} copy={copy} copied={copied} />
     </>
   )
 }
 
-function BscSecondaryCard({ w }: { w: WalletInfo }) {
+function BscSecondaryCard({ w, onChange, copy, copied }: { w: WalletInfo; onChange: () => void; copy: (t: string) => void; copied: boolean }) {
   return (
     <>
       <div className="card" style={{ marginBottom: 10, opacity: 0.85 }}>
@@ -582,6 +588,7 @@ function BscSecondaryCard({ w }: { w: WalletInfo }) {
         </div>
       </div>
       <ArbitrumCard w={w} compact />
+      <PolygonCard w={w} compact onChange={onChange} copy={copy} copied={copied} />
     </>
   )
 }
@@ -631,6 +638,185 @@ function ArbitrumCard({ w, compact }: { w: WalletInfo; compact?: boolean }) {
       {arb.usdc >= 5 && (
         <div style={{ marginTop: 10, fontSize: 11, color: 'var(--b4-muted)', lineHeight: 1.45 }}>
           💡 USDC on Arbitrum doesn't trade directly. Open the <b>Hyperliquid</b> tab to bridge it into HL perps.
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Polygon card — surfaces the user's USDC.e + MATIC at their custodial EOA
+// and (if they've onboarded to Polymarket) the USDC.e at their Polymarket
+// Safe. Includes a one-tap "Fund Polymarket" button that calls
+// POST /api/polymarket/fund to sweep EOA → Safe. The flow mirrors the
+// Hyperliquid bridge UX: user must hold a tiny amount of MATIC for the
+// EOA→Safe transfer gas (Polymarket's relayer only sponsors Safe-side tx).
+//
+// USDC.e is the bridged USDC at 0x2791…4174 — the only collateral
+// Polymarket's CTF Exchange accepts. Native USDC (0x3c49…3359) is NOT
+// useful here, which is why we label the balance specifically as USDC.e.
+function PolygonCard({
+  w, compact, onChange, copy, copied,
+}: {
+  w: WalletInfo
+  compact?: boolean
+  onChange: () => void
+  copy: (t: string) => void
+  copied: boolean
+}) {
+  const poly = w.polygon
+  const [funding, setFunding] = useState(false)
+  const [fundMsg, setFundMsg] = useState<string | null>(null)
+  const [fundErr, setFundErr] = useState<{ code: string; eoa?: string | null; msg: string } | null>(null)
+
+  // If the server didn't return a polygon block (older server, or polygon
+  // RPC was unreachable) silently hide rather than show a confusing empty
+  // card. The Predictions tab will surface any setup errors directly.
+  if (!poly) return null
+  const eoa  = poly.eoa
+  const safe = poly.safe
+  const hasEoaUsdc = eoa.usdcE > 0
+  const hasMatic   = eoa.matic >= 0.005
+  const safeReady  = safe.deployed && !!safe.address
+
+  async function fund() {
+    setFunding(true); setFundMsg(null); setFundErr(null)
+    try {
+      const res = await apiFetch<any>('/api/polymarket/fund', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+      setFundMsg(`✓ Sent ${Number(res.amountUsdc ?? 0).toFixed(2)} USDC.e to your Safe`)
+      onChange()
+    } catch (e: any) {
+      // ApiError stashes the parsed JSON body on .body — that's where the
+      // structured `code: 'NEED_MATIC'` lives. Fall back to message string
+      // for older errors / non-JSON failures.
+      const body = e?.body ?? null
+      const code = body?.code ?? (String(e?.message ?? '').includes('NEED_MATIC') ? 'NEED_MATIC' : null)
+      if (code === 'NEED_MATIC') {
+        setFundErr({ code, eoa: body?.eoaAddress ?? eoa.address, msg: 'Add MATIC for gas (~$0.01)' })
+      } else {
+        setFundErr({ code: 'ERR', msg: body?.details ?? body?.error ?? String(e?.message ?? 'Failed').slice(0, 140) })
+      }
+    } finally {
+      setFunding(false)
+    }
+  }
+
+  if (compact) {
+    return (
+      <div className="card" style={{ marginBottom: 14, opacity: 0.85 }} data-testid="card-polygon-balance">
+        <div style={{ fontSize: 11, color: 'var(--b4-muted)', marginBottom: 6 }}>ON-CHAIN (POLYGON · POLYMARKET)</div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+          <span data-testid="text-balance-poly-usdce">USDC.e {eoa.usdcE.toFixed(2)}</span>
+          <span data-testid="text-balance-poly-matic">MATIC {eoa.matic.toFixed(4)}</span>
+        </div>
+        {safeReady && safe.usdcE > 0 && (
+          <div style={{ fontSize: 11, color: 'var(--b4-muted)', marginTop: 4 }} data-testid="text-balance-poly-safe">
+            Safe: {safe.usdcE.toFixed(2)} USDC.e
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <div
+      className="card"
+      style={{
+        marginBottom: 14,
+        ...(hasEoaUsdc || (safe.usdcE ?? 0) > 0 ? { borderLeft: '3px solid #8247e5' } : {}),
+      }}
+      data-testid="card-polygon-balance"
+    >
+      <div style={{ fontSize: 11, color: 'var(--b4-muted)', marginBottom: 8 }}>
+        ON-CHAIN (POLYGON · POLYMARKET)
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+        <div>
+          <div style={{ fontSize: 11, color: 'var(--b4-muted)' }}>USDC.e</div>
+          <div style={{ fontSize: 20, fontWeight: 700 }} data-testid="text-balance-poly-usdce">
+            {eoa.usdcE.toFixed(2)}
+          </div>
+        </div>
+        <div style={{ textAlign: 'right' }}>
+          <div style={{ fontSize: 11, color: 'var(--b4-muted)' }}>MATIC (gas)</div>
+          <div style={{ fontSize: 20, fontWeight: 700 }} data-testid="text-balance-poly-matic">
+            {eoa.matic.toFixed(4)}
+          </div>
+        </div>
+      </div>
+
+      {safeReady && (
+        <div style={{
+          marginTop: 10, paddingTop: 10,
+          borderTop: '1px solid var(--b4-border, #1e1e2e)',
+          display: 'flex', justifyContent: 'space-between', fontSize: 12,
+        }}>
+          <span style={{ color: 'var(--b4-muted)' }}>Polymarket Safe</span>
+          <span data-testid="text-balance-poly-safe">{safe.usdcE.toFixed(2)} USDC.e</span>
+        </div>
+      )}
+
+      {/* Fund CTA: only meaningful when Safe is ready *and* EOA has USDC.e
+          to send. Without a Safe we route the user to the Predictions tab
+          so they can complete onboarding (which deploys the Safe). */}
+      {hasEoaUsdc && safeReady && hasMatic && (
+        <button
+          className="btn-primary"
+          style={{ marginTop: 12, width: '100%' }}
+          disabled={funding}
+          onClick={fund}
+          data-testid="button-fund-polymarket"
+        >
+          {funding ? 'Sending…' : `Fund Polymarket ($${eoa.usdcE.toFixed(2)})`}
+        </button>
+      )}
+      {hasEoaUsdc && safeReady && !hasMatic && (
+        <div style={{ marginTop: 10, fontSize: 11, lineHeight: 1.5 }}>
+          <div style={{ color: 'var(--b4-red)', marginBottom: 6 }}>
+            ⚠ Need a tiny amount of MATIC for gas (~$0.01) at:
+          </div>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <code style={{
+              flex: 1, fontSize: 10, wordBreak: 'break-all',
+              background: 'var(--b4-bg-elevated, #181822)', padding: '4px 6px', borderRadius: 4,
+            }} data-testid="text-poly-eoa-address">
+              {eoa.address}
+            </code>
+            <button
+              onClick={() => copy(eoa.address)}
+              style={{
+                padding: '4px 8px', borderRadius: 4, border: '1px solid var(--b4-border)',
+                background: 'transparent', color: 'var(--b4-text)', fontSize: 11, cursor: 'pointer',
+              }}
+              data-testid="button-copy-poly-eoa"
+            >
+              {copied ? '✓' : 'Copy'}
+            </button>
+          </div>
+        </div>
+      )}
+      {!hasEoaUsdc && !safeReady && (
+        <div style={{ marginTop: 10, fontSize: 11, color: 'var(--b4-muted)', lineHeight: 1.45 }}>
+          Open the <b>Predictions → Polymarket</b> tab to set up your trading Safe and start funding.
+        </div>
+      )}
+      {!hasEoaUsdc && safeReady && (safe.usdcE ?? 0) === 0 && (
+        <div style={{ marginTop: 10, fontSize: 11, color: 'var(--b4-muted)', lineHeight: 1.45 }}>
+          Send USDC.e on Polygon to your Safe address (shown on the Polymarket tab) to start trading.
+        </div>
+      )}
+
+      {fundMsg && (
+        <div style={{ marginTop: 8, fontSize: 11, color: 'var(--b4-green, #00c076)' }} data-testid="text-fund-success">
+          {fundMsg}
+        </div>
+      )}
+      {fundErr && fundErr.code !== 'NEED_MATIC' && (
+        <div style={{ marginTop: 8, fontSize: 11, color: 'var(--b4-red)' }} data-testid="text-fund-error">
+          ⚠ {fundErr.msg}
         </div>
       )}
     </div>

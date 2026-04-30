@@ -38,12 +38,10 @@ export async function handleWalletCommand(ctx: Context) {
   }
 
   const activeWallet = wallets.find((w) => w.isActive) ?? wallets[0]
-  // Same address works on every EVM chain — pull both BSC and Arbitrum
-  // balances in parallel so users can see funds on either network.
-  // XLayer OKB read in parallel with BSC + Arbitrum. Failure is swallowed
-  // (we still want /wallet to render even if OKX RPCs are down) — surfaced
-  // as 'rpc' so user knows it's a transient network issue, not zero balance.
-  const [balances, arb, xlayer] = await Promise.all([
+  // Same address works on every EVM chain — pull BSC, Arbitrum, XLayer
+  // and Polygon (Polymarket) balances in parallel. Each is failure-isolated
+  // so a single down RPC never blocks the /wallet command from rendering.
+  const [balances, arb, xlayer, polygon] = await Promise.all([
     getWalletBalances(activeWallet.address, activeWallet.chain),
     getArbitrumBalances(activeWallet.address),
     (async () => {
@@ -55,6 +53,37 @@ export async function handleWalletCommand(ctx: Context) {
         return { okb: parseFloat(ethers.formatEther(wei)), error: null as string | null }
       } catch (e: any) {
         return { okb: 0, error: e?.shortMessage ?? e?.message ?? 'rpc' }
+      }
+    })(),
+    // Polygon block: USDC.e + MATIC at the EOA, plus Safe USDC.e if the
+    // user has onboarded to Polymarket. Safe lookup is best-effort —
+    // missing creds = treat as not-onboarded, never a hard error.
+    (async () => {
+      try {
+        const { getPolygonBalances } = await import('../../services/polymarketTrading')
+        const creds = await db.polymarketCreds.findUnique({ where: { userId: user.id } }).catch(() => null)
+        const eoa = await getPolygonBalances(activeWallet.address)
+        let safeUsdcE: number | null = null
+        if (creds?.safeAddress && creds.safeDeployedAt) {
+          try {
+            const sb = await getPolygonBalances(creds.safeAddress)
+            safeUsdcE = sb.usdc
+          } catch { /* RPC blip — leave safeUsdcE null */ }
+        }
+        return {
+          eoaUsdcE: eoa.usdc,
+          matic:    eoa.matic,
+          safeAddress: creds?.safeAddress ?? null,
+          safeDeployed: Boolean(creds?.safeDeployedAt),
+          safeUsdcE,
+          error: null as string | null,
+        }
+      } catch (e: any) {
+        return {
+          eoaUsdcE: 0, matic: 0,
+          safeAddress: null as string | null, safeDeployed: false, safeUsdcE: null as number | null,
+          error: e?.shortMessage ?? e?.message ?? 'rpc',
+        }
       }
     })(),
   ])
@@ -73,6 +102,22 @@ export async function handleWalletCommand(ctx: Context) {
   text += xlayer.error
     ? `• OKB: _unavailable (${xlayer.error})_\n`
     : `• OKB: ${xlayer.okb.toFixed(5)}\n`
+  // Polygon (Polymarket) block: USDC.e is the only asset Polymarket's CTF
+  // Exchange accepts as collateral, so we name it explicitly. MATIC is
+  // surfaced because it's needed to gas the EOA→Safe sweep tx.
+  text += `\n*Polygon* (Polymarket)\n`
+  if (polygon.error) {
+    text += `• _unavailable (${polygon.error})_\n`
+  } else {
+    text += `• USDC.e: $${polygon.eoaUsdcE.toFixed(2)}\n`
+    text += `• MATIC: ${polygon.matic.toFixed(4)}\n`
+    if (polygon.safeDeployed && polygon.safeAddress) {
+      text += `• Safe: $${(polygon.safeUsdcE ?? 0).toFixed(2)} USDC.e — \`${truncateAddress(polygon.safeAddress)}\`\n`
+    }
+    if (polygon.eoaUsdcE > 0.01 || (polygon.safeUsdcE ?? 0) > 0) {
+      text += `_Open the Polymarket tab in the mini-app to fund and trade →_\n`
+    }
+  }
   if (arb.usdc >= 5) {
     text += `\n💡 You have USDC on Arbitrum — you can bridge it to *Hyperliquid* from the mini app to trade perps.\n\n`
   } else {

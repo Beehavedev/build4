@@ -113,6 +113,10 @@ interface PolyWalletStatus {
     ctfApprovedNegExchange: boolean
     ctfApprovedNegAdapter:  boolean
   } | null
+  // Custodial EOA balances on Polygon — surfaced so the user can see what
+  // we'd sweep with /api/polymarket/fund and whether they hold enough
+  // MATIC for the EOA→Safe transfer gas.
+  eoaBalances?: { usdcE: number; matic: number } | null
   builderCode: string | null
 }
 
@@ -532,6 +536,8 @@ export default function PredictionsPolymarket() {
   const [wallet, setWallet] = useState<PolyWalletStatus | null>(null)
   const [walletErr, setWalletErr] = useState<string | null>(null)
   const [setupBusy, setSetupBusy] = useState(false)
+  const [fundBusy, setFundBusy] = useState(false)
+  const [eoaCopied, setEoaCopied] = useState(false)
   const [positions, setPositions] = useState<PolyPosition[]>([])
   const [tradeIntent, setTradeIntent] = useState<TradeIntent | null>(null)
   const [toast, setToast] = useState<{ kind: 'ok' | 'err'; msg: string } | null>(null)
@@ -606,6 +612,48 @@ export default function PredictionsPolymarket() {
       flash('err', `Setup failed: ${(e as Error).message}`)
     } finally {
       setSetupBusy(false)
+    }
+  }
+
+  // One-tap sweep: custodial EOA USDC.e → user's Polymarket Safe.
+  // Server returns 400 + code:'NEED_MATIC' when the EOA holds USDC.e but
+  // can't pay gas; we surface that as an inline prompt with the EOA
+  // address rather than a vague toast.
+  async function fundPolymarket() {
+    setFundBusy(true)
+    try {
+      const r = await fetch('/api/polymarket/fund', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...tgAuthHeaders() },
+        body: JSON.stringify({}),
+      })
+      const j = await r.json()
+      if (!r.ok || !j.ok) {
+        if (j?.code === 'NEED_MATIC') {
+          flash('err', 'Need a tiny amount of MATIC for gas — see prompt below')
+        } else {
+          flash('err', `Fund failed: ${j?.details ?? j?.error ?? `HTTP ${r.status}`}`)
+        }
+        await loadWallet()
+        return
+      }
+      flash('ok', `Funded $${Number(j.amountUsdc ?? 0).toFixed(2)} to Safe`)
+      await loadWallet()
+    } catch (e) {
+      flash('err', `Fund failed: ${(e as Error).message}`)
+    } finally {
+      setFundBusy(false)
+    }
+  }
+
+  async function copyEoa(addr: string) {
+    try {
+      await navigator.clipboard.writeText(addr)
+      setEoaCopied(true)
+      window.setTimeout(() => setEoaCopied(false), 1500)
+    } catch {
+      const tg = (window as any).Telegram?.WebApp
+      if (tg?.showAlert) tg.showAlert(addr)
     }
   }
 
@@ -797,19 +845,82 @@ export default function PredictionsPolymarket() {
           </div>
 
           {wallet.balances && (
-            <div style={{ marginTop: 8, display: 'grid', gridTemplateColumns: '1fr', gap: 6 }}>
+            <div style={{ marginTop: 8, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
               <div style={{ fontSize: 10, color: '#94a3b8' }}>
                 <span style={{ color: '#64748b' }}>USDC.e in Safe: </span>
                 <span data-testid="text-poly-usdc" style={{ fontFamily: 'ui-monospace, monospace', color: wallet.balances.usdc > 0 ? '#10b981' : '#ef4444' }}>
                   ${wallet.balances.usdc.toFixed(2)}
                 </span>
               </div>
+              {wallet.eoaBalances && (
+                <div style={{ fontSize: 10, color: '#94a3b8', textAlign: 'right' }}>
+                  <span style={{ color: '#64748b' }}>EOA: </span>
+                  <span data-testid="text-poly-eoa-usdce" style={{ fontFamily: 'ui-monospace, monospace' }}>
+                    ${wallet.eoaBalances.usdcE.toFixed(2)} USDC.e
+                  </span>
+                  <span style={{ color: '#475569' }}> · </span>
+                  <span data-testid="text-poly-eoa-matic" style={{ fontFamily: 'ui-monospace, monospace' }}>
+                    {wallet.eoaBalances.matic.toFixed(4)} MATIC
+                  </span>
+                </div>
+              )}
             </div>
           )}
 
-          {wallet.ready && wallet.balances && wallet.balances.usdc < 1 && wallet.safeAddress && (
+          {/* Funding CTA tree — only shown when Safe is live. Three states:
+              (1) EOA has USDC.e + MATIC → big green Fund button (one-tap sweep)
+              (2) EOA has USDC.e but no MATIC → "send MATIC for gas" prompt with copyable EOA address
+              (3) EOA empty → keep the existing "send USDC.e directly to Safe" instruction as a fallback for users who already hold USDC.e elsewhere */}
+          {wallet.ready && wallet.safeAddress && wallet.eoaBalances && wallet.eoaBalances.usdcE > 0.01 && wallet.eoaBalances.matic >= 0.005 && (
+            <button
+              type="button"
+              onClick={fundPolymarket}
+              disabled={fundBusy}
+              data-testid="button-poly-fund"
+              style={{
+                marginTop: 10, width: '100%',
+                padding: '10px 12px', borderRadius: 6,
+                fontSize: 12, fontWeight: 700,
+                background: fundBusy ? '#1e1e2e' : '#10b981',
+                border: '1px solid #10b981',
+                color: 'white',
+                cursor: fundBusy ? 'wait' : 'pointer',
+              }}
+            >
+              {fundBusy
+                ? 'Sending to Safe…'
+                : `Fund Polymarket ($${wallet.eoaBalances.usdcE.toFixed(2)})`}
+            </button>
+          )}
+          {wallet.ready && wallet.safeAddress && wallet.eoaBalances && wallet.eoaBalances.usdcE > 0.01 && wallet.eoaBalances.matic < 0.005 && wallet.walletAddress && (
+            <div style={{ marginTop: 10, padding: 8, borderRadius: 6, background: '#f59e0b11', border: '1px solid #f59e0b33', fontSize: 10, color: '#fcd34d', lineHeight: 1.5 }} data-testid="prompt-poly-need-matic">
+              <div style={{ marginBottom: 6 }}>
+                <strong style={{ color: '#f59e0b' }}>Need a tiny amount of MATIC for gas (~$0.01).</strong> Send any small amount of MATIC on Polygon to:
+              </div>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <code style={{ flex: 1, fontSize: 10, wordBreak: 'break-all', background: '#0a0a12', padding: '4px 6px', borderRadius: 4, color: '#e2e8f0' }} data-testid="text-poly-eoa-addr">
+                  {wallet.walletAddress}
+                </code>
+                <button
+                  type="button"
+                  onClick={() => copyEoa(wallet.walletAddress!)}
+                  data-testid="button-copy-poly-eoa-addr"
+                  style={{
+                    padding: '4px 8px', borderRadius: 4, border: '1px solid #f59e0b66',
+                    background: 'transparent', color: '#fcd34d', fontSize: 10, cursor: 'pointer',
+                  }}
+                >
+                  {eoaCopied ? '✓' : 'Copy'}
+                </button>
+              </div>
+              <div style={{ marginTop: 6, color: '#94a3b8' }}>
+                Once MATIC arrives, the Fund button appears here.
+              </div>
+            </div>
+          )}
+          {wallet.ready && wallet.balances && wallet.balances.usdc < 1 && wallet.safeAddress && (!wallet.eoaBalances || wallet.eoaBalances.usdcE <= 0.01) && (
             <div style={{ marginTop: 8, padding: 6, borderRadius: 4, background: '#10b98111', fontSize: 10, color: '#34d399', lineHeight: 1.4 }}>
-              <strong style={{ color: '#10b981' }}>Gasless trading is active.</strong> Send USDC.e (Polygon) to your Safe above. No MATIC needed — Polymarket pays gas for every transaction.
+              <strong style={{ color: '#10b981' }}>Gasless trading is active.</strong> Send USDC.e (Polygon) to your Safe above — or to your custodial EOA + a tiny MATIC for one-tap funding. No MATIC needed for trading itself; Polymarket pays gas there.
             </div>
           )}
 

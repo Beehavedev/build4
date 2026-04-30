@@ -493,6 +493,99 @@ export async function getFunderAddress(userId: string): Promise<string | null> {
   return c?.safeAddress ?? null
 }
 
+// ── One-tap fund: sweep custodial EOA USDC.e → user's Polymarket Safe ──
+// This is the only on-chain transaction the user themselves pays gas for.
+// Polymarket's relayer covers every Safe-side action (deploy, approvals,
+// orders, redemptions), but moving funds from the user's external custodial
+// EOA into their Safe is a regular ERC-20 transfer — the relayer does not
+// sponsor arbitrary EOAs. So we require ~$0.001 worth of MATIC at the EOA
+// for that one tx, mirroring the same pattern as the Hyperliquid bridge
+// flow (which needs Arbitrum ETH for the bridge transfer).
+//
+// `amountUsdc` is in human units (USDC.e has 6 decimals on-chain). When
+// omitted, sweeps the entire EOA balance minus a tiny dust safety buffer
+// (1 µUSDC) to dodge floating-point rounding.
+//
+// Returns enough information for the UI to show a meaningful success state
+// and refresh balances. Throws with a descriptive message on any precondition
+// failure so the API layer can surface a clean 4xx (e.g. NEED_MATIC).
+export async function fundSafeFromEoa(opts: {
+  userId: string
+  amountUsdc?: number
+}): Promise<{
+  txHash: string
+  fromAddress: string
+  toAddress: string
+  amountUsdc: number
+}> {
+  const { userId } = opts
+
+  // (1) Resolve EOA signer + Safe address. Both must be ready — the Safe
+  //     is the only valid destination, and a user without a Safe should
+  //     have hit /setup first.
+  const { wallet, address: eoaAddress } = await getUserPolygonSigner(userId)
+  const safeAddress = await getFunderAddress(userId)
+  if (!safeAddress) {
+    throw new Error('Polymarket Safe not deployed yet — run setup first')
+  }
+
+  // (2) Read on-chain balances at the EOA. We need both:
+  //     - USDC.e to actually move
+  //     - MATIC to pay for the transfer's gas
+  const provider = getProvider()
+  const usdc     = new ethers.Contract(USDC_E, ERC20_ABI, wallet)
+  const [usdcRaw, maticWei] = await Promise.all([
+    (usdc.balanceOf(eoaAddress) as Promise<bigint>),
+    provider.getBalance(eoaAddress),
+  ])
+
+  // (3) Resolve the amount to move. If unspecified, sweep all but 1 µUSDC.
+  //     If specified, clamp to balance — never attempt to move more than the
+  //     EOA actually holds.
+  const reqRaw = opts.amountUsdc !== undefined && Number.isFinite(opts.amountUsdc)
+    ? ethers.parseUnits(opts.amountUsdc.toFixed(6), 6)
+    : usdcRaw - 1n
+  if (reqRaw <= 0n) {
+    throw new Error('No USDC.e balance at custodial address to fund Polymarket')
+  }
+  if (reqRaw > usdcRaw) {
+    const have = ethers.formatUnits(usdcRaw, 6)
+    const want = ethers.formatUnits(reqRaw,  6)
+    throw new Error(`Insufficient USDC.e — requested ${want}, have ${have}`)
+  }
+
+  // (4) Gas precondition. The transfer costs roughly ~50k gas; at ~30 gwei
+  //     that's ~0.0015 MATIC. We require 0.005 MATIC as a comfortable
+  //     headroom (~$0.005 at MATIC=$1) to absorb gas-price spikes during
+  //     network busy periods. Distinct error string so the API layer can
+  //     surface a NEED_MATIC code and the UI can show a "send a small
+  //     amount of MATIC for gas" prompt with the EOA address.
+  const minMaticWei = ethers.parseEther('0.005')
+  if (maticWei < minMaticWei) {
+    const have = ethers.formatEther(maticWei)
+    throw new Error(
+      `NEED_MATIC: custodial address has ${have} MATIC, ` +
+      `need at least 0.005 MATIC for gas to fund Polymarket`,
+    )
+  }
+
+  // (5) Execute the transfer. Single ERC-20 call, signed and broadcast by
+  //     the user's own custodial key. We wait for confirmation so the
+  //     UI can immediately refetch and show the new Safe balance.
+  const tx      = await usdc.transfer(safeAddress, reqRaw)
+  const receipt = await tx.wait(1)
+  if (!receipt || receipt.status !== 1) {
+    throw new Error('USDC.e transfer reverted on Polygon')
+  }
+
+  return {
+    txHash:      tx.hash,
+    fromAddress: eoaAddress,
+    toAddress:   safeAddress,
+    amountUsdc:  parseFloat(ethers.formatUnits(reqRaw, 6)),
+  }
+}
+
 // ── One-time gasless approvals via the relayer ─────────────────────────
 // Approves USDC.e to the three exchange contracts and the CTF (ERC-1155)
 // to the same three operators, all in a single batched relayer execute.
