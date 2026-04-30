@@ -317,9 +317,35 @@ function MarketRow({
       }}
       data-testid={`row-poly-market-${market.id}`}
     >
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+      {/* alignItems flex-start so the BUY YES / BUY NO / depth buttons
+          stay top-aligned when the question wraps to 2 lines, instead of
+          drifting to the vertical centre and looking misaligned with
+          siblings whose questions fit on 1 line. */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 12, color: '#e2e8f0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {/* Polymarket questions average ~60 chars and frequently exceed
+              the row's text column, so the previous nowrap+ellipsis
+              clipped meaningful content (e.g. "Will the Fed increase
+              inte..." → users couldn't tell whether it was rates / by
+              how much / by when). Allow up to 2 lines via -webkit-line
+              -clamp (Telegram WebView is Chromium/WebKit on both iOS
+              and Android), then ellipsis the rest if even 2 lines
+              isn't enough. word-break:break-word handles the rare URL
+              or unbroken token in a question that would otherwise
+              overflow horizontally. */}
+          <div
+            style={{
+              fontSize: 12,
+              color: '#e2e8f0',
+              lineHeight: 1.3,
+              display: '-webkit-box',
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: 'vertical',
+              overflow: 'hidden',
+              wordBreak: 'break-word',
+            }}
+            title={market.question}
+          >
             {market.question}
           </div>
           <div style={{ fontSize: 10, color: '#64748b', marginTop: 2, display: 'flex', gap: 8 }}>
@@ -434,17 +460,30 @@ function EventCard({
           />
         )}
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          {/* alignItems flex-start so the POLY badge stays aligned to
+              the first line of the title when the title wraps. */}
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
             <VenueBadge />
+            {/* Same rationale as MarketRow's title: Polymarket event
+                titles often run 60–80 chars (e.g. "US x Iran ceasefire
+                extended by April 21, 2026") and the previous nowrap+
+                ellipsis hid the resolution date / amount, leaving users
+                staring at "US x Iran ceasefire extended by…" with no
+                way to know what they were actually betting on. Allow up
+                to 2 lines via -webkit-line-clamp, then ellipsis. */}
             <span
               style={{
                 fontSize: 13,
                 fontWeight: 600,
                 color: '#e2e8f0',
+                lineHeight: 1.3,
+                display: '-webkit-box',
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: 'vertical',
                 overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
+                wordBreak: 'break-word',
               }}
+              title={event.title}
               data-testid={`title-poly-event-${event.id}`}
             >
               {event.title}
@@ -985,11 +1024,26 @@ export default function PredictionsPolymarket() {
             return (
               <div
                 key={p.id}
-                style={{ padding: '8px 10px', borderTop: '1px solid #1e1e2e', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}
+                style={{ padding: '8px 10px', borderTop: '1px solid #1e1e2e', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}
                 data-testid={`row-poly-position-${p.id}`}
               >
                 <div style={{ minWidth: 0, flex: 1 }}>
-                  <div style={{ fontSize: 11, color: '#e2e8f0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {/* Allow position market title to wrap to 2 lines for the same
+                      reason the market list rows do (Polymarket question text
+                      regularly exceeds the row width — see MarketRow comment). */}
+                  <div
+                    style={{
+                      fontSize: 11,
+                      color: '#e2e8f0',
+                      lineHeight: 1.3,
+                      display: '-webkit-box',
+                      WebkitLineClamp: 2,
+                      WebkitBoxOrient: 'vertical',
+                      overflow: 'hidden',
+                      wordBreak: 'break-word',
+                    }}
+                    title={p.marketTitle}
+                  >
                     {p.marketTitle}
                   </div>
                   <div style={{ fontSize: 10, color: '#64748b', marginTop: 2, display: 'flex', gap: 8 }}>
