@@ -364,6 +364,44 @@ export async function getOrCreateCreds(userId: string): Promise<{
     const bootstrap = new ClobClient(CLOB_HOST, POLYGON_CHAIN_ID, viemWallet as any)
     const fresh = await bootstrap.createOrDeriveApiKey()
 
+    // Defensive: clob-client@5.8.1's http-helpers/errorHandling swallows axios
+    // errors into `{ error: string, status: number }` (see node_modules/@polymarket
+    // /clob-client/dist/http-helpers/index.js → errorHandling). When that happens,
+    // createOrDeriveApiKey resolves with key/secret/passphrase all undefined, and
+    // we'd write NULLs into Prisma's required String columns ("Argument apiKey is
+    // missing"). Detect that here and surface the actual API error to the user
+    // — e.g. a Polymarket-side 4xx, signature rejection, or geo block — instead
+    // of an opaque ORM stack trace.
+    if (!fresh?.key || !fresh?.secret || !fresh?.passphrase) {
+      const raw       = fresh as any
+      const rawErr    = typeof raw?.error === 'string' ? raw.error : ''
+      const status    = raw?.status as number | undefined
+      const addrLog   = address.slice(0, 10) + '…' + address.slice(-4)
+      // Cloudflare geo-block / WAF returns an HTML body, which axios surfaces
+      // as a string `error`. Don't spew the full HTML at the user — collapse
+      // to a friendly hint. Polymarket geofences US/sanctioned regions.
+      const looksHtml = /<!DOCTYPE|<html|cloudflare|attention required/i.test(rawErr)
+      let userMsg: string
+      if (status === 403 || looksHtml) {
+        userMsg = 'Polymarket blocked the request (region restriction or VPN). ' +
+                  'Polymarket is not available in the US and several other regions.'
+      } else if (status === 401) {
+        userMsg = 'Polymarket rejected the wallet signature. ' +
+                  'This can happen if your custodial address has been delegated ' +
+                  'to a smart contract via EIP-7702 (e.g. by importing the key ' +
+                  'into another wallet that enabled smart-account features).'
+      } else if (rawErr) {
+        userMsg = `Polymarket API key derivation failed${status ? ` (HTTP ${status})` : ''}: ${rawErr.slice(0, 200)}`
+      } else {
+        userMsg = 'Polymarket API key derivation failed: empty response from CLOB.'
+      }
+      console.error(
+        `[polymarket] createOrDeriveApiKey returned malformed response for ` +
+        `${addrLog}: ${JSON.stringify({ hasKey: !!fresh?.key, hasSecret: !!fresh?.secret, hasPassphrase: !!fresh?.passphrase, status, errPreview: rawErr.slice(0, 120) })}`,
+      )
+      throw new Error(userMsg)
+    }
+
     try {
       await db.polymarketCreds.create({
         data: {
