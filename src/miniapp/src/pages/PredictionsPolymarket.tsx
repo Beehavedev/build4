@@ -647,7 +647,7 @@ export default function PredictionsPolymarket() {
       const j = await r.json()
       if (!r.ok || !j.ok) {
         if (j?.code === 'NEED_MATIC') {
-          flash('err', 'Need a tiny amount of MATIC for gas — see prompt below')
+          flash('err', 'Need a tiny amount of POL (formerly MATIC) for gas — see prompt below')
         } else {
           flash('err', `Fund failed: ${j?.details ?? j?.error ?? `HTTP ${r.status}`}`)
         }
@@ -789,7 +789,7 @@ export default function PredictionsPolymarket() {
                                           Safe → 6× allowance approvals).
                                           All three on-chain txs are paid by
                                           the Polymarket relayer — user pays
-                                          ZERO gas, ever. No MATIC required.
+                                          ZERO gas, ever. No POL required.
             (c) wallet.ready=true        → shows the SAFE address (the deposit
                                           target). USDC.e sent to the Safe is
                                           tradable immediately. */}
@@ -876,8 +876,8 @@ export default function PredictionsPolymarket() {
                     ${wallet.eoaBalances.usdcE.toFixed(2)} USDC.e
                   </span>
                   <span style={{ color: '#475569' }}> · </span>
-                  <span data-testid="text-poly-eoa-matic" style={{ fontFamily: 'ui-monospace, monospace' }}>
-                    {wallet.eoaBalances.matic.toFixed(4)} MATIC
+                  <span data-testid="text-poly-eoa-matic" style={{ fontFamily: 'ui-monospace, monospace' }} title="POL is the new ticker for MATIC on Polygon (renamed Sept 2024)">
+                    {wallet.eoaBalances.matic.toFixed(4)} POL
                   </span>
                 </div>
               )}
@@ -912,7 +912,7 @@ export default function PredictionsPolymarket() {
           {wallet.ready && wallet.safeAddress && wallet.eoaBalances && wallet.eoaBalances.usdcE > 0.01 && wallet.eoaBalances.matic < 0.005 && wallet.walletAddress && (
             <div style={{ marginTop: 10, padding: 8, borderRadius: 6, background: '#f59e0b11', border: '1px solid #f59e0b33', fontSize: 10, color: '#fcd34d', lineHeight: 1.5 }} data-testid="prompt-poly-need-matic">
               <div style={{ marginBottom: 6 }}>
-                <strong style={{ color: '#f59e0b' }}>Need a tiny amount of MATIC for gas (~$0.01).</strong> Send any small amount of MATIC on Polygon to:
+                <strong style={{ color: '#f59e0b' }}>Need a tiny amount of POL for gas (~$0.01).</strong> Send any small amount of <strong>POL</strong> (the new name for MATIC on Polygon — renamed Sept 2024) to:
               </div>
               <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                 <code style={{ flex: 1, fontSize: 10, wordBreak: 'break-all', background: '#0a0a12', padding: '4px 6px', borderRadius: 4, color: '#e2e8f0' }} data-testid="text-poly-eoa-addr">
@@ -931,13 +931,13 @@ export default function PredictionsPolymarket() {
                 </button>
               </div>
               <div style={{ marginTop: 6, color: '#94a3b8' }}>
-                Once MATIC arrives, the Fund button appears here.
+                Once POL arrives, the Fund button appears here.
               </div>
             </div>
           )}
           {wallet.ready && wallet.balances && wallet.balances.usdc < 1 && wallet.safeAddress && (!wallet.eoaBalances || wallet.eoaBalances.usdcE <= 0.01) && (
             <div style={{ marginTop: 8, padding: 6, borderRadius: 4, background: '#10b98111', fontSize: 10, color: '#34d399', lineHeight: 1.4 }}>
-              <strong style={{ color: '#10b981' }}>Gasless trading is active.</strong> Send USDC.e (Polygon) to your Safe above — or to your custodial EOA + a tiny MATIC for one-tap funding. No MATIC needed for trading itself; Polymarket pays gas there.
+              <strong style={{ color: '#10b981' }}>Gasless trading is active.</strong> Send USDC.e (Polygon) to your Safe above — or to your custodial EOA + a tiny POL (formerly MATIC) for one-tap funding. No POL needed for trading itself; Polymarket pays gas there.
             </div>
           )}
 
