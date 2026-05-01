@@ -26,9 +26,9 @@ PORT = "5000"
 
 [deployment]
 deploymentTarget = "vm"
-run = ["bash", "-c", "NODE_ENV=production npx tsx web4/server/dapp-server.ts"]
-build = ["bash", "-c", "cd web4 && npx vite build --config vite.config.ts"]
-publicDir = "web4/dist/public"
+run = ["bash", "-c", "npx tsx src/server.ts"]
+build = ["bash", "-c", "npx prisma generate --schema=src/prisma/schema.prisma && npx vite build --config src/miniapp/vite.config.ts src/miniapp"]
+publicDir = "dist/public"
 
 [workflows]
 runButton = "Project"
