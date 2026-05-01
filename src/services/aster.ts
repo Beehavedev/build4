@@ -143,6 +143,53 @@ function ttlForInterval(interval: string): number {
 const klinesCache = new Map<string, { data: OHLCV; ts: number }>()
 const inflightKlines = new Map<string, Promise<OHLCV>>()
 
+// ── Cache eviction (memory-leak fix) ────────────────────────────────────────
+// klinesCache.set was unbounded: keys are `${symbol}:${interval}:${limit}` and
+// each entry stores 6 number arrays of size up to 1500. Aster currently lists
+// hundreds of symbols, the agents probe new listings constantly, and we use
+// 3-4 distinct limit values (100, 120, 200), so the key space grows to
+// thousands of entries over a long-running process. Combined with HL's own
+// caches it pushed the Render container over the 1GB heap limit after ~18h.
+//
+// Eviction policy: every 60s walk the cache and drop any entry whose age
+// exceeds twice the interval-specific TTL. The 2× factor preserves the
+// existing "serve a slightly stale entry on the next miss" behaviour for any
+// caller that re-requests within a short grace window — we only evict things
+// no live caller would have used anyway. Hard cap at MAX_KLINES_CACHE_ENTRIES
+// as a belt-and-braces guard for symbol explosions.
+const MAX_KLINES_CACHE_ENTRIES = 2_000
+const KLINES_JANITOR_INTERVAL_MS = 60_000
+function evictExpiredKlines(): void {
+  const now = Date.now()
+  for (const [key, entry] of klinesCache) {
+    // key looks like "BTCUSDT:15m:200" — extract interval (idx 1) for TTL.
+    const interval = key.split(':')[1] ?? '15m'
+    const maxAge = ttlForInterval(interval) * 2
+    if (now - entry.ts > maxAge) klinesCache.delete(key)
+  }
+  // Hard cap: if still over budget, evict oldest until we're back under it.
+  // Map preserves insertion order, so the first keys are the oldest writes.
+  // (We re-set on each fetch, which moves keys to the end — so this also
+  // approximates LRU behaviour for actively used entries.)
+  if (klinesCache.size > MAX_KLINES_CACHE_ENTRIES) {
+    const overflow = klinesCache.size - MAX_KLINES_CACHE_ENTRIES
+    let n = 0
+    for (const key of klinesCache.keys()) {
+      if (n++ >= overflow) break
+      klinesCache.delete(key)
+    }
+  }
+}
+// Use unref() so the janitor doesn't keep the Node event loop alive on its
+// own (clean shutdown still works). In Node tests the timer would otherwise
+// prevent the process from exiting.
+const _klinesJanitor = setInterval(evictExpiredKlines, KLINES_JANITOR_INTERVAL_MS)
+if (typeof (_klinesJanitor as any).unref === 'function') (_klinesJanitor as any).unref()
+// Test-only helper so the OOM-fix regression test can drive eviction
+// deterministically without waiting 60 seconds.
+export function __evictExpiredKlinesForTests(): void { evictExpiredKlines() }
+export function __peekKlinesCacheSizeForTests(): number { return klinesCache.size }
+
 export async function getKlines(
   pair: string,
   interval: string = '15m',
