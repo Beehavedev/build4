@@ -47,6 +47,12 @@ const AGENT_NAME  = process.env.HYPERLIQUID_AGENT_NAME ?? 'build4-agent'
 const HL_INFO_TTL_MS = 1_500
 const _infoCache: Map<string, { at: number; value: any }> = new Map()
 const _infoInflight: Map<string, Promise<any>> = new Map()
+// Hard cap on _infoCache to bound memory if a long-running process
+// accumulates many distinct keys (per-user clearinghouse reads, spot
+// reads, etc.). Cache entries are tiny but the Map itself grows
+// monotonically without eviction, which over 18h of uptime contributed
+// to the OOM that took the Render container down. Janitor below.
+const HL_INFO_CACHE_MAX_ENTRIES = 5_000
 async function dedupedInfo<T>(key: string, ttlMs: number, fn: () => Promise<T>): Promise<T> {
   const now = Date.now()
   const cached = _infoCache.get(key)
@@ -604,6 +610,60 @@ export function __primeHlAccountStateCacheForTests(
 export function __peekHlAccountStateCacheForTests(addr: string) {
   return _hlLastGoodAccountState.get(addr.toLowerCase())?.value
 }
+
+// ── HL cache janitor (memory-leak fix) ──────────────────────────────────────
+// Two Maps in this module accumulated forever:
+//   • _infoCache              — TTL'd at read time (1.5s for most keys, 5min
+//                               for clearinghouse) but never purged. Distinct
+//                               keys grow with #users × #read-types.
+//   • _hlLastGoodAccountState — explicitly "no expiry"; grows with #distinct
+//                               user addresses ever loaded.
+// Combined with src/services/aster.ts klinesCache (also unbounded before
+// today), this is what walked the Render container into a 1GB OOM at ~18h
+// uptime. Fix: every 5 minutes, drop _infoCache entries older than 5×TTL,
+// drop _hlLastGoodAccountState entries older than 24h, and hard-cap both
+// Maps as a belt-and-braces guard.
+const HL_JANITOR_INTERVAL_MS         = 5 * 60_000
+const HL_INFO_MAX_AGE_MS             = 5 * 60_000   // 5min — far past any TTL
+const HL_LAST_GOOD_MAX_AGE_MS        = 24 * 3600_000 // 24h — long-idle users
+const HL_LAST_GOOD_MAX_ENTRIES       = 10_000
+
+function evictExpiredHlCaches(): void {
+  const now = Date.now()
+  // 1) _infoCache — drop anything past max-TTL.
+  for (const [k, v] of _infoCache) {
+    if (now - v.at > HL_INFO_MAX_AGE_MS) _infoCache.delete(k)
+  }
+  if (_infoCache.size > HL_INFO_CACHE_MAX_ENTRIES) {
+    const overflow = _infoCache.size - HL_INFO_CACHE_MAX_ENTRIES
+    let n = 0
+    for (const k of _infoCache.keys()) {
+      if (n++ >= overflow) break
+      _infoCache.delete(k)
+    }
+  }
+  // 2) _hlLastGoodAccountState — drop addresses we haven't refreshed in 24h
+  // (the user hasn't opened the mini-app in a day, no point keeping their
+  // stale snapshot). Then hard-cap.
+  for (const [k, v] of _hlLastGoodAccountState) {
+    if (now - v.at > HL_LAST_GOOD_MAX_AGE_MS) _hlLastGoodAccountState.delete(k)
+  }
+  if (_hlLastGoodAccountState.size > HL_LAST_GOOD_MAX_ENTRIES) {
+    const overflow = _hlLastGoodAccountState.size - HL_LAST_GOOD_MAX_ENTRIES
+    let n = 0
+    for (const k of _hlLastGoodAccountState.keys()) {
+      if (n++ >= overflow) break
+      _hlLastGoodAccountState.delete(k)
+    }
+  }
+}
+// unref so we don't hold the Node event loop open in tests / on shutdown.
+const _hlJanitor = setInterval(evictExpiredHlCaches, HL_JANITOR_INTERVAL_MS)
+if (typeof (_hlJanitor as any).unref === 'function') (_hlJanitor as any).unref()
+// Test-only helpers.
+export function __evictHlCachesForTests(): void { evictExpiredHlCaches() }
+export function __peekHlInfoCacheSizeForTests(): number { return _infoCache.size }
+export function __peekHlLastGoodCacheSizeForTests(): number { return _hlLastGoodAccountState.size }
 
 /**
  * Fetch the user's recent fills from HL. Each fill is one side of a single

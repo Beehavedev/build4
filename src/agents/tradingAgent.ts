@@ -1313,6 +1313,30 @@ export async function runAgentTick(agent: Agent): Promise<void> {
         // must match the venue we'll execute on — same ticker, different
         // orderbook, different funding, different liquidity.
         ohlcv = await getMultiTimeframeOHLCV(pair, agent.exchange)
+        // Candles can come back empty when the venue rate-limits us
+        // (HL `/info` 429s on Render's shared egress IP are the
+        // common case). buildMarketContext immediately reads
+        // ohlcv['15m'].close[length-1] and calls .toFixed() on it —
+        // an empty array becomes undefined and used to crash the
+        // whole pair-iteration with the per-pair catch swallowing
+        // the TypeError. The loud red "Tick error for ETH: TypeError"
+        // log lines in production were that. Skip JUST THIS PAIR
+        // (continue, NOT return — there are other pairs in pairList
+        // for this agent to evaluate) and the next tick's data will
+        // retry. The user sees no agent output for a missed bar
+        // instead of a stack trace.
+        if (
+          !ohlcv['15m'].close.length ||
+          !ohlcv['1h'].close.length ||
+          !ohlcv['4h'].close.length
+        ) {
+          console.warn(
+            `[Agent ${agent.name}] Skipping ${pair} tick — empty candles ` +
+            `(15m=${ohlcv['15m'].close.length} 1h=${ohlcv['1h'].close.length} ` +
+            `4h=${ohlcv['4h'].close.length}); likely venue rate-limit.`
+          )
+          continue
+        }
         marketContext = buildMarketContext(ohlcv['15m'], ohlcv['1h'], ohlcv['4h'], pair)
       }
 

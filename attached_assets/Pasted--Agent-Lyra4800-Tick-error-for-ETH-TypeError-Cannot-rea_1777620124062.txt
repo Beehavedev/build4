@@ -1,0 +1,54 @@
+[Agent Lyra4800] Tick error for ETH: TypeError: Cannot read properties of undefined (reading 'toFixed')
+    at buildMarketContext (/opt/render/project/src/src/agents/tradingAgent.ts:398:33)
+    at runAgentTick (/opt/render/project/src/src/agents/tradingAgent.ts:1316:25)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+[HL] getCandles failed: ETH 15m 429 Too Many Requests - null
+[HL] getCandles failed: ETH 1h 429 Too Many Requests - null
+[HL] getCandles failed: ETH 1h 429 Too Many Requests - null
+[HL] getCandles failed: ETH 15m 429 Too Many Requests - null
+[Agent Goku] Tick error for ETH: TypeError: Cannot read properties of undefined (reading 'toFixed')
+    at buildMarketContext (/opt/render/project/src/src/agents/tradingAgent.ts:398:33)
+    at runAgentTick (/opt/render/project/src/src/agents/tradingAgent.ts:1316:25)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+[HL] getCandles failed: ETH 4h 429 Too Many Requests - null
+[HL] getCandles failed: ETH 1h 429 Too Many Requests - null
+[Agent Phoenix2848] Tick error for ETH: TypeError: Cannot read properties of undefined (reading 'toFixed')
+    at buildMarketContext (/opt/render/project/src/src/agents/tradingAgent.ts:398:33)
+    at runAgentTick (/opt/render/project/src/src/agents/tradingAgent.ts:1316:25)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+[HL] getCandles failed: ETH 15m 429 Too Many Requests - null
+[HL] getCandles failed: ETH 4h 429 Too Many Requests - null
+[HL] getCandles failed: ETH 15m 429 Too Many Requests - null
+[HL] getCandles failed: ETH 1h 429 Too Many Requests - null
+[Agent Nimbus9438] Tick error for ETH: TypeError: Cannot read properties of undefined (reading 'toFixed')
+    at buildMarketContext (/opt/render/project/src/src/agents/tradingAgent.ts:398:33)
+    at runAgentTick (/opt/render/project/src/src/agents/tradingAgent.ts:1316:25)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+[Agent Halcyon1391] Tick error for ETH: TypeError: Cannot read properties of undefined (reading 'toFixed')
+    at buildMarketContext (/opt/render/project/src/src/agents/tradingAgent.ts:398:33)
+    at runAgentTick (/opt/render/project/src/src/agents/tradingAgent.ts:1316:25)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+[Aster] klines fetch (cache miss): { symbol: 'BLENDUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'BLENDUSDT', interval: '5m', limit: 100 }
+[HL] getCandles failed: ETH 4h 429 Too Many Requests - null
+[HL] getCandles failed: ETH 1h 429 Too Many Requests - null
+[HL] getCandles failed: ETH 15m 429 Too Many Requests - null
+[Agent TENSHI] Tick error for ETH: TypeError: Cannot read properties of undefined (reading 'toFixed')
+    at buildMarketContext (/opt/render/project/src/src/agents/tradingAgent.ts:398:33)
+    at runAgentTick (/opt/render/project/src/src/agents/tradingAgent.ts:1316:25)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+[inference:xai] circuit tripped — status=403 parked for 10m. body={"code":"The caller does not have permission to execute the specified operation","error":"Your newly created team doesn'
+[inference:anthropic] circuit tripped — status=400 parked for 10m. body={"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropi
+[HL] getCandles failed: ETH 15m 429 Too Many Requests - null
+[HL] getCandles failed: ETH 4h 429 Too Many Requests - null
+[HL] getCandles failed: ETH 1h 429 Too Many Requests - null
+[Agent agvvfttcvvcg] Tick error for ETH: TypeError: Cannot read properties of undefined (reading 'toFixed')
+    at buildMarketContext (/opt/render/project/src/src/agents/tradingAgent.ts:398:33)
+    at runAgentTick (/opt/render/project/src/src/agents/tradingAgent.ts:1316:25)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+[Aster] klines fetch (cache miss): { symbol: 'AIGENSYNUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'AIGENSYNUSDT', interval: '5m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'MORPHOUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'MORPHOUSDT', interval: '5m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'KAITOUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'KAITOUSDT', interval: '5m', limit: 100 }

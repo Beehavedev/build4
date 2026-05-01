@@ -1,0 +1,46 @@
+[Aster] klines fetch (cache miss): { symbol: 'AIGENSYNUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'AIGENSYNUSDT', interval: '5m', limit: 100 }
+[Agent AlphaWolf] HOLD on ARBUSDT — Mixed signals and lack of trend
+[Agent TENSHI] HOLD on ARBUSDT — Mixed signals and lack of trend
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '4h', limit: 200 }
+[HL] getCandles failed: BTC 1h 429 Too Many Requests - null
+[HL] getCandles failed: BTC 15m 429 Too Many Requests - null
+[HL] getCandles failed: BTC 4h 429 Too Many Requests - null
+[Agent BNT] Tick error for BTC: TypeError: Cannot read properties of undefined (reading 'toFixed')
+    at buildMarketContext (/opt/render/project/src/src/agents/tradingAgent.ts:398:33)
+    at runAgentTick (/opt/render/project/src/src/agents/tradingAgent.ts:1316:25)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+[HL] getCandles failed: HYPE 15m 429 Too Many Requests - null
+[HL] getCandles failed: HYPE 1h 429 Too Many Requests - null
+[HL] getCandles failed: HYPE 4h 429 Too Many Requests - null
+[Agent Phoenix2848] Tick error for HYPE: TypeError: Cannot read properties of undefined (reading 'toFixed')
+    at buildMarketContext (/opt/render/project/src/src/agents/tradingAgent.ts:398:33)
+    at runAgentTick (/opt/render/project/src/src/agents/tradingAgent.ts:1316:25)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+[Aster] klines fetch (cache miss): { symbol: 'PUNDIAIUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'BLENDUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'MORPHOUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'MORPHOUSDT', interval: '5m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '4h', limit: 200 }
+<--- Last few GCs --->
+[95:0x261d7000] 65573487 ms: Scavenge (reduce) (interleaved) 999.8 (1021.0) -> 999.8 (1021.0) MB, pooled: 0 MB, 5.42 / 0.00 ms  (average mu = 0.340, current mu = 0.305) allocation failure; 
+[95:0x261d7000] 65573510 ms: Mark-Compact (reduce) 1000.0 (1021.0) -> 979.8 (1010.9) MB, pooled: 0 MB, 21.77 / 1.27 ms  (+ 638.2 ms in 0 steps since start of marking, biggest step 0.0 ms, walltime since start of marking 1129 ms) (average mu = 0.455, curre
+Menu
+<--- JS stacktrace --->
+FATAL ERROR: Ineffective mark-compacts near heap limit Allocation failed - JavaScript heap out of memory
+----- Native stack trace -----
+ 1: 0xe40d24 node::OOMErrorHandler(char const*, v8::OOMDetails const&) [/opt/render/project/nodes/node-22.22.0/bin/node]
+ 2: 0x1216be0 v8::Utils::ReportOOMFailure(v8::internal::Isolate*, char const*, v8::OOMDetails const&) [/opt/render/project/nodes/node-22.22.0/bin/node]
+ 3: 0x1216eb7 v8::internal::V8::FatalProcessOutOfMemory(v8::internal::Isolate*, char const*, v8::OOMDetails const&) [/opt/render/project/nodes/node-22.22.0/bin/node]
+ 4: 0x1444875  [/opt/render/project/nodes/node-22.22.0/bin/node]
+ 5: 0x14448a3  [/opt/render/project/nodes/node-22.22.0/bin/node]
+ 6: 0x145d97a  [/opt/render/project/nodes/node-22.22.0/bin/node]
+ 7: 0x1460b48  [/opt/render/project/nodes/node-22.22.0/bin/node]
+ 8: 0x1cc69b1  [/opt/render/project/nodes/node-22.22.0/bin/node]
+==> Running 'npx tsx src/server.ts'
+[HL config] builder=0x5ff57464152c9285a8526a0665d996da66e2def1 (HYPERLIQUID_BUILDER_ADDRESS=0x5Ff57464152c9285A8526a0665d996dA66e2def1, ASTER_BUILDER_ADDRESS=0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4) rate=0.1% feeTenths=100
+[DB] Connected
+[DB] Ensuring new tables exist (safe — no drops)...
