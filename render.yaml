@@ -14,14 +14,14 @@ services:
     # was added to the Prisma schema, so `db push` now collides with itself
     # ("relation already exists"). Dropping is safe — `db push` recreates it
     # immediately from the schema's @unique constraint.
-    buildCommand: npm install && npx prisma generate --schema=src/prisma/schema.prisma && echo 'DROP INDEX IF EXISTS "Agent_walletAddress_key";' | npx prisma db execute --schema=src/prisma/schema.prisma --stdin && npx prisma db push --schema=src/prisma/schema.prisma --skip-generate --accept-data-loss && npx vite build --config src/miniapp/vite.config.ts src/miniapp
+    buildCommand: npm install && npx prisma generate --schema=src/_prisma_bot/schema.prisma && echo 'DROP INDEX IF EXISTS "Agent_walletAddress_key";' | npx prisma db execute --schema=src/_prisma_bot/schema.prisma --stdin && npx prisma db push --schema=src/_prisma_bot/schema.prisma --skip-generate --accept-data-loss && npx vite build --config src/miniapp/vite.config.ts src/miniapp
     # Re-run `prisma generate` on every start as a safety net: Render
     # sometimes serves a cached node_modules where the generated client is
     # stale (which is what happened when the new AgentLog columns
     # pair/adx/rsi/score/regime were added — the build's generate step
     # didn't actually replace node_modules/.prisma/client). Generate is
     # fast (~3-5s) and idempotent, so paying it on boot is worth it.
-    startCommand: npx prisma generate --schema=src/prisma/schema.prisma && npx tsx src/server.ts
+    startCommand: npx prisma generate --schema=src/_prisma_bot/schema.prisma && npx tsx src/server.ts
     healthCheckPath: /api/health
     envVars:
       - key: NODE_ENV

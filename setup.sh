@@ -11,20 +11,20 @@ npm install
 
 echo ""
 echo "🗄️  Step 2/5 — Generating Prisma client..."
-# NOTE: Schema lives at _prisma_archived/schema.prisma (was prisma/ but
+# NOTE: Schema lives at src/_prisma_bot/schema.prisma (was prisma/ but
 # Replit's deploy Provision stage auto-detects prisma/ and offered to
 # rename/wipe production tables — see commit message of 2026-05-01).
-# Render uses src/prisma/schema.prisma instead; this root schema is for
+# Render uses src/_prisma_bot/schema.prisma instead; this root schema is for
 # manual local setup only.
-npx prisma generate --schema=_prisma_archived/schema.prisma
+npx prisma generate --schema=src/_prisma_bot/schema.prisma
 
 echo ""
 echo "🗄️  Step 3/5 — Pushing database schema..."
-npx prisma db push --schema=_prisma_archived/schema.prisma --accept-data-loss
+npx prisma db push --schema=src/_prisma_bot/schema.prisma --accept-data-loss
 
 echo ""
 echo "🌱 Step 4/5 — Seeding quests..."
-npx tsx _prisma_archived/seed.ts
+npx tsx src/_prisma_bot/seed.ts
 
 echo ""
 echo "📦 Step 5/5 — Installing & building mini-app..."
