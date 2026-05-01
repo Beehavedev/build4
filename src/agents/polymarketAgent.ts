@@ -80,6 +80,10 @@ interface PolymarketAgentRow {
   // Agent Studio drive Polymarket on/off in addition to the legacy
   // polymarketEnabled boolean.
   enabledVenues: string[]
+  // Phase 4 (2026-05-01) — joined user row used to gate dispatch on the
+  // per-user platform allow flag. Optional + nullable on user so a row
+  // that somehow loses its FK target doesn't crash the runner.
+  user: { polymarketAgentTradingEnabled: boolean } | null
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -113,7 +117,7 @@ export async function tickAllPolymarketAgents(): Promise<{
     // runner.ts). The check is done in JS rather than the SQL where-clause
     // because Prisma can't filter on a relation field with a default-true
     // boolean efficiently here, and the agent count is small.
-    agents = await db.agent.findMany({
+    const rows = await db.agent.findMany({
       where: {
         isActive: true,
         isPaused: false,
@@ -135,15 +139,26 @@ export async function tickAllPolymarketAgents(): Promise<{
         enabledVenues: true,
         user: { select: { polymarketAgentTradingEnabled: true } },
       },
-    }) as PolymarketAgentRow[]
+    })
     // Drop agents whose user has paused polymarket trading at the
     // platform level. Treat undefined / null as ALLOW so a missing
     // user record (shouldn't happen, but be defensive) does not
     // silently mute the venue.
-    agents = agents.filter((a) => {
-      const flag = (a as any).user?.polymarketAgentTradingEnabled
-      return flag !== false
-    })
+    agents = rows
+      .filter((r) => r.user?.polymarketAgentTradingEnabled !== false)
+      .map<PolymarketAgentRow>((r) => ({
+        id: r.id,
+        userId: r.userId,
+        name: r.name,
+        polymarketEnabled: r.polymarketEnabled,
+        polymarketMaxSizeUsdc: r.polymarketMaxSizeUsdc,
+        polymarketEdgeThreshold: r.polymarketEdgeThreshold,
+        lastPolymarketTickAt: r.lastPolymarketTickAt,
+        predictionEdgeThreshold: r.predictionEdgeThreshold,
+        predictionMaxDurationDays: r.predictionMaxDurationDays,
+        enabledVenues: r.enabledVenues,
+        user: r.user,
+      }))
   } catch (err) {
     console.error('[polymarketAgent] failed to load agents:', (err as Error).message)
     return { scanned, ticked, ordersPlaced, ordersSkipped, errors: errors + 1 }
