@@ -363,6 +363,49 @@ async function tickOneAgent(
           edge, sidePrice,
           execution: `order_placed pos=${result.positionId} fill=~${(result.fillPrice ?? sidePrice).toFixed(3)}`,
         })
+        // Phase 4 (2026-05-01) — Telegram notification on successful
+        // Polymarket entry. Mirrors the per-trade notify pattern used by
+        // Aster/HL/42 so users with all 4 venues enabled see Polymarket
+        // activity in chat instead of having to open the mini app.
+        // Wrapped in try/catch + .catch(() => {}) — a missing telegramId
+        // or a Telegram outage must NEVER block the trading loop.
+        try {
+          const { getBot } = await import('./runner')
+          const bot = getBot()
+          if (bot) {
+            const u = await db.user.findUnique({
+              where: { id: agent.userId },
+              select: { telegramId: true },
+            })
+            const tg = u?.telegramId?.toString() ?? null
+            if (tg) {
+              const fillPx = result.fillPrice ?? sidePrice
+              const title = (market.question ?? '').slice(0, 80)
+              // escape only the markdown specials we actually use in the
+              // body — full escapeMd would be overkill for this short
+              //, mostly-numeric template.
+              const safeTitle = title.replace(/([_*`\[\]()])/g, '\\$1')
+              const safeAgent = agent.name.replace(/([_*`\[\]()])/g, '\\$1')
+              const safeOutcome = outcomeLabel.replace(/([_*`\[\]()])/g, '\\$1')
+              const msg =
+                `🎲 *${safeAgent}* opened a Polymarket position\n\n` +
+                `*Market:* ${safeTitle}${title.length === 80 ? '…' : ''}\n` +
+                `*Outcome:* ${safeOutcome} (${decision.side})\n` +
+                `*Entry:* ${(fillPx * 100).toFixed(1)}¢ (implied ${(fillPx * 100).toFixed(1)}%)\n` +
+                `*Edge:* +${(edge * 100).toFixed(1)}pp vs market\n` +
+                `*Size:* $${agent.polymarketMaxSizeUsdc.toFixed(0)} USDC\n` +
+                `*Conviction:* ${(decision.conviction * 100).toFixed(0)}%\n\n` +
+                `💭 ${(decision.reasoning ?? '').slice(0, 240)}`
+              bot.api.sendMessage(tg, msg, { parse_mode: 'Markdown' }).catch(() => {})
+            }
+          }
+        } catch (notifyErr) {
+          // Notification failures must never affect trading. Log only.
+          console.warn(
+            `[polymarketAgent] notify failed for ${agent.id}:`,
+            (notifyErr as Error).message,
+          )
+        }
       } else {
         ordersSkipped++
         await logDecision(agent, event, market, decision, {

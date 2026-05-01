@@ -2103,6 +2103,36 @@ If you would not put real money in this trade right now, action = HOLD.`
               console.log(
                 `[Agent ${agent.name}] CLOSE_PREDICTION pnl=$${res.pnl.toFixed(2)} positionId=${pt.positionId}`
               )
+              // Phase 4 (2026-05-01) — Telegram notification on prediction
+              // close. The OPEN side already notifies (above); the CLOSE
+              // side was silent, leaving users unable to see PnL outcomes
+              // for 42.space trades from chat. Same try/catch pattern as
+              // the open notify so a Telegram outage can't propagate.
+              try {
+                const _botPredClose = getBot()
+                if (_botPredClose && telegramId) {
+                  const emoji = res.pnl >= 0 ? '✅' : '🔻'
+                  const sign = res.pnl >= 0 ? '+' : ''
+                  // Fire-and-forget — DO NOT await. A Telegram outage or
+                  // slow API response must not stall the trading tick
+                  // (architect-flagged 2026-05-01). The .catch swallows
+                  // rejection so unhandled-rejection logs stay clean.
+                  _botPredClose.api
+                    .sendMessage(
+                      telegramId,
+                      `${emoji} *${escapeMd(agent.name)}* closed prediction position\n\n` +
+                        `*Outcome:* ${escapeMd(pt.outcomeLabel ?? `tokenId ${pt.tokenId ?? '?'}`)}\n` +
+                        `*PnL:* ${sign}$${res.pnl.toFixed(2)} USDT`,
+                      { parse_mode: 'Markdown' },
+                    )
+                    .catch(() => {})
+                }
+              } catch (notifyErr) {
+                console.warn(
+                  `[Agent ${agent.name}] CLOSE_PREDICTION notify failed:`,
+                  (notifyErr as Error).message,
+                )
+              }
             }
           }
         } catch (predErr: any) {

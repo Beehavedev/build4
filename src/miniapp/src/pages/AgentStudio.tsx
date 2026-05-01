@@ -12,7 +12,10 @@ import { MarketTicker } from '../components/MarketTicker'
 interface AgentPositionRow {
   id: string
   pair: string
-  side: 'LONG' | 'SHORT'
+  // Perp venues use 'LONG'/'SHORT'; prediction venues use the outcome
+  // label (e.g. 'Yes', 'Trump'). Widened from the original perp-only
+  // union when Polymarket/42 were added in Phase 4 (2026-05-01).
+  side: string
   size: number
   leverage: number
   entryPrice: number
@@ -153,6 +156,22 @@ function AgentPositions({ agentId }: { agentId: string }) {
           // live behind different endpoints and aren't wired into this
           // panel yet.
           const canClose = (p.exchange ?? 'aster') === 'aster'
+          // Phase 4 (2026-05-01) — branch the row chrome on venue. Perp
+          // venues (aster/hyperliquid) keep the original "SIDE · 1x"
+          // header and "size @ entry / mark" subline. Prediction venues
+          // (polymarket/fortytwo) instead show a small venue chip + the
+          // outcome label (no leverage), because "Yes · 1x" is meaningless.
+          const isPrediction = p.exchange === 'polymarket' || p.exchange === 'fortytwo'
+          const venueChip =
+            p.exchange === 'polymarket' ? { label: 'POLY', color: '#3b82f6' }
+            : p.exchange === 'fortytwo'  ? { label: '42',   color: '#a78bfa' }
+            : p.exchange === 'hyperliquid' ? { label: 'HL', color: '#22d3ee' }
+            : { label: 'ASTER', color: '#f97316' }
+          // For prediction rows the entry price is in cents (0..1) — show
+          // it as a percent so the user reads "67¢ (67%)" not "$0.6700".
+          const entryDisplay = isPrediction
+            ? `${(p.entryPrice * 100).toFixed(1)}¢`
+            : `$${fmtPrice(p.entryPrice)}`
           return (
             <div
               key={p.id}
@@ -163,15 +182,27 @@ function AgentPositions({ agentId }: { agentId: string }) {
                 fontSize: 12,
               }}
             >
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ fontWeight: 600 }}>{p.pair}</span>
-                <span style={{ color: sideColor, fontWeight: 600 }}>
-                  {p.side} · {p.leverage}x
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, flex: 1 }}>
+                  <span style={{
+                    fontSize: 9, fontWeight: 700, letterSpacing: 0.4,
+                    padding: '1px 5px', borderRadius: 3, color: venueChip.color,
+                    border: `1px solid ${venueChip.color}55`, background: `${venueChip.color}11`,
+                    flexShrink: 0,
+                  }}>
+                    {venueChip.label}
+                  </span>
+                  <span style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {p.pair}
+                  </span>
+                </span>
+                <span style={{ color: isPrediction ? '#a78bfa' : sideColor, fontWeight: 600, flexShrink: 0 }}>
+                  {isPrediction ? p.side : `${p.side} · ${p.leverage}x`}
                 </span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', color: '#94a3b8', fontSize: 11 }}>
-                <span>{p.size} @ ${fmtPrice(p.entryPrice)}</span>
-                <span>mark {p.markPrice != null ? `$${fmtPrice(p.markPrice)}` : '—'}</span>
+                <span>{p.size}{isPrediction ? ' USDC' : ''} @ {entryDisplay}</span>
+                <span>mark {p.markPrice != null ? (isPrediction ? `${(p.markPrice * 100).toFixed(1)}¢` : `$${fmtPrice(p.markPrice)}`) : '—'}</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
                 <span style={{ color: pnlColor, fontWeight: 600 }}

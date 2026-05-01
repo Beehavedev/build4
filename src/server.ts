@@ -544,9 +544,99 @@ app.get('/api/agents/:id/positions', requireTgUser, async (req, res) => {
       console.warn(`[API] /agents/${agent.id}/positions reconcile failed: ${e?.message ?? e}`)
     }
 
-    const positions = effectiveOpenTrades.map((t) => {
+    // Phase 4 (2026-05-01) — multi-venue overlay. The original endpoint
+    // only joined Aster live positions; HL/Polymarket/42 positions were
+    // invisible from this panel. Now we also fetch:
+    //   • HL positions via getAccountState (perp, has live mark + PnL)
+    //   • Polymarket positions from db.polymarketPosition (status open/
+    //     placed/matched/filled — entry price only, no live overlay)
+    //   • 42.space positions from db.outcomePosition (status='open' —
+    //     entry price + sizeUsdt, no live overlay)
+    //
+    // Live mark/PnL overlay only exists for the perp venues; prediction
+    // venues just render the entry price the agent paid. The frontend
+    // already gates the Close button to Aster-only via canClose so
+    // surfacing extra venues here is purely additive.
+    let hlPositions: Array<{ symbol: string; side: 'LONG' | 'SHORT'; szi: number; entryPx: number; markPx: number; unrealizedPnl: number; leverage: number }> = []
+    if (user.hyperliquidOnboarded) {
+      try {
+        const wallet = await db.wallet.findFirst({ where: { userId: user.id, isActive: true } })
+        if (wallet) {
+          const { getAccountState } = await import('./services/hyperliquid')
+          const acct = await getAccountState(wallet.address)
+          hlPositions = acct.positions.map((p) => ({
+            symbol: p.coin,
+            side:   p.szi > 0 ? 'LONG' : 'SHORT',
+            szi:    Math.abs(p.szi),
+            entryPx: p.entryPx,
+            // markPx: derive from positionValue/szi when szi != 0; HL doesn't
+            // surface mark directly on positionRisk, but positionValue is
+            // signed notional in USDC.
+            markPx: p.szi !== 0 ? Math.abs(p.positionValue / p.szi) : 0,
+            unrealizedPnl: p.unrealizedPnl,
+            leverage: p.leverage ?? 1,
+          }))
+        }
+      } catch (e: any) {
+        console.warn(`[API] /agents/${agent.id}/positions HL overlay failed: ${e?.message ?? e}`)
+      }
+    }
+
+    const polymarketPositions = await db.polymarketPosition.findMany({
+      where: {
+        agentId: agent.id,
+        status: { in: ['placed', 'matched', 'filled'] },
+      },
+      orderBy: { openedAt: 'desc' },
+    }).catch(() => [])
+
+    const fortyTwoPositions = await db.$queryRawUnsafe<Array<{
+      id: string; marketTitle: string; outcomeLabel: string; usdtIn: number;
+      entryPrice: number; openedAt: Date;
+    }>>(
+      `SELECT id, "marketTitle", "outcomeLabel", "usdtIn", "entryPrice", "openedAt"
+       FROM "OutcomePosition"
+       WHERE "agentId"=$1 AND status='open'
+       ORDER BY "openedAt" DESC`,
+      agent.id,
+    ).catch(() => [])
+
+    // Build the unified positions array.
+    //
+    // Aster rows: existing logic (live overlay from livePositions).
+    // HL rows: live overlay from hlPositions.
+    // Polymarket / 42 rows: no live overlay (no perp-style mark) — show
+    //   entry price as both entry and mark so the UI doesn't render '—',
+    //   and PnL is null (would need a market re-read to compute, deferred).
+    const asterAndHlRows = effectiveOpenTrades.map((t) => {
+      if (t.exchange === 'hyperliquid') {
+        const live = hlPositions.find(
+          (lp) => lp.symbol.toUpperCase() === t.pair.toUpperCase() && lp.side === t.side,
+        )
+        const markPrice = live?.markPx ?? null
+        const dir = t.side === 'LONG' ? 1 : -1
+        const livePnl =
+          live?.unrealizedPnl != null
+            ? live.unrealizedPnl
+            : (markPrice != null ? (markPrice - t.entryPrice) * t.size * dir : null)
+        return {
+          id: t.id,
+          pair: t.pair,
+          side: t.side,
+          size: t.size,
+          leverage: t.leverage,
+          entryPrice: t.entryPrice,
+          exchange: t.exchange,
+          openedAt: t.openedAt,
+          markPrice,
+          unrealizedPnl: livePnl,
+          liveOnVenue: !!live,
+        }
+      }
+      // Aster (default branch — keeps the original behavior intact for
+      // legacy rows where exchange is null/'aster').
       const live = livePositions.find(
-        (lp) => lp.symbol.toUpperCase() === t.pair.toUpperCase() && lp.side === t.side
+        (lp) => lp.symbol.toUpperCase() === t.pair.toUpperCase() && lp.side === t.side,
       )
       const markPrice = live?.markPrice ?? null
       // Prefer Aster's authoritative `unrealizedPnl` when present — it
@@ -573,6 +663,37 @@ app.get('/api/agents/:id/positions', requireTgUser, async (req, res) => {
         liveOnVenue: !!live,
       }
     })
+
+    const polymarketRows = polymarketPositions.map((p) => ({
+      id: p.id,
+      // pair: short market title so the UI's pair cell is informative.
+      pair: (p.marketTitle ?? 'Polymarket').slice(0, 32),
+      side: p.outcomeLabel ?? p.side,
+      size: p.sizeUsdc,
+      leverage: 1,
+      entryPrice: p.entryPrice,
+      exchange: 'polymarket',
+      openedAt: p.openedAt,
+      markPrice: null,
+      unrealizedPnl: null,
+      liveOnVenue: true,
+    }))
+
+    const fortyTwoRows = fortyTwoPositions.map((p) => ({
+      id: p.id,
+      pair: (p.marketTitle ?? '42.space').slice(0, 32),
+      side: p.outcomeLabel,
+      size: p.usdtIn,
+      leverage: 1,
+      entryPrice: p.entryPrice,
+      exchange: 'fortytwo',
+      openedAt: p.openedAt,
+      markPrice: null,
+      unrealizedPnl: null,
+      liveOnVenue: true,
+    }))
+
+    const positions = [...asterAndHlRows, ...polymarketRows, ...fortyTwoRows]
 
     res.json({ positions })
   } catch (err: any) {
