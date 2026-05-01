@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BUILD4 — AI Crypto Trading on Telegram</title>
+  <meta name="description" content="BUILD4 is an AI-powered crypto trading bot on Telegram. Trade Hyperliquid perps, Aster, and Polymarket through autonomous AI agents." />
+  <meta property="og:title" content="BUILD4 — AI Crypto Trading on Telegram" />
+  <meta property="og:description" content="Autonomous AI trading agents for Hyperliquid, Aster, and Polymarket." />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://build4.io" />
+  <meta name="theme-color" content="#0D0D0F" />
+  <style>
+    :root {
+      --bg-primary: #0D0D0F;
+      --bg-card: #161618;
+      --bg-elevated: #1E1E22;
+      --border: #2A2A2E;
+      --text-primary: #F0F0F0;
+      --text-secondary: #8A8A8E;
+      --text-muted: #4A4A4E;
+      --green: #00C076;
+      --purple: #8B5CF6;
+      --purple-glow: rgba(139, 92, 246, 0.35);
+    }
+
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body {
+      margin: 0; padding: 0;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', sans-serif;
+      min-height: 100vh;
+    }
+
+    /* ── Page shell ────────────────────────────────────────────────── */
+    .page {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      overflow: hidden;
+    }
+    /* Soft purple glow behind the hero — purely decorative. */
+    .page::before {
+      content: '';
+      position: absolute;
+      top: -200px; left: 50%;
+      width: 600px; height: 600px;
+      transform: translateX(-50%);
+      background: radial-gradient(circle, var(--purple-glow) 0%, transparent 70%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    header {
+      position: relative;
+      z-index: 1;
+      padding: 24px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .logo {
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+    }
+    .logo .accent { color: var(--purple); }
+
+    main {
+      position: relative;
+      z-index: 1;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 48px 24px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      font-size: 13px;
+      color: var(--text-secondary);
+      margin-bottom: 24px;
+    }
+    .badge .dot {
+      width: 8px; height: 8px;
+      background: var(--green);
+      border-radius: 50%;
+      box-shadow: 0 0 8px var(--green);
+    }
+
+    h1 {
+      font-size: clamp(36px, 7vw, 64px);
+      line-height: 1.05;
+      margin: 0 0 20px;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      max-width: 800px;
+    }
+    h1 .gradient {
+      background: linear-gradient(135deg, var(--purple) 0%, #d4b3ff 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .lede {
+      font-size: clamp(15px, 2.2vw, 18px);
+      color: var(--text-secondary);
+      max-width: 560px;
+      line-height: 1.55;
+      margin: 0 0 40px;
+    }
+
+    .cta-row {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      padding: 16px 32px;
+      font-size: 16px;
+      font-weight: 600;
+      border-radius: 14px;
+      border: none;
+      cursor: pointer;
+      font-family: inherit;
+      transition: transform 0.1s ease, box-shadow 0.2s ease;
+      min-width: 220px;
+    }
+    .btn-primary {
+      background: var(--purple);
+      color: #fff;
+      box-shadow: 0 8px 24px var(--purple-glow);
+    }
+    .btn-primary:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 12px 32px var(--purple-glow);
+    }
+    .btn-primary:active { transform: translateY(0); }
+    .btn-primary:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .btn-secondary {
+      background: transparent;
+      color: var(--text-secondary);
+      border: 1px solid var(--border);
+    }
+    .btn-secondary:hover {
+      color: var(--text-primary);
+      border-color: var(--text-secondary);
+    }
+
+    .status {
+      margin-top: 16px;
+      font-size: 14px;
+      color: var(--text-secondary);
+      min-height: 20px;
+    }
+    .status.error { color: #FF8080; }
+    .status.success { color: var(--green); }
+
+    /* ── Venue strip ──────────────────────────────────────────────── */
+    .venues {
+      margin-top: 48px;
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+      justify-content: center;
+      max-width: 600px;
+    }
+    .venue {
+      padding: 8px 16px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      font-size: 13px;
+      color: var(--text-secondary);
+    }
+
+    footer {
+      position: relative;
+      z-index: 1;
+      padding: 24px 32px;
+      text-align: center;
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+    footer a {
+      color: var(--text-secondary);
+      text-decoration: none;
+      margin: 0 8px;
+    }
+    footer a:hover { color: var(--text-primary); }
+
+    /* Spinner inside button */
+    .spinner {
+      width: 16px; height: 16px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header>
+      <div class="logo">BUILD<span class="accent">4</span></div>
+    </header>
+
+    <main>
+      <div class="badge">
+        <span class="dot"></span>
+        Live on Hyperliquid, Aster &amp; Polymarket
+      </div>
+
+      <h1>
+        AI agents that trade crypto<br/>
+        <span class="gradient">on your behalf.</span>
+      </h1>
+
+      <p class="lede">
+        Spin up autonomous trading agents in Telegram. Connect your wallet,
+        pick a venue, and let your AI agent run perpetuals and prediction
+        markets 24/7.
+      </p>
+
+      <div class="cta-row">
+        <button id="launch-btn" class="btn btn-primary" data-testid="button-launch">
+          Launch App
+        </button>
+        <a class="btn btn-secondary" href="https://t.me/BUILD4_BOT" data-testid="link-telegram">
+          Open on Telegram
+        </a>
+      </div>
+
+      <div id="status" class="status" data-testid="text-status"></div>
+
+      <div class="venues">
+        <span class="venue">Hyperliquid Perps</span>
+        <span class="venue">Aster</span>
+        <span class="venue">Polymarket</span>
+        <span class="venue">42.space</span>
+      </div>
+    </main>
+
+    <footer>
+      <a href="https://t.me/BUILD4_BOT" data-testid="link-telegram-footer">Telegram</a>
+      ·
+      <a href="https://github.com/Beehavedev/build4" data-testid="link-github">GitHub</a>
+    </footer>
+  </div>
+
+  <script type="module">
+    // WalletConnect v2 via @walletconnect/ethereum-provider.
+    // We load it from esm.sh so we don't have to add the (large) package
+    // to package.json — the landing page is intentionally a single static
+    // HTML file that doesn't go through Vite. The provider bundles the
+    // WalletConnect modal UI internally, so a single import is enough.
+    import { EthereumProvider } from 'https://esm.sh/@walletconnect/ethereum-provider@2.17.0?bundle';
+
+    // Project ID is injected by the Express route at serve time
+    // (search for "WALLETCONNECT_PROJECT_ID_PLACEHOLDER" in src/server.ts).
+    // The placeholder is replaced before the HTML is sent to the browser
+    // so the Project ID never appears in any source file checked into git.
+    const PROJECT_ID = '__WALLETCONNECT_PROJECT_ID__';
+    const TELEGRAM_BOT_URL = 'https://t.me/BUILD4_BOT';
+
+    const launchBtn = document.getElementById('launch-btn');
+    const statusEl = document.getElementById('status');
+
+    function setStatus(msg, kind) {
+      statusEl.textContent = msg || '';
+      statusEl.className = 'status' + (kind ? ' ' + kind : '');
+    }
+
+    function setBusy(busy) {
+      launchBtn.disabled = busy;
+      launchBtn.innerHTML = busy
+        ? '<span class="spinner"></span> Connecting…'
+        : 'Launch App';
+    }
+
+    // Lazy-init the provider so the first paint isn't blocked on
+    // WalletConnect's bundle (~250KB gzipped). We only construct it the
+    // first time the user clicks "Launch App".
+    let _provider = null;
+    async function getProvider() {
+      if (_provider) return _provider;
+      if (!PROJECT_ID || PROJECT_ID === '__WALLETCONNECT_PROJECT_ID__') {
+        throw new Error(
+          'WalletConnect is not configured (server is missing the ' +
+          'WALLETCONNECT_PROJECT_ID environment variable).'
+        );
+      }
+      _provider = await EthereumProvider.init({
+        projectId: PROJECT_ID,
+        // BSC mainnet (chain id 56) — matches where BUILD4's builder/treasury
+        // addresses live. Trust Wallet supports BSC out of the box.
+        chains: [56],
+        showQrModal: true,
+        // Keep the modal styling close to the page's dark theme so the
+        // transition into the connect flow doesn't look jarring.
+        qrModalOptions: {
+          themeMode: 'dark',
+          themeVariables: {
+            '--wcm-z-index': '9999',
+            '--wcm-accent-color': '#8B5CF6',
+            '--wcm-background-color': '#161618',
+          },
+        },
+        metadata: {
+          name: 'BUILD4',
+          description: 'AI agents that trade crypto on your behalf.',
+          url: 'https://build4.io',
+          icons: ['https://build4.io/icon.png'],
+        },
+      });
+      return _provider;
+    }
+
+    async function launch() {
+      try {
+        setBusy(true);
+        setStatus('Opening wallet…');
+        const provider = await getProvider();
+
+        // If the user is already connected from a previous visit, skip
+        // straight to the Telegram redirect — no point making them
+        // re-scan a QR code.
+        if (provider.accounts && provider.accounts.length > 0) {
+          setStatus('Wallet already connected. Opening Telegram…', 'success');
+          window.location.href = TELEGRAM_BOT_URL;
+          return;
+        }
+
+        // This call opens the WalletConnect modal (QR on desktop, deep
+        // link to Trust Wallet / any installed wallet on mobile) and
+        // resolves once the user approves the session in their wallet.
+        await provider.connect();
+
+        const addr = provider.accounts && provider.accounts[0];
+        setStatus(
+          addr
+            ? 'Connected as ' + addr.slice(0, 6) + '…' + addr.slice(-4) + '. Opening Telegram…'
+            : 'Connected. Opening Telegram…',
+          'success'
+        );
+        // Tiny pause so the success message is visible before the
+        // browser navigates away to Telegram.
+        setTimeout(() => { window.location.href = TELEGRAM_BOT_URL; }, 600);
+      } catch (err) {
+        // The user closing the modal also throws ("User rejected"). Treat
+        // that as a soft cancellation, not a red error message.
+        const msg = (err && err.message) || String(err);
+        const cancelled = /reject|cancel|close|expired/i.test(msg);
+        setStatus(cancelled ? 'Connection cancelled.' : ('Could not connect: ' + msg),
+                  cancelled ? '' : 'error');
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    launchBtn.addEventListener('click', launch);
+  </script>
+</body>
+</html>
