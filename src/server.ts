@@ -2,6 +2,7 @@ import express from 'express'
 import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
+import { Prisma } from '@prisma/client'
 import { db } from './db'
 import { createBot } from './bot'
 import { initRunner } from './agents/runner'
@@ -3477,7 +3478,7 @@ app.post('/api/agents/:id/venues/:venue/toggle', requireTgUser, async (req, res)
     // time and the runner would still tick the agent — making the chip a
     // no-op. Mirror the chip state into the boolean so the chip is the
     // single canonical control surface.
-    const data: any = {
+    const data: Prisma.AgentUpdateInput = {
       enabledVenues: next,
       isActive:      next.length > 0,
     }
