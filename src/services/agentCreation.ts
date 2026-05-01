@@ -123,11 +123,20 @@ export async function createAgentForUser(opts: {
   //                    paths short-circuit with reason='no-creds'
   //   • fortytwo     — scan-only by default; trade requires
   //                    User.fortyTwoLiveTrade=true (separate opt-in)
+  //   • polymarket   — Phase 4 (2026-05-01): autonomous trading enabled by
+  //                    default for newly-created agents. The Polymarket
+  //                    runner loop (src/agents/polymarketAgent.ts) refuses
+  //                    to place orders until the user has run /api/polymarket/setup
+  //                    (deploys their gasless Safe + funds USDC), so the
+  //                    "enabled" flag here is safe — pre-onboard agents
+  //                    just produce SKIP rows in the brain feed with
+  //                    reason='safe_not_deployed' until setup completes,
+  //                    then start trading on the next tick.
   //
   // The runner expands per (agent, venue) and the trading agent writes
   // a brain-feed row per tick per venue, so the user sees decisions on
   // every venue from the very first tick after the agent is created.
-  const venues: string[] = ['aster', 'hyperliquid', 'fortytwo']
+  const venues: string[] = ['aster', 'hyperliquid', 'fortytwo', 'polymarket']
 
   // Concurrency-safe name + create. The name uniqueness check + create is
   // a TOCTOU race when many users onboard at once — two workers can both
@@ -171,6 +180,14 @@ export async function createAgentForUser(opts: {
           maxLeverage: preset.maxLeverage,
           stopLossPct: preset.stopLossPct,
           takeProfitPct: preset.takeProfitPct,
+          // Phase 4 (2026-05-01) — opt new agents into autonomous Polymarket
+          // trading by default. The polymarket runner is a separate loop
+          // gated on this flag; without it the venue chip lights up but no
+          // orders are ever placed even if 'polymarket' is in enabledVenues.
+          // Schema-level safety nets (insufficient_usdc, safe_not_deployed)
+          // mean turning this on for un-onboarded users is harmless — the
+          // agent simply logs SKIP rows until /api/polymarket/setup runs.
+          polymarketEnabled: true,
           isActive: true,
         },
       })

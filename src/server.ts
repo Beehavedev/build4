@@ -3308,7 +3308,12 @@ app.post('/api/agents/:id/toggle', requireTgUser, async (req, res) => {
 // This keeps the master kill-switch behaviour intact for any legacy
 // code path that still gates on isActive (and for the chat bot's
 // existing "agent is active" copy).
-const ALLOWED_VENUE_TOGGLES = new Set(['aster', 'hyperliquid', 'fortytwo'])
+// Phase 4 (2026-05-01) — 'polymarket' added so per-agent chip toggles work for
+// the 4th venue. The toggle endpoint flips Agent.enabledVenues; the polymarket
+// runner loop honors that array (in addition to the legacy polymarketEnabled
+// boolean) so chip on/off translates directly to "this agent trades Polymarket
+// or it doesn't".
+const ALLOWED_VENUE_TOGGLES = new Set(['aster', 'hyperliquid', 'fortytwo', 'polymarket'])
 app.post('/api/agents/:id/venues/:venue/toggle', requireTgUser, async (req, res) => {
   try {
     const user = (req as any).user
@@ -3342,12 +3347,25 @@ app.post('/api/agents/:id/venues/:venue/toggle', requireTgUser, async (req, res)
     // empty → inactive. Don't touch isPaused — that's reserved for
     // automated stops (daily-loss tripwires) and the user shouldn't be
     // able to override one of those by toggling a venue chip.
+    //
+    // Phase 4 (2026-05-01): Polymarket has its OWN legacy boolean
+    // (`polymarketEnabled`) that the polymarket runner ALSO honors via an
+    // OR clause for backwards compatibility with rows pre-dating
+    // `enabledVenues`. If we don't sync that boolean here, toggling the
+    // chip OFF would leave `polymarketEnabled=true` set at agent-creation
+    // time and the runner would still tick the agent — making the chip a
+    // no-op. Mirror the chip state into the boolean so the chip is the
+    // single canonical control surface.
+    const data: any = {
+      enabledVenues: next,
+      isActive:      next.length > 0,
+    }
+    if (venue === 'polymarket') {
+      data.polymarketEnabled = enabled
+    }
     const updated = await db.agent.update({
       where: { id: agentId },
-      data: {
-        enabledVenues: next,
-        isActive:      next.length > 0,
-      },
+      data,
     })
     res.json({ ok: true, agent: updated })
   } catch (err: any) {

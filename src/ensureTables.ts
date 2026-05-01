@@ -438,6 +438,14 @@ export async function ensureNewTables() {
   await run(`ALTER TABLE "Agent" ADD COLUMN IF NOT EXISTS "polymarketEdgeThreshold" DOUBLE PRECISION NOT NULL DEFAULT 0.10`)
   await run(`ALTER TABLE "Agent" ADD COLUMN IF NOT EXISTS "lastPolymarketTickAt" TIMESTAMP(3)`)
 
+  // Phase 4 (2026-05-01) — generalized prediction-market risk fields shared
+  // by the 42.space sidecar AND the Polymarket loop. Nullable so the readers
+  // can fall back to the venue-specific legacy fields (polymarketEdgeThreshold)
+  // for any row that escapes the default. See Agent model doc-comment for
+  // rationale on the 5pp / 14d defaults.
+  await run(`ALTER TABLE "Agent" ADD COLUMN IF NOT EXISTS "predictionEdgeThreshold" DOUBLE PRECISION DEFAULT 0.05`)
+  await run(`ALTER TABLE "Agent" ADD COLUMN IF NOT EXISTS "predictionMaxDurationDays" DOUBLE PRECISION DEFAULT 14`)
+
   await run(`CREATE TABLE IF NOT EXISTS "PolymarketCreds" (
     "id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
     "userId" TEXT NOT NULL,

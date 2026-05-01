@@ -214,7 +214,7 @@ interface AgentStudioProps {
 // venue. Same agent can therefore trade on Aster today and (once the user
 // flips Hyperliquid on + finishes onboarding) Hyperliquid tomorrow without
 // having to be re-created.
-type VenueId = 'aster' | 'hyperliquid' | 'fortytwo'
+type VenueId = 'aster' | 'hyperliquid' | 'fortytwo' | 'polymarket'
 interface VenueConfig {
   id: VenueId
   label: string
@@ -222,11 +222,22 @@ interface VenueConfig {
   accent: string
 }
 const VENUES: VenueConfig[] = [
-  { id: 'aster',       label: 'Aster',       sub: 'Perp DEX · BSC',     accent: '#f97316' },
-  { id: 'hyperliquid', label: 'Hyperliquid', sub: 'L1 perps',           accent: '#22d3ee' },
-  { id: 'fortytwo',    label: '42.space',    sub: 'Prediction markets', accent: '#a78bfa' },
+  { id: 'aster',       label: 'Aster',       sub: 'Perp DEX · BSC',         accent: '#f97316' },
+  { id: 'hyperliquid', label: 'Hyperliquid', sub: 'L1 perps',               accent: '#22d3ee' },
+  { id: 'fortytwo',    label: '42.space',    sub: 'Prediction markets',     accent: '#a78bfa' },
+  { id: 'polymarket',  label: 'Polymarket',  sub: 'Prediction · Polygon',   accent: '#3b82f6' },
 ]
 
+// Phase 4: VenuePermissions/VenueOnboarded intentionally NOT extended with
+// polymarket here. Polymarket has its own onboarding (Safe deployment via
+// /api/polymarket/setup) and its own "is this user allowed to trade" gate
+// (USDC balance + Safe presence enforced inside polymarketAgent.ts). The
+// venue chip uses the same enabledVenues toggle pattern as the others, but
+// the per-user platform allow flag (asterAgentTradingEnabled etc.) doesn't
+// have a polymarket equivalent yet — runner.ts already implicit-allows
+// non-perp venues, so the UI doesn't need to render a 4th platform-toggle
+// row. If we add User.polymarketAgentTradingEnabled later, extend these
+// two interfaces and the perms section in render().
 interface VenuePermissions { aster: boolean; hyperliquid: boolean; fortytwo: boolean }
 interface VenueOnboarded   { aster: boolean; hyperliquid: boolean; fortytwo: boolean }
 
@@ -256,6 +267,7 @@ export function venueChip(ex: string | null | undefined): { label: string; color
   if (x === 'aster')       return { label: 'ASTER', color: '#f97316' }
   if (x === 'hyperliquid') return { label: 'HL',    color: '#22d3ee' }
   if (x === 'fortytwo')    return { label: '42',    color: '#a78bfa' }
+  if (x === 'polymarket')  return { label: 'POLY',  color: '#3b82f6' }
   return null
 }
 
@@ -311,7 +323,7 @@ export function ScoutBadge({ id }: { id: string }) {
 // so a stray "Aster"/"HyperLiquid" doesn't fall through to "other".
 function venueOf(exchange: string | undefined): VenueId | 'other' {
   const x = (exchange ?? '').toLowerCase()
-  if (x === 'aster' || x === 'hyperliquid' || x === 'fortytwo') return x as VenueId
+  if (x === 'aster' || x === 'hyperliquid' || x === 'fortytwo' || x === 'polymarket') return x as VenueId
   return 'other'
 }
 
@@ -598,6 +610,13 @@ export default function AgentStudio(_props: AgentStudioProps) {
   // the toggle never lies about the server state.
   const setVenuePermission = async (venue: VenueId, enabled: boolean) => {
     if (busyVenue) return
+    // Phase 4: Polymarket has no per-user platform allow flag yet (the gate
+    // is "do you have a Safe deployed + USDC funded", enforced inside
+    // polymarketAgent.ts). The server's /api/me/venue-permissions endpoint
+    // strictly validates aster|hyperliquid|fortytwo and would 400 on
+    // polymarket. Short-circuit here so the per-agent venue chip toggle
+    // (which DOES support polymarket) remains the canonical control.
+    if (venue === 'polymarket') return
     setBusyVenue(venue)
     const previous = perms
     setPerms(p => p ? { ...p, [venue]: enabled } : p)
@@ -637,8 +656,14 @@ export default function AgentStudio(_props: AgentStudioProps) {
   // disables agent trading on it for THIS user, regardless of how many
   // agents the user has — toggles are permissions, not per-agent groups.
   const renderVenueRow = (v: VenueConfig) => {
-    const enabled = perms ? perms[v.id] : false
-    const isOnboarded = onboarded ? onboarded[v.id] : false
+    // Phase 4: Polymarket has no per-user platform allow flag — its gate is
+    // "do you have a Safe deployed + USDC funded", enforced inside
+    // polymarketAgent.ts. Skip rendering the platform-level row entirely so
+    // we don't show a non-functional toggle. Per-agent venue chips still
+    // expose Polymarket on/off and remain the canonical control.
+    if (v.id === 'polymarket') return null
+    const enabled = perms ? perms[v.id as 'aster' | 'hyperliquid' | 'fortytwo'] : false
+    const isOnboarded = onboarded ? onboarded[v.id as 'aster' | 'hyperliquid' | 'fortytwo'] : false
     const hasAgentHere = venuesWithAgent.has(v.id)
     const busy = busyVenue === v.id
     // Always interactive once permissions have loaded — even if not yet
@@ -735,15 +760,21 @@ export default function AgentStudio(_props: AgentStudioProps) {
     const venueAccent =
       v === 'aster' ? '#f97316' :
       v === 'hyperliquid' ? '#22d3ee' :
-      v === 'fortytwo' ? '#a78bfa' : '#64748b'
+      v === 'fortytwo' ? '#a78bfa' :
+      v === 'polymarket' ? '#3b82f6' : '#64748b'
     const venueLabel =
       v === 'aster' ? 'Aster' :
       v === 'hyperliquid' ? 'Hyperliquid' :
       v === 'fortytwo' ? '42.space' :
+      v === 'polymarket' ? 'Polymarket' :
       (agent.exchange ?? 'unknown')
+    // platformAllowed: polymarket has no per-user platform flag yet (the
+    // gate is Safe-deployed + USDC-funded inside polymarketAgent.ts), so
+    // implicit-allow it here. Same treatment as 'other' — neither venue
+    // has a row in `perms`.
     const platformAllowed = perms == null
       ? true
-      : (v === 'other' ? true : perms[v])
+      : (v === 'other' || v === 'polymarket' ? true : perms[v])
 
     return (
       <div key={agent.id} className="card" style={{ marginBottom: 10 }}>
@@ -782,7 +813,13 @@ export default function AgentStudio(_props: AgentStudioProps) {
             const enabledHere = Array.isArray(agent.enabledVenues)
               ? agent.enabledVenues.includes(v.id)
               : agent.exchange === v.id  // legacy fallback if backfill hasn't run yet
-            const platformOff = perms != null && perms[v.id] === false
+            // Polymarket has no per-user platform flag (see VenuePermissions
+            // doc-comment); treat as implicit-allow so the chip is always
+            // interactive. The Safe-deployed gate is enforced inside the
+            // polymarket runner loop, not here.
+            const platformOff = v.id === 'polymarket'
+              ? false
+              : (perms != null && perms[v.id as 'aster' | 'hyperliquid' | 'fortytwo'] === false)
             const busy = busyAgentVenue.has(`${agent.id}:${v.id}`)
             const disabled = platformOff || busy
             const tip = platformOff

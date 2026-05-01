@@ -167,6 +167,26 @@ model Agent {
   polymarketMaxSizeUsdc   Float    @default(5)
   polymarketEdgeThreshold Float    @default(0.10)
 
+  // Phase 4 (2026-05-01) — generalized prediction-market risk fields.
+  // Apply to BOTH 42.space (perp-LLM sidecar) and Polymarket (dedicated
+  // agent loop). Replace the venue-specific polymarketEdgeThreshold over
+  // time; readers fall back to polymarketEdgeThreshold when null/0 so
+  // legacy rows stay safe during the migration window.
+  //
+  // predictionEdgeThreshold: minimum gap between the agent's subjective
+  // probability and the market's implied probability before placing a
+  // bet. 0.05 = 5 percentage points. Tuned softer than the legacy 10pp
+  // default because 10pp mispricings are rare and were leading to near-
+  // zero trade velocity in Phase 3 testing.
+  //
+  // predictionMaxDurationDays: skip any market whose endDate is more
+  // than N days out. Prediction-market capital is locked until
+  // resolution (early-exit liquidity is unreliable on small books), so
+  // this is the agent's "how long am I willing to lock USDT/USDC for"
+  // knob. 14 days = roughly biweekly capital recycling.
+  predictionEdgeThreshold    Float?  @default(0.05)
+  predictionMaxDurationDays  Float?  @default(14)
+
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @default(now()) @updatedAt
   lastTickAt      DateTime?

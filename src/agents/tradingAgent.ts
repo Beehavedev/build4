@@ -1713,8 +1713,20 @@ export async function runAgentTick(agent: Agent): Promise<void> {
       let predictionContext = ''
       try {
         const { build42MarketContext } = await import('../services/fortyTwoPrompt')
+        // Phase 4 (2026-05-01) — feed per-agent prediction-market knobs into
+        // the 42 context builder so the LLM sees the same risk envelope the
+        // executor enforces. `agent` is the full Prisma Agent record so
+        // these fields are always present (they have schema defaults of
+        // 0.05 / 14 days respectively).
+        const predictionMaxDurationDays = agent.predictionMaxDurationDays ?? 14
+        const predictionEdgeThreshold = agent.predictionEdgeThreshold ?? 0.05
         const block = await Promise.race<string>([
-          build42MarketContext({ maxMarkets: 5, tradingRelevantOnly: true }),
+          build42MarketContext({
+            maxMarkets: 5,
+            tradingRelevantOnly: true,
+            maxDurationDays: predictionMaxDurationDays,
+            edgeThreshold: predictionEdgeThreshold,
+          }),
           new Promise<string>((resolve) => setTimeout(() => resolve(''), 1500)),
         ])
         if (block.trim()) {

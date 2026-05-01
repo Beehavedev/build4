@@ -71,6 +71,15 @@ interface PolymarketAgentRow {
   polymarketMaxSizeUsdc: number
   polymarketEdgeThreshold: number
   lastPolymarketTickAt: Date | null
+  // Phase 4 (2026-05-01) — generalized prediction-market risk fields. Both
+  // are nullable so legacy rows that pre-date the migration still work; the
+  // readers below fall back to polymarketEdgeThreshold / 14d defaults.
+  predictionEdgeThreshold: number | null
+  predictionMaxDurationDays: number | null
+  // Phase 4 — reading enabledVenues lets the per-agent venue chip in
+  // Agent Studio drive Polymarket on/off in addition to the legacy
+  // polymarketEnabled boolean.
+  enabledVenues: string[]
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -93,11 +102,20 @@ export async function tickAllPolymarketAgents(): Promise<{
 
   let agents: PolymarketAgentRow[] = []
   try {
+    // Phase 4: pick up agents enabled via EITHER the legacy boolean OR the
+    // newer per-agent enabledVenues array (driven by the venue chip in
+    // Agent Studio). Either path opts the agent into autonomous Polymarket
+    // trading; the per-market gates inside tickOneAgent (Safe deployed,
+    // USDC funded, edge threshold met) still decide whether any single
+    // tick actually places an order.
     agents = await db.agent.findMany({
       where: {
         isActive: true,
         isPaused: false,
-        polymarketEnabled: true,
+        OR: [
+          { polymarketEnabled: true },
+          { enabledVenues: { has: 'polymarket' } },
+        ],
       },
       select: {
         id: true,
@@ -107,6 +125,9 @@ export async function tickAllPolymarketAgents(): Promise<{
         polymarketMaxSizeUsdc: true,
         polymarketEdgeThreshold: true,
         lastPolymarketTickAt: true,
+        predictionEdgeThreshold: true,
+        predictionMaxDurationDays: true,
+        enabledVenues: true,
       },
     }) as PolymarketAgentRow[]
   } catch (err) {
@@ -156,6 +177,24 @@ async function tickOneAgent(
 ): Promise<{ ordersPlaced: number; ordersSkipped: number }> {
   let ordersPlaced = 0
   let ordersSkipped = 0
+
+  // Phase 4 (2026-05-01) — generalized prediction-market knobs.
+  //
+  //   effectiveEdge       : minimum (LLM conviction − market-implied price)
+  //                         we'll cross the spread for. Falls back to the
+  //                         legacy polymarketEdgeThreshold so rows that
+  //                         pre-date the migration still trade.
+  //
+  //   maxEndDateMs        : Unix-ms ceiling on a market's resolution date.
+  //                         Capital locked in long-dated markets is the
+  //                         user's primary risk concern (you can't ragequit
+  //                         a Polymarket position the way you can close a
+  //                         perp). Default 14d gives the LLM ~2-week
+  //                         resolution horizon. predictionMaxDurationDays
+  //                         is nullable until backfill, so default in JS.
+  const effectiveEdge = agent.predictionEdgeThreshold ?? agent.polymarketEdgeThreshold
+  const maxDurationDays = agent.predictionMaxDurationDays ?? 14
+  const maxEndDateMs = Date.now() + maxDurationDays * 86400000
 
   // Stamp the tick time UP-FRONT so a slow LLM round-trip can't cause
   // back-to-back ticks if the runner double-fires.
@@ -239,7 +278,13 @@ async function tickOneAgent(
     const markets = (event.markets || [])
       .filter((m) => m.enableOrderBook && !m.closed && !m.archived
                      && Array.isArray(m.clobTokenIds) && m.clobTokenIds.length >= 1
-                     && Array.isArray(m.outcomes) && m.outcomes.length >= 1)
+                     && Array.isArray(m.outcomes) && m.outcomes.length >= 1
+                     // Phase 4: enforce predictionMaxDurationDays. A null
+                     // endDate is treated as too-long (skip) — we'd rather
+                     // miss an open-ended market than accidentally lock
+                     // capital for months.
+                     && m.endDate !== null
+                     && new Date(m.endDate).getTime() <= maxEndDateMs)
       .slice(0, MAX_MARKETS_PER_EVENT)
 
     for (const market of markets) {
@@ -275,8 +320,8 @@ async function tickOneAgent(
       const edge = decision.conviction - sidePrice
 
       if (decision.action === 'SKIP'
-          || decision.conviction < agent.polymarketEdgeThreshold
-          || edge < agent.polymarketEdgeThreshold
+          || decision.conviction < effectiveEdge
+          || edge < effectiveEdge
           || sidePrice <= 0
           || sidePrice >= 1) {
         ordersSkipped++
