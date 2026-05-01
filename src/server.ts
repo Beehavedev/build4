@@ -2810,6 +2810,20 @@ app.get('/api/hyperliquid/trades', requireTgUser, async (req, res) => {
         const trades = [...entry.data].sort((a, b) => b.time - a.time).slice(0, limit)
         return res.json({ trades, cached: true, stale: true })
       }
+      // 4. No usable cache (cold open). Returning a 5xx here is what
+      //    triggered the user-visible "Could not load fills: 429 Too
+      //    Many Requests - null" red banner on first paint, because the
+      //    client's grace-period suppression only fires once it has had
+      //    at least one successful read. Return 200 with an empty list
+      //    plus an explicit `rateLimited` flag so the UI can render a
+      //    muted "temporarily unavailable" hint instead of an alarming
+      //    error banner — the next 20s poll usually succeeds.
+      const status = hlErr?.status ?? hlErr?.response?.status
+      const msg = String(hlErr?.message ?? '')
+      const isRateLimited = status === 429 || /429|too many requests|rate.?limit/i.test(msg)
+      if (isRateLimited) {
+        return res.json({ trades: [], rateLimited: true })
+      }
       throw hlErr
     }
   } catch (err: any) {
