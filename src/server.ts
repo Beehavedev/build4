@@ -1,4 +1,5 @@
 import express from 'express'
+import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import { db } from './db'
@@ -34,6 +35,44 @@ app.use('/app', express.static(miniAppDist, {
 app.use('/app', (_req, res) => {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
   res.sendFile(path.join(miniAppDist, 'index.html'))
+})
+
+// ── Public landing page (https://build4.io/) ────────────────────────────────
+// Serves public/index.html with the WalletConnect Project ID injected in
+// place of the placeholder string. We read the file once at boot, do the
+// substitution, and cache the rendered HTML in memory (it never changes
+// for the life of the process — the Project ID comes from a process env
+// var). Failing to find the project id is non-fatal: the landing page
+// still renders, but the Launch App button will surface a clear error
+// when clicked instead of silently breaking.
+const landingPath = path.join(__dirname, '..', 'public', 'index.html')
+let _landingHtml: string | null = null
+function getLandingHtml(): string {
+  if (_landingHtml) return _landingHtml
+  try {
+    const raw = fs.readFileSync(landingPath, 'utf-8')
+    const projectId = process.env.WALLETCONNECT_PROJECT_ID ?? ''
+    if (!projectId) {
+      console.warn('[landing] WALLETCONNECT_PROJECT_ID is not set — Launch App button will show an error when clicked.')
+    }
+    // Replace ALL occurrences of the placeholder so we don't accidentally
+    // leave one behind if the page references the id more than once.
+    _landingHtml = raw.split('__WALLETCONNECT_PROJECT_ID__').join(projectId)
+    return _landingHtml
+  } catch (err) {
+    console.error('[landing] failed to read public/index.html:', (err as Error).message)
+    // Last-resort fallback so the root path still serves something useful
+    // (a redirect to the Telegram bot) instead of a 500 if the file is
+    // missing on disk for any reason.
+    return '<!doctype html><meta http-equiv="refresh" content="0;url=https://t.me/BUILD4_BOT">'
+  }
+}
+app.get('/', (_req, res) => {
+  res.setHeader('Content-Type', 'text/html; charset=utf-8')
+  // Short cache — the HTML rarely changes but we want users to pick up
+  // fixes within minutes rather than hours.
+  res.setHeader('Cache-Control', 'public, max-age=300')
+  res.send(getLandingHtml())
 })
 
 // REST API routes
