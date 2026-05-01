@@ -295,6 +295,11 @@ export async function ensureNewTables() {
   // tracked migration so it only runs once per DB, even across reboots.
   await run(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "fortyTwoLiveTrade" BOOLEAN NOT NULL DEFAULT true`)
   await run(`ALTER TABLE "User" ALTER COLUMN "fortyTwoLiveTrade" SET DEFAULT true`)
+  // Phase 4 (2026-05-01) — Polymarket per-user pause flag. Default true
+  // so existing users opt-in. Mirrors aster/hyperliquidAgentTradingEnabled
+  // semantics; consumed by tickAllPolymarketAgents.
+  await run(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "polymarketAgentTradingEnabled" BOOLEAN NOT NULL DEFAULT true`)
+  await run(`ALTER TABLE "User" ALTER COLUMN "polymarketAgentTradingEnabled" SET DEFAULT true`)
   // ─── Multi-provider swarm opt-in (Task #18) ───
   await run(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "swarmEnabled" BOOLEAN NOT NULL DEFAULT false`)
   // ─── HL Unified Account flag (post-Apr-2026) ───

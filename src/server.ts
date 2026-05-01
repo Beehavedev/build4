@@ -5439,17 +5439,35 @@ app.get('/api/me/venue-permissions', requireTgUser, async (req, res) => {
         asterAgentTradingEnabled: true,
         hyperliquidAgentTradingEnabled: true,
         fortyTwoLiveTrade: true,
+        polymarketAgentTradingEnabled: true,
         asterOnboarded: true,
         hyperliquidOnboarded: true,
       },
     })
     if (!u) return res.status(404).json({ ok: false, error: 'user not found' })
+    // Polymarket "onboarded" = the user has a deployed Safe with API
+    // creds registered. We derive it from PolymarketCreds rather than
+    // a User flag so the state is always truthful (a user who deployed
+    // their Safe in another session shows as onboarded immediately).
+    // safeAddress can be null on legacy rows where setup failed midway,
+    // so we require it explicitly to avoid lighting up a non-functional
+    // "ready" state. .catch returns false on any DB hiccup so the whole
+    // permissions endpoint never 500s due to a single missing table.
+    const polyCreds = await db.polymarketCreds
+      .findUnique({
+        where: { userId: user.id },
+        select: { safeAddress: true },
+      })
+      .catch(() => null)
+    const polymarketOnboarded = !!polyCreds?.safeAddress
     res.json({
       ok: true,
       permissions: {
         aster:       !!u.asterAgentTradingEnabled,
         hyperliquid: !!u.hyperliquidAgentTradingEnabled,
         fortytwo:    !!u.fortyTwoLiveTrade,
+        // Phase 4 (2026-05-01) — Polymarket gets a real per-user toggle.
+        polymarket:  !!u.polymarketAgentTradingEnabled,
       },
       onboarded: {
         aster:       !!u.asterOnboarded,
@@ -5457,6 +5475,7 @@ app.get('/api/me/venue-permissions', requireTgUser, async (req, res) => {
         // 42.space requires no per-user onboarding — anyone with a wallet
         // can trade on-chain prediction markets — so it's always "ready".
         fortytwo:    true,
+        polymarket:  polymarketOnboarded,
       },
     })
   } catch (err) {
@@ -5472,8 +5491,8 @@ app.post('/api/me/venue-permissions', requireTgUser, async (req, res) => {
   // mode (especially for 42.space) due to a missing or coerced field.
   const venue = req.body?.venue
   const enabled = req.body?.enabled
-  if (venue !== 'aster' && venue !== 'hyperliquid' && venue !== 'fortytwo') {
-    return res.status(400).json({ ok: false, error: 'venue must be aster | hyperliquid | fortytwo' })
+  if (venue !== 'aster' && venue !== 'hyperliquid' && venue !== 'fortytwo' && venue !== 'polymarket') {
+    return res.status(400).json({ ok: false, error: 'venue must be aster | hyperliquid | fortytwo | polymarket' })
   }
   if (typeof enabled !== 'boolean') {
     return res.status(400).json({ ok: false, error: 'enabled must be boolean' })
@@ -5486,9 +5505,10 @@ app.post('/api/me/venue-permissions', requireTgUser, async (req, res) => {
       const { setUserLiveOptIn } = await import('./services/fortyTwoExecutor')
       await setUserLiveOptIn(user.id, enabled)
     } else {
-      const field = venue === 'aster'
-        ? 'asterAgentTradingEnabled'
-        : 'hyperliquidAgentTradingEnabled'
+      const field =
+        venue === 'aster'       ? 'asterAgentTradingEnabled' :
+        venue === 'hyperliquid' ? 'hyperliquidAgentTradingEnabled' :
+        /* polymarket */          'polymarketAgentTradingEnabled'
       await db.user.update({
         where: { id: user.id },
         data: { [field]: enabled },

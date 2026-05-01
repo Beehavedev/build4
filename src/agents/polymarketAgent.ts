@@ -108,6 +108,11 @@ export async function tickAllPolymarketAgents(): Promise<{
     // trading; the per-market gates inside tickOneAgent (Safe deployed,
     // USDC funded, edge threshold met) still decide whether any single
     // tick actually places an order.
+    // Phase 4 (2026-05-01) — also gate on the per-user
+    // polymarketAgentTradingEnabled flag (mirrors the aster/HL pattern in
+    // runner.ts). The check is done in JS rather than the SQL where-clause
+    // because Prisma can't filter on a relation field with a default-true
+    // boolean efficiently here, and the agent count is small.
     agents = await db.agent.findMany({
       where: {
         isActive: true,
@@ -128,8 +133,17 @@ export async function tickAllPolymarketAgents(): Promise<{
         predictionEdgeThreshold: true,
         predictionMaxDurationDays: true,
         enabledVenues: true,
+        user: { select: { polymarketAgentTradingEnabled: true } },
       },
     }) as PolymarketAgentRow[]
+    // Drop agents whose user has paused polymarket trading at the
+    // platform level. Treat undefined / null as ALLOW so a missing
+    // user record (shouldn't happen, but be defensive) does not
+    // silently mute the venue.
+    agents = agents.filter((a) => {
+      const flag = (a as any).user?.polymarketAgentTradingEnabled
+      return flag !== false
+    })
   } catch (err) {
     console.error('[polymarketAgent] failed to load agents:', (err as Error).message)
     return { scanned, ticked, ordersPlaced, ordersSkipped, errors: errors + 1 }
