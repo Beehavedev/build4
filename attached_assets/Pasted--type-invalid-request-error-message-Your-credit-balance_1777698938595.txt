@@ -1,0 +1,301 @@
+      type: 'invalid_request_error',
+      message: 'Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.'
+    },
+    request_id: 'req_011CadAuDfQYhkC3tzcqZjA8'
+  },
+  type: 'invalid_request_error'
+}
+[Agent Lyra9262] Shared scan failed: BadRequestError: 400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."},"request_id":"req_011CadAuDfQYhkC3tzcqZjA8"}
+    at Function.generate (/opt/render/project/src/node_modules/@anthropic-ai/sdk/src/core/error.ts:75:14)
+    at Anthropic.makeStatusError (/opt/render/project/src/node_modules/@anthropic-ai/sdk/src/client.ts:516:28)
+    at Anthropic.makeRequest (/opt/render/project/src/node_modules/@anthropic-ai/sdk/src/client.ts:752:24)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async callAnthropicForDecision (/opt/render/project/src/src/agents/tradingAgent.ts:739:20)
+    at async runDecisionLLM (/opt/render/project/src/src/agents/tradingAgent.ts:925:37)
+    at async runMarketScan (/opt/render/project/src/src/agents/marketScan.ts:568:17) {
+  status: 400,
+  headers: Headers {
+    date: 'Sat, 02 May 2026 05:14:20 GMT',
+    'content-type': 'application/json',
+    'transfer-encoding': 'chunked',
+    connection: 'keep-alive',
+    'x-should-retry': 'false',
+    'request-id': 'req_011CadAuDfQYhkC3tzcqZjA8',
+    'strict-transport-security': 'max-age=31536000; includeSubDomains; preload',
+    'anthropic-organization-id': 'faf0b835-a80e-46df-9424-f4f45142fac9',
+    traceresponse: '00-f6467224dbf3cee065b685f27df3ba66-a6a4add9bdd4d6f4-01',
+    server: 'cloudflare',
+    'x-envoy-upstream-service-time': '2',
+    'content-encoding': 'gzip',
+    vary: 'Accept-Encoding',
+    'server-timing': 'x-originResponse;dur=27',
+    'cf-cache-status': 'DYNAMIC',
+    'set-cookie': '_cfuvid=7cYE5tj2PVpY1K6SbkbnBFPjAlp4p3yqxCVEMqWOI_4-1777698860.2081568-1.0.1.1-RuRQ_G1nciWQpsb8dtOutzrYj38GT8666B_Z.1B34gc; HttpOnly; SameSite=None; Secure; Path=/; Domain=api.anthropic.com',
+    'content-security-policy': "default-src 'none'; frame-ancestors 'none'",
+    'x-robots-tag': 'none',
+    'cf-ray': '9f548ab44a910f58-SIN'
+  },
+  requestID: 'req_011CadAuDfQYhkC3tzcqZjA8',
+  error: {
+    type: 'error',
+    error: {
+      type: 'invalid_request_error',
+      message: 'Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.'
+    },
+    request_id: 'req_011CadAuDfQYhkC3tzcqZjA8'
+  },
+  type: 'invalid_request_error'
+}
+[Agent TENSHI] HOLD on ARBUSDT — Mixed signals and low volume
+[Agent SeanBuild4] HOLD on XCNUSDT — Low-conviction setup due to low volume and volatility
+  error: {
+    type: 'error',
+    error: {
+      type: 'invalid_request_error',
+      message: 'Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.'
+    },
+    request_id: 'req_011CadAyS6saGNppQdgnztR4'
+  },
+  type: 'invalid_request_error'
+}
+[Agent Halcyon1391] Shared scan failed: BadRequestError: 400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."},"request_id":"req_011CadAyS6saGNppQdgnztR4"}
+    at Function.generate (/opt/render/project/src/node_modules/@anthropic-ai/sdk/src/core/error.ts:75:14)
+    at Anthropic.makeStatusError (/opt/render/project/src/node_modules/@anthropic-ai/sdk/src/client.ts:516:28)
+    at Anthropic.makeRequest (/opt/render/project/src/node_modules/@anthropic-ai/sdk/src/client.ts:752:24)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async callAnthropicForDecision (/opt/render/project/src/src/agents/tradingAgent.ts:739:20)
+    at async runDecisionLLM (/opt/render/project/src/src/agents/tradingAgent.ts:925:37)
+    at async runMarketScan (/opt/render/project/src/src/agents/marketScan.ts:568:17) {
+  status: 400,
+  headers: Headers {
+    date: 'Sat, 02 May 2026 05:15:17 GMT',
+    'content-type': 'application/json',
+    'transfer-encoding': 'chunked',
+    connection: 'keep-alive',
+    'x-should-retry': 'false',
+    'request-id': 'req_011CadAyS6saGNppQdgnztR4',
+    'strict-transport-security': 'max-age=31536000; includeSubDomains; preload',
+    'anthropic-organization-id': 'faf0b835-a80e-46df-9424-f4f45142fac9',
+    traceresponse: '00-77753487306d7dc0875f555412936450-786c1b4a52789240-01',
+    server: 'cloudflare',
+    'x-envoy-upstream-service-time': '30',
+    'content-encoding': 'gzip',
+    vary: 'Accept-Encoding',
+    'cf-cache-status': 'DYNAMIC',
+    'set-cookie': '_cfuvid=rwdjGuDd2p6TcD_icWEbPwtZ4mjmkuK0zzy7ONnlMXE-1777698917.3733308-1.0.1.1-zZp8nyqZMnQGfNyxIGQ3TLnSIN4R85.5Uf3EKBSLH1I; HttpOnly; SameSite=None; Secure; Path=/; Domain=api.anthropic.com',
+    'content-security-policy': "default-src 'none'; frame-ancestors 'none'",
+    'x-robots-tag': 'none',
+    'cf-ray': '9f548c199c3ffda3-SIN'
+  },
+  requestID: 'req_011CadAyS6saGNppQdgnztR4',
+  error: {
+    type: 'error',
+    error: {
+      type: 'invalid_request_error',
+      message: 'Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.'
+    },
+    request_id: 'req_011CadAyS6saGNppQdgnztR4'
+  },
+  type: 'invalid_request_error'
+}
+[Agent Lyra9262] Shared scan failed: BadRequestError: 400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."},"request_id":"req_011CadAyS6saGNppQdgnztR4"}
+    at Function.generate (/opt/render/project/src/node_modules/@anthropic-ai/sdk/src/core/error.ts:75:14)
+    at Anthropic.makeStatusError (/opt/render/project/src/node_modules/@anthropic-ai/sdk/src/client.ts:516:28)
+    at Anthropic.makeRequest (/opt/render/project/src/node_modules/@anthropic-ai/sdk/src/client.ts:752:24)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async callAnthropicForDecision (/opt/render/project/src/src/agents/tradingAgent.ts:739:20)
+    at async runDecisionLLM (/opt/render/project/src/src/agents/tradingAgent.ts:925:37)
+    at async runMarketScan (/opt/render/project/src/src/agents/marketScan.ts:568:17) {
+  status: 400,
+  headers: Headers {
+    date: 'Sat, 02 May 2026 05:15:17 GMT',
+    'content-type': 'application/json',
+    'transfer-encoding': 'chunked',
+    connection: 'keep-alive',
+    'x-should-retry': 'false',
+    'request-id': 'req_011CadAyS6saGNppQdgnztR4',
+    'strict-transport-security': 'max-age=31536000; includeSubDomains; preload',
+    'anthropic-organization-id': 'faf0b835-a80e-46df-9424-f4f45142fac9',
+    traceresponse: '00-77753487306d7dc0875f555412936450-786c1b4a52789240-01',
+    server: 'cloudflare',
+    'x-envoy-upstream-service-time': '30',
+    'content-encoding': 'gzip',
+    vary: 'Accept-Encoding',
+    'cf-cache-status': 'DYNAMIC',
+    'set-cookie': '_cfuvid=rwdjGuDd2p6TcD_icWEbPwtZ4mjmkuK0zzy7ONnlMXE-1777698917.3733308-1.0.1.1-zZp8nyqZMnQGfNyxIGQ3TLnSIN4R85.5Uf3EKBSLH1I; HttpOnly; SameSite=None; Secure; Path=/; Domain=api.anthropic.com',
+    'content-security-policy': "default-src 'none'; frame-ancestors 'none'",
+    'x-robots-tag': 'none',
+    'cf-ray': '9f548c199c3ffda3-SIN'
+  },
+  requestID: 'req_011CadAyS6saGNppQdgnztR4',
+  error: {
+    type: 'error',
+    error: {
+      type: 'invalid_request_error',
+      message: 'Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.'
+    },
+    request_id: 'req_011CadAyS6saGNppQdgnztR4'
+  },
+  type: 'invalid_request_error'
+}
+[Agent Phoenix2848] Shared scan failed: BadRequestError: 400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."},"request_id":"req_011CadAyS6saGNppQdgnztR4"}
+    at Function.generate (/opt/render/project/src/node_modules/@anthropic-ai/sdk/src/core/error.ts:75:14)
+    at Anthropic.makeStatusError (/opt/render/project/src/node_modules/@anthropic-ai/sdk/src/client.ts:516:28)
+    at Anthropic.makeRequest (/opt/render/project/src/node_modules/@anthropic-ai/sdk/src/client.ts:752:24)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async callAnthropicForDecision (/opt/render/project/src/src/agents/tradingAgent.ts:739:20)
+    at async runDecisionLLM (/opt/render/project/src/src/agents/tradingAgent.ts:925:37)
+    at async runMarketScan (/opt/render/project/src/src/agents/marketScan.ts:568:17) {
+  status: 400,
+  headers: Headers {
+    date: 'Sat, 02 May 2026 05:15:17 GMT',
+    'content-type': 'application/json',
+    'transfer-encoding': 'chunked',
+    connection: 'keep-alive',
+    'x-should-retry': 'false',
+    'request-id': 'req_011CadAyS6saGNppQdgnztR4',
+    'strict-transport-security': 'max-age=31536000; includeSubDomains; preload',
+    'anthropic-organization-id': 'faf0b835-a80e-46df-9424-f4f45142fac9',
+    traceresponse: '00-77753487306d7dc0875f555412936450-786c1b4a52789240-01',
+    server: 'cloudflare',
+    'x-envoy-upstream-service-time': '30',
+    'content-encoding': 'gzip',
+    vary: 'Accept-Encoding',
+    'cf-cache-status': 'DYNAMIC',
+    'set-cookie': '_cfuvid=rwdjGuDd2p6TcD_icWEbPwtZ4mjmkuK0zzy7ONnlMXE-1777698917.3733308-1.0.1.1-zZp8nyqZMnQGfNyxIGQ3TLnSIN4R85.5Uf3EKBSLH1I; HttpOnly; SameSite=None; Secure; Path=/; Domain=api.anthropic.com',
+    'content-security-policy': "default-src 'none'; frame-ancestors 'none'",
+    'x-robots-tag': 'none',
+    'cf-ray': '9f548c199c3ffda3-SIN'
+  },
+  requestID: 'req_011CadAyS6saGNppQdgnztR4',
+  error: {
+    type: 'error',
+    error: {
+      type: 'invalid_request_error',
+      message: 'Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.'
+    },
+    request_id: 'req_011CadAyS6saGNppQdgnztR4'
+  },
+  type: 'invalid_request_error'
+}
+[Agent Andromeda5291] Shared scan failed: BadRequestError: 400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."},"request_id":"req_011CadAyS6saGNppQdgnztR4"}
+    at Function.generate (/opt/render/project/src/node_modules/@anthropic-ai/sdk/src/core/error.ts:75:14)
+    at Anthropic.makeStatusError (/opt/render/project/src/node_modules/@anthropic-ai/sdk/src/client.ts:516:28)
+    at Anthropic.makeRequest (/opt/render/project/src/node_modules/@anthropic-ai/sdk/src/client.ts:752:24)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async callAnthropicForDecision (/opt/render/project/src/src/agents/tradingAgent.ts:739:20)
+    at async runDecisionLLM (/opt/render/project/src/src/agents/tradingAgent.ts:925:37)
+    at async runMarketScan (/opt/render/project/src/src/agents/marketScan.ts:568:17) {
+  status: 400,
+  headers: Headers {
+    date: 'Sat, 02 May 2026 05:15:17 GMT',
+    'content-type': 'application/json',
+    'transfer-encoding': 'chunked',
+    connection: 'keep-alive',
+    'x-should-retry': 'false',
+    'request-id': 'req_011CadAyS6saGNppQdgnztR4',
+    'strict-transport-security': 'max-age=31536000; includeSubDomains; preload',
+    'anthropic-organization-id': 'faf0b835-a80e-46df-9424-f4f45142fac9',
+    traceresponse: '00-77753487306d7dc0875f555412936450-786c1b4a52789240-01',
+    server: 'cloudflare',
+    'x-envoy-upstream-service-time': '30',
+    'content-encoding': 'gzip',
+    vary: 'Accept-Encoding',
+    'cf-cache-status': 'DYNAMIC',
+    'set-cookie': '_cfuvid=rwdjGuDd2p6TcD_icWEbPwtZ4mjmkuK0zzy7ONnlMXE-1777698917.3733308-1.0.1.1-zZp8nyqZMnQGfNyxIGQ3TLnSIN4R85.5Uf3EKBSLH1I; HttpOnly; SameSite=None; Secure; Path=/; Domain=api.anthropic.com',
+    'content-security-policy': "default-src 'none'; frame-ancestors 'none'",
+    'x-robots-tag': 'none',
+    'cf-ray': '9f548c199c3ffda3-SIN'
+  },
+  requestID: 'req_011CadAyS6saGNppQdgnztR4',
+  error: {
+    type: 'error',
+    error: {
+      type: 'invalid_request_error',
+      message: 'Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.'
+    },
+    request_id: 'req_011CadAyS6saGNppQdgnztR4'
+  },
+  type: 'invalid_request_error'
+}
+[Agent agvvfttcvvcg] Shared scan failed: BadRequestError: 400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."},"request_id":"req_011CadAyS6saGNppQdgnztR4"}
+    at Function.generate (/opt/render/project/src/node_modules/@anthropic-ai/sdk/src/core/error.ts:75:14)
+    at Anthropic.makeStatusError (/opt/render/project/src/node_modules/@anthropic-ai/sdk/src/client.ts:516:28)
+    at Anthropic.makeRequest (/opt/render/project/src/node_modules/@anthropic-ai/sdk/src/client.ts:752:24)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async callAnthropicForDecision (/opt/render/project/src/src/agents/tradingAgent.ts:739:20)
+    at async runDecisionLLM (/opt/render/project/src/src/agents/tradingAgent.ts:925:37)
+    at async runMarketScan (/opt/render/project/src/src/agents/marketScan.ts:568:17) {
+  status: 400,
+  headers: Headers {
+    date: 'Sat, 02 May 2026 05:15:17 GMT',
+    'content-type': 'application/json',
+    'transfer-encoding': 'chunked',
+    connection: 'keep-alive',
+    'x-should-retry': 'false',
+    'request-id': 'req_011CadAyS6saGNppQdgnztR4',
+    'strict-transport-security': 'max-age=31536000; includeSubDomains; preload',
+    'anthropic-organization-id': 'faf0b835-a80e-46df-9424-f4f45142fac9',
+    traceresponse: '00-77753487306d7dc0875f555412936450-786c1b4a52789240-01',
+    server: 'cloudflare',
+    'x-envoy-upstream-service-time': '30',
+    'content-encoding': 'gzip',
+    vary: 'Accept-Encoding',
+    'cf-cache-status': 'DYNAMIC',
+    'set-cookie': '_cfuvid=rwdjGuDd2p6TcD_icWEbPwtZ4mjmkuK0zzy7ONnlMXE-1777698917.3733308-1.0.1.1-zZp8nyqZMnQGfNyxIGQ3TLnSIN4R85.5Uf3EKBSLH1I; HttpOnly; SameSite=None; Secure; Path=/; Domain=api.anthropic.com',
+    'content-security-policy': "default-src 'none'; frame-ancestors 'none'",
+    'x-robots-tag': 'none',
+    'cf-ray': '9f548c199c3ffda3-SIN'
+  },
+  requestID: 'req_011CadAyS6saGNppQdgnztR4',
+  error: {
+    type: 'error',
+    error: {
+      type: 'invalid_request_error',
+      message: 'Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.'
+    },
+    request_id: 'req_011CadAyS6saGNppQdgnztR4'
+  },
+  type: 'invalid_request_error'
+}
+[Agent Goku] Shared scan failed: BadRequestError: 400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."},"request_id":"req_011CadAyS6saGNppQdgnztR4"}
+    at Function.generate (/opt/render/project/src/node_modules/@anthropic-ai/sdk/src/core/error.ts:75:14)
+    at Anthropic.makeStatusError (/opt/render/project/src/node_modules/@anthropic-ai/sdk/src/client.ts:516:28)
+    at Anthropic.makeRequest (/opt/render/project/src/node_modules/@anthropic-ai/sdk/src/client.ts:752:24)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async callAnthropicForDecision (/opt/render/project/src/src/agents/tradingAgent.ts:739:20)
+    at async runDecisionLLM (/opt/render/project/src/src/agents/tradingAgent.ts:925:37)
+    at async runMarketScan (/opt/render/project/src/src/agents/marketScan.ts:568:17) {
+  status: 400,
+  headers: Headers {
+    date: 'Sat, 02 May 2026 05:15:17 GMT',
+    'content-type': 'application/json',
+    'transfer-encoding': 'chunked',
+    connection: 'keep-alive',
+    'x-should-retry': 'false',
+    'request-id': 'req_011CadAyS6saGNppQdgnztR4',
+    'strict-transport-security': 'max-age=31536000; includeSubDomains; preload',
+    'anthropic-organization-id': 'faf0b835-a80e-46df-9424-f4f45142fac9',
+    traceresponse: '00-77753487306d7dc0875f555412936450-786c1b4a52789240-01',
+    server: 'cloudflare',
+    'x-envoy-upstream-service-time': '30',
+    'content-encoding': 'gzip',
+    vary: 'Accept-Encoding',
+    'cf-cache-status': 'DYNAMIC',
+    'set-cookie': '_cfuvid=rwdjGuDd2p6TcD_icWEbPwtZ4mjmkuK0zzy7ONnlMXE-1777698917.3733308-1.0.1.1-zZp8nyqZMnQGfNyxIGQ3TLnSIN4R85.5Uf3EKBSLH1I; HttpOnly; SameSite=None; Secure; Path=/; Domain=api.anthropic.com',
+Menu
+    'content-security-policy': "default-src 'none'; frame-ancestors 'none'",
+    'x-robots-tag': 'none',
+    'cf-ray': '9f548c199c3ffda3-SIN'
+  },
+  requestID: 'req_011CadAyS6saGNppQdgnztR4',
+  error: {
+    type: 'error',
+    error: {
+      type: 'invalid_request_error',
+      message: 'Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.'
+    },
+    request_id: 'req_011CadAyS6saGNppQdgnztR4'
+  },
+  type: 'invalid_request_error'
+}
