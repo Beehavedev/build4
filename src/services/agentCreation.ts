@@ -174,13 +174,6 @@ export async function createAgentForUser(opts: {
           identityStandard: identity.standard,
           exchange: 'aster',
           enabledVenues: venues,
-          // Phase 4 (2026-05-03): mark new agents as already-expanded so
-          // the boot-time backfill in ensureTables.ts doesn't overwrite
-          // the 4-venue array we just seeded. Without this, the next
-          // server boot's `WHERE venuesAutoExpanded = false` UPDATE
-          // would clobber enabledVenues — which is exactly why Joey
-          // came up with POLY chip OFF despite this code setting it ON.
-          venuesAutoExpanded: true,
           pairs: ['AUTO'],
           maxPositionSize: capital,
           maxDailyLoss,
@@ -224,6 +217,26 @@ export async function createAgentForUser(opts: {
   }
   if (!agent) {
     return { ok: false, reason: 'Could not allocate a unique agent name after 5 tries — try again' }
+  }
+  // Phase 4 (2026-05-03): mark this agent as already-expanded so the
+  // boot-time backfill in ensureTables.ts (which UPDATEs enabledVenues
+  // for any row with venuesAutoExpanded=false) doesn't clobber the
+  // 4-venue array we just seeded above. Done via raw SQL rather than
+  // through prisma.agent.create so the code keeps working even when
+  // the deployed Prisma client predates the schema field (Render's
+  // `prisma generate` runs on every start but there's a brief deploy
+  // window where the running container still has the old client).
+  // Tolerate any error — the column is added by ensureTables on boot
+  // so worst case the backfill runs once more on the next deploy.
+  try {
+    await db.$executeRawUnsafe(
+      `UPDATE "Agent" SET "venuesAutoExpanded" = true WHERE id = $1`,
+      agent.id,
+    )
+  } catch (e: any) {
+    console.warn(
+      `[agentCreation] could not stamp venuesAutoExpanded on ${agent.id}: ${e?.message ?? 'unknown'} — boot backfill will run on next deploy`,
+    )
   }
   try { await opts.onProgress?.({ step: 'agent_created' }) } catch {}
 
