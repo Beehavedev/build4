@@ -2,6 +2,7 @@ import express from 'express'
 import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
+import { Prisma } from '@prisma/client'
 import { db } from './db'
 import { createBot } from './bot'
 import { initRunner } from './agents/runner'
@@ -544,9 +545,99 @@ app.get('/api/agents/:id/positions', requireTgUser, async (req, res) => {
       console.warn(`[API] /agents/${agent.id}/positions reconcile failed: ${e?.message ?? e}`)
     }
 
-    const positions = effectiveOpenTrades.map((t) => {
+    // Phase 4 (2026-05-01) — multi-venue overlay. The original endpoint
+    // only joined Aster live positions; HL/Polymarket/42 positions were
+    // invisible from this panel. Now we also fetch:
+    //   • HL positions via getAccountState (perp, has live mark + PnL)
+    //   • Polymarket positions from db.polymarketPosition (status open/
+    //     placed/matched/filled — entry price only, no live overlay)
+    //   • 42.space positions from db.outcomePosition (status='open' —
+    //     entry price + sizeUsdt, no live overlay)
+    //
+    // Live mark/PnL overlay only exists for the perp venues; prediction
+    // venues just render the entry price the agent paid. The frontend
+    // already gates the Close button to Aster-only via canClose so
+    // surfacing extra venues here is purely additive.
+    let hlPositions: Array<{ symbol: string; side: 'LONG' | 'SHORT'; szi: number; entryPx: number; markPx: number; unrealizedPnl: number; leverage: number }> = []
+    if (user.hyperliquidOnboarded) {
+      try {
+        const wallet = await db.wallet.findFirst({ where: { userId: user.id, isActive: true } })
+        if (wallet) {
+          const { getAccountState } = await import('./services/hyperliquid')
+          const acct = await getAccountState(wallet.address)
+          hlPositions = acct.positions.map((p) => ({
+            symbol: p.coin,
+            side:   p.szi > 0 ? 'LONG' : 'SHORT',
+            szi:    Math.abs(p.szi),
+            entryPx: p.entryPx,
+            // markPx: derive from positionValue/szi when szi != 0; HL doesn't
+            // surface mark directly on positionRisk, but positionValue is
+            // signed notional in USDC.
+            markPx: p.szi !== 0 ? Math.abs(p.positionValue / p.szi) : 0,
+            unrealizedPnl: p.unrealizedPnl,
+            leverage: p.leverage ?? 1,
+          }))
+        }
+      } catch (e: any) {
+        console.warn(`[API] /agents/${agent.id}/positions HL overlay failed: ${e?.message ?? e}`)
+      }
+    }
+
+    const polymarketPositions = await db.polymarketPosition.findMany({
+      where: {
+        agentId: agent.id,
+        status: { in: ['placed', 'matched', 'filled'] },
+      },
+      orderBy: { openedAt: 'desc' },
+    }).catch(() => [])
+
+    const fortyTwoPositions = await db.$queryRawUnsafe<Array<{
+      id: string; marketTitle: string; outcomeLabel: string; usdtIn: number;
+      entryPrice: number; openedAt: Date;
+    }>>(
+      `SELECT id, "marketTitle", "outcomeLabel", "usdtIn", "entryPrice", "openedAt"
+       FROM "OutcomePosition"
+       WHERE "agentId"=$1 AND status='open'
+       ORDER BY "openedAt" DESC`,
+      agent.id,
+    ).catch(() => [])
+
+    // Build the unified positions array.
+    //
+    // Aster rows: existing logic (live overlay from livePositions).
+    // HL rows: live overlay from hlPositions.
+    // Polymarket / 42 rows: no live overlay (no perp-style mark) — show
+    //   entry price as both entry and mark so the UI doesn't render '—',
+    //   and PnL is null (would need a market re-read to compute, deferred).
+    const asterAndHlRows = effectiveOpenTrades.map((t) => {
+      if (t.exchange === 'hyperliquid') {
+        const live = hlPositions.find(
+          (lp) => lp.symbol.toUpperCase() === t.pair.toUpperCase() && lp.side === t.side,
+        )
+        const markPrice = live?.markPx ?? null
+        const dir = t.side === 'LONG' ? 1 : -1
+        const livePnl =
+          live?.unrealizedPnl != null
+            ? live.unrealizedPnl
+            : (markPrice != null ? (markPrice - t.entryPrice) * t.size * dir : null)
+        return {
+          id: t.id,
+          pair: t.pair,
+          side: t.side,
+          size: t.size,
+          leverage: t.leverage,
+          entryPrice: t.entryPrice,
+          exchange: t.exchange,
+          openedAt: t.openedAt,
+          markPrice,
+          unrealizedPnl: livePnl,
+          liveOnVenue: !!live,
+        }
+      }
+      // Aster (default branch — keeps the original behavior intact for
+      // legacy rows where exchange is null/'aster').
       const live = livePositions.find(
-        (lp) => lp.symbol.toUpperCase() === t.pair.toUpperCase() && lp.side === t.side
+        (lp) => lp.symbol.toUpperCase() === t.pair.toUpperCase() && lp.side === t.side,
       )
       const markPrice = live?.markPrice ?? null
       // Prefer Aster's authoritative `unrealizedPnl` when present — it
@@ -573,6 +664,37 @@ app.get('/api/agents/:id/positions', requireTgUser, async (req, res) => {
         liveOnVenue: !!live,
       }
     })
+
+    const polymarketRows = polymarketPositions.map((p) => ({
+      id: p.id,
+      // pair: short market title so the UI's pair cell is informative.
+      pair: (p.marketTitle ?? 'Polymarket').slice(0, 32),
+      side: p.outcomeLabel ?? p.side,
+      size: p.sizeUsdc,
+      leverage: 1,
+      entryPrice: p.entryPrice,
+      exchange: 'polymarket',
+      openedAt: p.openedAt,
+      markPrice: null,
+      unrealizedPnl: null,
+      liveOnVenue: true,
+    }))
+
+    const fortyTwoRows = fortyTwoPositions.map((p) => ({
+      id: p.id,
+      pair: (p.marketTitle ?? '42.space').slice(0, 32),
+      side: p.outcomeLabel,
+      size: p.usdtIn,
+      leverage: 1,
+      entryPrice: p.entryPrice,
+      exchange: 'fortytwo',
+      openedAt: p.openedAt,
+      markPrice: null,
+      unrealizedPnl: null,
+      liveOnVenue: true,
+    }))
+
+    const positions = [...asterAndHlRows, ...polymarketRows, ...fortyTwoRows]
 
     res.json({ positions })
   } catch (err: any) {
@@ -2810,6 +2932,20 @@ app.get('/api/hyperliquid/trades', requireTgUser, async (req, res) => {
         const trades = [...entry.data].sort((a, b) => b.time - a.time).slice(0, limit)
         return res.json({ trades, cached: true, stale: true })
       }
+      // 4. No usable cache (cold open). Returning a 5xx here is what
+      //    triggered the user-visible "Could not load fills: 429 Too
+      //    Many Requests - null" red banner on first paint, because the
+      //    client's grace-period suppression only fires once it has had
+      //    at least one successful read. Return 200 with an empty list
+      //    plus an explicit `rateLimited` flag so the UI can render a
+      //    muted "temporarily unavailable" hint instead of an alarming
+      //    error banner — the next 20s poll usually succeeds.
+      const status = hlErr?.status ?? hlErr?.response?.status
+      const msg = String(hlErr?.message ?? '')
+      const isRateLimited = status === 429 || /429|too many requests|rate.?limit/i.test(msg)
+      if (isRateLimited) {
+        return res.json({ trades: [], rateLimited: true })
+      }
       throw hlErr
     }
   } catch (err: any) {
@@ -3164,12 +3300,29 @@ app.post('/api/me/agents/onboard', requireTgUser, async (req, res) => {
     if (token && user.telegramId && !user.botBlocked) {
       const miniBase = process.env.MINIAPP_URL
         || `https://${process.env.REPLIT_DOMAINS?.split(',')[0] || 'build4-1.onrender.com'}/app`
+      // List the venues this agent will actually scan. agentCreation seeds
+      // all 4 venues into enabledVenues by default, so the message should
+      // say so — saying "Trading on Aster" was lying about scope and made
+      // the user think HL/42/POLY were OFF until manually flipped.
+      const enabledVenuesLive: string[] = Array.isArray((result.agent as any)?.enabledVenues)
+        ? (result.agent as any).enabledVenues
+        : ['aster', 'hyperliquid', 'fortytwo', 'polymarket']
+      const venueNames = enabledVenuesLive
+        .map((v) => v === 'aster' ? 'Aster'
+                  : v === 'hyperliquid' ? 'Hyperliquid'
+                  : v === 'fortytwo' ? '42.space'
+                  : v === 'polymarket' ? 'Polymarket' : v)
+      const venueList = venueNames.length > 1
+        ? venueNames.slice(0, -1).join(', ') + ' & ' + venueNames[venueNames.length - 1]
+        : (venueNames[0] ?? 'Aster')
       tgSendMessage(
         token,
         String(user.telegramId),
         `🚀 ${result.agent.name} is LIVE.\n\n` +
-        `Trading on Aster with the ${preset} preset and $${capital.toFixed(2)} per position. ` +
-        `First scan kicks off in ~60 seconds — open BUILD4 to watch it work.`,
+        `Scanning ${venueList} with the ${preset} preset and $${capital.toFixed(2)} per position. ` +
+        `First scan kicks off in ~60 seconds — open BUILD4 to watch it work.\n\n` +
+        `Note: Polymarket needs a one-time Safe setup before it can place orders. ` +
+        `You'll see SKIP rows in the brain feed until you tap Predict → Setup.`,
         null,
         { text: '📱 Open BUILD4', url: miniBase },
       ).catch((e) => console.warn('[/api/me/agents/onboard] DM failed (non-fatal):', e?.message ?? e))
@@ -3295,8 +3448,10 @@ app.post('/api/agents/:id/toggle', requireTgUser, async (req, res) => {
 // code path that still gates on isActive (and for the chat bot's
 // existing "agent is active" copy).
 // Phase 4 (2026-05-01) — 'polymarket' added so per-agent chip toggles work for
-// the 4th venue. The polymarket runner reads enabledVenues; we also mirror
-// to the legacy polymarketEnabled boolean below for back-compat.
+// the 4th venue. The toggle endpoint flips Agent.enabledVenues; the polymarket
+// runner loop honors that array (in addition to the legacy polymarketEnabled
+// boolean) so chip on/off translates directly to "this agent trades Polymarket
+// or it doesn't".
 const ALLOWED_VENUE_TOGGLES = new Set(['aster', 'hyperliquid', 'fortytwo', 'polymarket'])
 app.post('/api/agents/:id/venues/:venue/toggle', requireTgUser, async (req, res) => {
   try {
@@ -3331,12 +3486,16 @@ app.post('/api/agents/:id/venues/:venue/toggle', requireTgUser, async (req, res)
     // empty → inactive. Don't touch isPaused — that's reserved for
     // automated stops (daily-loss tripwires) and the user shouldn't be
     // able to override one of those by toggling a venue chip.
-    // Phase 4 (2026-05-01) — when the chip is for polymarket, also flip the
-    // legacy `polymarketEnabled` boolean that the polymarket runner ALSO
-    // honors via an OR with enabledVenues. Without this mirror, turning a
-    // polymarket chip OFF would leave `polymarketEnabled=true` set and the
-    // runner would still tick the agent.
-    const data: Record<string, unknown> = {
+    //
+    // Phase 4 (2026-05-01): Polymarket has its OWN legacy boolean
+    // (`polymarketEnabled`) that the polymarket runner ALSO honors via an
+    // OR clause for backwards compatibility with rows pre-dating
+    // `enabledVenues`. If we don't sync that boolean here, toggling the
+    // chip OFF would leave `polymarketEnabled=true` set at agent-creation
+    // time and the runner would still tick the agent — making the chip a
+    // no-op. Mirror the chip state into the boolean so the chip is the
+    // single canonical control surface.
+    const data: Prisma.AgentUpdateInput = {
       enabledVenues: next,
       isActive:      next.length > 0,
     }
@@ -5298,7 +5457,6 @@ app.get('/api/me/venue-permissions', requireTgUser, async (req, res) => {
         asterAgentTradingEnabled: true,
         hyperliquidAgentTradingEnabled: true,
         fortyTwoLiveTrade: true,
-        // Phase 4 (2026-05-01) — 4th platform toggle.
         polymarketAgentTradingEnabled: true,
         asterOnboarded: true,
         hyperliquidOnboarded: true,
@@ -5306,11 +5464,18 @@ app.get('/api/me/venue-permissions', requireTgUser, async (req, res) => {
     })
     if (!u) return res.status(404).json({ ok: false, error: 'user not found' })
     // Polymarket "onboarded" = the user has a deployed Safe with API
-    // creds registered. Derived from PolymarketCreds rather than a User
-    // flag so the state is always truthful. .catch returns null on any
-    // DB hiccup so the whole permissions endpoint never 500s.
+    // creds registered. We derive it from PolymarketCreds rather than
+    // a User flag so the state is always truthful (a user who deployed
+    // their Safe in another session shows as onboarded immediately).
+    // safeAddress can be null on legacy rows where setup failed midway,
+    // so we require it explicitly to avoid lighting up a non-functional
+    // "ready" state. .catch returns false on any DB hiccup so the whole
+    // permissions endpoint never 500s due to a single missing table.
     const polyCreds = await db.polymarketCreds
-      .findUnique({ where: { userId: user.id }, select: { safeAddress: true } })
+      .findUnique({
+        where: { userId: user.id },
+        select: { safeAddress: true },
+      })
       .catch(() => null)
     const polymarketOnboarded = !!polyCreds?.safeAddress
     res.json({

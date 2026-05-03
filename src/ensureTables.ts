@@ -132,8 +132,17 @@ export async function ensureNewTables() {
   // agent (idempotent; never overrides a user who later prunes a
   // venue via the chip toggles in Agent Studio).
   await run(`ALTER TABLE "Agent" ADD COLUMN IF NOT EXISTS "venuesAutoExpanded" BOOLEAN DEFAULT false`)
+  // Phase 4 (2026-05-03): include 'polymarket' in the auto-expansion so
+  // every agent (existing AND brand-new — agentCreation now stamps
+  // venuesAutoExpanded=true to opt out of this UPDATE entirely, but
+  // legacy rows still flow through here) lights up all 4 venue chips by
+  // default. Previously this set ['aster','hyperliquid','fortytwo'] and
+  // silently dropped 'polymarket' from the array — even when
+  // agentCreation seeded it correctly — because the UPDATE clobbered
+  // the column on the next boot. That's why new agents (e.g. Joey) were
+  // showing the POLY chip OFF despite the creation code setting it ON.
   await run(`UPDATE "Agent"
-             SET "enabledVenues" = ARRAY['aster', 'hyperliquid', 'fortytwo']::TEXT[],
+             SET "enabledVenues" = ARRAY['aster', 'hyperliquid', 'fortytwo', 'polymarket']::TEXT[],
                  "venuesAutoExpanded" = true
              WHERE COALESCE("venuesAutoExpanded", false) = false`)
   await run(`CREATE UNIQUE INDEX IF NOT EXISTS "Agent_walletAddress_key" ON "Agent"("walletAddress") WHERE "walletAddress" IS NOT NULL`)
@@ -295,8 +304,9 @@ export async function ensureNewTables() {
   // tracked migration so it only runs once per DB, even across reboots.
   await run(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "fortyTwoLiveTrade" BOOLEAN NOT NULL DEFAULT true`)
   await run(`ALTER TABLE "User" ALTER COLUMN "fortyTwoLiveTrade" SET DEFAULT true`)
-  // Phase 4 (2026-05-01) — per-user pause flag for Polymarket. Mirrors
-  // the aster/HL/42 pattern. See prisma/schema.prisma for full rationale.
+  // Phase 4 (2026-05-01) — Polymarket per-user pause flag. Default true
+  // so existing users opt-in. Mirrors aster/hyperliquidAgentTradingEnabled
+  // semantics; consumed by tickAllPolymarketAgents.
   await run(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "polymarketAgentTradingEnabled" BOOLEAN NOT NULL DEFAULT true`)
   await run(`ALTER TABLE "User" ALTER COLUMN "polymarketAgentTradingEnabled" SET DEFAULT true`)
   // ─── Multi-provider swarm opt-in (Task #18) ───
@@ -441,6 +451,14 @@ export async function ensureNewTables() {
   await run(`ALTER TABLE "Agent" ADD COLUMN IF NOT EXISTS "polymarketMaxSizeUsdc" DOUBLE PRECISION NOT NULL DEFAULT 5`)
   await run(`ALTER TABLE "Agent" ADD COLUMN IF NOT EXISTS "polymarketEdgeThreshold" DOUBLE PRECISION NOT NULL DEFAULT 0.10`)
   await run(`ALTER TABLE "Agent" ADD COLUMN IF NOT EXISTS "lastPolymarketTickAt" TIMESTAMP(3)`)
+
+  // Phase 4 (2026-05-01) — generalized prediction-market risk fields shared
+  // by the 42.space sidecar AND the Polymarket loop. Nullable so the readers
+  // can fall back to the venue-specific legacy fields (polymarketEdgeThreshold)
+  // for any row that escapes the default. See Agent model doc-comment for
+  // rationale on the 5pp / 14d defaults.
+  await run(`ALTER TABLE "Agent" ADD COLUMN IF NOT EXISTS "predictionEdgeThreshold" DOUBLE PRECISION DEFAULT 0.05`)
+  await run(`ALTER TABLE "Agent" ADD COLUMN IF NOT EXISTS "predictionMaxDurationDays" DOUBLE PRECISION DEFAULT 14`)
 
   await run(`CREATE TABLE IF NOT EXISTS "PolymarketCreds" (
     "id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,

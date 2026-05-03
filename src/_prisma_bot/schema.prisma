@@ -1,0 +1,447 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                String    @id @default(cuid())
+  telegramId        BigInt    @unique
+  username          String?
+  firstName         String?
+  referredBy        String?
+  referralCode      String    @unique @default(cuid())
+  subscriptionTier  String    @default("free")
+  subscriptionExpiry DateTime?
+  totalFeesSpent    Float     @default(0)
+  b4Balance         Float     @default(0)
+  // Aster exchange credentials (per-user, encrypted)
+  asterApiKey       String?
+  asterApiSecret    String?
+  asterAgentAddress    String?   // agent/signer address approved for this user (UNIQUE per user)
+  asterAgentEncryptedPK String?  // AES-encrypted private key for above agent (server-side trade signing)
+  asterOnboarded    Boolean   @default(false)
+  // ── Hyperliquid (added 2026-04-23) ────────────────────────────────────────
+  // Same wallet address as the user's BSC wallet (HL is EVM, addresses derive
+  // from the same secp256k1 PK). Agent is a separate keypair the user
+  // authorises via approveAgent so the server can sign orders without holding
+  // the master PK in memory. Mirrors the asterAgent* pattern above.
+  hyperliquidAgentAddress     String?
+  hyperliquidAgentEncryptedPK String?
+  hyperliquidOnboarded        Boolean @default(false)
+  // True once we've observed HL reject a usdClassTransfer with
+  // "Action disabled when unified account is active". In unified mode the
+  // user's spot and perps share margin so spot↔perps transfers are both
+  // forbidden and unnecessary. The mini-app uses this to suppress the
+  // move-to-perps / move-to-spot CTAs and to show the unified balance
+  // (spot + perps) as the trading equity. Detected lazily — set on the
+  // first failed transfer attempt; never cleared automatically (HL doesn't
+  // let users leave unified mode mid-stream so once true, always true).
+  hyperliquidUnified          Boolean @default(false)
+  // ── Per-venue agent-trading allow flags (added 2026-04-27) ───────────────
+  // User-controlled "my agents are allowed to place trades on this venue".
+  // Independent from the *Onboarded flags (which mean "user has connected
+  // the venue") — a user can be onboarded on Hyperliquid but choose to
+  // pause all HL agent activity without disconnecting. Default true so
+  // existing users keep their current behaviour after the migration.
+  // Consumed by ACTIVE_AGENTS_FILTER's per-row gate in src/agents/runner.ts.
+  asterAgentTradingEnabled       Boolean @default(true)
+  hyperliquidAgentTradingEnabled Boolean @default(true)
+  // Phase 4 (2026-05-01) — per-user pause flag for Polymarket. Mirrors
+  // the aster/HL pattern so the "ALLOWED TRADING PLATFORMS" toggle in
+  // Agent Studio has a 4th, fully-functional row. Default true so
+  // existing users opt-in by default; the per-agent gate (Safe deployed
+  // + USDC funded, enforced inside polymarketAgent.ts) means turning
+  // this on for un-onboarded users is harmless. Honored by the
+  // tickAllPolymarketAgents loop; runAllAgents() ignores it because
+  // polymarket dispatch is a separate runner loop.
+  polymarketAgentTradingEnabled  Boolean @default(true)
+  pinHash           String?   // PBKDF2 hash of user's wallet PIN (optional security layer)
+  pinSalt           String?
+  // 42.space prediction-market live trading opt-in. Default true — all
+  // 42.space trades execute on-chain on BSC. Read by isUserLiveOptedIn()
+  // in src/services/fortyTwoExecutor.ts and the /api/me/predictions-mode
+  // endpoint. MUST stay in sync with prisma/schema.prisma — Render's build
+  // runs `prisma db push --schema=src/prisma/schema.prisma`, so any field
+  // missing here never reaches the production DB and every read of it
+  // throws `column "fortyTwoLiveTrade" does not exist`.
+  fortyTwoLiveTrade Boolean   @default(true)
+  // Multi-provider swarm decision-making opt-in (Task #18). Default false →
+  // single-provider Anthropic. When true, every trading tick is run across
+  // all configured providers and the quorum verdict wins.
+  swarmEnabled      Boolean   @default(false)
+  // Set true when Telegram returns 403 (user blocked bot or deactivated chat).
+  // Broadcast endpoint skips these so we don't burn rate-limit budget on
+  // unreachable chats.
+  botBlocked        Boolean   @default(false)
+  // ── $B4 holder linking (Task #6) ──────────────────────────────────────
+  // External wallet the user proved ownership of via signed message; the
+  // cached balance is read from the BSC $B4 contract at link/refresh time.
+  // Nullable because a user is unlinked by default.
+  linkedB4WalletAddress String?
+  linkedB4Balance       Float?
+  linkedB4At            DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @default(now()) @updatedAt
+
+  wallets           Wallet[]
+  agents            Agent[]
+  trades            Trade[]
+  userQuests        UserQuest[]
+  copyFollowing     CopyFollow[] @relation("follower")
+  copyCopied        CopyFollow[] @relation("copied")
+  portfolio         Portfolio?
+  agentLogs         AgentLog[]
+}
+
+model Wallet {
+  id           String   @id @default(cuid())
+  userId       String
+  chain        String
+  address      String
+  encryptedPK  String
+  label        String   @default("Wallet 1")
+  isActive     Boolean  @default(false)
+  createdAt    DateTime @default(now())
+
+  user         User     @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+}
+
+// (ERC-8004 fields appended below in Agent model)
+model Agent {
+  id              String    @id @default(cuid())
+  userId          String
+  name            String
+  description     String?
+  isActive        Boolean   @default(false)
+  isPaused        Boolean   @default(false)
+
+  exchange        String    @default("mock")
+  // See prisma/schema.prisma for the full doc-comment. Per-agent venue
+  // allow-list driven by the new mini-app chip toggles. Backfilled at
+  // boot to [exchange] so existing agents keep behaving identically.
+  enabledVenues   String[]  @default([])
+  // One-shot flag set by agentCreation (true) so the boot-time
+  // backfill in ensureTables.ts skips this row. Existing rows
+  // (default false) get auto-expanded once to all 4 venues.
+  venuesAutoExpanded Boolean @default(false)
+  pairs           String[]  @default(["BTC/USDT"])
+  timeframe       String    @default("15m")
+  maxPositionSize Float     @default(100)
+  maxDailyLoss    Float     @default(50)
+  maxLeverage     Float     @default(5)
+  stopLossPct     Float     @default(2)
+  takeProfitPct   Float     @default(4)
+
+  memorySnapshot  Json?
+  totalPnl        Float     @default(0)
+  totalTrades     Int       @default(0)
+  winRate         Float     @default(0)
+
+  isListed        Boolean   @default(false)
+  listingPrice    Float?
+  subscriberCount Int       @default(0)
+
+  // On-chain identity — every BUILD4 agent lives in its own wallet
+  walletAddress   String?   @unique
+  encryptedPK     String?
+  onchainTxHash   String?
+  onchainChain    String?   @default("BSC")
+
+  // ERC-8004 Trustless AI Agents Standard fields
+  learningModel    String?
+  learningRoot     String?
+  metadataUri      String?
+  identityStandard String?  @default("ERC-8004")
+
+  // ERC-8004 IdentityRegistry — mandatory on-chain registration (BSC)
+  erc8004AgentId   String?
+  erc8004TxHash    String?
+  erc8004FundTxHash String?
+  erc8004Verified  Boolean  @default(false)
+
+  // BAP-578 NFA NFT — optional 0.015 BNB upgrade via the official registry
+  bap578TokenId    String?
+  bap578TxHash     String?
+  bap578Verified   Boolean  @default(false)
+
+  // AUTO-mode scanner state — set after each tick when pairs:['AUTO']
+  currentPair      String?
+  lastScanScore    Int?
+
+  // Polymarket Phase 3 — see prisma/schema.prisma for the full doc-comment.
+  polymarketEnabled       Boolean  @default(false)
+  polymarketMaxSizeUsdc   Float    @default(5)
+  polymarketEdgeThreshold Float    @default(0.10)
+
+  // Phase 4 (2026-05-01) — generalized prediction-market risk fields.
+  // Apply to BOTH 42.space (perp-LLM sidecar) and Polymarket (dedicated
+  // agent loop). Replace the venue-specific polymarketEdgeThreshold over
+  // time; readers fall back to polymarketEdgeThreshold when null/0 so
+  // legacy rows stay safe during the migration window.
+  //
+  // predictionEdgeThreshold: minimum gap between the agent's subjective
+  // probability and the market's implied probability before placing a
+  // bet. 0.05 = 5 percentage points. Tuned softer than the legacy 10pp
+  // default because 10pp mispricings are rare and were leading to near-
+  // zero trade velocity in Phase 3 testing.
+  //
+  // predictionMaxDurationDays: skip any market whose endDate is more
+  // than N days out. Prediction-market capital is locked until
+  // resolution (early-exit liquidity is unreliable on small books), so
+  // this is the agent's "how long am I willing to lock USDT/USDC for"
+  // knob. 14 days = roughly biweekly capital recycling.
+  predictionEdgeThreshold    Float?  @default(0.05)
+  predictionMaxDurationDays  Float?  @default(14)
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @default(now()) @updatedAt
+  lastTickAt      DateTime?
+  lastPolymarketTickAt DateTime?
+
+  user            User      @relation(fields: [userId], references: [id])
+  trades          Trade[]
+  memories        AgentMemory[]
+  logs            AgentLog[]
+
+  @@index([userId])
+  @@index([isActive])
+}
+
+model AgentMemory {
+  id        String   @id @default(cuid())
+  agentId   String
+  type      String
+  content   String
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  agent     Agent    @relation(fields: [agentId], references: [id])
+
+  @@index([agentId])
+  @@index([type])
+}
+
+model Trade {
+  id          String    @id @default(cuid())
+  userId      String
+  agentId     String?
+
+  exchange    String
+  pair        String
+  side        String
+  entryPrice  Float
+  exitPrice   Float?
+  size        Float
+  leverage    Float     @default(1)
+  pnl         Float?
+  pnlPct      Float?
+
+  status      String    @default("open")
+  txHash      String?
+
+  aiReasoning String?
+  signalsUsed Json?
+
+  openedAt    DateTime  @default(now())
+  closedAt    DateTime?
+
+  user        User      @relation(fields: [userId], references: [id])
+  agent       Agent?    @relation(fields: [agentId], references: [id])
+
+  @@index([userId])
+  @@index([agentId])
+  @@index([status])
+}
+
+model CopyFollow {
+  id          String   @id @default(cuid())
+  followerId  String
+  copiedId    String
+  allocation  Float    @default(100)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  follower    User     @relation("follower", fields: [followerId], references: [id])
+  copied      User     @relation("copied", fields: [copiedId], references: [id])
+
+  @@unique([followerId, copiedId])
+}
+
+model Portfolio {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  totalValue      Float    @default(0)
+  totalPnl        Float    @default(0)
+  totalPnlPct     Float    @default(0)
+  dayPnl          Float    @default(0)
+  verifiedOnChain Boolean  @default(false)
+  lastUpdated     DateTime @default(now())
+
+  user            User     @relation(fields: [userId], references: [id])
+}
+
+model Quest {
+  id          String      @id @default(cuid())
+  title       String
+  description String
+  reward      Float
+  type        String
+  requirement Json
+  isActive    Boolean     @default(true)
+
+  userQuests  UserQuest[]
+}
+
+model UserQuest {
+  id        String    @id @default(cuid())
+  userId    String
+  questId   String
+  progress  Int       @default(0)
+  completed Boolean   @default(false)
+  claimedAt DateTime?
+
+  user      User      @relation(fields: [userId], references: [id])
+  quest     Quest     @relation(fields: [questId], references: [id])
+
+  @@unique([userId, questId])
+}
+
+model AgentLog {
+  id              String   @id @default(cuid())
+  agentId         String
+  userId          String
+  action          String
+  rawResponse     String?
+  parsedAction    String?
+  executionResult String?
+  error           String?
+  pair            String?
+  price           Float?
+  reason          String?
+  adx             Float?
+  rsi             Float?
+  score           Int?
+  regime          String?
+  // Per-tick swarm telemetry (Task #18). Shape per element:
+  // { provider, model, action, predictionTrade?, reasoning, latencyMs, inputTokens, outputTokens, tokensUsed }
+  // (inputTokens/outputTokens added in Task #24; older rows only carry tokensUsed.)
+  // Null when the user is on the single-provider path.
+  providers       Json?
+  // Venue tag for the brain feed: 'hyperliquid' | 'aster' | '42' |
+  // 'polymarket'. Older rows are NULL — the UI infers from agent.exchange.
+  exchange        String?
+  createdAt       DateTime @default(now())
+
+  agent           Agent    @relation(fields: [agentId], references: [id])
+  user            User     @relation(fields: [userId], references: [id])
+
+  @@index([agentId])
+  @@index([userId, createdAt])
+}
+
+// 42.space prediction-market positions held by users (live + paper).
+// CRITICAL: must stay defined here so `prisma db push --accept-data-loss`
+// (in render.yaml buildCommand) does NOT drop the table on every deploy.
+// We had a months-long bug where this model only existed in the legacy
+// /prisma/schema.prisma and the buildCommand uses /src/prisma/schema.prisma,
+// so each Render deploy treated the live OutcomePosition table as
+// "extra" and silently dropped it — wiping every live & paper position.
+model OutcomePosition {
+  id              String    @id @default(cuid())
+  userId          String
+  agentId         String?
+
+  marketAddress   String
+  marketTitle     String
+  tokenId         Int
+  outcomeLabel    String
+
+  usdtIn          Float
+  entryPrice      Float
+  exitPrice       Float?
+  payoutUsdt      Float?
+  pnl             Float?
+
+  // Real outcome-token amount received at open (read from chain in live mode).
+  // Null in paper-trade mode → callers fall back to usdtIn / entryPrice.
+  outcomeTokenAmount Float?
+
+  status          String    @default("open") // open | closed | resolved_win | resolved_loss
+  paperTrade      Boolean   @default(true)
+  txHashOpen      String?
+  txHashClose     String?
+  reasoning       String?
+  // Per-provider swarm telemetry captured at open (see ProviderCostRate).
+  providers       Json?
+
+  openedAt        DateTime  @default(now())
+  closedAt        DateTime?
+
+  @@index([userId])
+  @@index([agentId])
+  @@index([status])
+  @@index([marketAddress])
+}
+
+// Polymarket — Phase 2/3. See prisma/schema.prisma for full doc comments.
+model PolymarketCreds {
+  id                  String   @id @default(cuid())
+  userId              String   @unique
+  walletAddress       String
+  safeAddress         String?
+  safeDeployedAt      DateTime?
+  apiKey              String
+  encryptedApiSecret  String
+  encryptedPassphrase String
+  allowanceTxHash     String?
+  allowanceVerifiedAt DateTime?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @default(now()) @updatedAt
+
+  @@index([walletAddress])
+  @@index([safeAddress])
+}
+
+model PolymarketPosition {
+  id              String    @id @default(cuid())
+  userId          String
+  agentId         String?
+
+  conditionId     String
+  tokenId         String
+  marketSlug      String?
+  marketTitle     String
+  outcomeLabel    String
+  side            String
+
+  sizeUsdc        Float
+  entryPrice      Float
+  fillSize        Float?
+  exitPrice       Float?
+  payoutUsdc      Float?
+  pnl             Float?
+
+  orderHash       String?
+  orderId         String?
+  status          String    @default("placed")
+  errorMessage    String?
+
+  builderCode     String?
+  reasoning       String?
+  providers       Json?
+
+  openedAt        DateTime  @default(now())
+  closedAt        DateTime?
+
+  @@index([userId])
+  @@index([agentId])
+  @@index([status])
+  @@index([conditionId])
+}

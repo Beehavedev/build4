@@ -148,6 +148,12 @@ export default function Hyperliquid() {
   // PnL on close fills without leaving for app.hyperliquid.xyz.
   const [fills, setFills]       = useState<HlFill[]>([])
   const [fillsErr, setFillsErr] = useState<string | null>(null)
+  // Server returns `rateLimited:true` (HTTP 200, empty trades) when HL's
+  // /info endpoint is throttling Render's shared egress IP and we have
+  // no cached fills to fall back on. Render this as a muted "temporarily
+  // unavailable" line rather than the alarming red error banner — the
+  // next 20s poll almost always recovers.
+  const [fillsRateLimited, setFillsRateLimited] = useState(false)
   // Tracks the last time loadFills() succeeded. Used by the error-banner
   // grace period below: HL's /info endpoint 429s intermittently on
   // Render's shared egress IP and a single failed poll should NOT show a
@@ -555,9 +561,19 @@ export default function Hyperliquid() {
 
   const loadFills = async () => {
     try {
-      const r = await apiFetch<{ trades: HlFill[] }>('/api/hyperliquid/trades?limit=10')
+      const r = await apiFetch<{ trades: HlFill[]; rateLimited?: boolean }>('/api/hyperliquid/trades?limit=10')
+      // Server signals "HL throttled us, no cache to fall back on" with
+      // `rateLimited:true` + empty trades. Don't overwrite a previously
+      // good fills list with the empty array — keep showing what we have
+      // and just flag the muted hint. Next poll usually recovers.
+      if (r.rateLimited && (!r.trades || r.trades.length === 0)) {
+        setFillsRateLimited(true)
+        setFillsErr(null)
+        return
+      }
       setFills(r.trades)
       setFillsErr(null)
+      setFillsRateLimited(false)
       lastFillsOkAtRef.current = Date.now()
     } catch (e: any) {
       // Distinguish "couldn't reach HL" from "no fills yet" — silent
@@ -578,6 +594,18 @@ export default function Hyperliquid() {
         // Swallow silently; the panel stays as-is. The next successful
         // poll will clear `fillsErr` anyway, and if the failure persists
         // past the grace window the banner will fire normally.
+        return
+      }
+      // Cold-start 429: lastFillsOkAtRef is still 0 and fills is empty,
+      // so without a freebie the user gets a red "429 Too Many Requests
+      // - null" banner on first paint every time HL's shared egress IP
+      // is throttled. Treat any 429-shaped error on first paint as the
+      // muted "temporarily unavailable" state — the next 20s poll
+      // almost always succeeds. This is the recurring complaint.
+      const isRateLimited = /429|too many requests|rate.?limit/i.test(msg)
+      if (isRateLimited) {
+        setFillsRateLimited(true)
+        setFillsErr(null)
         return
       }
       setFillsErr(msg)
@@ -1318,6 +1346,13 @@ export default function Hyperliquid() {
           {fillsErr ? (
             <div style={{ fontSize: 13, color: '#ef4444' }} data-testid="text-hl-fills-error">
               Could not load fills: {fillsErr}
+            </div>
+          ) : fills.length === 0 && fillsRateLimited ? (
+            // Rate-limited cold open: show a calm muted hint instead of
+            // either the red error banner or the misleading "No fills yet"
+            // (which falsely implies the user has never traded).
+            <div style={{ fontSize: 13, color: '#64748b' }} data-testid="text-hl-fills-rate-limited">
+              Recent fills temporarily unavailable — refreshing…
             </div>
           ) : fills.length === 0 ? (
             <div style={{ fontSize: 13, color: '#64748b' }} data-testid="text-hl-no-fills">
