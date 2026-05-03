@@ -3300,12 +3300,29 @@ app.post('/api/me/agents/onboard', requireTgUser, async (req, res) => {
     if (token && user.telegramId && !user.botBlocked) {
       const miniBase = process.env.MINIAPP_URL
         || `https://${process.env.REPLIT_DOMAINS?.split(',')[0] || 'build4-1.onrender.com'}/app`
+      // List the venues this agent will actually scan. agentCreation seeds
+      // all 4 venues into enabledVenues by default, so the message should
+      // say so — saying "Trading on Aster" was lying about scope and made
+      // the user think HL/42/POLY were OFF until manually flipped.
+      const enabledVenuesLive: string[] = Array.isArray((result.agent as any)?.enabledVenues)
+        ? (result.agent as any).enabledVenues
+        : ['aster', 'hyperliquid', 'fortytwo', 'polymarket']
+      const venueNames = enabledVenuesLive
+        .map((v) => v === 'aster' ? 'Aster'
+                  : v === 'hyperliquid' ? 'Hyperliquid'
+                  : v === 'fortytwo' ? '42.space'
+                  : v === 'polymarket' ? 'Polymarket' : v)
+      const venueList = venueNames.length > 1
+        ? venueNames.slice(0, -1).join(', ') + ' & ' + venueNames[venueNames.length - 1]
+        : (venueNames[0] ?? 'Aster')
       tgSendMessage(
         token,
         String(user.telegramId),
         `🚀 ${result.agent.name} is LIVE.\n\n` +
-        `Trading on Aster with the ${preset} preset and $${capital.toFixed(2)} per position. ` +
-        `First scan kicks off in ~60 seconds — open BUILD4 to watch it work.`,
+        `Scanning ${venueList} with the ${preset} preset and $${capital.toFixed(2)} per position. ` +
+        `First scan kicks off in ~60 seconds — open BUILD4 to watch it work.\n\n` +
+        `Note: Polymarket needs a one-time Safe setup before it can place orders. ` +
+        `You'll see SKIP rows in the brain feed until you tap Predict → Setup.`,
         null,
         { text: '📱 Open BUILD4', url: miniBase },
       ).catch((e) => console.warn('[/api/me/agents/onboard] DM failed (non-fatal):', e?.message ?? e))

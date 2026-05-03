@@ -596,6 +596,18 @@ export default function Hyperliquid() {
         // past the grace window the banner will fire normally.
         return
       }
+      // Cold-start 429: lastFillsOkAtRef is still 0 and fills is empty,
+      // so without a freebie the user gets a red "429 Too Many Requests
+      // - null" banner on first paint every time HL's shared egress IP
+      // is throttled. Treat any 429-shaped error on first paint as the
+      // muted "temporarily unavailable" state — the next 20s poll
+      // almost always succeeds. This is the recurring complaint.
+      const isRateLimited = /429|too many requests|rate.?limit/i.test(msg)
+      if (isRateLimited) {
+        setFillsRateLimited(true)
+        setFillsErr(null)
+        return
+      }
       setFillsErr(msg)
     }
   }

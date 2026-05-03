@@ -127,6 +127,10 @@ model Agent {
   // allow-list driven by the new mini-app chip toggles. Backfilled at
   // boot to [exchange] so existing agents keep behaving identically.
   enabledVenues   String[]  @default([])
+  // One-shot flag set by agentCreation (true) so the boot-time
+  // backfill in ensureTables.ts skips this row. Existing rows
+  // (default false) get auto-expanded once to all 4 venues.
+  venuesAutoExpanded Boolean @default(false)
   pairs           String[]  @default(["BTC/USDT"])
   timeframe       String    @default("15m")
   maxPositionSize Float     @default(100)

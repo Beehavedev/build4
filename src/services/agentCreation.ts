@@ -174,6 +174,13 @@ export async function createAgentForUser(opts: {
           identityStandard: identity.standard,
           exchange: 'aster',
           enabledVenues: venues,
+          // Phase 4 (2026-05-03): mark new agents as already-expanded so
+          // the boot-time backfill in ensureTables.ts doesn't overwrite
+          // the 4-venue array we just seeded. Without this, the next
+          // server boot's `WHERE venuesAutoExpanded = false` UPDATE
+          // would clobber enabledVenues — which is exactly why Joey
+          // came up with POLY chip OFF despite this code setting it ON.
+          venuesAutoExpanded: true,
           pairs: ['AUTO'],
           maxPositionSize: capital,
           maxDailyLoss,

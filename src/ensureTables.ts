@@ -132,8 +132,17 @@ export async function ensureNewTables() {
   // agent (idempotent; never overrides a user who later prunes a
   // venue via the chip toggles in Agent Studio).
   await run(`ALTER TABLE "Agent" ADD COLUMN IF NOT EXISTS "venuesAutoExpanded" BOOLEAN DEFAULT false`)
+  // Phase 4 (2026-05-03): include 'polymarket' in the auto-expansion so
+  // every agent (existing AND brand-new — agentCreation now stamps
+  // venuesAutoExpanded=true to opt out of this UPDATE entirely, but
+  // legacy rows still flow through here) lights up all 4 venue chips by
+  // default. Previously this set ['aster','hyperliquid','fortytwo'] and
+  // silently dropped 'polymarket' from the array — even when
+  // agentCreation seeded it correctly — because the UPDATE clobbered
+  // the column on the next boot. That's why new agents (e.g. Joey) were
+  // showing the POLY chip OFF despite the creation code setting it ON.
   await run(`UPDATE "Agent"
-             SET "enabledVenues" = ARRAY['aster', 'hyperliquid', 'fortytwo']::TEXT[],
+             SET "enabledVenues" = ARRAY['aster', 'hyperliquid', 'fortytwo', 'polymarket']::TEXT[],
                  "venuesAutoExpanded" = true
              WHERE COALESCE("venuesAutoExpanded", false) = false`)
   await run(`CREATE UNIQUE INDEX IF NOT EXISTS "Agent_walletAddress_key" ON "Agent"("walletAddress") WHERE "walletAddress" IS NOT NULL`)
