@@ -73,6 +73,64 @@ export function createBot(): Bot {
     )
   })
 
+  // /debugpoly — diagnose why an agent isn't being picked up by the
+  // Polymarket sweep. Returns the same payload as
+  // /api/me/debug-polymarket but accessible from inside Telegram so a
+  // user without browser-side mini-app auth can still self-serve.
+  bot.command('debugpoly', async (ctx) => {
+    try {
+      const tg = ctx.from?.id
+      if (!tg) { await ctx.reply('No telegram id on context.'); return }
+      const { db } = await import('../db')
+      const u = await db.user.findUnique({
+        where: { telegramId: BigInt(tg) },
+        select: { id: true, polymarketAgentTradingEnabled: true },
+      })
+      if (!u) { await ctx.reply('No user row for your telegram id.'); return }
+      const rows = await db.$queryRawUnsafe<any[]>(
+        `SELECT name, "isActive", "isPaused", "polymarketEnabled",
+                "enabledVenues", "venuesAutoExpanded",
+                "lastPolymarketTickAt", "createdAt"
+           FROM "Agent"
+          WHERE "userId" = $1
+          ORDER BY "createdAt" DESC`,
+        u.id,
+      )
+      const polyCreds = await db.polymarketCreds.findUnique({
+        where: { userId: u.id },
+        select: { walletAddress: true, safeAddress: true },
+      })
+      const matched = rows.filter((r) =>
+        r.isActive && !r.isPaused &&
+        (r.polymarketEnabled === true ||
+          (Array.isArray(r.enabledVenues) && r.enabledVenues.includes('polymarket'))),
+      )
+      const lines: string[] = []
+      lines.push(`*Polymarket debug*`)
+      lines.push(`user.polymarketAgentTradingEnabled: \`${u.polymarketAgentTradingEnabled}\``)
+      lines.push(`creds: ${polyCreds ? `wallet=\`${polyCreds.walletAddress.slice(0,10)}…\` safe=\`${polyCreds.safeAddress?.slice(0,10) ?? 'null'}…\`` : '_none — run setup_'}`)
+      lines.push('')
+      lines.push(`*Agents (${rows.length}):*`)
+      for (const r of rows) {
+        const venues = Array.isArray(r.enabledVenues) ? r.enabledVenues.join(',') : '?'
+        lines.push(`• \`${r.name}\` active=${r.isActive} paused=${r.isPaused} polyEn=${r.polymarketEnabled} venues=[${venues}] expanded=${r.venuesAutoExpanded} lastTick=${r.lastPolymarketTickAt ? new Date(r.lastPolymarketTickAt).toISOString().slice(11,19) : 'never'}`)
+      }
+      lines.push('')
+      lines.push(`*Sweep would pick up: ${matched.length} agent(s)*`)
+      if (matched.length > 0) lines.push(matched.map((m) => `→ ${m.name}`).join('\n'))
+      const diag = u.polymarketAgentTradingEnabled === false
+        ? 'BLOCKED: User.polymarketAgentTradingEnabled=false'
+        : matched.length === 0
+          ? rows.length === 0 ? 'BLOCKED: no agents' : 'BLOCKED: no agent matches sweep filter'
+          : 'OK: agent(s) eligible'
+      lines.push('')
+      lines.push(`*Diagnosis:* ${diag}`)
+      await ctx.reply(lines.join('\n'), { parse_mode: 'Markdown' })
+    } catch (err: any) {
+      await ctx.reply(`debugpoly error: ${err?.message ?? err}`)
+    }
+  })
+
   bot.command('help', async (ctx) => {
     await ctx.reply(
       `📖 *BUILD4 Commands*\n\n*Wallet:* /wallet /linkwallet\n*Trading:* /trade /tradestatus /newagent /myagents\n*Market:* /signals /smartmoney /scan /trending /price\n*Buy/Sell:* /buy /sell /swap /launch\n*Social:* /copytrade /portfolio /predictions /showcase\n*Rewards:* /quests /rewards\n*Utility:* /settings /gas /swarmstats /cancel /help`,
