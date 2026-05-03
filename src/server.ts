@@ -3914,6 +3914,66 @@ app.get('/api/me/admin', requireTgUser, async (req, res) => {
   res.json({ isAdmin: isAdminTelegramId(user.telegramId) })
 })
 
+// ─── Debug: per-user Polymarket agent state ───
+// Returns the exact filter values the polymarket sweep uses so we can
+// diagnose "Polymarket isn't running for my agent" reports without DB
+// access. Scoped to the calling Telegram user, so safe to expose
+// publicly — they only see their own agents. Hit this from a browser
+// while logged into the mini-app: /api/me/debug-polymarket
+app.get('/api/me/debug-polymarket', requireTgUser, async (req, res) => {
+  try {
+    const user = (req as any).user
+    const u = await db.user.findUnique({
+      where: { id: user.id },
+      select: {
+        id: true, telegramId: true,
+        polymarketAgentTradingEnabled: true,
+      },
+    })
+    // Raw SELECT bypasses any stale-Prisma-client problem and surfaces
+    // every column relevant to the sweep filter.
+    const rows = await db.$queryRawUnsafe<any[]>(
+      `SELECT id, name, "isActive", "isPaused",
+              "polymarketEnabled",
+              "enabledVenues",
+              "venuesAutoExpanded",
+              "lastPolymarketTickAt",
+              "polymarketMaxSizeUsdc",
+              "polymarketEdgeThreshold",
+              "createdAt"
+         FROM "Agent"
+        WHERE "userId" = $1
+        ORDER BY "createdAt" DESC`,
+      user.id,
+    )
+    const polyCreds = await db.polymarketCreds.findUnique({
+      where: { userId: user.id },
+      select: { walletAddress: true, safeAddress: true, createdAt: true },
+    })
+    const wouldMatchSweep = rows
+      .filter((r) => r.isActive && !r.isPaused)
+      .filter((r) => r.polymarketEnabled === true ||
+                     (Array.isArray(r.enabledVenues) && r.enabledVenues.includes('polymarket')))
+      .filter(() => u?.polymarketAgentTradingEnabled !== false)
+    res.json({
+      user: u,
+      agents: rows,
+      polymarketCreds: polyCreds,
+      wouldMatchSweep: wouldMatchSweep.map((r) => ({ id: r.id, name: r.name })),
+      diagnosis:
+        u?.polymarketAgentTradingEnabled === false
+          ? 'BLOCKED: User.polymarketAgentTradingEnabled is false'
+          : wouldMatchSweep.length === 0
+            ? rows.length === 0
+              ? 'BLOCKED: User has no agents'
+              : 'BLOCKED: No agent matches sweep filter — check polymarketEnabled / enabledVenues / isActive'
+            : `OK: ${wouldMatchSweep.length} agent(s) would be picked up by the polymarket sweep`,
+    })
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message ?? 'Internal error' })
+  }
+})
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Broadcast — POST /api/admin/broadcast + GET /api/admin/broadcast/status
 //
