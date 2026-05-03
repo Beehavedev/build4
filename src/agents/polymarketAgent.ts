@@ -161,12 +161,25 @@ export async function tickAllPolymarketAgents(): Promise<{
 
   // Pull events ONCE for the whole sweep — every agent scores from the
   // same top-of-board snapshot so we don't multiply Gamma traffic by N.
-  let events: PolymarketEvent[]
+  //
+  // Phase 4 (2026-05-03) — DON'T early-return on listEvents failure.
+  // If Gamma is unreachable from Render's IP, an early return means
+  // tickOneAgent never runs, lastPolymarketTickAt never gets stamped,
+  // and the user has no visible signal that the sweep is reaching
+  // their agent at all. Falling through with `events=[]` lets each
+  // agent's tickOneAgent still:
+  //   1. Stamp lastPolymarketTickAt (proves sweep matched the row),
+  //   2. Send a heartbeat ("Polymarket data temporarily unavailable"),
+  //   3. Run the setup-blocked / safe-not-deployed / low-USDC gates,
+  //   4. Skip with a brain-feed entry (visible to the user).
+  // The Gamma error is logged with full detail so we can fix it.
+  let events: PolymarketEvent[] = []
   try {
     events = await listEvents({ limit: 20, order: 'volume24hr' })
   } catch (err) {
-    console.error('[polymarketAgent] listEvents failed:', (err as Error).message)
-    return { scanned, ticked, ordersPlaced, ordersSkipped, errors: errors + 1 }
+    errors++
+    const msg = (err as Error).message ?? String(err)
+    console.error(`[polymarketAgent] listEvents failed (continuing with empty events): ${msg}`)
   }
 
   for (const agent of agents) {
