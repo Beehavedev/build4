@@ -960,56 +960,97 @@ export async function runAgentTick(agent: Agent): Promise<void> {
     //   • mock         → reuses Aster's universe for paper-trading shape
     //                    (mock has no native price feed of its own).
     if (agent.exchange === 'fortytwo') {
-      // Real 42.space scan path. Pulls the top live markets (by volume),
-      // writes one brain-feed row per market with the agent's read on
-      // it, and sends one rate-limited Telegram summary per (agent,
-      // venue) per cycle. Trade execution is a separate flow in
-      // fortyTwoExecutor.ts gated on User.fortyTwoLiveTrade — visibility
-      // here is what the user has been asking for and the trade path
-      // can be wired in once they're satisfied with the decisions they
-      // see surfacing.
+      // Real 42.space scan path. Pulls the top live markets (by volume)
+      // and runs each one through the SHARED prediction-market brain
+      // (predictionBrain.scorePredictionMarket) — same LLM judgement
+      // Polymarket uses, so the user gets {action,side,conviction,reasoning}
+      // per market instead of canned "monitoring" boilerplate. Trade
+      // execution is still a separate flow in fortyTwoExecutor.ts gated
+      // on User.fortyTwoLiveTrade; this block is brain-feed visibility.
       try {
-        const { scanMarketLevelSignals } = await import('../services/fortyTwo')
-        const markets = await scanMarketLevelSignals(8)
+        const { getAllMarkets } = await import('../services/fortyTwo')
+        const { readMarketOnchain } = await import('../services/fortyTwoOnchain')
+        const { scorePredictionMarket } = await import('./predictionBrain')
+
+        // Pull the top markets ordered by cumulative volume (descending)
+        // — same "highest volume wins" rule we apply on Polymarket.
+        const markets = await getAllMarkets({
+          status: 'live', limit: 25, order: 'volume', ascending: false,
+        })
         if (markets.length === 0) {
           console.log(`[Agent ${agent.name}] 42.space scan: no live markets returned`)
         } else {
           console.log(`[Agent ${agent.name}] 42.space scan: ${markets.length} live markets`)
         }
-        // Per-market brain-feed rows. We write at most 5 rows per tick
-        // (the top markets by volume) so a single tick doesn't flood
-        // the feed. The decision itself is HOLD for now — we surface
-        // the market + reasoning so the user can SEE the agent
-        // considering each one. Conviction-based OPEN_PREDICTION rows
-        // ship alongside the trade-execution wiring.
+        // Cap LLM round-trips at 5 per tick to bound spend (matches the
+        // MAX_EVENTS_PER_TICK budget in polymarketAgent).
         const top = markets.slice(0, 5)
         for (const m of top) {
-          // Convert "Will BTC hit $100k by end of April?" → BTC100KAPR
-          // style short tag for the pair column. Keep it human-readable
-          // by collapsing whitespace + non-alphanumerics, capping at
-          // 24 chars (matches Aster pair-tag length budget).
-          const pairTag = (m.title || m.marketAddress)
-            .replace(/[^a-zA-Z0-9]+/g, '')
-            .slice(0, 24)
-            .toUpperCase() || m.marketAddress.slice(2, 14).toUpperCase()
+          // Best-effort on-chain price read. The BSC public RPC rate-
+          // limits hard, so a failure here must NOT block the brain
+          // feed — we just pass null prices and the brain prompt
+          // adapts ("Live book price unavailable this tick").
+          let yesPrice: number | null = null
+          let noPrice:  number | null = null
+          try {
+            const state = await readMarketOnchain(m)
+            if (state.outcomes.length >= 2) {
+              const yes = state.outcomes[0]
+              const no  = state.outcomes[1]
+              if (yes && no && yes.priceFloat > 0 && no.priceFloat > 0) {
+                yesPrice = yes.impliedProbability
+                noPrice  = no.impliedProbability
+              }
+            }
+          } catch (priceErr: any) {
+            console.warn(`[Agent ${agent.name}] 42.space onchain price read failed for ${m.address}: ${priceErr?.message ?? 'unknown'}`)
+          }
+
+          let decision: { action: 'BUY' | 'SKIP'; side: 'YES' | 'NO'; conviction: number; reasoning: string }
+          try {
+            decision = await scorePredictionMarket({
+              venue:       'fortytwo',
+              eventTitle:  null,
+              question:    m.question,
+              description: m.description ?? null,
+              endDateIso:  m.endDate ?? null,
+              outcomes:    ['Yes', 'No'],
+              yesPrice,
+              noPrice,
+              volume24h:   m.volume ?? null,
+              liquidity:   null,
+              category:    (m.categories ?? [])[0] ?? null,
+            })
+          } catch (llmErr: any) {
+            decision = {
+              action: 'SKIP', side: 'YES', conviction: 0,
+              reasoning: `llm_failed: ${(llmErr?.message ?? 'unknown').slice(0, 200)}`,
+            }
+          }
+
+          // Use the question text as the pair (truncated) so the brain
+          // feed shows "Will BTC hit $100k…" instead of an opaque hash.
+          const pair = (m.question || m.address).slice(0, 80)
           const elapsedHumanPct = Math.round((m.elapsedPct ?? 0) * 100)
+          const priceLine = (yesPrice !== null && noPrice !== null)
+            ? `YES ${(yesPrice * 100).toFixed(1)}¢ / NO ${(noPrice * 100).toFixed(1)}¢`
+            : 'price unavailable'
           const reason =
-            `42.space "${m.title.slice(0, 80)}" ` +
-            `(${m.category}, ${elapsedHumanPct}% elapsed, ends ${m.endDate}). ` +
-            `No conviction edge yet — monitoring.`
+            `${decision.action} ${decision.side} (conv ${decision.conviction.toFixed(2)}) · ` +
+            `${priceLine} · ${elapsedHumanPct}% elapsed · ${decision.reasoning}`
           await safeAgentLogCreate({
             data: {
               agentId:        agent.id,
               userId:         agent.userId,
-              action:         'HOLD',
-              parsedAction:   'HOLD',
+              action:         decision.action === 'BUY' ? 'fortytwo_buy' : 'HOLD',
+              parsedAction:   decision.action === 'BUY' ? `${decision.action}_${decision.side}` : 'HOLD',
               executionResult: 'paper',
-              pair:           pairTag,
-              price:          null,
-              reason,
+              pair,
+              price:          decision.side === 'YES' ? (yesPrice ?? null) : (noPrice ?? null),
+              reason:         reason.slice(0, 500),
               adx:            null,
               rsi:            null,
-              score:          null,
+              score:          Math.round(decision.conviction * 100),
               regime:         'PREDICTION_MARKET',
               exchange:       agent.exchange,
             } as any,
@@ -1034,7 +1075,7 @@ export async function runAgentTick(agent: Agent): Promise<void> {
             markPairNotificationSent(agent.id, heartbeatKey, 'heartbeat')
             const lines = top
               .slice(0, 3)
-              .map((m) => `• ${escapeMd(m.title.slice(0, 60))} \\(${Math.round((m.elapsedPct ?? 0) * 100)}% elapsed\\)`)
+              .map((m) => `• ${escapeMd((m.question ?? '').slice(0, 60))} \\(${Math.round((m.elapsedPct ?? 0) * 100)}% elapsed\\)`)
               .join('\n')
             const body = top.length === 0
               ? `Scanned 42\\.space — no live markets returned\\.`
@@ -1713,8 +1754,20 @@ export async function runAgentTick(agent: Agent): Promise<void> {
       let predictionContext = ''
       try {
         const { build42MarketContext } = await import('../services/fortyTwoPrompt')
+        // Phase 4 (2026-05-01) — feed per-agent prediction-market knobs into
+        // the 42 context builder so the LLM sees the same risk envelope the
+        // executor enforces. `agent` is the full Prisma Agent record so
+        // these fields are always present (they have schema defaults of
+        // 0.05 / 14 days respectively).
+        const predictionMaxDurationDays = agent.predictionMaxDurationDays ?? 14
+        const predictionEdgeThreshold = agent.predictionEdgeThreshold ?? 0.05
         const block = await Promise.race<string>([
-          build42MarketContext({ maxMarkets: 5, tradingRelevantOnly: true }),
+          build42MarketContext({
+            maxMarkets: 5,
+            tradingRelevantOnly: true,
+            maxDurationDays: predictionMaxDurationDays,
+            edgeThreshold: predictionEdgeThreshold,
+          }),
           new Promise<string>((resolve) => setTimeout(() => resolve(''), 1500)),
         ])
         if (block.trim()) {
@@ -2091,6 +2144,36 @@ If you would not put real money in this trade right now, action = HOLD.`
               console.log(
                 `[Agent ${agent.name}] CLOSE_PREDICTION pnl=$${res.pnl.toFixed(2)} positionId=${pt.positionId}`
               )
+              // Phase 4 (2026-05-01) — Telegram notification on prediction
+              // close. The OPEN side already notifies (above); the CLOSE
+              // side was silent, leaving users unable to see PnL outcomes
+              // for 42.space trades from chat. Same try/catch pattern as
+              // the open notify so a Telegram outage can't propagate.
+              try {
+                const _botPredClose = getBot()
+                if (_botPredClose && telegramId) {
+                  const emoji = res.pnl >= 0 ? '✅' : '🔻'
+                  const sign = res.pnl >= 0 ? '+' : ''
+                  // Fire-and-forget — DO NOT await. A Telegram outage or
+                  // slow API response must not stall the trading tick
+                  // (architect-flagged 2026-05-01). The .catch swallows
+                  // rejection so unhandled-rejection logs stay clean.
+                  _botPredClose.api
+                    .sendMessage(
+                      telegramId,
+                      `${emoji} *${escapeMd(agent.name)}* closed prediction position\n\n` +
+                        `*Outcome:* ${escapeMd(pt.outcomeLabel ?? `tokenId ${pt.tokenId ?? '?'}`)}\n` +
+                        `*PnL:* ${sign}$${res.pnl.toFixed(2)} USDT`,
+                      { parse_mode: 'Markdown' },
+                    )
+                    .catch(() => {})
+                }
+              } catch (notifyErr) {
+                console.warn(
+                  `[Agent ${agent.name}] CLOSE_PREDICTION notify failed:`,
+                  (notifyErr as Error).message,
+                )
+              }
             }
           }
         } catch (predErr: any) {

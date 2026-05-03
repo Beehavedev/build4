@@ -32,13 +32,7 @@ import {
   placeMarketOrder,
   getBuilderCode,
 } from '../services/polymarketTrading'
-import { callLLM, type Provider } from '../services/inference'
-
-// Provider preference — anthropic first, then degrade gracefully. We
-// burn at most ONE provider per (agent × market) pair per tick; if the
-// preferred provider is circuit-broken or missing creds, we try the
-// next. This mirrors how `marketScan.ts` handles provider preference.
-const PROVIDER_FALLBACK: Provider[] = ['anthropic', 'xai', 'hyperbolic']
+import { scorePredictionMarket, parsePredictionDecision } from './predictionBrain'
 
 // Hard cap on number of events we score per tick — keeps the LLM bill
 // bounded even if Gamma returns dozens. Five top-volume events is plenty
@@ -56,12 +50,10 @@ const MAX_MARKETS_PER_EVENT = 3
 // markets move slowly relative to perps, and this keeps LLM cost low.
 const MIN_TICK_INTERVAL_MS = 60_000
 
-interface AgentDecision {
-  action:     'BUY' | 'SKIP'
-  side:       'YES' | 'NO'
-  conviction: number          // 0-1
-  reasoning:  string          // <= 280 chars
-}
+// AgentDecision is now PredictionDecision from predictionBrain — shared
+// with 42.space so both prediction venues use the same shape.
+import type { PredictionDecision } from './predictionBrain'
+type AgentDecision = PredictionDecision
 
 interface PolymarketAgentRow {
   id: string
@@ -71,13 +63,18 @@ interface PolymarketAgentRow {
   polymarketMaxSizeUsdc: number
   polymarketEdgeThreshold: number
   lastPolymarketTickAt: Date | null
-  // Phase 4 (2026-05-01) — generalized prediction-market risk fields.
+  // Phase 4 (2026-05-01) — generalized prediction-market risk fields. Both
+  // are nullable so legacy rows that pre-date the migration still work; the
+  // readers below fall back to polymarketEdgeThreshold / 14d defaults.
   predictionEdgeThreshold: number | null
   predictionMaxDurationDays: number | null
-  // Phase 4 — reading enabledVenues lets the per-agent venue chip drive
-  // Polymarket on/off in addition to the legacy polymarketEnabled boolean.
+  // Phase 4 — reading enabledVenues lets the per-agent venue chip in
+  // Agent Studio drive Polymarket on/off in addition to the legacy
+  // polymarketEnabled boolean.
   enabledVenues: string[]
-  // Phase 4 — joined user row for per-user platform allow flag.
+  // Phase 4 (2026-05-01) — joined user row used to gate dispatch on the
+  // per-user platform allow flag. Optional + nullable on user so a row
+  // that somehow loses its FK target doesn't crash the runner.
   user: { polymarketAgentTradingEnabled: boolean } | null
 }
 
@@ -102,10 +99,16 @@ export async function tickAllPolymarketAgents(): Promise<{
   let agents: PolymarketAgentRow[] = []
   try {
     // Phase 4: pick up agents enabled via EITHER the legacy boolean OR the
-    // newer per-agent enabledVenues array. The per-market gates inside
-    // tickOneAgent (Safe deployed, USDC funded, edge met) still decide
-    // whether any single tick actually places an order.
-    // Also gate on the per-user polymarketAgentTradingEnabled flag.
+    // newer per-agent enabledVenues array (driven by the venue chip in
+    // Agent Studio). Either path opts the agent into autonomous Polymarket
+    // trading; the per-market gates inside tickOneAgent (Safe deployed,
+    // USDC funded, edge threshold met) still decide whether any single
+    // tick actually places an order.
+    // Phase 4 (2026-05-01) — also gate on the per-user
+    // polymarketAgentTradingEnabled flag (mirrors the aster/HL pattern in
+    // runner.ts). The check is done in JS rather than the SQL where-clause
+    // because Prisma can't filter on a relation field with a default-true
+    // boolean efficiently here, and the agent count is small.
     const rows = await db.agent.findMany({
       where: {
         isActive: true,
@@ -131,7 +134,8 @@ export async function tickAllPolymarketAgents(): Promise<{
     })
     // Drop agents whose user has paused polymarket trading at the
     // platform level. Treat undefined / null as ALLOW so a missing
-    // user record does not silently mute the venue.
+    // user record (shouldn't happen, but be defensive) does not
+    // silently mute the venue.
     agents = rows
       .filter((r) => r.user?.polymarketAgentTradingEnabled !== false)
       .map<PolymarketAgentRow>((r) => ({
@@ -194,6 +198,24 @@ async function tickOneAgent(
 ): Promise<{ ordersPlaced: number; ordersSkipped: number }> {
   let ordersPlaced = 0
   let ordersSkipped = 0
+
+  // Phase 4 (2026-05-01) — generalized prediction-market knobs.
+  //
+  //   effectiveEdge       : minimum (LLM conviction − market-implied price)
+  //                         we'll cross the spread for. Falls back to the
+  //                         legacy polymarketEdgeThreshold so rows that
+  //                         pre-date the migration still trade.
+  //
+  //   maxEndDateMs        : Unix-ms ceiling on a market's resolution date.
+  //                         Capital locked in long-dated markets is the
+  //                         user's primary risk concern (you can't ragequit
+  //                         a Polymarket position the way you can close a
+  //                         perp). Default 14d gives the LLM ~2-week
+  //                         resolution horizon. predictionMaxDurationDays
+  //                         is nullable until backfill, so default in JS.
+  const effectiveEdge = agent.predictionEdgeThreshold ?? agent.polymarketEdgeThreshold
+  const maxDurationDays = agent.predictionMaxDurationDays ?? 14
+  const maxEndDateMs = Date.now() + maxDurationDays * 86400000
 
   // Stamp the tick time UP-FRONT so a slow LLM round-trip can't cause
   // back-to-back ticks if the runner double-fires.
@@ -277,7 +299,13 @@ async function tickOneAgent(
     const markets = (event.markets || [])
       .filter((m) => m.enableOrderBook && !m.closed && !m.archived
                      && Array.isArray(m.clobTokenIds) && m.clobTokenIds.length >= 1
-                     && Array.isArray(m.outcomes) && m.outcomes.length >= 1)
+                     && Array.isArray(m.outcomes) && m.outcomes.length >= 1
+                     // Phase 4: enforce predictionMaxDurationDays. A null
+                     // endDate is treated as too-long (skip) — we'd rather
+                     // miss an open-ended market than accidentally lock
+                     // capital for months.
+                     && m.endDate !== null
+                     && new Date(m.endDate).getTime() <= maxEndDateMs)
       .slice(0, MAX_MARKETS_PER_EVENT)
 
     for (const market of markets) {
@@ -313,8 +341,8 @@ async function tickOneAgent(
       const edge = decision.conviction - sidePrice
 
       if (decision.action === 'SKIP'
-          || decision.conviction < agent.polymarketEdgeThreshold
-          || edge < agent.polymarketEdgeThreshold
+          || decision.conviction < effectiveEdge
+          || edge < effectiveEdge
           || sidePrice <= 0
           || sidePrice >= 1) {
         ordersSkipped++
@@ -356,6 +384,49 @@ async function tickOneAgent(
           edge, sidePrice,
           execution: `order_placed pos=${result.positionId} fill=~${(result.fillPrice ?? sidePrice).toFixed(3)}`,
         })
+        // Phase 4 (2026-05-01) — Telegram notification on successful
+        // Polymarket entry. Mirrors the per-trade notify pattern used by
+        // Aster/HL/42 so users with all 4 venues enabled see Polymarket
+        // activity in chat instead of having to open the mini app.
+        // Wrapped in try/catch + .catch(() => {}) — a missing telegramId
+        // or a Telegram outage must NEVER block the trading loop.
+        try {
+          const { getBot } = await import('./runner')
+          const bot = getBot()
+          if (bot) {
+            const u = await db.user.findUnique({
+              where: { id: agent.userId },
+              select: { telegramId: true },
+            })
+            const tg = u?.telegramId?.toString() ?? null
+            if (tg) {
+              const fillPx = result.fillPrice ?? sidePrice
+              const title = (market.question ?? '').slice(0, 80)
+              // escape only the markdown specials we actually use in the
+              // body — full escapeMd would be overkill for this short
+              //, mostly-numeric template.
+              const safeTitle = title.replace(/([_*`\[\]()])/g, '\\$1')
+              const safeAgent = agent.name.replace(/([_*`\[\]()])/g, '\\$1')
+              const safeOutcome = outcomeLabel.replace(/([_*`\[\]()])/g, '\\$1')
+              const msg =
+                `🎲 *${safeAgent}* opened a Polymarket position\n\n` +
+                `*Market:* ${safeTitle}${title.length === 80 ? '…' : ''}\n` +
+                `*Outcome:* ${safeOutcome} (${decision.side})\n` +
+                `*Entry:* ${(fillPx * 100).toFixed(1)}¢ (implied ${(fillPx * 100).toFixed(1)}%)\n` +
+                `*Edge:* +${(edge * 100).toFixed(1)}pp vs market\n` +
+                `*Size:* $${agent.polymarketMaxSizeUsdc.toFixed(0)} USDC\n` +
+                `*Conviction:* ${(decision.conviction * 100).toFixed(0)}%\n\n` +
+                `💭 ${(decision.reasoning ?? '').slice(0, 240)}`
+              bot.api.sendMessage(tg, msg, { parse_mode: 'Markdown' }).catch(() => {})
+            }
+          }
+        } catch (notifyErr) {
+          // Notification failures must never affect trading. Log only.
+          console.warn(
+            `[polymarketAgent] notify failed for ${agent.id}:`,
+            (notifyErr as Error).message,
+          )
+        }
       } else {
         ordersSkipped++
         await logDecision(agent, event, market, decision, {
@@ -370,78 +441,35 @@ async function tickOneAgent(
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// Score a single (event, market) with an LLM. Try providers in order
-// until one returns parseable JSON or we exhaust the list.
+// Score a single (event, market) with the shared prediction-market brain.
+// Polymarket-specific work here = computing executable YES/NO prices from
+// the order book; the LLM scoring itself is venue-agnostic and lives in
+// predictionBrain.ts so 42.space gets the same judgement.
 // ─────────────────────────────────────────────────────────────────────────
 async function scoreMarket(event: PolymarketEvent, market: PolymarketMarket): Promise<AgentDecision> {
   const yesPrice = market.bestAsk ?? market.outcomePrices[0] ?? 0.5
   const noPrice  = market.outcomes[1]
     ? (market.bestBid !== null ? 1 - market.bestBid : (market.outcomePrices[1] ?? 0.5))
     : 1 - yesPrice
-  const endLabel = market.endDate ? new Date(market.endDate).toISOString().slice(0, 10) : 'unspecified'
 
-  const system = [
-    'You are a disciplined prediction-market trader analyzing a Polymarket binary outcome.',
-    'You only place a trade when you have a real informational edge versus the market price.',
-    'When the market price already reflects the available evidence, the correct action is SKIP.',
-    'Your conviction is your subjective probability the chosen side resolves TRUE (0.0-1.0).',
-    'Reply with STRICT JSON only — no prose, no markdown.',
-  ].join(' ')
-
-  const user = [
-    `Event: ${event.title}`,
-    `Market: ${market.question}`,
-    `Description: ${(market.description ?? '').slice(0, 500)}`,
-    `Resolution date: ${endLabel}`,
-    `Outcomes: ${market.outcomes.join(' / ')}`,
-    `YES priced at ${(yesPrice * 100).toFixed(1)}¢, NO priced at ${(noPrice * 100).toFixed(1)}¢`,
-    `24h vol: $${Math.round(event.volume24hr || 0)}, liq: $${Math.round(market.liquidity || 0)}`,
-    '',
-    'Reply with JSON: {"action":"BUY"|"SKIP","side":"YES"|"NO","conviction":0.0-1.0,"reasoning":"<=240 chars"}',
-  ].join('\n')
-
-  let lastErr: Error | null = null
-  for (const provider of PROVIDER_FALLBACK) {
-    try {
-      const r = await callLLM({
-        provider,
-        system,
-        user,
-        jsonMode: true,
-        maxTokens: 300,
-        temperature: 0.2,
-        timeoutMs: 30_000,
-      })
-      const parsed = parseDecision(r.text)
-      if (parsed) return parsed
-      lastErr = new Error(`unparseable JSON from ${provider}`)
-    } catch (err) {
-      lastErr = err as Error
-    }
-  }
-  throw lastErr ?? new Error('no providers available')
+  return scorePredictionMarket({
+    venue:       'polymarket',
+    eventTitle:  event.title,
+    question:    market.question,
+    description: market.description,
+    endDateIso:  market.endDate,
+    outcomes:    market.outcomes,
+    yesPrice,
+    noPrice,
+    volume24h:   event.volume24hr ?? null,
+    liquidity:   market.liquidity ?? null,
+  })
 }
 
-function parseDecision(raw: string): AgentDecision | null {
-  if (!raw) return null
-  // Some providers wrap JSON in code-fences even with jsonMode set.
-  const cleaned = raw.replace(/^```(?:json)?/i, '').replace(/```$/, '').trim()
-  let obj: any
-  try { obj = JSON.parse(cleaned) } catch { return null }
-  if (!obj || typeof obj !== 'object') return null
-  const action = String(obj.action ?? '').toUpperCase()
-  const side   = String(obj.side ?? '').toUpperCase()
-  const conv   = Number(obj.conviction)
-  if (action !== 'BUY' && action !== 'SKIP') return null
-  if (side !== 'YES' && side !== 'NO') return null
-  if (!Number.isFinite(conv) || conv < 0 || conv > 1) return null
-  return {
-    action,
-    side,
-    conviction: conv,
-    reasoning:  String(obj.reasoning ?? '').slice(0, 280),
-  }
-}
+// Re-export so callers that imported parseDecision from this module
+// continue to compile against the shared parser in predictionBrain.
+const parseDecision = parsePredictionDecision
+void parseDecision
 
 // ─────────────────────────────────────────────────────────────────────────
 // Brain-feed log helper. Always writes — even SKIPs. The mini-app brain
