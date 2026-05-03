@@ -470,6 +470,17 @@ async function runAllAgents() {
         continue
       }
       for (const venue of venues) {
+        // Phase 4 (2026-05-02) — 'polymarket' is handled by a SEPARATE
+        // runner loop (tickAllPolymarketAgents, see setInterval above)
+        // that reads real prediction markets via the Gamma API and
+        // writes brain-feed rows tagged with the market QUESTION text.
+        // The perp brain (tradingAgent.ts) below would otherwise run its
+        // ADX/RSI/funding-rate pipeline on crypto perp tickers and stamp
+        // them with exchange='polymarket', producing nonsense POLY-tagged
+        // entries like "HOLD ARBUSDT — Funding rate 0.0000%". Skip here
+        // so the dedicated polymarket runner is the only writer for
+        // exchange='polymarket' brain logs.
+        if (venue === 'polymarket') continue
         tickUnits.push({ agent, venue })
       }
     }
