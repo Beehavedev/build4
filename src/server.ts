@@ -3294,7 +3294,10 @@ app.post('/api/agents/:id/toggle', requireTgUser, async (req, res) => {
 // This keeps the master kill-switch behaviour intact for any legacy
 // code path that still gates on isActive (and for the chat bot's
 // existing "agent is active" copy).
-const ALLOWED_VENUE_TOGGLES = new Set(['aster', 'hyperliquid', 'fortytwo'])
+// Phase 4 (2026-05-01) — 'polymarket' added so per-agent chip toggles work for
+// the 4th venue. The polymarket runner reads enabledVenues; we also mirror
+// to the legacy polymarketEnabled boolean below for back-compat.
+const ALLOWED_VENUE_TOGGLES = new Set(['aster', 'hyperliquid', 'fortytwo', 'polymarket'])
 app.post('/api/agents/:id/venues/:venue/toggle', requireTgUser, async (req, res) => {
   try {
     const user = (req as any).user
@@ -3328,12 +3331,21 @@ app.post('/api/agents/:id/venues/:venue/toggle', requireTgUser, async (req, res)
     // empty → inactive. Don't touch isPaused — that's reserved for
     // automated stops (daily-loss tripwires) and the user shouldn't be
     // able to override one of those by toggling a venue chip.
+    // Phase 4 (2026-05-01) — when the chip is for polymarket, also flip the
+    // legacy `polymarketEnabled` boolean that the polymarket runner ALSO
+    // honors via an OR with enabledVenues. Without this mirror, turning a
+    // polymarket chip OFF would leave `polymarketEnabled=true` set and the
+    // runner would still tick the agent.
+    const data: Record<string, unknown> = {
+      enabledVenues: next,
+      isActive:      next.length > 0,
+    }
+    if (venue === 'polymarket') {
+      data.polymarketEnabled = enabled
+    }
     const updated = await db.agent.update({
       where: { id: agentId },
-      data: {
-        enabledVenues: next,
-        isActive:      next.length > 0,
-      },
+      data,
     })
     res.json({ ok: true, agent: updated })
   } catch (err: any) {
@@ -5286,17 +5298,29 @@ app.get('/api/me/venue-permissions', requireTgUser, async (req, res) => {
         asterAgentTradingEnabled: true,
         hyperliquidAgentTradingEnabled: true,
         fortyTwoLiveTrade: true,
+        // Phase 4 (2026-05-01) — 4th platform toggle.
+        polymarketAgentTradingEnabled: true,
         asterOnboarded: true,
         hyperliquidOnboarded: true,
       },
     })
     if (!u) return res.status(404).json({ ok: false, error: 'user not found' })
+    // Polymarket "onboarded" = the user has a deployed Safe with API
+    // creds registered. Derived from PolymarketCreds rather than a User
+    // flag so the state is always truthful. .catch returns null on any
+    // DB hiccup so the whole permissions endpoint never 500s.
+    const polyCreds = await db.polymarketCreds
+      .findUnique({ where: { userId: user.id }, select: { safeAddress: true } })
+      .catch(() => null)
+    const polymarketOnboarded = !!polyCreds?.safeAddress
     res.json({
       ok: true,
       permissions: {
         aster:       !!u.asterAgentTradingEnabled,
         hyperliquid: !!u.hyperliquidAgentTradingEnabled,
         fortytwo:    !!u.fortyTwoLiveTrade,
+        // Phase 4 (2026-05-01) — Polymarket gets a real per-user toggle.
+        polymarket:  !!u.polymarketAgentTradingEnabled,
       },
       onboarded: {
         aster:       !!u.asterOnboarded,
@@ -5304,6 +5328,7 @@ app.get('/api/me/venue-permissions', requireTgUser, async (req, res) => {
         // 42.space requires no per-user onboarding — anyone with a wallet
         // can trade on-chain prediction markets — so it's always "ready".
         fortytwo:    true,
+        polymarket:  polymarketOnboarded,
       },
     })
   } catch (err) {
@@ -5319,8 +5344,8 @@ app.post('/api/me/venue-permissions', requireTgUser, async (req, res) => {
   // mode (especially for 42.space) due to a missing or coerced field.
   const venue = req.body?.venue
   const enabled = req.body?.enabled
-  if (venue !== 'aster' && venue !== 'hyperliquid' && venue !== 'fortytwo') {
-    return res.status(400).json({ ok: false, error: 'venue must be aster | hyperliquid | fortytwo' })
+  if (venue !== 'aster' && venue !== 'hyperliquid' && venue !== 'fortytwo' && venue !== 'polymarket') {
+    return res.status(400).json({ ok: false, error: 'venue must be aster | hyperliquid | fortytwo | polymarket' })
   }
   if (typeof enabled !== 'boolean') {
     return res.status(400).json({ ok: false, error: 'enabled must be boolean' })
@@ -5333,9 +5358,10 @@ app.post('/api/me/venue-permissions', requireTgUser, async (req, res) => {
       const { setUserLiveOptIn } = await import('./services/fortyTwoExecutor')
       await setUserLiveOptIn(user.id, enabled)
     } else {
-      const field = venue === 'aster'
-        ? 'asterAgentTradingEnabled'
-        : 'hyperliquidAgentTradingEnabled'
+      const field =
+        venue === 'aster'       ? 'asterAgentTradingEnabled' :
+        venue === 'hyperliquid' ? 'hyperliquidAgentTradingEnabled' :
+        /* polymarket */          'polymarketAgentTradingEnabled'
       await db.user.update({
         where: { id: user.id },
         data: { [field]: enabled },

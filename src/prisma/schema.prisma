@@ -51,6 +51,13 @@ model User {
   // Consumed by ACTIVE_AGENTS_FILTER's per-row gate in src/agents/runner.ts.
   asterAgentTradingEnabled       Boolean @default(true)
   hyperliquidAgentTradingEnabled Boolean @default(true)
+  // Phase 4 (2026-05-01) — per-user pause flag for Polymarket. Mirrors
+  // the aster/HL pattern so the "ALLOWED TRADING PLATFORMS" toggle in
+  // Agent Studio has a 4th, fully-functional row. Default true so
+  // existing users opt-in by default; the per-agent gate (Safe deployed
+  // + USDC funded, enforced inside polymarketAgent.ts) means turning
+  // this on for un-onboarded users is harmless.
+  polymarketAgentTradingEnabled  Boolean @default(true)
   pinHash           String?   // PBKDF2 hash of user's wallet PIN (optional security layer)
   pinSalt           String?
   // 42.space prediction-market live trading opt-in. Default true — all

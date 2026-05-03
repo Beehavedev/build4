@@ -214,7 +214,7 @@ interface AgentStudioProps {
 // venue. Same agent can therefore trade on Aster today and (once the user
 // flips Hyperliquid on + finishes onboarding) Hyperliquid tomorrow without
 // having to be re-created.
-type VenueId = 'aster' | 'hyperliquid' | 'fortytwo'
+type VenueId = 'aster' | 'hyperliquid' | 'fortytwo' | 'polymarket'
 interface VenueConfig {
   id: VenueId
   label: string
@@ -222,13 +222,16 @@ interface VenueConfig {
   accent: string
 }
 const VENUES: VenueConfig[] = [
-  { id: 'aster',       label: 'Aster',       sub: 'Perp DEX · BSC',     accent: '#f97316' },
-  { id: 'hyperliquid', label: 'Hyperliquid', sub: 'L1 perps',           accent: '#22d3ee' },
-  { id: 'fortytwo',    label: '42.space',    sub: 'Prediction markets', accent: '#a78bfa' },
+  { id: 'aster',       label: 'Aster',       sub: 'Perp DEX · BSC',         accent: '#f97316' },
+  { id: 'hyperliquid', label: 'Hyperliquid', sub: 'L1 perps',               accent: '#22d3ee' },
+  { id: 'fortytwo',    label: '42.space',    sub: 'Prediction markets',     accent: '#a78bfa' },
+  // Phase 4 (2026-05-01) — Polymarket promoted to a first-class platform
+  // toggle. Backed by User.polymarketAgentTradingEnabled (default true).
+  { id: 'polymarket',  label: 'Polymarket',  sub: 'Prediction · Polygon',   accent: '#3b82f6' },
 ]
 
-interface VenuePermissions { aster: boolean; hyperliquid: boolean; fortytwo: boolean }
-interface VenueOnboarded   { aster: boolean; hyperliquid: boolean; fortytwo: boolean }
+interface VenuePermissions { aster: boolean; hyperliquid: boolean; fortytwo: boolean; polymarket: boolean }
+interface VenueOnboarded   { aster: boolean; hyperliquid: boolean; fortytwo: boolean; polymarket: boolean }
 
 function timeAgo(iso: string): string {
   const ms = Date.now() - new Date(iso).getTime()
@@ -256,6 +259,7 @@ export function venueChip(ex: string | null | undefined): { label: string; color
   if (x === 'aster')       return { label: 'ASTER', color: '#f97316' }
   if (x === 'hyperliquid') return { label: 'HL',    color: '#22d3ee' }
   if (x === 'fortytwo')    return { label: '42',    color: '#a78bfa' }
+  if (x === 'polymarket')  return { label: 'POLY',  color: '#3b82f6' }
   return null
 }
 
@@ -311,7 +315,7 @@ export function ScoutBadge({ id }: { id: string }) {
 // so a stray "Aster"/"HyperLiquid" doesn't fall through to "other".
 function venueOf(exchange: string | undefined): VenueId | 'other' {
   const x = (exchange ?? '').toLowerCase()
-  if (x === 'aster' || x === 'hyperliquid' || x === 'fortytwo') return x as VenueId
+  if (x === 'aster' || x === 'hyperliquid' || x === 'fortytwo' || x === 'polymarket') return x as VenueId
   return 'other'
 }
 
@@ -494,8 +498,8 @@ export default function AgentStudio(_props: AgentStudioProps) {
       // but 42.space LIVE stays OFF so we never auto-enable real-money
       // prediction trading because of a transient network error.
       .catch(() => {
-        setPerms({ aster: true, hyperliquid: true, fortytwo: false })
-        setOnboarded({ aster: false, hyperliquid: false, fortytwo: true })
+        setPerms({ aster: true, hyperliquid: true, fortytwo: false, polymarket: true })
+        setOnboarded({ aster: false, hyperliquid: false, fortytwo: true, polymarket: false })
       })
   }
 
@@ -735,11 +739,13 @@ export default function AgentStudio(_props: AgentStudioProps) {
     const venueAccent =
       v === 'aster' ? '#f97316' :
       v === 'hyperliquid' ? '#22d3ee' :
-      v === 'fortytwo' ? '#a78bfa' : '#64748b'
+      v === 'fortytwo' ? '#a78bfa' :
+      v === 'polymarket' ? '#3b82f6' : '#64748b'
     const venueLabel =
       v === 'aster' ? 'Aster' :
       v === 'hyperliquid' ? 'Hyperliquid' :
       v === 'fortytwo' ? '42.space' :
+      v === 'polymarket' ? 'Polymarket' :
       (agent.exchange ?? 'unknown')
     const platformAllowed = perms == null
       ? true

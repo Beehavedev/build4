@@ -71,6 +71,14 @@ interface PolymarketAgentRow {
   polymarketMaxSizeUsdc: number
   polymarketEdgeThreshold: number
   lastPolymarketTickAt: Date | null
+  // Phase 4 (2026-05-01) — generalized prediction-market risk fields.
+  predictionEdgeThreshold: number | null
+  predictionMaxDurationDays: number | null
+  // Phase 4 — reading enabledVenues lets the per-agent venue chip drive
+  // Polymarket on/off in addition to the legacy polymarketEnabled boolean.
+  enabledVenues: string[]
+  // Phase 4 — joined user row for per-user platform allow flag.
+  user: { polymarketAgentTradingEnabled: boolean } | null
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -93,11 +101,19 @@ export async function tickAllPolymarketAgents(): Promise<{
 
   let agents: PolymarketAgentRow[] = []
   try {
-    agents = await db.agent.findMany({
+    // Phase 4: pick up agents enabled via EITHER the legacy boolean OR the
+    // newer per-agent enabledVenues array. The per-market gates inside
+    // tickOneAgent (Safe deployed, USDC funded, edge met) still decide
+    // whether any single tick actually places an order.
+    // Also gate on the per-user polymarketAgentTradingEnabled flag.
+    const rows = await db.agent.findMany({
       where: {
         isActive: true,
         isPaused: false,
-        polymarketEnabled: true,
+        OR: [
+          { polymarketEnabled: true },
+          { enabledVenues: { has: 'polymarket' } },
+        ],
       },
       select: {
         id: true,
@@ -107,8 +123,30 @@ export async function tickAllPolymarketAgents(): Promise<{
         polymarketMaxSizeUsdc: true,
         polymarketEdgeThreshold: true,
         lastPolymarketTickAt: true,
+        predictionEdgeThreshold: true,
+        predictionMaxDurationDays: true,
+        enabledVenues: true,
+        user: { select: { polymarketAgentTradingEnabled: true } },
       },
-    }) as PolymarketAgentRow[]
+    })
+    // Drop agents whose user has paused polymarket trading at the
+    // platform level. Treat undefined / null as ALLOW so a missing
+    // user record does not silently mute the venue.
+    agents = rows
+      .filter((r) => r.user?.polymarketAgentTradingEnabled !== false)
+      .map<PolymarketAgentRow>((r) => ({
+        id: r.id,
+        userId: r.userId,
+        name: r.name,
+        polymarketEnabled: r.polymarketEnabled,
+        polymarketMaxSizeUsdc: r.polymarketMaxSizeUsdc,
+        polymarketEdgeThreshold: r.polymarketEdgeThreshold,
+        lastPolymarketTickAt: r.lastPolymarketTickAt,
+        predictionEdgeThreshold: r.predictionEdgeThreshold,
+        predictionMaxDurationDays: r.predictionMaxDurationDays,
+        enabledVenues: r.enabledVenues,
+        user: r.user,
+      }))
   } catch (err) {
     console.error('[polymarketAgent] failed to load agents:', (err as Error).message)
     return { scanned, ticked, ordersPlaced, ordersSkipped, errors: errors + 1 }
