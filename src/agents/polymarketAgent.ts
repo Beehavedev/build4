@@ -32,13 +32,7 @@ import {
   placeMarketOrder,
   getBuilderCode,
 } from '../services/polymarketTrading'
-import { callLLM, type Provider } from '../services/inference'
-
-// Provider preference — anthropic first, then degrade gracefully. We
-// burn at most ONE provider per (agent × market) pair per tick; if the
-// preferred provider is circuit-broken or missing creds, we try the
-// next. This mirrors how `marketScan.ts` handles provider preference.
-const PROVIDER_FALLBACK: Provider[] = ['anthropic', 'xai', 'hyperbolic']
+import { scorePredictionMarket, parsePredictionDecision } from './predictionBrain'
 
 // Hard cap on number of events we score per tick — keeps the LLM bill
 // bounded even if Gamma returns dozens. Five top-volume events is plenty
@@ -56,12 +50,10 @@ const MAX_MARKETS_PER_EVENT = 3
 // markets move slowly relative to perps, and this keeps LLM cost low.
 const MIN_TICK_INTERVAL_MS = 60_000
 
-interface AgentDecision {
-  action:     'BUY' | 'SKIP'
-  side:       'YES' | 'NO'
-  conviction: number          // 0-1
-  reasoning:  string          // <= 280 chars
-}
+// AgentDecision is now PredictionDecision from predictionBrain — shared
+// with 42.space so both prediction venues use the same shape.
+import type { PredictionDecision } from './predictionBrain'
+type AgentDecision = PredictionDecision
 
 interface PolymarketAgentRow {
   id: string
@@ -449,78 +441,35 @@ async function tickOneAgent(
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// Score a single (event, market) with an LLM. Try providers in order
-// until one returns parseable JSON or we exhaust the list.
+// Score a single (event, market) with the shared prediction-market brain.
+// Polymarket-specific work here = computing executable YES/NO prices from
+// the order book; the LLM scoring itself is venue-agnostic and lives in
+// predictionBrain.ts so 42.space gets the same judgement.
 // ─────────────────────────────────────────────────────────────────────────
 async function scoreMarket(event: PolymarketEvent, market: PolymarketMarket): Promise<AgentDecision> {
   const yesPrice = market.bestAsk ?? market.outcomePrices[0] ?? 0.5
   const noPrice  = market.outcomes[1]
     ? (market.bestBid !== null ? 1 - market.bestBid : (market.outcomePrices[1] ?? 0.5))
     : 1 - yesPrice
-  const endLabel = market.endDate ? new Date(market.endDate).toISOString().slice(0, 10) : 'unspecified'
 
-  const system = [
-    'You are a disciplined prediction-market trader analyzing a Polymarket binary outcome.',
-    'You only place a trade when you have a real informational edge versus the market price.',
-    'When the market price already reflects the available evidence, the correct action is SKIP.',
-    'Your conviction is your subjective probability the chosen side resolves TRUE (0.0-1.0).',
-    'Reply with STRICT JSON only — no prose, no markdown.',
-  ].join(' ')
-
-  const user = [
-    `Event: ${event.title}`,
-    `Market: ${market.question}`,
-    `Description: ${(market.description ?? '').slice(0, 500)}`,
-    `Resolution date: ${endLabel}`,
-    `Outcomes: ${market.outcomes.join(' / ')}`,
-    `YES priced at ${(yesPrice * 100).toFixed(1)}¢, NO priced at ${(noPrice * 100).toFixed(1)}¢`,
-    `24h vol: $${Math.round(event.volume24hr || 0)}, liq: $${Math.round(market.liquidity || 0)}`,
-    '',
-    'Reply with JSON: {"action":"BUY"|"SKIP","side":"YES"|"NO","conviction":0.0-1.0,"reasoning":"<=240 chars"}',
-  ].join('\n')
-
-  let lastErr: Error | null = null
-  for (const provider of PROVIDER_FALLBACK) {
-    try {
-      const r = await callLLM({
-        provider,
-        system,
-        user,
-        jsonMode: true,
-        maxTokens: 300,
-        temperature: 0.2,
-        timeoutMs: 30_000,
-      })
-      const parsed = parseDecision(r.text)
-      if (parsed) return parsed
-      lastErr = new Error(`unparseable JSON from ${provider}`)
-    } catch (err) {
-      lastErr = err as Error
-    }
-  }
-  throw lastErr ?? new Error('no providers available')
+  return scorePredictionMarket({
+    venue:       'polymarket',
+    eventTitle:  event.title,
+    question:    market.question,
+    description: market.description,
+    endDateIso:  market.endDate,
+    outcomes:    market.outcomes,
+    yesPrice,
+    noPrice,
+    volume24h:   event.volume24hr ?? null,
+    liquidity:   market.liquidity ?? null,
+  })
 }
 
-function parseDecision(raw: string): AgentDecision | null {
-  if (!raw) return null
-  // Some providers wrap JSON in code-fences even with jsonMode set.
-  const cleaned = raw.replace(/^```(?:json)?/i, '').replace(/```$/, '').trim()
-  let obj: any
-  try { obj = JSON.parse(cleaned) } catch { return null }
-  if (!obj || typeof obj !== 'object') return null
-  const action = String(obj.action ?? '').toUpperCase()
-  const side   = String(obj.side ?? '').toUpperCase()
-  const conv   = Number(obj.conviction)
-  if (action !== 'BUY' && action !== 'SKIP') return null
-  if (side !== 'YES' && side !== 'NO') return null
-  if (!Number.isFinite(conv) || conv < 0 || conv > 1) return null
-  return {
-    action,
-    side,
-    conviction: conv,
-    reasoning:  String(obj.reasoning ?? '').slice(0, 280),
-  }
-}
+// Re-export so callers that imported parseDecision from this module
+// continue to compile against the shared parser in predictionBrain.
+const parseDecision = parsePredictionDecision
+void parseDecision
 
 // ─────────────────────────────────────────────────────────────────────────
 // Brain-feed log helper. Always writes — even SKIPs. The mini-app brain
