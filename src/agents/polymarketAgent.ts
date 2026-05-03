@@ -224,6 +224,43 @@ async function tickOneAgent(
     data:  { lastPolymarketTickAt: new Date() },
   })
 
+  // Phase 4 (2026-05-03) — Telegram scan heartbeat. Mirrors the 42.space
+  // pattern in tradingAgent.ts so users with Polymarket enabled see a
+  // "Dominic on Polymarket — scanned N markets" message in chat instead
+  // of having to dig through the brain feed to confirm the venue is
+  // running. Fired BEFORE the setup-blocked / safe-not-deployed gates
+  // so users without onboarding still get the signal that the agent
+  // tried — and a one-line hint about what's blocking it.
+  // Rate-limited to once every ~10 minutes per agent via the same
+  // shouldSendPairNotification helper used by 42.space and Aster/HL.
+  try {
+    const { getBot, shouldSendPairNotification, markPairNotificationSent, escapeMd } =
+      await import('./runner')
+    const bot = getBot()
+    const u = await db.user.findUnique({
+      where: { id: agent.userId },
+      select: { telegramId: true },
+    })
+    const tg = u?.telegramId?.toString() ?? null
+    const heartbeatKey = '__scanlog__:polymarket'
+    if (bot && tg && shouldSendPairNotification(agent.id, heartbeatKey, 'heartbeat')) {
+      markPairNotificationSent(agent.id, heartbeatKey, 'heartbeat')
+      const top = events
+        .filter((e) => e.active && !e.closed && !e.archived && e.enableOrderBook)
+        .slice(0, 3)
+      const lines = top
+        .map((e) => `• ${escapeMd((e.title ?? '').slice(0, 60))}`)
+        .join('\n')
+      const body = top.length === 0
+        ? `Scanned Polymarket — no live events returned\\.`
+        : `Scanned ${events.length} live Polymarket events:\n${lines}`
+      const msg = `🎲 *${escapeMd(agent.name)} on Polymarket*\n\n${body}`
+      try { await bot.api.sendMessage(tg, msg, { parse_mode: 'MarkdownV2' }) } catch {}
+    }
+  } catch (e: any) {
+    console.warn(`[polymarketAgent] heartbeat send failed for ${agent.id}:`, e?.message)
+  }
+
   // Make sure the user has Polymarket creds ready — this is idempotent
   // (no-ops once set up). If they haven't onboarded (no BSC wallet to
   // derive PK from), getOrCreateCreds throws and we log + bail.
@@ -232,7 +269,7 @@ async function tickOneAgent(
     const c = await getOrCreateCreds(agent.userId)
     walletAddress = c.walletAddress
   } catch (err) {
-    await logDecision(agent, null, null, {
+    await logDecision(agent, null, { question: 'Polymarket setup required' } as any, {
       action: 'SKIP',
       side:   'YES',
       conviction: 0,
@@ -249,7 +286,7 @@ async function tickOneAgent(
   })
   const safeAddress = polyCreds?.safeAddress ?? null
   if (!safeAddress) {
-    await logDecision(agent, null, null, {
+    await logDecision(agent, null, { question: 'Polymarket Safe not deployed — run setup' } as any, {
       action: 'SKIP', side: 'YES', conviction: 0,
       reasoning: 'safe_not_deployed: user must run /api/polymarket/setup before agent can trade',
     })
@@ -270,7 +307,7 @@ async function tickOneAgent(
   }
   void walletAddress
   if (usdcBal < agent.polymarketMaxSizeUsdc) {
-    await logDecision(agent, null, null, {
+    await logDecision(agent, null, { question: `Polymarket low USDC ($${usdcBal.toFixed(2)})` } as any, {
       action: 'SKIP', side: 'YES', conviction: 0,
       reasoning: `insufficient_usdc: have $${usdcBal.toFixed(2)}, need $${agent.polymarketMaxSizeUsdc}`,
     })
