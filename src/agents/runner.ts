@@ -149,7 +149,11 @@ export function initRunner(bot: Bot) {
   // tick every 60s; the agent itself enforces a per-row min interval so
   // an over-eager runner can't double-fire. Single-flight via
   // `polymarketTickInflight` so a slow LLM round trip can't pile up.
-  setInterval(async () => {
+  // Phase 4 (2026-05-03): always log the sweep result (not just when
+  // scanned>0), so a user reporting "Polymarket isn't running for my
+  // agent" can be debugged from Render logs alone — the line tells us
+  // whether the sweep is firing AND whether it found the agent.
+  const tickPolymarket = async () => {
     if (polymarketTickInflight) {
       console.log('[polymarketAgent] previous tick still running, skipping')
       return
@@ -158,15 +162,18 @@ export function initRunner(bot: Bot) {
     try {
       const { tickAllPolymarketAgents } = await import('./polymarketAgent')
       const r = await tickAllPolymarketAgents()
-      if (r.scanned > 0 || r.errors > 0) {
-        console.log(`[polymarketAgent] scanned=${r.scanned} ticked=${r.ticked} placed=${r.ordersPlaced} skipped=${r.ordersSkipped} errors=${r.errors}`)
-      }
+      console.log(`[polymarketAgent] scanned=${r.scanned} ticked=${r.ticked} placed=${r.ordersPlaced} skipped=${r.ordersSkipped} errors=${r.errors}`)
     } catch (err) {
       console.error('[polymarketAgent] sweep failed:', (err as Error).message)
     } finally {
       polymarketTickInflight = false
     }
-  }, 60_000)
+  }
+  // Kick the first sweep immediately on boot so users don't wait the
+  // full 60s after a Render deploy to see Polymarket activity start.
+  // Defer by 5s to let the rest of initRunner finish wiring up first.
+  setTimeout(tickPolymarket, 5_000)
+  setInterval(tickPolymarket, 60_000)
 
   console.log('[Runner] Agent runner initialized')
 }
