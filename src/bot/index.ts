@@ -105,6 +105,11 @@ export function createBot(): Bot {
         (r.polymarketEnabled === true ||
           (Array.isArray(r.enabledVenues) && r.enabledVenues.includes('polymarket'))),
       )
+      // Live sweep telemetry — captured at the end of every sweep in
+      // polymarketAgent.ts. If null, the runner has never finished a
+      // sweep yet (server probably just booted).
+      const { getLastPolymarketSweepStatus } = await import('../agents/polymarketAgent')
+      const sweep = getLastPolymarketSweepStatus()
       const lines: string[] = []
       lines.push(`*Polymarket debug*`)
       lines.push(`user.polymarketAgentTradingEnabled: \`${u.polymarketAgentTradingEnabled}\``)
@@ -118,12 +123,21 @@ export function createBot(): Bot {
       lines.push('')
       lines.push(`*Sweep would pick up: ${matched.length} agent(s)*`)
       if (matched.length > 0) lines.push(matched.map((m) => `→ ${m.name}`).join('\n'))
+      lines.push('')
+      if (sweep) {
+        lines.push(`*Last sweep* ${sweep.at.slice(11,19)} UTC: scanned=${sweep.scanned} ticked=${sweep.ticked} placed=${sweep.ordersPlaced} skipped=${sweep.ordersSkipped} errors=${sweep.errors}`)
+        if (sweep.loadAgentsError) lines.push(`  loadAgentsError: \`${sweep.loadAgentsError.slice(0,200)}\``)
+        if (sweep.listEventsError) lines.push(`  listEventsError: \`${sweep.listEventsError.slice(0,200)}\``)
+        if (sweep.lastError)       lines.push(`  lastTickError: \`${sweep.lastError.slice(0,200)}\``)
+      } else {
+        lines.push(`*Last sweep:* _never completed yet_`)
+      }
+      lines.push('')
       const diag = u.polymarketAgentTradingEnabled === false
         ? 'BLOCKED: User.polymarketAgentTradingEnabled=false'
         : matched.length === 0
           ? rows.length === 0 ? 'BLOCKED: no agents' : 'BLOCKED: no agent matches sweep filter'
           : 'OK: agent(s) eligible'
-      lines.push('')
       lines.push(`*Diagnosis:* ${diag}`)
       await ctx.reply(lines.join('\n'), { parse_mode: 'Markdown' })
     } catch (err: any) {

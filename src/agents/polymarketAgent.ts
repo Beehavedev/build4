@@ -50,6 +50,28 @@ const MAX_MARKETS_PER_EVENT = 3
 // markets move slowly relative to perps, and this keeps LLM cost low.
 const MIN_TICK_INTERVAL_MS = 60_000
 
+// Phase 4 (2026-05-03) — live sweep telemetry. Captured on every sweep
+// completion, exposed via /api/me/debug-polymarket and the /debugpoly
+// bot command so users (and us) can see *why* a sweep returned what it
+// did without parsing Render logs. The shape mirrors the return value
+// of tickAllPolymarketAgents plus a timestamp and the last error
+// message — that's the diagnostic users actually need.
+export interface PolymarketSweepStatus {
+  at: string  // ISO timestamp of last sweep completion
+  scanned: number
+  ticked: number
+  ordersPlaced: number
+  ordersSkipped: number
+  errors: number
+  lastError: string | null
+  loadAgentsError: string | null
+  listEventsError: string | null
+}
+let lastSweepStatus: PolymarketSweepStatus | null = null
+export function getLastPolymarketSweepStatus(): PolymarketSweepStatus | null {
+  return lastSweepStatus
+}
+
 // AgentDecision is now PredictionDecision from predictionBrain — shared
 // with 42.space so both prediction venues use the same shape.
 import type { PredictionDecision } from './predictionBrain'
@@ -97,62 +119,76 @@ export async function tickAllPolymarketAgents(): Promise<{
   let errors = 0
 
   let agents: PolymarketAgentRow[] = []
+  let loadAgentsError: string | null = null
   try {
-    // Phase 4: pick up agents enabled via EITHER the legacy boolean OR the
-    // newer per-agent enabledVenues array (driven by the venue chip in
-    // Agent Studio). Either path opts the agent into autonomous Polymarket
-    // trading; the per-market gates inside tickOneAgent (Safe deployed,
-    // USDC funded, edge threshold met) still decide whether any single
-    // tick actually places an order.
-    // Phase 4 (2026-05-01) — also gate on the per-user
-    // polymarketAgentTradingEnabled flag (mirrors the aster/HL pattern in
-    // runner.ts). The check is done in JS rather than the SQL where-clause
-    // because Prisma can't filter on a relation field with a default-true
-    // boolean efficiently here, and the agent count is small.
-    const rows = await db.agent.findMany({
-      where: {
-        isActive: true,
-        isPaused: false,
-        OR: [
-          { polymarketEnabled: true },
-          { enabledVenues: { has: 'polymarket' } },
-        ],
-      },
-      select: {
-        id: true,
-        userId: true,
-        name: true,
-        polymarketEnabled: true,
-        polymarketMaxSizeUsdc: true,
-        polymarketEdgeThreshold: true,
-        lastPolymarketTickAt: true,
-        predictionEdgeThreshold: true,
-        predictionMaxDurationDays: true,
-        enabledVenues: true,
-        user: { select: { polymarketAgentTradingEnabled: true } },
-      },
-    })
+    // Phase 4 (2026-05-03): switched from db.agent.findMany() to raw SQL.
+    // Why: an earlier deploy was returning scanned=0 even when /debugpoly
+    // (which uses raw SQL) showed the agent was eligible. The most
+    // plausible explanation is a stale Prisma client on Render's build
+    // (predictionEdgeThreshold / predictionMaxDurationDays / enabledVenues
+    // missing from the generated client) silently throwing inside
+    // findMany — caught here, swallowed as "load failed", returns
+    // scanned=0 with no actionable error to the user.
+    //
+    // Raw SQL bypasses the client entirely, reads the columns directly
+    // from Postgres (where ensureTables guarantees they exist), and
+    // gives us a real error string we can surface via /debugpoly when
+    // something IS actually wrong with the schema.
+    const rows = await db.$queryRawUnsafe<any[]>(
+      `SELECT a."id", a."userId", a."name",
+              a."polymarketEnabled",
+              a."polymarketMaxSizeUsdc",
+              a."polymarketEdgeThreshold",
+              a."lastPolymarketTickAt",
+              a."predictionEdgeThreshold",
+              a."predictionMaxDurationDays",
+              a."enabledVenues",
+              u."polymarketAgentTradingEnabled" AS "userPolymarketAgentTradingEnabled"
+         FROM "Agent" a
+         LEFT JOIN "User" u ON u."id" = a."userId"
+        WHERE a."isActive" = true
+          AND a."isPaused" = false
+          AND (
+            a."polymarketEnabled" = true
+            OR 'polymarket' = ANY(a."enabledVenues")
+          )`,
+    )
     // Drop agents whose user has paused polymarket trading at the
     // platform level. Treat undefined / null as ALLOW so a missing
     // user record (shouldn't happen, but be defensive) does not
     // silently mute the venue.
     agents = rows
-      .filter((r) => r.user?.polymarketAgentTradingEnabled !== false)
+      .filter((r) => r.userPolymarketAgentTradingEnabled !== false)
       .map<PolymarketAgentRow>((r) => ({
         id: r.id,
         userId: r.userId,
         name: r.name,
         polymarketEnabled: r.polymarketEnabled,
-        polymarketMaxSizeUsdc: r.polymarketMaxSizeUsdc,
-        polymarketEdgeThreshold: r.polymarketEdgeThreshold,
-        lastPolymarketTickAt: r.lastPolymarketTickAt,
-        predictionEdgeThreshold: r.predictionEdgeThreshold,
-        predictionMaxDurationDays: r.predictionMaxDurationDays,
-        enabledVenues: r.enabledVenues,
-        user: r.user,
+        polymarketMaxSizeUsdc: Number(r.polymarketMaxSizeUsdc ?? 5),
+        polymarketEdgeThreshold: Number(r.polymarketEdgeThreshold ?? 0.05),
+        lastPolymarketTickAt: r.lastPolymarketTickAt instanceof Date
+          ? r.lastPolymarketTickAt
+          : (r.lastPolymarketTickAt ? new Date(r.lastPolymarketTickAt) : null),
+        predictionEdgeThreshold: r.predictionEdgeThreshold == null
+          ? null
+          : Number(r.predictionEdgeThreshold),
+        predictionMaxDurationDays: r.predictionMaxDurationDays == null
+          ? null
+          : Number(r.predictionMaxDurationDays),
+        enabledVenues: Array.isArray(r.enabledVenues) ? r.enabledVenues : [],
+        user: { polymarketAgentTradingEnabled: r.userPolymarketAgentTradingEnabled !== false },
       }))
   } catch (err) {
-    console.error('[polymarketAgent] failed to load agents:', (err as Error).message)
+    loadAgentsError = (err as Error).message ?? String(err)
+    console.error('[polymarketAgent] failed to load agents:', loadAgentsError)
+    lastSweepStatus = {
+      at: new Date().toISOString(),
+      scanned: 0, ticked: 0, ordersPlaced: 0, ordersSkipped: 0,
+      errors: errors + 1,
+      lastError: loadAgentsError,
+      loadAgentsError,
+      listEventsError: null,
+    }
     return { scanned, ticked, ordersPlaced, ordersSkipped, errors: errors + 1 }
   }
 
@@ -174,14 +210,16 @@ export async function tickAllPolymarketAgents(): Promise<{
   //   4. Skip with a brain-feed entry (visible to the user).
   // The Gamma error is logged with full detail so we can fix it.
   let events: PolymarketEvent[] = []
+  let listEventsError: string | null = null
   try {
     events = await listEvents({ limit: 20, order: 'volume24hr' })
   } catch (err) {
     errors++
-    const msg = (err as Error).message ?? String(err)
-    console.error(`[polymarketAgent] listEvents failed (continuing with empty events): ${msg}`)
+    listEventsError = (err as Error).message ?? String(err)
+    console.error(`[polymarketAgent] listEvents failed (continuing with empty events): ${listEventsError}`)
   }
 
+  let lastTickError: string | null = null
   for (const agent of agents) {
     // Tick-rate gate — even if runner spins fast, each agent acts at
     // most once a minute. lastPolymarketTickAt is updated below.
@@ -195,10 +233,18 @@ export async function tickAllPolymarketAgents(): Promise<{
       ordersSkipped += summary.ordersSkipped
     } catch (err) {
       errors++
+      lastTickError = `${agent.name}: ${(err as Error).message ?? String(err)}`
       console.error(`[polymarketAgent] agent ${agent.id} tick failed:`, (err as Error).message)
     }
   }
 
+  lastSweepStatus = {
+    at: new Date().toISOString(),
+    scanned, ticked, ordersPlaced, ordersSkipped, errors,
+    lastError: lastTickError,
+    loadAgentsError,
+    listEventsError,
+  }
   return { scanned, ticked, ordersPlaced, ordersSkipped, errors }
 }
 
