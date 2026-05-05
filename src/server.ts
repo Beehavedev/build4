@@ -7063,9 +7063,29 @@ app.get('/api/admin/swarm-divergence/samples', async (req, res) => {
 })
 
 async function main() {
-  // Connect DB
-  await db.$connect()
-  console.log('[DB] Connected')
+  // Connect DB — retry up to 5 times with exponential backoff so a
+  // transient Postgres P1017 ("server has closed the connection",
+  // typically Render's Postgres briefly at connection limit or in a
+  // maintenance window) doesn't crash the boot. Prisma also connects
+  // lazily on first query, so even if all retries fail we let the
+  // server come up and serve traffic — individual queries will retry
+  // their own connections.
+  let connected = false
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    try {
+      await db.$connect()
+      connected = true
+      console.log(`[DB] Connected (attempt ${attempt})`)
+      break
+    } catch (err) {
+      const msg = (err as Error).message ?? String(err)
+      console.warn(`[DB] $connect attempt ${attempt}/5 failed: ${msg}`)
+      if (attempt < 5) await new Promise((r) => setTimeout(r, 1000 * attempt))
+    }
+  }
+  if (!connected) {
+    console.error('[DB] All $connect retries failed — booting anyway, queries will lazy-connect')
+  }
 
   // Create new tables safely (no drops, no renames)
   await ensureNewTables()
