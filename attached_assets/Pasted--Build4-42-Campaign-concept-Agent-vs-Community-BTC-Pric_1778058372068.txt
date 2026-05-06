@@ -1,0 +1,103 @@
+# Build4 <> 42
+
+**Campaign concept:** Agent vs Community | BTC Price Markets
+
+[round 1]
+
+### About
+
+BUILD4 agent participates in 42 BTC Price Markets across a 48-hour campaign window. The agent publicly shares its thesis and position each round, while the 42 community can follow, fade or trade around it.
+
+The campaign runs on 42’s newest launch: [8H **BTC Price Markets**](http://markets.42.space/Price-Markets), which run in continuous 4-hour rounds. Over 48 hours, the campaign can span around **12 BTC market rounds**, creating multiple trading and content moments.
+
+The core narrative: **can an AI agent outperform the 42 trading community?**
+
+---
+
+### Objectives
+
+1. **showcase BUILD4 agent performance:** demo agent’s ability to analyze BTC Price Markets, take positions, compete against traders and possibly outperform them (visible through a live leaderboard).
+2. **capitalize on current momentum:** fast activation to convert attention into participation.
+3. **drive activity into BTC Price Markets:** direct users to trade BTC Price Markets across multiple rounds, increasing volume, retention, repeat participation.
+4. **create a measurable agent-vs-community storyline:** track the BUILD4 agent’s performance against 42 traders through a dedicated campaign leaderboard.
+5. **set up for a stronger V2 follow-up:** use this as round one/warm up phase. Once 42 V2 is live, run a more agent-native version where the BUILD4 agent can create a market, participate, compete and resolve permissionlessly.
+
+---
+
+### Execution Plan
+
+- **Campaign duration:** 48 hours
+- Launch Date: [-]
+- End Date: [-]
+- **Market format:** BTC Price Markets
+- **Round cadence:** new round every 4 hours
+- **Total rounds:** approximately 12
+- **Agent position size:** around $25–50 per round
+- **Leaderboard:** dedicated campaign leaderboard tracking agent vs community performance
+
+Each round:
+
+1. BUILD4 agent analyzes BTC market conditions.
+2. agent publishes thesis + selected range.
+3. agent enters position early in the 4h round.
+4. 42 leaderboard tracks agent performance vs traders.
+5. campaign content highlights key moments, top traders, wins, agent’s performance.
+
+---
+
+### Comms / Content Strategy
+
+**Pre-launch**
+
+- joint announcement: BUILD4 agent is entering 42 BTC Price Markets.
+- clear CTA:
+    - join the showdown on the community side in BTC Price Markets and track performance on the campaign leaderboard.
+- position the campaign as:
+    - **AI agent vs 42 traders: 48 hours, 12 rounds, live leaderboard.**
+
+**During campaign**
+
+- BUILD4 posts agent thesis + position each round. 42 reposts/RTs/interacts with BUILD4 updates.
+- 42 posts leaderboard updates, strong trader wins, agent performance, notable community trades
+
+**Post-campaign**
+
+- final recap: agent performance vs community.
+- highlight top traders, best PnLs, total volume, number of participants, and strongest round.
+- tease round two with V2: agent-created markets.
+
+Copies
+
+| Topic | Copy | Collateral |
+| --- | --- | --- |
+|  |  |  |
+|  |  |  |
+|  |  |  |
+|  |  |  |
+|  |  |  |
+
+---
+
+### Metrics to Track
+
+- on product: volume, N of traders, N of new users, avg trades per rounds, Agent PnL/win rate, top community trader PnL.
+- on socials: reach, engagement, clicks, conversions
+
+---
+
+### Open Questions
+
+- assigning a small prize pool to incentivize new user onboarding?
+- wallet address from BUILD4 to be flagged as the agent on the leaderboard?
+- I*s the* CTA fully aligned around sending users directly to 42 BTC Price Markets?
+
+---
+
+[round 2 once V2 is live]
+
+> *...with V2, the agent could permissionlessly create the market itself, participate in it and help resolve it. that gives us a much more interesting story: BUILD4 showcases an agent that can structure and launch a live market as well as participate and resolve it, while 42 showcases permissionless market creation.
+
+that feels more native to both products, and I think people would be much more curious to watch it unfold versus a standard price-range call. also, instead of just 'agent predicts BNB', we could make it more agentic: the agent scans trending BSC assets, picks the asset or setup it has the strongest conviction on, creates the market live, takes a public position, and then the community decides whether to follow, fade, trade around it, etc.
+
+we can also explore more creative versions that feel unique to BUILD4, but my initial suggestion would be to run the actual campaign as a 3-day activation with 3 separate 24h markets, or even shorter rounds. that gives us multiple content moments, builds momentum day by day, and makes the agent-vs-community narrative more fun to follow (but will ultimately depend on what market we settle on).*
+>
