@@ -197,3 +197,9 @@ id = "wbs_R1rB6uVAOs0bbmKBH"
 uri = "file://media-kit/logos/partner-hyperliquid.png"
 type = "image"
 title = "Hyperliquid Logo"
+
+[[outputs]]
+id = "T58pE6YEI-IAYc4wPRkkS"
+uri = "file://build4-media-kit.pdf"
+type = "pdf"
+title = "BUILD4 Media Kit (PDF)"
