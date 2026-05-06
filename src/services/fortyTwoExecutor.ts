@@ -274,7 +274,10 @@ async function loadUserWalletPK(
   // load that specific Wallet row instead of the user's primary BSC wallet.
   // Keeps the campaign agent's trade history isolated from the user's main
   // wallet — important for the 42.space leaderboard story.
-  if (agentId) {
+  // Gated on isCampaignAgent() so non-campaign agents (every existing
+  // production agent) skip the extra SQL round-trip entirely — guarantees
+  // a true zero-impact change for the existing trading path.
+  if (agentId && isCampaignAgent(agentId)) {
     try {
       const agentRows = await db.$queryRawUnsafe<Array<{ walletId: string | null }>>(
         `SELECT "walletId" FROM "Agent" WHERE id = $1 LIMIT 1`,
