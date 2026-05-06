@@ -1,0 +1,50 @@
+[Aster] klines fetch (cache miss): { symbol: 'DOGSUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DRAMUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'LINKUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'LINKUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'XCNUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'XCNUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'XCNUSDT', interval: '4h', limit: 200 }
+[HL] getCandles failed: HYPE 15m 429 Too Many Requests - null
+[HL] getCandles failed: HYPE 4h 429 Too Many Requests - null
+[Agent Helios4114] Skipping HYPE tick — empty candles (15m=0 1h=201 4h=0); likely venue rate-limit.
+[HL] getCandles failed: HYPE 1h 429 Too Many Requests - null
+[Agent Orion1687] Skipping HYPE tick — empty candles (15m=201 1h=0 4h=201); likely venue rate-limit.
+[HL] getCandles failed: FARTCOIN 4h 429 Too Many Requests - null
+[HL] getCandles failed: FARTCOIN 1h 429 Too Many Requests - null
+[HL] getCandles failed: FARTCOIN 15m 429 Too Many Requests - null
+[Agent Hahah] Skipping FARTCOIN tick — empty candles (15m=0 1h=0 4h=0); likely venue rate-limit.
+[HL] getCandles failed: SOL 15m 429 Too Many Requests - null
+[HL] getCandles failed: SOL 4h 429 Too Many Requests - null
+[HL] getCandles failed: SOL 1h 429 Too Many Requests - null
+[Agent Halcyon1391] Skipping SOL tick — empty candles (15m=0 1h=0 4h=0); likely venue rate-limit.
+[HL] getCandles failed: FARTCOIN 15m 429 Too Many Requests - null
+[HL] getCandles failed: FARTCOIN 1h 429 Too Many Requests - null
+[HL] getCandles failed: FARTCOIN 4h 429 Too Many Requests - null
+[Agent agvvfttcvvcg] Skipping FARTCOIN tick — empty candles (15m=0 1h=0 4h=0); likely venue rate-limit.
+[HL] getCandles failed: SOL 15m 429 Too Many Requests - null
+[HL] getCandles failed: SOL 1h 429 Too Many Requests - null
+[HL] getCandles failed: SOL 4h 429 Too Many Requests - null
+[Agent TENSHI] Skipping SOL tick — empty candles (15m=0 1h=0 4h=0); likely venue rate-limit.
+[HL] getCandles failed: FARTCOIN 1h 429 Too Many Requests - null
+[HL] getCandles failed: FARTCOIN 15m 429 Too Many Requests - null
+[HL] getCandles failed: FARTCOIN 4h 429 Too Many Requests - null
+[Agent Goku] Skipping FARTCOIN tick — empty candles (15m=0 1h=0 4h=0); likely venue rate-limit.
+[HL] getCandles failed: FARTCOIN 15m 429 Too Many Requests - null
+[HL] getCandles failed: FARTCOIN 4h 429 Too Many Requests - null
+[HL] getCandles failed: FARTCOIN 1h 429 Too Many Requests - null
+[Agent BNT] Skipping FARTCOIN tick — empty candles (15m=0 1h=0 4h=0); likely venue rate-limit.
+[HL] getCandles failed: SOL 15m 429 Too Many Requests - null
+[HL] getCandles failed: SOL 1h 429 Too Many Requests - null
+[HL] getCandles failed: SOL 15m 429 Too Many Requests - null
+[HL] getCandles failed: SOL 4h 429 Too Many Requests - null
+[HL] getCandles failed: SOL 1h 429 Too Many Requests - null
+[Agent Phoenix2848] Skipping SOL tick — empty candles (15m=0 1h=0 4h=0); likely venue rate-limit.
+[HL] getCandles failed: SOL 4h 429 Too Many Requests - null
+[Agent Helios4114] Skipping SOL tick — empty candles (15m=0 1h=0 4h=0); likely venue rate-limit.
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '15m', limit: 200 }
+[HL] getCandles failed: SOL 15m 429 Too Many Requests - null
+[HL] getCandles failed: SOL 1h 429 Too Many Requests - null
+[HL] getCandles failed: SOL 4h 429 Too Many Requests - null
+[Agent Orion1687] Skipping SOL tick — empty candles (15m=0 1h=0 4h=0); likely venue rate-limit.
