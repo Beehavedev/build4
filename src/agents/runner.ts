@@ -175,6 +175,53 @@ export function initRunner(bot: Bot) {
   setTimeout(tickPolymarket, 5_000)
   setInterval(tickPolymarket, 60_000)
 
+  // ── BUILD4 × 42.space "Agent vs Community" 48h campaign ──────────────
+  // 12 rounds of BTC 8h Price Markets, one round per 4h UTC boundary
+  // (00/04/08/12/16/20). For each round we fire 4 ticks:
+  //   ENTRY      = boundary + 5min   (always trades $50 — no skip)
+  //   REASSESS_1 = boundary + 1h30m  (HOLD/DOUBLE_DOWN/SPREAD)
+  //   REASSESS_2 = boundary + 3h     (HOLD/DOUBLE_DOWN/SPREAD)
+  //   FINAL      = boundary + 3h45m  (last call before market locks)
+  //
+  // All cron strings are explicit UTC. Gated on FT_CAMPAIGN_MODE=true so
+  // the scheduler is a complete no-op for any deploy that doesn't set the
+  // env. The runCampaignTick() function itself short-circuits if the
+  // campaign agent isn't found, so accidental enables can't trade.
+  if (process.env.FT_CAMPAIGN_MODE === 'true') {
+    let campaignTickInflight = false
+    const fireCampaignTick = async (tick: 'ENTRY' | 'REASSESS_1' | 'REASSESS_2' | 'FINAL') => {
+      if (campaignTickInflight) {
+        console.warn(`[fortyTwoCampaign] previous tick still running, skipping ${tick}`)
+        return
+      }
+      campaignTickInflight = true
+      try {
+        const { runCampaignTick } = await import('../services/fortyTwoCampaign')
+        const r = await runCampaignTick(tick)
+        if (r.ok) {
+          console.log(
+            `[fortyTwoCampaign] ${tick} OK: market=${r.marketAddress ?? '-'} ` +
+              `bucket=${r.bucketIndex ?? '-'} positionId=${r.positionId ?? '-'}`,
+          )
+        } else {
+          console.warn(`[fortyTwoCampaign] ${tick} no-trade: ${r.reason ?? 'unknown'}`)
+        }
+      } catch (err) {
+        console.error(`[fortyTwoCampaign] ${tick} crashed:`, (err as Error).message)
+      } finally {
+        campaignTickInflight = false
+      }
+    }
+    const cronOpts = { timezone: 'UTC' as const }
+    cron.schedule('5 0,4,8,12,16,20 * * *',  () => { void fireCampaignTick('ENTRY') },      cronOpts)
+    cron.schedule('30 1,5,9,13,17,21 * * *', () => { void fireCampaignTick('REASSESS_1') }, cronOpts)
+    cron.schedule('0 3,7,11,15,19,23 * * *', () => { void fireCampaignTick('REASSESS_2') }, cronOpts)
+    cron.schedule('45 3,7,11,15,19,23 * * *',() => { void fireCampaignTick('FINAL') },      cronOpts)
+    console.log(
+      '[Runner] 42.space campaign scheduler ARMED — ENTRY +5m, REASSESS +1h30m/+3h, FINAL +3h45m past every 4h UTC boundary',
+    )
+  }
+
   console.log('[Runner] Agent runner initialized')
 }
 
