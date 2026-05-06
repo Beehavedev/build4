@@ -4394,6 +4394,167 @@ app.post('/api/admin/market-creator/run', requireAdmin, async (_req, res) => {
   }
 })
 
+// ── 42.space "Agent vs Community" campaign recap (T011) ──────────────────
+// GET /api/admin/campaign/state
+//   Round-by-round breakdown of the campaign agent's positions: bucket,
+//   size, multiplier, swarm vote, settled status, payout, PnL, cumulative.
+//   Drives the leaderboard tweet + mini-app recap card.
+//
+// Reads positions tagged with `[CAMPAIGN ... round=<ms> ...]` in their
+// reasoning prefix (set by fortyTwoCampaign.runCampaignTick), groups by
+// round boundary, and computes per-round + cumulative PnL from the
+// existing OutcomePosition fields (status, payoutUsdt, pnl).
+app.get('/api/admin/campaign/state', requireAdmin, async (_req, res) => {
+  try {
+    const agentId = process.env.FT_CAMPAIGN_AGENT_ID
+    if (!agentId) {
+      return res.json({
+        ok: false,
+        reason: 'FT_CAMPAIGN_AGENT_ID not set',
+        rounds: [],
+        cumulativePnl: 0,
+      })
+    }
+    const positions = await db.$queryRawUnsafe<Array<{
+      id: string
+      marketAddress: string
+      marketTitle: string
+      tokenId: number
+      outcomeLabel: string
+      usdtIn: number
+      entryPrice: number
+      payoutUsdt: number | null
+      pnl: number | null
+      status: string
+      paperTrade: boolean
+      txHashOpen: string | null
+      reasoning: string | null
+      providers: any
+      openedAt: Date
+      closedAt: Date | null
+    }>>(
+      `SELECT id, "marketAddress", "marketTitle", "tokenId", "outcomeLabel",
+              "usdtIn", "entryPrice", "payoutUsdt", pnl, status, "paperTrade",
+              "txHashOpen", reasoning, providers, "openedAt", "closedAt"
+       FROM "OutcomePosition"
+       WHERE "agentId" = $1
+       ORDER BY "openedAt" ASC`,
+      agentId,
+    )
+
+    // Group by round boundary parsed from the reasoning prefix.
+    type RoundBucket = {
+      roundBoundaryMs: number | null
+      roundIdx: number | null
+      positions: Array<{
+        id: string
+        kind: string         // ENTRY | DOUBLE_DOWN | SPREAD | UNTAGGED
+        tick: string | null  // ENTRY | REASSESS_1 | REASSESS_2 | FINAL | null
+        marketAddress: string
+        marketTitle: string
+        tokenId: number
+        outcomeLabel: string
+        usdtIn: number
+        entryPrice: number
+        impliedMultiplier: number
+        payoutUsdt: number | null
+        pnl: number | null
+        status: string
+        paperTrade: boolean
+        txHashOpen: string | null
+        thesis: string
+        swarm: any
+        openedAt: string
+        closedAt: string | null
+      }>
+      totalIn: number
+      totalPayout: number
+      totalPnl: number
+      settled: boolean
+    }
+    const startMs = Number(process.env.FT_CAMPAIGN_START_MS ?? 0) || null
+    const buckets = new Map<string, RoundBucket>()
+    for (const p of positions) {
+      const m = (p.reasoning ?? '').match(/\[CAMPAIGN\s+(\w+)\s+round=(\d+)(?:\s+tick=(\w+))?\]\s*(.*)/)
+      const kind = m?.[1] ?? 'UNTAGGED'
+      const roundBoundaryMs = m ? Number(m[2]) : null
+      const tick = m?.[3] ?? (kind === 'ENTRY' ? 'ENTRY' : null)
+      const thesis = m?.[4] ?? (p.reasoning ?? '')
+      const key = roundBoundaryMs?.toString() ?? `unbounded:${p.id}`
+      const roundIdx = startMs && roundBoundaryMs
+        ? Math.max(1, Math.min(12, Math.floor((roundBoundaryMs - startMs) / (4 * 60 * 60 * 1000)) + 1))
+        : null
+      let bucket = buckets.get(key)
+      if (!bucket) {
+        bucket = {
+          roundBoundaryMs,
+          roundIdx,
+          positions: [],
+          totalIn: 0,
+          totalPayout: 0,
+          totalPnl: 0,
+          settled: true,
+        }
+        buckets.set(key, bucket)
+      }
+      const impliedMultiplier = p.entryPrice > 0 ? 1 / p.entryPrice : 0
+      bucket.positions.push({
+        id: p.id,
+        kind,
+        tick,
+        marketAddress: p.marketAddress,
+        marketTitle: p.marketTitle,
+        tokenId: Number(p.tokenId),
+        outcomeLabel: p.outcomeLabel,
+        usdtIn: Number(p.usdtIn),
+        entryPrice: Number(p.entryPrice),
+        impliedMultiplier,
+        payoutUsdt: p.payoutUsdt == null ? null : Number(p.payoutUsdt),
+        pnl: p.pnl == null ? null : Number(p.pnl),
+        status: p.status,
+        paperTrade: p.paperTrade,
+        txHashOpen: p.txHashOpen,
+        thesis: thesis.slice(0, 500),
+        swarm: p.providers,
+        openedAt: p.openedAt.toISOString(),
+        closedAt: p.closedAt?.toISOString() ?? null,
+      })
+      bucket.totalIn += Number(p.usdtIn)
+      bucket.totalPayout += Number(p.payoutUsdt ?? 0)
+      bucket.totalPnl += Number(p.pnl ?? 0)
+      if (p.status === 'open') bucket.settled = false
+    }
+
+    const rounds = [...buckets.values()].sort((a, b) => {
+      const aMs = a.roundBoundaryMs ?? Infinity
+      const bMs = b.roundBoundaryMs ?? Infinity
+      return aMs - bMs
+    })
+
+    let cumulative = 0
+    const cumulativeByRound = rounds.map((r) => {
+      cumulative += r.totalPnl
+      return { roundIdx: r.roundIdx, roundBoundaryMs: r.roundBoundaryMs, cumulativePnl: cumulative }
+    })
+
+    return res.json({
+      ok: true,
+      agentId,
+      campaignMode: process.env.FT_CAMPAIGN_MODE === 'true',
+      campaignStartMs: startMs,
+      tgChannel: process.env.FT_CAMPAIGN_TG_CHANNEL ?? null,
+      rounds,
+      cumulativeByRound,
+      cumulativePnl: cumulative,
+      totalRoundsTraded: rounds.length,
+      totalUsdtDeployed: rounds.reduce((s, r) => s + r.totalIn, 0),
+    })
+  } catch (err) {
+    console.error('[API] /admin/campaign/state failed:', err)
+    res.status(500).json({ error: 'Internal error' })
+  }
+})
+
 // Force a real, on-chain prediction-market trade RIGHT NOW for partnership
 // demos. Picks the highest-volume live 42.space market, reads its outcomes
 // on-chain, picks the highest-implied-probability outcome (most liquid side),
