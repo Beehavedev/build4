@@ -203,6 +203,41 @@ export interface HlCandle {
   volume: number
 }
 
+// ── Process-wide HL candles cache (mirrors src/services/aster.ts klinesCache) ──
+// With many agents trading the same HL symbols (SOL, HYPE, FARTCOIN, …) on the
+// same cron cadence, each tick fanned out to 3 separate HL info requests
+// (15m/1h/4h) per agent, hammering HL's per-IP limit and producing the
+// "[HL] getCandles failed: … 429 Too Many Requests" cascade visible in prod.
+//
+// Interval-aware TTL: a 4h candle doesn't change for hours, so cache it long.
+// Rule of thumb: ~25% of candle period, capped at 5min so even daily candles
+// refresh often enough to catch corrections. In-flight de-duplication via
+// _inflightCandles prevents thundering-herd on cache miss when N agents tick
+// simultaneously — the first caller fetches, the others await the same promise.
+const HL_CANDLES_TTL_BY_INTERVAL_MS: Record<string, number> = {
+  '1m':  10_000,
+  '3m':  20_000,
+  '5m':  30_000,
+  '15m': 60_000,
+  '30m': 120_000,
+  '1h':  180_000,
+  '2h':  300_000,
+  '4h':  300_000,
+  '8h':  300_000,
+  '12h': 300_000,
+  '1d':  300_000,
+  '3d':  300_000,
+  '1w':  300_000,
+  '1M':  300_000,
+}
+const HL_CANDLES_TTL_DEFAULT_MS = 60_000
+function ttlForCandleInterval(interval: string): number {
+  return HL_CANDLES_TTL_BY_INTERVAL_MS[interval] ?? HL_CANDLES_TTL_DEFAULT_MS
+}
+const HL_CANDLES_CACHE_MAX_ENTRIES = 2_000
+const _hlCandlesCache = new Map<string, { data: HlCandle[]; ts: number }>()
+const _inflightCandles = new Map<string, Promise<HlCandle[]>>()
+
 export async function getCandles(
   coin: string,
   interval: string = '15m',
@@ -212,28 +247,51 @@ export async function getCandles(
   if (!sym) return []
   const intv = HL_VALID_INTERVALS.has(interval) ? interval : '15m'
   const safeLimit = Math.max(1, Math.min(1500, Math.floor(limit)))
+
+  // ── Cache check (interval-aware TTL, dedupes in-flight requests) ──
+  const cacheKey = `${sym}:${intv}:${safeLimit}`
+  const cached = _hlCandlesCache.get(cacheKey)
+  if (cached && Date.now() - cached.ts < ttlForCandleInterval(intv)) {
+    return cached.data
+  }
+  const inflight = _inflightCandles.get(cacheKey)
+  if (inflight) return inflight
+
   const stepMs = HL_INTERVAL_MS[intv] ?? 900_000
   const endTime = Date.now()
   const startTime = endTime - stepMs * safeLimit
 
-  try {
-    const res: any = await (transport as any).request('info', {
-      type: 'candleSnapshot',
-      req: { coin: sym, interval: intv, startTime, endTime },
-    })
-    if (!Array.isArray(res)) return []
-    return res.map((c: any) => ({
-      time:   Math.floor(Number(c.t) / 1000),
-      open:   parseFloat(c.o),
-      high:   parseFloat(c.h),
-      low:    parseFloat(c.l),
-      close:  parseFloat(c.c),
-      volume: parseFloat(c.v),
-    })).filter(c => Number.isFinite(c.open) && Number.isFinite(c.close))
-  } catch (err: any) {
-    console.error('[HL] getCandles failed:', sym, intv, err?.message)
-    return []
-  }
+  const fetchPromise = (async (): Promise<HlCandle[]> => {
+    try {
+      const res: any = await (transport as any).request('info', {
+        type: 'candleSnapshot',
+        req: { coin: sym, interval: intv, startTime, endTime },
+      })
+      if (!Array.isArray(res)) return []
+      const result = res.map((c: any) => ({
+        time:   Math.floor(Number(c.t) / 1000),
+        open:   parseFloat(c.o),
+        high:   parseFloat(c.h),
+        low:    parseFloat(c.l),
+        close:  parseFloat(c.c),
+        volume: parseFloat(c.v),
+      })).filter((c: HlCandle) => Number.isFinite(c.open) && Number.isFinite(c.close))
+      // Only cache non-empty results — caching [] would mask transient
+      // failures (e.g. one 429) for the entire TTL window and starve every
+      // subsequent agent tick of data.
+      if (result.length > 0) {
+        _hlCandlesCache.set(cacheKey, { data: result, ts: Date.now() })
+      }
+      return result
+    } catch (err: any) {
+      console.error('[HL] getCandles failed:', sym, intv, err?.message)
+      return []
+    } finally {
+      _inflightCandles.delete(cacheKey)
+    }
+  })()
+  _inflightCandles.set(cacheKey, fetchPromise)
+  return fetchPromise
 }
 
 /**
@@ -642,6 +700,21 @@ function evictExpiredHlCaches(): void {
       _infoCache.delete(k)
     }
   }
+  // 1b) _hlCandlesCache — drop entries past 2× their interval-specific TTL,
+  // then hard-cap. Mirrors the policy in src/services/aster.ts klinesCache.
+  for (const [k, v] of _hlCandlesCache) {
+    const interval = k.split(':')[1] ?? '15m'
+    const maxAge = ttlForCandleInterval(interval) * 2
+    if (now - v.ts > maxAge) _hlCandlesCache.delete(k)
+  }
+  if (_hlCandlesCache.size > HL_CANDLES_CACHE_MAX_ENTRIES) {
+    const overflow = _hlCandlesCache.size - HL_CANDLES_CACHE_MAX_ENTRIES
+    let n = 0
+    for (const k of _hlCandlesCache.keys()) {
+      if (n++ >= overflow) break
+      _hlCandlesCache.delete(k)
+    }
+  }
   // 2) _hlLastGoodAccountState — drop addresses we haven't refreshed in 24h
   // (the user hasn't opened the mini-app in a day, no point keeping their
   // stale snapshot). Then hard-cap.
@@ -664,6 +737,8 @@ if (typeof (_hlJanitor as any).unref === 'function') (_hlJanitor as any).unref()
 export function __evictHlCachesForTests(): void { evictExpiredHlCaches() }
 export function __peekHlInfoCacheSizeForTests(): number { return _infoCache.size }
 export function __peekHlLastGoodCacheSizeForTests(): number { return _hlLastGoodAccountState.size }
+export function __peekHlCandlesCacheSizeForTests(): number { return _hlCandlesCache.size }
+export function __resetHlCandlesCacheForTests(): void { _hlCandlesCache.clear(); _inflightCandles.clear() }
 
 /**
  * Fetch the user's recent fills from HL. Each fill is one side of a single
