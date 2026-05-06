@@ -88,6 +88,10 @@ export async function ensureNewTables() {
 
   // On-chain identity columns (added in v2 — every agent has its own wallet)
   await run(`ALTER TABLE "Agent" ADD COLUMN IF NOT EXISTS "walletAddress" TEXT`)
+  // Campaign-mode: dedicated agent → dedicated Wallet row (Path A).
+  // NULL means "fall back to user's primary BSC wallet" (existing behaviour).
+  // Non-NULL pins this agent's 42.space trades to a specific Wallet.id.
+  await run(`ALTER TABLE "Agent" ADD COLUMN IF NOT EXISTS "walletId" TEXT`)
   await run(`ALTER TABLE "Agent" ADD COLUMN IF NOT EXISTS "encryptedPK" TEXT`)
   await run(`ALTER TABLE "Agent" ADD COLUMN IF NOT EXISTS "onchainTxHash" TEXT`)
   await run(`ALTER TABLE "Agent" ADD COLUMN IF NOT EXISTS "onchainChain" TEXT DEFAULT 'BSC'`)

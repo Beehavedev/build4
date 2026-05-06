@@ -195,6 +195,54 @@ export const PRED_AGENT_BUDGET_PCT = 0.10;         // ≤10% of agent.maxPositio
 export const PRED_MAX_OPEN_PER_AGENT = 5;          // simultaneous open positions
 export const PRED_MAX_NEW_PER_AGENT_PER_DAY = 3;   // bound velocity / cost
 
+// ── Campaign-mode caps (BUILD4 × 42.space "Agent vs Community" 48h sprint) ──
+// Lifted ONLY for the dedicated campaign agent identified by env
+// FT_CAMPAIGN_AGENT_ID. Every other agent in the system continues to trade
+// under the conservative defaults above. The split is intentional: campaign
+// rules need $50 entries and 4 ticks/round, but the broker-mode default for
+// regular users must stay defensive ($2 cap, 3/day, 5 open) so a stray
+// signal can never drain a normal user's wallet.
+export const PRED_CAMPAIGN_PER_POSITION_USDT_CAP = 50;
+export const PRED_CAMPAIGN_AGENT_BUDGET_PCT = 0.50;
+export const PRED_CAMPAIGN_MAX_OPEN_PER_AGENT = 12;
+export const PRED_CAMPAIGN_MAX_NEW_PER_AGENT_PER_DAY = 8;
+
+interface PredictionCaps {
+  perPositionUsdtCap: number;
+  agentBudgetPct: number;
+  maxOpenPerAgent: number;
+  maxNewPerAgentPerDay: number;
+  isCampaign: boolean;
+}
+
+/** True when the given agentId is the dedicated 42.space campaign agent. */
+export function isCampaignAgent(agentId: string | null | undefined): boolean {
+  if (process.env.FT_CAMPAIGN_MODE !== 'true') return false;
+  const id = process.env.FT_CAMPAIGN_AGENT_ID;
+  return !!id && !!agentId && agentId === id;
+}
+
+/** Returns the sizing caps appropriate for the given agent. Campaign agent
+ *  gets the lifted caps; everyone else gets the default broker-mode caps. */
+export function capsFor(agentId: string | null | undefined): PredictionCaps {
+  if (isCampaignAgent(agentId)) {
+    return {
+      perPositionUsdtCap: PRED_CAMPAIGN_PER_POSITION_USDT_CAP,
+      agentBudgetPct: PRED_CAMPAIGN_AGENT_BUDGET_PCT,
+      maxOpenPerAgent: PRED_CAMPAIGN_MAX_OPEN_PER_AGENT,
+      maxNewPerAgentPerDay: PRED_CAMPAIGN_MAX_NEW_PER_AGENT_PER_DAY,
+      isCampaign: true,
+    };
+  }
+  return {
+    perPositionUsdtCap: PRED_PER_POSITION_USDT_CAP,
+    agentBudgetPct: PRED_AGENT_BUDGET_PCT,
+    maxOpenPerAgent: PRED_MAX_OPEN_PER_AGENT,
+    maxNewPerAgentPerDay: PRED_MAX_NEW_PER_AGENT_PER_DAY,
+    isCampaign: false,
+  };
+}
+
 export interface PredictionTradeIntent {
   action: 'OPEN_PREDICTION' | 'CLOSE_PREDICTION';
   marketAddress: string;
@@ -218,7 +266,40 @@ interface UserWalletPK {
   privateKey: string;
 }
 
-async function loadUserWalletPK(userId: string): Promise<UserWalletPK | null> {
+async function loadUserWalletPK(
+  userId: string,
+  agentId?: string | null,
+): Promise<UserWalletPK | null> {
+  // Campaign-mode (Path A): if the agent has a dedicated walletId pinned,
+  // load that specific Wallet row instead of the user's primary BSC wallet.
+  // Keeps the campaign agent's trade history isolated from the user's main
+  // wallet — important for the 42.space leaderboard story.
+  if (agentId) {
+    try {
+      const agentRows = await db.$queryRawUnsafe<Array<{ walletId: string | null }>>(
+        `SELECT "walletId" FROM "Agent" WHERE id = $1 LIMIT 1`,
+        agentId,
+      );
+      const pinnedWalletId = agentRows[0]?.walletId;
+      if (pinnedWalletId) {
+        const w = await db.wallet.findFirst({
+          where: { id: pinnedWalletId, userId, chain: 'BSC' },
+        });
+        if (!w?.encryptedPK) return null;
+        try {
+          const pk = __testDeps.decryptPrivateKey(w.encryptedPK, userId);
+          if (!pk?.startsWith('0x')) return null;
+          return { address: w.address, privateKey: pk };
+        } catch {
+          return null;
+        }
+      }
+    } catch (err) {
+      // Pre-migration boot or transient DB issue — fall through to default
+      // wallet so existing agents keep trading rather than going dark.
+      console.warn('[fortyTwoExecutor] agent.walletId lookup failed:', (err as Error).message);
+    }
+  }
   const wallet = await db.wallet.findFirst({
     where: { userId, chain: 'BSC', isActive: true },
   });
@@ -251,8 +332,9 @@ async function loadUserWalletPK(userId: string): Promise<UserWalletPK | null> {
 async function buildTrader(
   userId: string,
   forcePaperTrade?: boolean,
+  agentId?: string | null,
 ): Promise<{ trader: ExecutorTrader; paperTrade: boolean } | null> {
-  const wallet = await loadUserWalletPK(userId);
+  const wallet = await loadUserWalletPK(userId, agentId);
   if (!wallet) return null;
   let paperTrade: boolean;
   if (typeof forcePaperTrade === 'boolean') {
@@ -315,6 +397,10 @@ async function checkAndSize(
     return { allowed: false, reason: 'already holding an open position on this market+outcome' };
   }
 
+  // Per-agent caps — campaign agent gets lifted limits ($50/pos, 8/day, 12 open,
+  // 50% budget); every other agent stays on the conservative broker defaults.
+  const caps = capsFor(ctx.agentId);
+
   const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
   const opensToday = await db.$queryRawUnsafe<Array<{ c: bigint }>>(
     `SELECT count(*)::bigint AS c FROM "OutcomePosition"
@@ -322,7 +408,7 @@ async function checkAndSize(
     ctx.agentId,
     dayAgo,
   );
-  if (Number(opensToday[0]?.c ?? 0) >= PRED_MAX_NEW_PER_AGENT_PER_DAY) {
+  if (Number(opensToday[0]?.c ?? 0) >= caps.maxNewPerAgentPerDay) {
     return { allowed: false, reason: 'daily prediction-trade quota reached' };
   }
 
@@ -331,16 +417,16 @@ async function checkAndSize(
      WHERE "agentId" = $1 AND status = 'open'`,
     ctx.agentId,
   );
-  if (Number(openCount[0]?.c ?? 0) >= PRED_MAX_OPEN_PER_AGENT) {
+  if (Number(openCount[0]?.c ?? 0) >= caps.maxOpenPerAgent) {
     return { allowed: false, reason: 'max simultaneous prediction positions reached' };
   }
 
   // Position size scales with edge, capped by both per-position and per-agent
   // rules. agentCap is a HARD ceiling: if it can't even fund the minimum
   // order, the trade is rejected (we never silently exceed the budget cap).
-  const edgeScaled = Math.min(1, edge / 0.30) * PRED_PER_POSITION_USDT_CAP; // 30% edge = full cap
-  const agentCap = ctx.agentMaxPositionSize * PRED_AGENT_BUDGET_PCT;
-  const sized = Math.min(edgeScaled, PRED_PER_POSITION_USDT_CAP, agentCap);
+  const edgeScaled = Math.min(1, edge / 0.30) * caps.perPositionUsdtCap; // 30% edge = full cap
+  const agentCap = ctx.agentMaxPositionSize * caps.agentBudgetPct;
+  const sized = Math.min(edgeScaled, caps.perPositionUsdtCap, agentCap);
   if (sized < PRED_MIN_USDT_IN) {
     return {
       allowed: false,
@@ -455,7 +541,9 @@ export async function openPredictionPosition(
   );
   if (!sizing.allowed || !sizing.usdtIn) return { ok: false, reason: sizing.reason ?? 'sizing rejected' };
 
-  const built = await buildTrader(ctx.userId);
+  // Pass agentId so campaign-mode opens use the agent's pinned wallet, not
+  // the user's primary BSC wallet. Manual/non-agent paths leave it null.
+  const built = await buildTrader(ctx.userId, undefined, ctx.agentId);
   if (!built) return { ok: false, reason: 'no usable BSC wallet for user' };
   const { trader, paperTrade } = built;
 
