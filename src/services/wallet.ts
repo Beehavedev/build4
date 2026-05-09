@@ -2,6 +2,7 @@ import { ethers } from 'ethers'
 import CryptoJS from 'crypto-js'
 import nodeCrypto from 'crypto'
 import { db } from '../db'
+import { buildBscProvider } from './bscProvider'
 
 const MASTER_KEY = process.env.MASTER_ENCRYPTION_KEY ?? process.env.WALLET_ENCRYPTION_KEY ?? 'default_dev_key_change_in_prod_32c'
 const LEGACY_MASTER = process.env.WALLET_ENCRYPTION_KEY ?? process.env.MASTER_ENCRYPTION_KEY ?? 'default-dev-key-change-me-32chars!'
@@ -218,7 +219,11 @@ export async function getWalletBalances(
   }
 
   try {
-    const provider = new ethers.JsonRpcProvider(BSC_RPC)
+    // Use the hardened multi-endpoint BSC provider (FallbackProvider with
+    // staticNetwork) instead of a bare JsonRpcProvider. The bare version
+    // re-resolved the network on every call, which under load triggered
+    // the "JsonRpcProvider failed to detect network" retry loop.
+    const provider = buildBscProvider(process.env.BSC_RPC_URL)
     const [bnbWei, usdtContract] = await Promise.all([
       provider.getBalance(address),
       new ethers.Contract(USDT_BSC, ERC20_ABI, provider).balanceOf(address)

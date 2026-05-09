@@ -10,11 +10,18 @@ import { ethers } from 'ethers';
 // keyless endpoint is more aggressive about throttling than the
 // dataseeds and tends to return empty 0x responses, which is the exact
 // failure mode we're trying to escape.
+// Probed 2026-05-09 from Replit cloud egress: all return 200 + valid
+// chainId in <250ms. Excluded after probe: `binance.llamarpc.com` (NXDOMAIN
+// from us, same as the Polygon llamarpc), `rpc.ankr.com/bsc` (returns
+// "Unauthorized: You must…" on the keyless tier from cloud IPs).
 const PUBLIC_BSC_RPCS = [
   'https://bsc-dataseed.binance.org',
   'https://bsc-dataseed1.defibit.io',
   'https://bsc-dataseed1.ninicoin.io',
   'https://bsc.publicnode.com',
+  'https://bsc.drpc.org',
+  'https://1rpc.io/bnb',
+  'https://bsc.meowrpc.com',
 ];
 
 /**
