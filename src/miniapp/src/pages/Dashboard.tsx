@@ -755,11 +755,19 @@ interface LaunchRow {
 function statusPill(status: string): { color: string; bg: string; label: string } {
   if (status === 'launched') return { color: 'var(--green)', bg: 'rgba(16,185,129,0.12)', label: '✅ launched' }
   if (status === 'failed')   return { color: 'var(--red)',   bg: 'rgba(239,68,68,0.12)',  label: '❌ failed' }
+  if (status === 'stale')    return { color: 'var(--yellow, #f59e0b)', bg: 'rgba(245,158,11,0.12)', label: '⚠️ stale' }
   return { color: 'var(--text-secondary)', bg: 'var(--bg-elevated)', label: '⏳ pending' }
 }
 
 function FourMemeLaunchesSection() {
   const [rows, setRows] = useState<LaunchRow[] | null>(null)
+  // Per-row retry state: id -> 'pending' | error string | null. We
+  // intentionally keep this in component state (not React Query) so the
+  // section stays self-contained.
+  const [retrying, setRetrying] = useState<Record<string, 'pending' | string | null>>({})
+  const refresh = () => apiFetch<{ ok: boolean; launches: LaunchRow[] }>('/api/fourmeme/launches')
+    .then((j) => setRows(j?.ok ? j.launches : []))
+    .catch(() => setRows([]))
   useEffect(() => {
     let cancelled = false
     apiFetch<{ ok: boolean; launches: LaunchRow[] }>('/api/fourmeme/launches')
@@ -767,6 +775,26 @@ function FourMemeLaunchesSection() {
       .catch(() => { if (!cancelled) setRows([]) })
     return () => { cancelled = true }
   }, [])
+
+  async function handleRetry(launchId: string) {
+    setRetrying((s) => ({ ...s, [launchId]: 'pending' }))
+    try {
+      const j = await apiFetch<{ ok: boolean; error?: string }>('/api/fourmeme/retry', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ launchId }),
+      })
+      if (!j?.ok) {
+        setRetrying((s) => ({ ...s, [launchId]: j?.error ?? 'retry failed' }))
+        return
+      }
+      setRetrying((s) => ({ ...s, [launchId]: null }))
+      await refresh()
+    } catch (err: any) {
+      setRetrying((s) => ({ ...s, [launchId]: err?.message ?? 'retry failed' }))
+    }
+  }
+
   if (!rows || rows.length === 0) return null
   return (
     <>
@@ -775,11 +803,19 @@ function FourMemeLaunchesSection() {
         {rows.map((r, i) => {
           const pill = statusPill(r.status)
           const primaryUrl = r.launchUrl ?? r.bscScanUrl
-          const inner = (
+          const isRetryable = r.status === 'failed' || r.status === 'stale'
+          const retryState = retrying[r.id] ?? null
+          const isRetryPending = retryState === 'pending'
+          const retryError = retryState && retryState !== 'pending' ? retryState : null
+          const subtitle = isRetryable && r.errorMessage
+            ? ` · ${r.errorMessage.slice(0, 80)}`
+            : r.tokenAddress
+              ? ` · ${r.tokenAddress.slice(0, 6)}…${r.tokenAddress.slice(-4)}`
+              : ''
+          const headerInner = (
             <div style={{
               display: 'flex', alignItems: 'center', gap: 10,
               padding: '12px 14px',
-              borderBottom: i < rows.length - 1 ? '1px solid var(--border)' : 'none',
               fontSize: 13, color: 'var(--text-primary)', minWidth: 0,
             }}>
               {r.imageUrl ? (
@@ -810,12 +846,7 @@ function FourMemeLaunchesSection() {
                   fontSize: 11, color: 'var(--text-secondary)', marginTop: 2,
                   overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                 }}>
-                  {timeAgo(r.createdAt)} ago
-                  {r.status === 'failed' && r.errorMessage
-                    ? ` · ${r.errorMessage.slice(0, 80)}`
-                    : r.tokenAddress
-                      ? ` · ${r.tokenAddress.slice(0, 6)}…${r.tokenAddress.slice(-4)}`
-                      : ''}
+                  {timeAgo(r.createdAt)} ago{subtitle}
                 </div>
               </div>
               <span
@@ -830,19 +861,64 @@ function FourMemeLaunchesSection() {
               </span>
             </div>
           )
-          return primaryUrl ? (
+          // The clickable header is wrapped in <a> for launched rows
+          // (so the whole row links to four.meme / BscScan) and a plain
+          // <div> for failed/stale/pending rows, where we'd rather not
+          // ship a partial link. The Retry button is rendered OUTSIDE
+          // any anchor so clicking it never accidentally opens a tab.
+          const clickableHeader = primaryUrl ? (
             <a
-              key={r.id}
               href={primaryUrl}
               target="_blank"
               rel="noopener noreferrer"
               style={{ textDecoration: 'none', color: 'inherit', display: 'block' }}
-              data-testid={`row-launch-${r.id}`}
             >
-              {inner}
+              {headerInner}
             </a>
           ) : (
-            <div key={r.id} data-testid={`row-launch-${r.id}`}>{inner}</div>
+            headerInner
+          )
+          return (
+            <div
+              key={r.id}
+              style={{ borderBottom: i < rows.length - 1 ? '1px solid var(--border)' : 'none' }}
+              data-testid={`row-launch-${r.id}`}
+            >
+              {clickableHeader}
+              {isRetryable && (
+                <div style={{
+                  padding: '0 14px 12px 14px',
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  fontSize: 11,
+                }}>
+                  <button
+                    type="button"
+                    onClick={() => handleRetry(r.id)}
+                    disabled={isRetryPending}
+                    data-testid={`button-retry-launch-${r.id}`}
+                    style={{
+                      fontSize: 11, fontWeight: 600,
+                      padding: '6px 12px', borderRadius: 8,
+                      border: '1px solid var(--border)',
+                      background: isRetryPending ? 'var(--bg-elevated)' : 'var(--bg-elevated)',
+                      color: 'var(--text-primary)',
+                      cursor: isRetryPending ? 'wait' : 'pointer',
+                      opacity: isRetryPending ? 0.7 : 1,
+                    }}
+                  >
+                    {isRetryPending ? 'Retrying…' : '↻ Retry'}
+                  </button>
+                  {retryError && (
+                    <span
+                      style={{ color: 'var(--red)', fontSize: 11 }}
+                      data-testid={`text-retry-error-${r.id}`}
+                    >
+                      {retryError.slice(0, 80)}
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
           )
         })}
       </div>

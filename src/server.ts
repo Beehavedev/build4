@@ -5460,6 +5460,15 @@ app.get('/api/fourmeme/launches', requireTgUser, async (req, res) => {
   const user = (req as any).user
   if (!user?.id) return res.status(401).json({ ok: false, error: 'unauthorized' })
   try {
+    // Surface long-pending rows as 'stale' before reading so the
+    // mini-app/bot can show them as retryable instead of confusing the
+    // user with a forever-spinning ⏳ pill.
+    try {
+      const { markUserPendingStale } = await import('./services/fourMemeLaunch')
+      await markUserPendingStale(user.id)
+    } catch {
+      /* sweeper is best-effort, never block the read */
+    }
     // Parameterized via Prisma's tagged-template $queryRaw — ${user.id}
     // is bound as a SQL parameter, not interpolated.
     const rows = await db.$queryRaw<Array<{
@@ -5509,6 +5518,42 @@ app.get('/api/fourmeme/launches', requireTgUser, async (req, res) => {
       return res.json({ ok: true, launches: [] })
     }
     res.status(400).json({ ok: false, error: msg, code: err?.code })
+  }
+})
+
+// POST /api/fourmeme/retry — re-runs a previously-failed (or
+// auto-marked stale) launch using the original tokenName / symbol /
+// description / initialBuy / image from the row. Body: { launchId }.
+// Auth-gated and ownership-checked inside retryLaunchForUser so users
+// can only ever retry their own rows.
+app.post('/api/fourmeme/retry', requireTgUser, async (req, res) => {
+  const user = (req as any).user
+  if (!user?.id) return res.status(401).json({ ok: false, error: 'unauthorized' })
+  try {
+    const { isFourMemeLaunchEnabled, retryLaunchForUser, LaunchRetryError, LaunchValidationError } =
+      await import('./services/fourMemeLaunch')
+    if (!isFourMemeLaunchEnabled()) {
+      return res.status(503).json({ ok: false, code: 'FOUR_MEME_LAUNCH_DISABLED' })
+    }
+    const launchId = String((req.body ?? {}).launchId ?? '')
+    if (!launchId) {
+      return res.status(400).json({ ok: false, error: 'launchId required' })
+    }
+    try {
+      const result = await retryLaunchForUser(user.id, launchId)
+      res.json({ ok: true, ...result })
+    } catch (inner: any) {
+      if (inner instanceof LaunchRetryError) {
+        const status = inner.code === 'NOT_FOUND' ? 404 : inner.code === 'NOT_RETRYABLE' ? 409 : 400
+        return res.status(status).json({ ok: false, error: inner.message, code: inner.code })
+      }
+      if (inner instanceof LaunchValidationError) {
+        return res.status(400).json({ ok: false, error: inner.message, code: inner.code })
+      }
+      throw inner
+    }
+  } catch (err: any) {
+    res.status(400).json({ ok: false, error: err?.message ?? String(err), code: err?.code })
   }
 })
 

@@ -14,6 +14,9 @@ import {
   isFourMemeLaunchEnabled,
   launchFourMemeTokenForUser,
   LaunchValidationError,
+  markUserPendingStale,
+  retryLaunchForUser,
+  LaunchRetryError,
 } from '../../services/fourMemeLaunch'
 import { db } from '../../db'
 
@@ -46,6 +49,7 @@ function helpText(): string {
     `\`/fourmeme sell <token> <tokenAmount>\`\n` +
     launchLine +
     `\`/fourmeme launches\` _\\(your last launches\\)_\n` +
+    `\`/fourmeme retry <launchId>\` _\\(re\\-run a failed or stale launch\\)_\n` +
     `\nSlippage cap: 5% \\(server\\-enforced\\)\\.`
   )
 }
@@ -239,7 +243,12 @@ async function handleLaunches(ctx: Context) {
   const user = (ctx as any).dbUser
   if (!user) { await ctx.reply('No user record found.'); return }
   try {
+    // Mirror the HTTP endpoint: opportunistically convert long-pending
+    // rows to 'stale' so users see a retryable status instead of a
+    // forever-spinning ⏳.
+    await markUserPendingStale(user.id)
     let rows: Array<{
+      id: string
       token_name: string
       token_symbol: string
       token_address: string | null
@@ -253,7 +262,7 @@ async function handleLaunches(ctx: Context) {
       // Parameterized via tagged template — Prisma escapes ${user.id}
       // safely as a SQL parameter, not string interpolation.
       rows = await db.$queryRaw`
-        SELECT "token_name","token_symbol","token_address","tx_hash",
+        SELECT "id","token_name","token_symbol","token_address","tx_hash",
                "launch_url","status","error_message","created_at"
           FROM "token_launches"
          WHERE "user_id" = ${user.id}
@@ -278,7 +287,7 @@ async function handleLaunches(ctx: Context) {
       return
     }
     const statusIcon = (s: string) =>
-      s === 'launched' ? '✅' : s === 'failed' ? '❌' : '⏳'
+      s === 'launched' ? '✅' : s === 'failed' ? '❌' : s === 'stale' ? '⚠️' : '⏳'
     const lines: string[] = ['*Your four\\.meme launches*', '']
     for (const r of rows) {
       const url =
@@ -294,10 +303,14 @@ async function handleLaunches(ctx: Context) {
           `\\($${escapeMd(r.token_symbol)}\\) — ${escapeMd(r.status)}`,
       )
       lines.push(`  ${escapeMd(when)} UTC`)
+      lines.push(`  id: \`${escapeMd(r.id)}\``)
       if (url) lines.push(`  ${escapeMd(url)}`)
       if (tx) lines.push(`  TX: ${escapeMd(tx)}`)
-      if (r.status === 'failed' && r.error_message) {
+      if ((r.status === 'failed' || r.status === 'stale') && r.error_message) {
         lines.push(`  err: ${escapeMd(r.error_message.slice(0, 120))}`)
+      }
+      if (r.status === 'failed' || r.status === 'stale') {
+        lines.push(`  retry: \`/fourmeme retry ${escapeMd(r.id)}\``)
       }
       lines.push('')
     }
@@ -309,6 +322,47 @@ async function handleLaunches(ctx: Context) {
     })
   } catch (err: any) {
     await ctx.reply(`launches failed: ${err?.message ?? err}`)
+  }
+}
+
+// Re-runs a previously-failed or stale launch by id, reusing the
+// original tokenName / symbol / description / initialBuyBnb / image_url
+// from the row. Ownership is enforced inside retryLaunchForUser so a
+// caller can never retry someone else's launch.
+async function handleRetry(ctx: Context, args: string[]) {
+  if (!isFourMemeLaunchEnabled()) {
+    await ctx.reply('Token launches are not enabled on this deployment.')
+    return
+  }
+  const user = (ctx as any).dbUser
+  if (!user) { await ctx.reply('No user record found.'); return }
+  const launchId = args[0]
+  if (!launchId) {
+    await ctx.reply('Usage: `/fourmeme retry <launchId>` _(see ids in `/fourmeme launches`)_', {
+      parse_mode: 'Markdown',
+    })
+    return
+  }
+  await ctx.reply(`Retrying launch \`${launchId}\`… this can take 30–90s on-chain.`, {
+    parse_mode: 'Markdown',
+  })
+  try {
+    const result = await retryLaunchForUser(user.id, launchId)
+    await ctx.reply(
+      `✅ *four\\.meme retry confirmed*\n\n` +
+        `Previous: \`${escapeMd(result.previousLaunchId)}\`\n` +
+        `Initial buy: ${escapeMd(result.initialBuyBnb)} BNB\n` +
+        (result.tokenAddress ? `Token: \`${result.tokenAddress}\`\n` : '') +
+        `TX: \`${result.txHash}\`\n` +
+        `Page: ${escapeMd(result.launchUrl)}`,
+      { parse_mode: 'MarkdownV2' },
+    )
+  } catch (err: any) {
+    if (err instanceof LaunchRetryError || err instanceof LaunchValidationError) {
+      await ctx.reply(`retry failed: ${err.message}`)
+    } else {
+      await ctx.reply(`retry failed: ${err?.message ?? err}`)
+    }
   }
 }
 
@@ -366,6 +420,9 @@ export function registerFourMeme(bot: Bot) {
       case 'launches':
       case 'history':
         await handleLaunches(ctx)
+        return
+      case 'retry':
+        await handleRetry(ctx, args)
         return
       default:
         await ctx.reply(`Unknown subcommand "${sub}". Try \`/fourmeme help\`.`, { parse_mode: 'Markdown' })

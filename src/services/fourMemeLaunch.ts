@@ -632,3 +632,107 @@ export async function launchFourMemeTokenForUser(
   const result = await launchFourMemeToken(privateKey, params, { userId })
   return { ...result, walletAddress: address }
 }
+
+// ── Stale-launch sweeper ─────────────────────────────────────────────
+// Pending rows that never advanced past `recordLaunchPending` (e.g. the
+// process crashed mid-flow before recordLaunchResult ran) sit in the
+// table forever and confuse users. Surface them as `stale` after a
+// generous 10-minute window — well past the 180s on-chain timeout plus
+// any reasonable upstream four.meme latency. Scoped per-user so we
+// don't accidentally race with another in-flight launch belonging to a
+// different user. Idempotent and silent on table-missing.
+export async function markUserPendingStale(userId: string): Promise<number> {
+  try {
+    const n = await db.$executeRawUnsafe(
+      `UPDATE "token_launches"
+          SET "status" = 'stale',
+              "error_message" = COALESCE("error_message", 'pending timeout — process likely crashed before completion')
+        WHERE "user_id" = $1
+          AND "status" = 'pending'
+          AND "created_at" < now() - interval '10 minutes'`,
+      userId,
+    )
+    return Number(n) || 0
+  } catch (err: any) {
+    const msg = String(err?.message ?? err)
+    if (!/relation .*token_launches.* does not exist/i.test(msg)) {
+      console.warn('[fourMemeLaunch] markUserPendingStale failed:', msg)
+    }
+    return 0
+  }
+}
+
+export class LaunchRetryError extends Error {
+  code: string
+  constructor(msg: string, code = 'LAUNCH_RETRY_INVALID') {
+    super(msg)
+    this.code = code
+  }
+}
+
+// Re-runs a previously-failed (or auto-marked stale) launch using the
+// caller's own original tokenName / tokenSymbol / tokenDescription /
+// initialBuyBnb / imageUrl row. The original row is left as-is for
+// audit; the retry creates a fresh row. We refuse to retry rows that
+// are still 'pending' (active) or already 'launched'.
+export async function retryLaunchForUser(
+  userId: string,
+  launchId: string,
+): Promise<LaunchResult & { walletAddress: string; previousLaunchId: string }> {
+  if (!isFourMemeLaunchEnabled()) {
+    throw new LaunchRetryError('four.meme launch is disabled', 'FOUR_MEME_LAUNCH_DISABLED')
+  }
+  if (!launchId || typeof launchId !== 'string') {
+    throw new LaunchRetryError('launchId required')
+  }
+  // Opportunistically convert long-pending rows to stale so a stuck
+  // pending row becomes retryable on the same call.
+  await markUserPendingStale(userId)
+
+  let rows: Array<{
+    id: string
+    user_id: string | null
+    status: string
+    token_name: string
+    token_symbol: string
+    token_description: string | null
+    image_url: string | null
+    initial_liquidity_bnb: string | null
+  }> = []
+  try {
+    rows = await db.$queryRaw<typeof rows>`
+      SELECT "id","user_id","status","token_name","token_symbol",
+             "token_description","image_url","initial_liquidity_bnb"
+        FROM "token_launches"
+       WHERE "id" = ${launchId}
+       LIMIT 1
+    `
+  } catch (err: any) {
+    const msg = String(err?.message ?? err)
+    if (/relation .*token_launches.* does not exist/i.test(msg)) {
+      throw new LaunchRetryError('launch not found', 'NOT_FOUND')
+    }
+    throw err
+  }
+  const row = rows[0]
+  if (!row) throw new LaunchRetryError('launch not found', 'NOT_FOUND')
+  if (row.user_id !== userId) {
+    // Don't leak existence vs. ownership.
+    throw new LaunchRetryError('launch not found', 'NOT_FOUND')
+  }
+  if (row.status !== 'failed' && row.status !== 'stale') {
+    throw new LaunchRetryError(
+      `cannot retry a launch in status "${row.status}" — only failed or stale rows are retryable`,
+      'NOT_RETRYABLE',
+    )
+  }
+
+  const result = await launchFourMemeTokenForUser(userId, {
+    tokenName: row.token_name,
+    tokenSymbol: row.token_symbol,
+    tokenDescription: row.token_description ?? undefined,
+    initialBuyBnb: row.initial_liquidity_bnb ?? '0',
+    imageUrl: row.image_url ?? undefined,
+  })
+  return { ...result, previousLaunchId: row.id }
+}
