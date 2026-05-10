@@ -136,16 +136,48 @@ export async function ensureNewTables() {
   // agent (idempotent; never overrides a user who later prunes a
   // venue via the chip toggles in Agent Studio).
   await run(`ALTER TABLE "Agent" ADD COLUMN IF NOT EXISTS "venuesAutoExpanded" BOOLEAN DEFAULT false`)
-  // four.meme integration (Module 1 — trading existing tokens). Both
-  // columns default false so every existing agent stays opted-out
-  // until the operator (or the user via mini-app) flips them on. The
-  // trading flag (`fourMemeEnabled`) gates Module 2 (autonomous agent
-  // trading); the launch flag (`fourMemeLaunchEnabled`) is reserved
-  // for Module 3 (token creation), still blocked on four.meme sharing
-  // the private creation API. Schema-ready now so Module 2/3 don't
-  // need a redeploy.
+  // four.meme integration. Both columns default false so every
+  // existing agent stays opted-out until the operator (or the user via
+  // mini-app) flips them on. The trading flag (`fourMemeEnabled`)
+  // gates Module 2 (autonomous agent trading); the launch flag
+  // (`fourMemeLaunchEnabled`) gates Module 3 (token creation, ported
+  // from the marketing-site launcher — uses four.meme's private/user
+  // login + private/token/create API gated by a wallet signature).
   await run(`ALTER TABLE "Agent" ADD COLUMN IF NOT EXISTS "fourMemeEnabled" BOOLEAN DEFAULT false`)
   await run(`ALTER TABLE "Agent" ADD COLUMN IF NOT EXISTS "fourMemeLaunchEnabled" BOOLEAN DEFAULT false`)
+  // token_launches — persistent record of every Module 3 launch
+  // attempt. The table already exists in production from the
+  // marketing-site era with snake_cased columns and an
+  // `initial_liquidity_bnb` column (no `user_id`). Per project
+  // preferences we don't touch prisma/, so we shape the existing
+  // table forward via idempotent ALTERs:
+  //   - CREATE TABLE IF NOT EXISTS for fresh deployments only
+  //   - ADD COLUMN IF NOT EXISTS for the columns Module 3 needs that
+  //     the marketing-site schema didn't have (user_id only — we
+  //     reuse initial_liquidity_bnb for the initial-buy amount).
+  await run(`CREATE TABLE IF NOT EXISTS "token_launches" (
+    "id" TEXT PRIMARY KEY,
+    "user_id" TEXT,
+    "agent_id" TEXT,
+    "creator_wallet" TEXT,
+    "platform" TEXT NOT NULL DEFAULT 'four_meme',
+    "chain_id" INTEGER NOT NULL DEFAULT 56,
+    "token_name" TEXT NOT NULL,
+    "token_symbol" TEXT NOT NULL,
+    "token_description" TEXT,
+    "image_url" TEXT,
+    "token_address" TEXT,
+    "tx_hash" TEXT,
+    "launch_url" TEXT,
+    "initial_liquidity_bnb" TEXT,
+    "status" TEXT NOT NULL DEFAULT 'pending',
+    "error_message" TEXT,
+    "metadata" TEXT,
+    "created_at" TIMESTAMPTZ NOT NULL DEFAULT now()
+  )`)
+  await run(`ALTER TABLE "token_launches" ADD COLUMN IF NOT EXISTS "user_id" TEXT`)
+  await run(`CREATE INDEX IF NOT EXISTS "token_launches_user_id_idx" ON "token_launches" ("user_id")`)
+  await run(`CREATE INDEX IF NOT EXISTS "token_launches_creator_wallet_idx" ON "token_launches" ("creator_wallet")`)
   // Phase 4 (2026-05-03): include 'polymarket' in the auto-expansion so
   // every agent (existing AND brand-new — agentCreation now stamps
   // venuesAutoExpanded=true to opt out of this UPDATE entirely, but

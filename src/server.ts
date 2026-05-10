@@ -5366,6 +5366,75 @@ app.post('/api/fourmeme/sell', requireTgUser, async (req, res) => {
   }
 })
 
+// POST /api/fourmeme/launch — Module 3 token creation. Body:
+//   {
+//     tokenName: string,
+//     tokenSymbol: string,
+//     tokenDescription?: string,
+//     initialBuyBnb?: string,        // decimal BNB; default "0"
+//     imageBase64?: string,          // bare base64 OR data:image/...;base64,...
+//     imageUrl?: string,             // pre-uploaded CDN URL (skip upload)
+//     webUrl?: string, twitterUrl?: string, telegramUrl?: string,
+//   }
+// Response: { ok, txHash, tokenAddress, launchUrl, initialBuyBnb, imageUrl, walletAddress }
+// Per-route 6MB body parser so the documented 5MB image cap is
+// actually reachable (the global app.use(express.json()) at the top
+// of this file uses the default ~100KB limit). 6MB raw JSON
+// comfortably accommodates a 5MB image after base64 inflation.
+app.post('/api/fourmeme/launch', express.json({ limit: '6mb' }), requireTgUser, async (req, res) => {
+  const user = (req as any).user
+  if (!user?.id) return res.status(401).json({ ok: false, error: 'unauthorized' })
+  try {
+    const { isFourMemeLaunchEnabled, launchFourMemeTokenForUser, LaunchValidationError } =
+      await import('./services/fourMemeLaunch')
+    if (!isFourMemeLaunchEnabled()) {
+      return res.status(503).json({ ok: false, code: 'FOUR_MEME_LAUNCH_DISABLED' })
+    }
+    const body = req.body ?? {}
+    let imageBuffer: Buffer | undefined
+    if (typeof body.imageBase64 === 'string' && body.imageBase64.length > 0) {
+      const stripped = body.imageBase64.replace(/^data:image\/[a-zA-Z+]+;base64,/, '')
+      // Strict base64 check — Buffer.from is permissive and silently
+      // drops bad chars, so we validate first.
+      if (!/^[A-Za-z0-9+/]+={0,2}$/.test(stripped) || stripped.length % 4 !== 0) {
+        return res.status(400).json({ ok: false, error: 'invalid imageBase64' })
+      }
+      try {
+        imageBuffer = Buffer.from(stripped, 'base64')
+      } catch {
+        return res.status(400).json({ ok: false, error: 'invalid imageBase64' })
+      }
+      if (imageBuffer.length === 0) {
+        return res.status(400).json({ ok: false, error: 'invalid imageBase64' })
+      }
+      if (imageBuffer.length > 5 * 1024 * 1024) {
+        return res.status(400).json({ ok: false, error: 'image larger than 5MB' })
+      }
+    }
+    try {
+      const result = await launchFourMemeTokenForUser(user.id, {
+        tokenName: String(body.tokenName ?? ''),
+        tokenSymbol: String(body.tokenSymbol ?? ''),
+        tokenDescription: body.tokenDescription ? String(body.tokenDescription) : undefined,
+        initialBuyBnb: body.initialBuyBnb != null ? String(body.initialBuyBnb) : '0',
+        imageBuffer,
+        imageUrl: body.imageUrl ? String(body.imageUrl) : undefined,
+        webUrl: body.webUrl ? String(body.webUrl) : undefined,
+        twitterUrl: body.twitterUrl ? String(body.twitterUrl) : undefined,
+        telegramUrl: body.telegramUrl ? String(body.telegramUrl) : undefined,
+      })
+      res.json({ ok: true, ...result })
+    } catch (inner: any) {
+      if (inner instanceof LaunchValidationError) {
+        return res.status(400).json({ ok: false, error: inner.message, code: inner.code })
+      }
+      throw inner
+    }
+  } catch (err: any) {
+    res.status(400).json({ ok: false, error: err?.message ?? String(err), code: err?.code })
+  }
+})
+
 app.get('/api/fourmeme/agent-status', requireTgUser, async (req, res) => {
   const user = (req as any).user
   if (!user?.id) return res.status(401).json({ ok: false, error: 'unauthorized' })
