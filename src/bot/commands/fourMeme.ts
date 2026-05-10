@@ -15,6 +15,7 @@ import {
   launchFourMemeTokenForUser,
   LaunchValidationError,
 } from '../../services/fourMemeLaunch'
+import { db } from '../../db'
 
 // ── /fourmeme — manual buy/sell of existing four.meme tokens ──────────
 //
@@ -44,6 +45,7 @@ function helpText(): string {
     `\`/fourmeme buy <token> <bnb>\`\n` +
     `\`/fourmeme sell <token> <tokenAmount>\`\n` +
     launchLine +
+    `\`/fourmeme launches\` _\\(your last launches\\)_\n` +
     `\nSlippage cap: 5% \\(server\\-enforced\\)\\.`
   )
 }
@@ -229,6 +231,87 @@ function escapeMd(s: string): string {
   return String(s).replace(/[_*[\]()~`>#+\-=|{}.!\\]/g, (c) => '\\' + c)
 }
 
+// Render a compact list of the caller's last token launches. Reads
+// directly from the same `token_launches` table the launcher writes,
+// filtered by the user's own id, so users can audit pending / failed /
+// successful attempts and click through to BscScan or four.meme.
+async function handleLaunches(ctx: Context) {
+  const user = (ctx as any).dbUser
+  if (!user) { await ctx.reply('No user record found.'); return }
+  try {
+    let rows: Array<{
+      token_name: string
+      token_symbol: string
+      token_address: string | null
+      tx_hash: string | null
+      launch_url: string | null
+      status: string
+      error_message: string | null
+      created_at: Date
+    }>
+    try {
+      // Parameterized via tagged template — Prisma escapes ${user.id}
+      // safely as a SQL parameter, not string interpolation.
+      rows = await db.$queryRaw`
+        SELECT "token_name","token_symbol","token_address","tx_hash",
+               "launch_url","status","error_message","created_at"
+          FROM "token_launches"
+         WHERE "user_id" = ${user.id}
+         ORDER BY "created_at" DESC
+         LIMIT 20
+      `
+    } catch (e: any) {
+      // Mirror the HTTP endpoint's tolerance for a missing table on
+      // fresh dev DBs — show the empty state rather than a raw error.
+      if (/relation .*token_launches.* does not exist/i.test(String(e?.message ?? e))) {
+        await ctx.reply('No launches yet. Try `/fourmeme launch <NAME> <TICKER>`.', {
+          parse_mode: 'Markdown',
+        })
+        return
+      }
+      throw e
+    }
+    if (rows.length === 0) {
+      await ctx.reply('No launches yet. Try `/fourmeme launch <NAME> <TICKER>`.', {
+        parse_mode: 'Markdown',
+      })
+      return
+    }
+    const statusIcon = (s: string) =>
+      s === 'launched' ? '✅' : s === 'failed' ? '❌' : '⏳'
+    const lines: string[] = ['*Your four\\.meme launches*', '']
+    for (const r of rows) {
+      const url =
+        r.launch_url ??
+        (r.token_address ? `https://four.meme/token/${r.token_address}` : null)
+      const tx = r.tx_hash ? `https://bscscan.com/tx/${r.tx_hash}` : null
+      const when = (r.created_at instanceof Date
+        ? r.created_at
+        : new Date(r.created_at as any)
+      ).toISOString().slice(0, 16).replace('T', ' ')
+      lines.push(
+        `${statusIcon(r.status)} *${escapeMd(r.token_name)}* ` +
+          `\\($${escapeMd(r.token_symbol)}\\) — ${escapeMd(r.status)}`,
+      )
+      lines.push(`  ${escapeMd(when)} UTC`)
+      if (url) lines.push(`  ${escapeMd(url)}`)
+      if (tx) lines.push(`  TX: ${escapeMd(tx)}`)
+      if (r.status === 'failed' && r.error_message) {
+        lines.push(`  err: ${escapeMd(r.error_message.slice(0, 120))}`)
+      }
+      lines.push('')
+    }
+    await ctx.reply(lines.join('\n'), {
+      parse_mode: 'MarkdownV2',
+      // Long URLs are easier to follow without huge link previews
+      // crowding the chat.
+      link_preview_options: { is_disabled: true },
+    })
+  } catch (err: any) {
+    await ctx.reply(`launches failed: ${err?.message ?? err}`)
+  }
+}
+
 async function handleAgentStatus(ctx: Context) {
   const user = (ctx as any).dbUser
   if (!user) { await ctx.reply('No user record found.'); return }
@@ -279,6 +362,10 @@ export function registerFourMeme(bot: Bot) {
       case 'status':
       case 'agent':
         await handleAgentStatus(ctx)
+        return
+      case 'launches':
+      case 'history':
+        await handleLaunches(ctx)
         return
       default:
         await ctx.reply(`Unknown subcommand "${sub}". Try \`/fourmeme help\`.`, { parse_mode: 'Markdown' })

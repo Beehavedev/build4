@@ -561,6 +561,11 @@ export default function Dashboard({ userId, onNavigate }: DashboardProps) {
           query never blocks the rest of the dashboard. */}
       <BuybackSection />
 
+      {/* four.meme launch history — caller-scoped. Hidden entirely when
+          the user has no launches yet so it never adds noise for users
+          who haven't touched the launcher. */}
+      <FourMemeLaunchesSection />
+
       {/* Recent Activity */}
       <div className="section-label">Recent Activity</div>
       <div className="card" style={{ padding: 0 }} data-testid="card-recent-activity">
@@ -721,6 +726,125 @@ function BuybackSection() {
             First buyback coming soon.
           </div>
         )}
+      </div>
+    </>
+  )
+}
+
+// ─── four.meme launch history ──────────────────────────────────────────
+// Renders the caller's last ~20 launches from /api/fourmeme/launches.
+// Self-hides when the user has no launches OR the endpoint soft-fails
+// (404/disabled/network) so it never adds noise for users who haven't
+// used the launcher.
+
+interface LaunchRow {
+  id: string
+  tokenName: string
+  tokenSymbol: string
+  tokenAddress: string | null
+  txHash: string | null
+  launchUrl: string | null
+  bscScanUrl: string | null
+  imageUrl: string | null
+  initialBuyBnb: string | null
+  status: string
+  errorMessage: string | null
+  createdAt: string
+}
+
+function statusPill(status: string): { color: string; bg: string; label: string } {
+  if (status === 'launched') return { color: 'var(--green)', bg: 'rgba(16,185,129,0.12)', label: '✅ launched' }
+  if (status === 'failed')   return { color: 'var(--red)',   bg: 'rgba(239,68,68,0.12)',  label: '❌ failed' }
+  return { color: 'var(--text-secondary)', bg: 'var(--bg-elevated)', label: '⏳ pending' }
+}
+
+function FourMemeLaunchesSection() {
+  const [rows, setRows] = useState<LaunchRow[] | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    apiFetch<{ ok: boolean; launches: LaunchRow[] }>('/api/fourmeme/launches')
+      .then((j) => { if (!cancelled) setRows(j?.ok ? j.launches : []) })
+      .catch(() => { if (!cancelled) setRows([]) })
+    return () => { cancelled = true }
+  }, [])
+  if (!rows || rows.length === 0) return null
+  return (
+    <>
+      <div className="section-label">Token Launches</div>
+      <div className="card" style={{ padding: 0, marginBottom: 16 }} data-testid="card-fourmeme-launches">
+        {rows.map((r, i) => {
+          const pill = statusPill(r.status)
+          const primaryUrl = r.launchUrl ?? r.bscScanUrl
+          const inner = (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 10,
+              padding: '12px 14px',
+              borderBottom: i < rows.length - 1 ? '1px solid var(--border)' : 'none',
+              fontSize: 13, color: 'var(--text-primary)', minWidth: 0,
+            }}>
+              {r.imageUrl ? (
+                <img
+                  src={r.imageUrl}
+                  alt=""
+                  style={{ width: 32, height: 32, borderRadius: 8, flexShrink: 0, objectFit: 'cover' }}
+                  onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
+                />
+              ) : (
+                <div style={{
+                  width: 32, height: 32, borderRadius: 8, flexShrink: 0,
+                  background: 'var(--bg-elevated)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)',
+                }}>
+                  ${r.tokenSymbol.slice(0, 3).toUpperCase()}
+                </div>
+              )}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{
+                  fontWeight: 600,
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                }} data-testid={`text-launch-name-${r.id}`}>
+                  {r.tokenName} <span style={{ color: 'var(--text-muted)' }}>· ${r.tokenSymbol}</span>
+                </div>
+                <div style={{
+                  fontSize: 11, color: 'var(--text-secondary)', marginTop: 2,
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                }}>
+                  {timeAgo(r.createdAt)} ago
+                  {r.status === 'failed' && r.errorMessage
+                    ? ` · ${r.errorMessage.slice(0, 80)}`
+                    : r.tokenAddress
+                      ? ` · ${r.tokenAddress.slice(0, 6)}…${r.tokenAddress.slice(-4)}`
+                      : ''}
+                </div>
+              </div>
+              <span
+                className="pill"
+                style={{
+                  fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 999,
+                  color: pill.color, background: pill.bg, flexShrink: 0,
+                }}
+                data-testid={`status-launch-${r.id}`}
+              >
+                {pill.label}
+              </span>
+            </div>
+          )
+          return primaryUrl ? (
+            <a
+              key={r.id}
+              href={primaryUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ textDecoration: 'none', color: 'inherit', display: 'block' }}
+              data-testid={`row-launch-${r.id}`}
+            >
+              {inner}
+            </a>
+          ) : (
+            <div key={r.id} data-testid={`row-launch-${r.id}`}>{inner}</div>
+          )
+        })}
       </div>
     </>
   )

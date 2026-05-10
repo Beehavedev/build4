@@ -5449,6 +5449,69 @@ app.post('/api/fourmeme/launch', express.json({ limit: '6mb' }), requireTgUser, 
   }
 })
 
+// GET /api/fourmeme/launches — caller's last ~20 launch attempts from
+// the runtime-managed `token_launches` table. Auth-gated to the calling
+// Telegram user; rows are filtered to user_id = caller, so users can
+// only ever see their own history. Returns rows ordered newest-first
+// with everything the bot/mini-app need to render (status, tx_hash,
+// token_address, four.meme launchUrl, error_message). Tolerates the
+// table being entirely absent (fresh local dev) by returning [].
+app.get('/api/fourmeme/launches', requireTgUser, async (req, res) => {
+  const user = (req as any).user
+  if (!user?.id) return res.status(401).json({ ok: false, error: 'unauthorized' })
+  try {
+    // Parameterized via Prisma's tagged-template $queryRaw — ${user.id}
+    // is bound as a SQL parameter, not interpolated.
+    const rows = await db.$queryRaw<Array<{
+      id: string
+      token_name: string
+      token_symbol: string
+      token_address: string | null
+      tx_hash: string | null
+      launch_url: string | null
+      image_url: string | null
+      initial_liquidity_bnb: string | null
+      status: string
+      error_message: string | null
+      created_at: Date
+    }>>`
+      SELECT "id","token_name","token_symbol","token_address","tx_hash",
+             "launch_url","image_url","initial_liquidity_bnb","status",
+             "error_message","created_at"
+        FROM "token_launches"
+       WHERE "user_id" = ${user.id}
+       ORDER BY "created_at" DESC
+       LIMIT 20
+    `
+    const launches = rows.map((r) => ({
+      id: r.id,
+      tokenName: r.token_name,
+      tokenSymbol: r.token_symbol,
+      tokenAddress: r.token_address,
+      txHash: r.tx_hash,
+      launchUrl:
+        r.launch_url ??
+        (r.token_address ? `https://four.meme/token/${r.token_address}` : null),
+      bscScanUrl: r.tx_hash ? `https://bscscan.com/tx/${r.tx_hash}` : null,
+      imageUrl: r.image_url,
+      initialBuyBnb: r.initial_liquidity_bnb,
+      status: r.status,
+      errorMessage: r.error_message,
+      createdAt: r.created_at instanceof Date
+        ? r.created_at.toISOString()
+        : new Date(r.created_at as any).toISOString(),
+    }))
+    res.json({ ok: true, launches })
+  } catch (err: any) {
+    // Missing table (fresh dev DB without ensureTables having run) → []
+    const msg = String(err?.message ?? err)
+    if (/relation .*token_launches.* does not exist/i.test(msg)) {
+      return res.json({ ok: true, launches: [] })
+    }
+    res.status(400).json({ ok: false, error: msg, code: err?.code })
+  }
+})
+
 app.get('/api/fourmeme/agent-status', requireTgUser, async (req, res) => {
   const user = (req as any).user
   if (!user?.id) return res.status(401).json({ ok: false, error: 'unauthorized' })
