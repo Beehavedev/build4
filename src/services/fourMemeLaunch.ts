@@ -228,21 +228,45 @@ async function fourMemeUploadImage(pngBuffer: Buffer, accessToken: string): Prom
     body,
   })
   if (!res.ok) {
-    console.warn(`[fourMemeLaunch] image upload HTTP ${res.status}`)
+    const body = await res.text().catch(() => '')
+    console.warn(`[fourMemeLaunch] image upload HTTP ${res.status}: ${body.slice(0, 200)}`)
     return null
   }
   const text = await res.text()
+  // Some four.meme deployments return the URL as a bare string (no JSON
+  // wrapper), so accept that case first.
+  const trimmed = text.trim()
+  if (/^https?:\/\//i.test(trimmed)) return trimmed
   try {
     const json: any = JSON.parse(text)
-    if (json?.code === 0 && json?.data) {
-      const url =
-        typeof json.data === 'string'
-          ? json.data
-          : json.data.url || json.data.imgUrl || json.data.imageUrl
-      return url ?? null
+    // Try the documented success path AND any variant the upstream API
+    // has shipped over time. Earlier rev only checked url/imgUrl/imageUrl,
+    // but recent four.meme deployments have also returned the CDN path
+    // under data.path, data.image, data.cdnUrl, or as a bare data string.
+    if (json?.code === 0 || json?.msg === 'success' || json?.success === true) {
+      const data = json?.data
+      const candidate =
+        typeof data === 'string'
+          ? data
+          : data?.url || data?.imgUrl || data?.imageUrl
+              || data?.cdnUrl || data?.cdn || data?.image || data?.path
+              || data?.fileUrl || data?.fileName
+      if (typeof candidate === 'string' && candidate.length > 0) {
+        // If the API gave us a relative path (e.g. "/market/abc.png"),
+        // resolve it against four.meme's static CDN host so the create
+        // endpoint accepts it.
+        if (/^https?:\/\//i.test(candidate)) return candidate
+        if (candidate.startsWith('/')) return `https://static.four.meme${candidate}`
+        return `https://static.four.meme/${candidate}`
+      }
     }
+    // Loud breadcrumb so the next failure is debuggable from logs without
+    // having to re-instrument. Truncated to keep log size sane.
+    console.warn(
+      `[fourMemeLaunch] image upload returned unexpected shape: ${JSON.stringify(json).slice(0, 300)}`,
+    )
   } catch {
-    /* not JSON */
+    console.warn(`[fourMemeLaunch] image upload returned non-JSON: ${text.slice(0, 200)}`)
   }
   return null
 }
