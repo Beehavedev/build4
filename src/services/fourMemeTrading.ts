@@ -444,10 +444,20 @@ export async function sellTokenForBnb(
  * BSC wallet, decryption failure (e.g. PIN-protected wallet).
  */
 export async function loadUserBscPrivateKey(userId: string): Promise<{ address: string; privateKey: string }> {
-  const wallet = await db.wallet.findFirst({
-    where: { userId, chain: 'BSC' },
-    orderBy: { createdAt: 'asc' },
-  })
+  // Prefer the *active* BSC wallet so four.meme trades hit the same
+  // wallet the user sees in /wallet, /trade, and the mini-app
+  // PolygonCard. If somehow no wallet is flagged active (legacy
+  // accounts, race during wallet swap), fall back to the oldest BSC
+  // wallet — deterministic and at least gives a consistent answer
+  // across calls instead of a random pick.
+  const wallet =
+    (await db.wallet.findFirst({
+      where: { userId, chain: 'BSC', isActive: true },
+    })) ??
+    (await db.wallet.findFirst({
+      where: { userId, chain: 'BSC' },
+      orderBy: { createdAt: 'asc' },
+    }))
   if (!wallet) {
     const err: any = new Error('No BSC wallet found for user')
     err.code = 'NO_WALLET'
