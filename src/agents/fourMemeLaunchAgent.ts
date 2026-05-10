@@ -101,6 +101,10 @@ interface LaunchAgentRow {
   description: string | null
   fourMemeLaunchEnabled: boolean
   lastFourMemeLaunchTickAt: Date | null
+  // Task #64 — when true, the agent writes a 'pending_user_approval'
+  // row + sends a Telegram message instead of firing a launch
+  // immediately. The user approves/rejects via inline buttons.
+  fourMemeLaunchRequiresApproval: boolean
 }
 
 interface LaunchProposal {
@@ -149,7 +153,8 @@ export async function tickAllFourMemeLaunchAgents(): Promise<{
     // the DB level: only active, unpaused, opted-in agents.
     const rows = await db.$queryRawUnsafe<any[]>(
       `SELECT a."id", a."userId", a."name", a."description",
-              a."fourMemeLaunchEnabled", a."lastFourMemeLaunchTickAt"
+              a."fourMemeLaunchEnabled", a."lastFourMemeLaunchTickAt",
+              COALESCE(a."fourMemeLaunchRequiresApproval", false) AS "fourMemeLaunchRequiresApproval"
          FROM "Agent" a
         WHERE a."isActive" = true
           AND a."isPaused" = false
@@ -161,6 +166,7 @@ export async function tickAllFourMemeLaunchAgents(): Promise<{
       name: r.name,
       description: r.description ?? null,
       fourMemeLaunchEnabled: !!r.fourMemeLaunchEnabled,
+      fourMemeLaunchRequiresApproval: !!r.fourMemeLaunchRequiresApproval,
       lastFourMemeLaunchTickAt:
         r.lastFourMemeLaunchTickAt instanceof Date
           ? r.lastFourMemeLaunchTickAt
@@ -421,6 +427,38 @@ async function tickOneAgent(
     initialBuyBnb: clampedBuy.toFixed(6),
   }
 
+  // Task #64 — human-in-the-loop branch. When the per-agent
+  // `fourMemeLaunchRequiresApproval` toggle is on we never call
+  // launchFourMemeToken here. Instead we persist a row with status
+  // 'pending_user_approval' (proposal frozen in the metadata column),
+  // notify the user via Telegram with Approve/Reject inline buttons,
+  // and return as a "skipped" tick. The pending row is also picked up
+  // by the existing pending-dedup gate above on subsequent ticks, so
+  // the agent won't keep generating fresh proposals while the user
+  // hasn't acted — exactly one outstanding proposal at a time.
+  if (agent.fourMemeLaunchRequiresApproval) {
+    const pendingId = await recordPendingApproval({
+      agentId: agent.id,
+      userId: agent.userId,
+      walletAddress,
+      params,
+      proposal,
+      conviction: proposal.conviction,
+    })
+    if (pendingId) {
+      void notifyUserOfPendingApproval(agent, params, proposal, pendingId).catch((e) => {
+        console.warn('[fourMemeLaunchAgent] notify failed:', (e as Error).message)
+      })
+    }
+    return await skipWith(agent, proposal, {
+      ...proposal,
+      action: 'SKIP',
+      reasoning: pendingId
+        ? `pending_user_approval: awaiting owner approval (id=${pendingId})`
+        : `pending_user_approval_failed: could not persist proposal`,
+    })
+  }
+
   // launchFourMemeToken now persists agent_id directly into the
   // pending row (see persistContext.agentId in src/services/fourMemeLaunch.ts).
   // That makes attribution deterministic at write-time so the cap
@@ -582,6 +620,89 @@ async function logDecision(
     })
   } catch (err) {
     console.warn('[fourMemeLaunchAgent] logDecision failed:', (err as Error).message)
+  }
+}
+
+// ── Task #64: HITL approval persistence + notification ───────────────
+async function recordPendingApproval(input: {
+  agentId: string
+  userId: string
+  walletAddress: string
+  params: LaunchParams
+  proposal: LaunchProposal
+  conviction: number
+}): Promise<string | null> {
+  const id = `flm_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
+  const metadata = JSON.stringify({
+    tokenName: input.params.tokenName,
+    tokenSymbol: input.params.tokenSymbol,
+    tokenDescription: input.params.tokenDescription ?? '',
+    initialBuyBnb: input.params.initialBuyBnb ?? '0',
+    conviction: input.conviction,
+    reasoning: input.proposal.reasoning,
+    proposedAt: new Date().toISOString(),
+  })
+  try {
+    await db.$executeRawUnsafe(
+      `INSERT INTO "token_launches"
+        ("id","user_id","agent_id","creator_wallet","platform","chain_id",
+         "token_name","token_symbol","token_description","initial_liquidity_bnb",
+         "status","metadata","created_at")
+       VALUES ($1,$2,$3,$4,'four_meme',56,$5,$6,$7,$8,'pending_user_approval',$9, now())`,
+      id,
+      input.userId,
+      input.agentId,
+      input.walletAddress,
+      input.params.tokenName,
+      input.params.tokenSymbol,
+      input.params.tokenDescription ?? null,
+      input.params.initialBuyBnb ?? '0',
+      metadata,
+    )
+    return id
+  } catch (err: any) {
+    console.warn('[fourMemeLaunchAgent] pending_user_approval insert failed:', err?.message ?? err)
+    return null
+  }
+}
+
+async function notifyUserOfPendingApproval(
+  agent: LaunchAgentRow,
+  params: LaunchParams,
+  proposal: LaunchProposal,
+  launchId: string,
+): Promise<void> {
+  // Late-import the runner + grammy types to avoid a require cycle and
+  // to keep the agent loadable in environments where the bot isn't wired
+  // (e.g. unit tests).
+  const { getBot } = await import('./runner')
+  const bot = getBot()
+  if (!bot) return
+  const userRow = await db.user.findUnique({
+    where: { id: agent.userId },
+    select: { telegramId: true },
+  })
+  if (!userRow?.telegramId) return
+  const { InlineKeyboard } = await import('grammy')
+  const kb = new InlineKeyboard()
+    .text('✅ Approve', `flm_approve_${launchId}`)
+    .text('❌ Reject',  `flm_reject_${launchId}`)
+  const text =
+    `🎰 *Launch proposal from ${agent.name}*\n\n` +
+    `Token: *${params.tokenName}* ($${params.tokenSymbol})\n` +
+    `Initial buy: ${params.initialBuyBnb} BNB\n` +
+    `Conviction: ${(proposal.conviction * 100).toFixed(0)}%\n\n` +
+    `_${proposal.reasoning?.slice(0, 240) ?? '(no rationale)'}_\n\n` +
+    `Approve to fire the launch with these exact params, or reject to discard.`
+  try {
+    await bot.api.sendMessage(userRow.telegramId.toString(), text, {
+      parse_mode: 'Markdown',
+      reply_markup: kb,
+    })
+  } catch (err: any) {
+    // User may have blocked the bot — proposal still lives in the
+    // mini-app card so they can act on it from there.
+    console.warn('[fourMemeLaunchAgent] sendMessage failed:', err?.message ?? err)
   }
 }
 

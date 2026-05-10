@@ -17,6 +17,9 @@ import {
   markUserPendingStale,
   retryLaunchForUser,
   LaunchRetryError,
+  executeApprovedLaunch,
+  rejectPendingLaunch,
+  LaunchApprovalError,
 } from '../../services/fourMemeLaunch'
 import { db } from '../../db'
 
@@ -427,5 +430,68 @@ export function registerFourMeme(bot: Bot) {
       default:
         await ctx.reply(`Unknown subcommand "${sub}". Try \`/fourmeme help\`.`, { parse_mode: 'Markdown' })
     }
+  })
+
+  // ── Task #64: HITL approval inline-button handlers ────────────────
+  // Callback data format `flm_(approve|reject)_<launchId>`. The handler
+  // resolves the BUILD4 user from `ctx.from.id`, then delegates to the
+  // shared service helpers which enforce ownership + status transitions.
+  // We always answer the callback query first so the spinner clears
+  // even on the slow approve path (which fires an on-chain tx).
+  const handleApprovalCallback = async (
+    ctx: Context,
+    action: 'approve' | 'reject',
+    launchId: string,
+  ): Promise<void> => {
+    const tgId = ctx.from?.id
+    if (!tgId) {
+      await ctx.answerCallbackQuery({ text: 'Unknown user', show_alert: true })
+      return
+    }
+    const userRow = await db.user.findUnique({ where: { telegramId: BigInt(tgId) } })
+    if (!userRow) {
+      await ctx.answerCallbackQuery({ text: 'No BUILD4 account', show_alert: true })
+      return
+    }
+    if (action === 'reject') {
+      try {
+        await rejectPendingLaunch({ launchId, userId: userRow.id })
+        await ctx.answerCallbackQuery({ text: 'Rejected' })
+        try { await ctx.editMessageReplyMarkup({ reply_markup: undefined }) } catch {}
+        await ctx.reply(`❌ Launch proposal rejected (id ${launchId}).`)
+      } catch (err: any) {
+        const msg = err instanceof LaunchApprovalError ? err.message : (err?.message ?? 'reject failed')
+        await ctx.answerCallbackQuery({ text: msg, show_alert: true })
+      }
+      return
+    }
+    // approve
+    await ctx.answerCallbackQuery({ text: 'Launching… this may take 30–60s.' })
+    try {
+      try { await ctx.editMessageReplyMarkup({ reply_markup: undefined }) } catch {}
+      await ctx.reply(`⏳ Approved — firing launch ${launchId} on-chain…`)
+      const result = await executeApprovedLaunch({ launchId, userId: userRow.id })
+      const url = result.launchUrl ?? (result.tokenAddress ? `https://four.meme/token/${result.tokenAddress}` : null)
+      const lines = [
+        `✅ Launch confirmed.`,
+        `Tx: https://bscscan.com/tx/${result.txHash}`,
+      ]
+      if (url) lines.push(`Token: ${url}`)
+      await ctx.reply(lines.join('\n'), { link_preview_options: { is_disabled: true } } as any)
+    } catch (err: any) {
+      const msg = err instanceof LaunchApprovalError ? err.message : (err?.message ?? 'launch failed')
+      await ctx.reply(`❌ Launch failed: ${msg}`)
+    }
+  }
+
+  bot.callbackQuery(/^flm_approve_(.+)$/, async (ctx) => {
+    const launchId = ctx.match?.[1] ?? ''
+    if (!launchId) { await ctx.answerCallbackQuery(); return }
+    await handleApprovalCallback(ctx, 'approve', launchId)
+  })
+  bot.callbackQuery(/^flm_reject_(.+)$/, async (ctx) => {
+    const launchId = ctx.match?.[1] ?? ''
+    if (!launchId) { await ctx.answerCallbackQuery(); return }
+    await handleApprovalCallback(ctx, 'reject', launchId)
   })
 }

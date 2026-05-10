@@ -495,10 +495,16 @@ async function recordLaunchResult(
 }
 
 // ── Public entrypoint ────────────────────────────────────────────────
+// `existingLaunchId` (Task #64): when set, we skip recordLaunchPending
+// and reuse the caller-supplied id for the success/failure UPDATE. The
+// human-in-the-loop approval flow uses this so the original
+// 'pending_user_approval' row written when the agent proposed becomes
+// the same row that ends up 'launched'/'failed' — no duplicate audit
+// trail per launch.
 export async function launchFourMemeToken(
   privateKey: string,
   params: LaunchParams,
-  persistContext?: { userId: string | null; agentId?: string | null },
+  persistContext?: { userId: string | null; agentId?: string | null; existingLaunchId?: string | null },
 ): Promise<LaunchResult> {
   if (!isFourMemeLaunchEnabled()) {
     const err = new Error('four.meme launch is disabled')
@@ -527,18 +533,35 @@ export async function launchFourMemeToken(
   // Persist a pending row so a launch attempt is auditable even if
   // the process crashes mid-flow. ID is independent of the on-chain
   // hash so we have a stable handle from the moment we commit to try.
-  const launchId = `flm_${Date.now()}_${crypto.randomBytes(6).toString('hex')}`
-  await recordLaunchPending({
-    id: launchId,
-    userId: persistContext?.userId ?? null,
-    agentId: persistContext?.agentId ?? null,
-    walletAddress: wallet.address,
-    tokenName: params.tokenName,
-    tokenSymbol: params.tokenSymbol,
-    tokenDescription: params.tokenDescription ?? null,
-    imageUrl: params.imageUrl ?? null,
-    initialBuyBnb: preSaleEth,
-  })
+  // When the caller supplied an existingLaunchId (HITL approval flow,
+  // Task #64), we reuse that id and flip the existing
+  // 'pending_user_approval' row to 'pending' instead of inserting a
+  // duplicate audit row.
+  let launchId: string
+  if (persistContext?.existingLaunchId) {
+    launchId = persistContext.existingLaunchId
+    try {
+      await db.$executeRawUnsafe(
+        `UPDATE "token_launches" SET "status" = 'pending' WHERE "id" = $1`,
+        launchId,
+      )
+    } catch (err: any) {
+      console.warn('[fourMemeLaunch] approval status flip failed:', err?.message ?? err)
+    }
+  } else {
+    launchId = `flm_${Date.now()}_${crypto.randomBytes(6).toString('hex')}`
+    await recordLaunchPending({
+      id: launchId,
+      userId: persistContext?.userId ?? null,
+      agentId: persistContext?.agentId ?? null,
+      walletAddress: wallet.address,
+      tokenName: params.tokenName,
+      tokenSymbol: params.tokenSymbol,
+      tokenDescription: params.tokenDescription ?? null,
+      imageUrl: params.imageUrl ?? null,
+      initialBuyBnb: preSaleEth,
+    })
+  }
 
   try {
     // 1) Login
@@ -670,6 +693,28 @@ export class LaunchRetryError extends Error {
   }
 }
 
+// ── Task #64: HITL approval helpers ──────────────────────────────────
+// A "frozen proposal" is the JSON the agent stored in
+// token_launches.metadata when the row was first written with status
+// 'pending_user_approval'. On approve we replay it verbatim so the
+// launch the user reviewed is exactly the launch that fires.
+export interface FrozenLaunchProposal {
+  tokenName: string
+  tokenSymbol: string
+  tokenDescription: string
+  initialBuyBnb: string
+  conviction?: number
+  reasoning?: string
+}
+
+export class LaunchApprovalError extends Error {
+  code: string
+  constructor(code: string, msg: string) {
+    super(msg)
+    this.code = code
+  }
+}
+
 // Re-runs a previously-failed (or auto-marked stale) launch using the
 // caller's own original tokenName / tokenSymbol / tokenDescription /
 // initialBuyBnb / imageUrl row. The original row is left as-is for
@@ -735,4 +780,100 @@ export async function retryLaunchForUser(
     imageUrl: row.image_url ?? undefined,
   })
   return { ...result, previousLaunchId: row.id }
+}
+
+interface PendingApprovalRow {
+  id: string
+  user_id: string | null
+  agent_id: string | null
+  status: string
+  metadata: string | null
+  token_name: string
+  token_symbol: string
+}
+
+async function loadPendingApprovalRow(launchId: string): Promise<PendingApprovalRow | null> {
+  const rows = await db.$queryRawUnsafe<PendingApprovalRow[]>(
+    `SELECT "id","user_id","agent_id","status","metadata","token_name","token_symbol"
+       FROM "token_launches"
+      WHERE "id" = $1
+      LIMIT 1`,
+    launchId,
+  )
+  return rows[0] ?? null
+}
+
+function parseFrozenProposal(metadata: string | null): FrozenLaunchProposal | null {
+  if (!metadata) return null
+  try {
+    const obj = JSON.parse(metadata)
+    if (!obj || typeof obj !== 'object') return null
+    if (typeof obj.tokenName !== 'string' || typeof obj.tokenSymbol !== 'string') return null
+    return {
+      tokenName: String(obj.tokenName),
+      tokenSymbol: String(obj.tokenSymbol),
+      tokenDescription: typeof obj.tokenDescription === 'string' ? obj.tokenDescription : '',
+      initialBuyBnb: typeof obj.initialBuyBnb === 'string' ? obj.initialBuyBnb : '0',
+      conviction: typeof obj.conviction === 'number' ? obj.conviction : undefined,
+      reasoning: typeof obj.reasoning === 'string' ? obj.reasoning : undefined,
+    }
+  } catch {
+    return null
+  }
+}
+
+// Reject a pending approval. Idempotent — if the row is already in
+// any non-pending_user_approval state we throw a typed error so the
+// caller can show a clean "already handled" message instead of a 500.
+export async function rejectPendingLaunch(opts: {
+  launchId: string
+  userId: string
+}): Promise<void> {
+  const row = await loadPendingApprovalRow(opts.launchId)
+  if (!row) throw new LaunchApprovalError('NOT_FOUND', 'Launch proposal not found.')
+  if (row.user_id !== opts.userId) {
+    throw new LaunchApprovalError('FORBIDDEN', 'Not your launch proposal.')
+  }
+  if (row.status !== 'pending_user_approval') {
+    throw new LaunchApprovalError('ALREADY_HANDLED', `Launch already ${row.status}.`)
+  }
+  await db.$executeRawUnsafe(
+    `UPDATE "token_launches" SET "status" = 'rejected' WHERE "id" = $1`,
+    opts.launchId,
+  )
+}
+
+// Execute an approved launch. Replays the frozen proposal that was
+// captured when the agent first proposed the launch. The same
+// token_launches row is reused (existingLaunchId) so the audit trail
+// is a single row that walks pending_user_approval → pending →
+// launched/failed.
+export async function executeApprovedLaunch(opts: {
+  launchId: string
+  userId: string
+}): Promise<LaunchResult & { walletAddress: string }> {
+  const row = await loadPendingApprovalRow(opts.launchId)
+  if (!row) throw new LaunchApprovalError('NOT_FOUND', 'Launch proposal not found.')
+  if (row.user_id !== opts.userId) {
+    throw new LaunchApprovalError('FORBIDDEN', 'Not your launch proposal.')
+  }
+  if (row.status !== 'pending_user_approval') {
+    throw new LaunchApprovalError('ALREADY_HANDLED', `Launch already ${row.status}.`)
+  }
+  const frozen = parseFrozenProposal(row.metadata)
+  if (!frozen) {
+    throw new LaunchApprovalError('INVALID_PROPOSAL', 'Stored proposal is unreadable.')
+  }
+  const { address, privateKey } = await loadUserBscPrivateKey(opts.userId)
+  const result = await launchFourMemeToken(
+    privateKey,
+    {
+      tokenName: frozen.tokenName,
+      tokenSymbol: frozen.tokenSymbol,
+      tokenDescription: frozen.tokenDescription,
+      initialBuyBnb: frozen.initialBuyBnb,
+    },
+    { userId: opts.userId, agentId: row.agent_id, existingLaunchId: row.id },
+  )
+  return { ...result, walletAddress: address }
 }

@@ -564,6 +564,7 @@ export default function Dashboard({ userId, onNavigate }: DashboardProps) {
       {/* four.meme launch history — caller-scoped. Hidden entirely when
           the user has no launches yet so it never adds noise for users
           who haven't touched the launcher. */}
+      <FourMemePendingApprovalsSection />
       <FourMemeLaunchesSection />
 
       {/* Recent Activity */}
@@ -781,6 +782,131 @@ function formatBnbPrice(weiStr: string | undefined): string | null {
     if (n >= 1e-6) return `${n.toFixed(8)} BNB`
     return `${n.toExponential(2)} BNB`
   } catch { return null }
+}
+
+// Task #64 — pending HITL approvals. Lists every 'pending_user_approval'
+// row owned by the caller with one-tap Approve/Reject. Self-hides when
+// the list is empty so it adds no noise for users without an approval-
+// gated agent. Approve fires an on-chain launch (30-60s), so we lock
+// both buttons during the in-flight request to prevent double-clicks.
+interface PendingApprovalRow {
+  id: string
+  agentId: string | null
+  tokenName: string
+  tokenSymbol: string
+  tokenDescription: string | null
+  initialBuyBnb: string | null
+  conviction: number | null
+  reasoning: string | null
+  createdAt: string
+}
+
+function FourMemePendingApprovalsSection() {
+  const [rows, setRows] = useState<PendingApprovalRow[] | null>(null)
+  const [busy, setBusy] = useState<string | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+
+  const reload = async () => {
+    try {
+      const j = await apiFetch<{ ok: boolean; pending: PendingApprovalRow[] }>(
+        '/api/fourmeme/pending-approvals',
+      )
+      setRows(j?.ok ? j.pending : [])
+    } catch {
+      setRows([])
+    }
+  }
+  useEffect(() => { void reload() }, [])
+
+  const act = async (launchId: string, kind: 'approve' | 'reject') => {
+    setBusy(launchId)
+    setErr(null)
+    try {
+      await apiFetch<{ ok: true }>(`/api/fourmeme/${kind}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ launchId }),
+      })
+      await reload()
+    } catch (e: any) {
+      setErr(e?.message ?? `${kind} failed`)
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  if (!rows || rows.length === 0) return null
+  return (
+    <>
+      <div className="section-label">Launch Approvals</div>
+      <div className="card" style={{ padding: 0, marginBottom: 16 }} data-testid="card-fourmeme-pending-approvals">
+        {err && (
+          <div style={{ padding: '8px 14px', fontSize: 12, color: 'var(--red)' }} data-testid="text-approval-error">
+            {err}
+          </div>
+        )}
+        {rows.map((r, i) => (
+          <div
+            key={r.id}
+            data-testid={`row-pending-approval-${r.id}`}
+            style={{
+              padding: '12px 14px',
+              borderBottom: i < rows.length - 1 ? '1px solid var(--border)' : 'none',
+              fontSize: 13, color: 'var(--text-primary)',
+            }}
+          >
+            <div style={{ fontWeight: 600 }} data-testid={`text-approval-name-${r.id}`}>
+              {r.tokenName} <span style={{ color: 'var(--text-muted)' }}>· ${r.tokenSymbol}</span>
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>
+              {timeAgo(r.createdAt)} ago
+              {r.initialBuyBnb ? ` · buy ${r.initialBuyBnb} BNB` : ''}
+              {typeof r.conviction === 'number' ? ` · ${(r.conviction * 100).toFixed(0)}% conviction` : ''}
+            </div>
+            {r.reasoning && (
+              <div style={{
+                fontSize: 12, color: 'var(--text-secondary)', marginTop: 6,
+                fontStyle: 'italic', lineHeight: 1.4,
+              }}>
+                {r.reasoning.slice(0, 200)}{r.reasoning.length > 200 ? '…' : ''}
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+              <button
+                type="button"
+                onClick={() => void act(r.id, 'approve')}
+                disabled={busy !== null}
+                data-testid={`button-approve-${r.id}`}
+                style={{
+                  flex: 1, padding: '8px 12px', borderRadius: 8, border: 'none',
+                  background: 'var(--green)', color: '#fff', fontWeight: 600,
+                  fontSize: 13, cursor: busy ? 'not-allowed' : 'pointer',
+                  opacity: busy === r.id ? 0.6 : 1,
+                }}
+              >
+                {busy === r.id ? 'Launching…' : 'Approve & Launch'}
+              </button>
+              <button
+                type="button"
+                onClick={() => void act(r.id, 'reject')}
+                disabled={busy !== null}
+                data-testid={`button-reject-${r.id}`}
+                style={{
+                  flex: 1, padding: '8px 12px', borderRadius: 8,
+                  border: '1px solid var(--border)',
+                  background: 'transparent', color: 'var(--text-primary)',
+                  fontWeight: 600, fontSize: 13,
+                  cursor: busy ? 'not-allowed' : 'pointer',
+                }}
+              >
+                Reject
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </>
+  )
 }
 
 function FourMemeLaunchesSection() {

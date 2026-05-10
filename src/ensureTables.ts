@@ -150,6 +150,12 @@ export async function ensureNewTables() {
   // tick interval (so a fast cron can't double-fire a launch decision).
   // Daily cap is enforced separately by counting rows in token_launches.
   await run(`ALTER TABLE "Agent" ADD COLUMN IF NOT EXISTS "lastFourMemeLaunchTickAt" TIMESTAMP(3)`)
+  // Task #64 — human-in-the-loop launch approvals. When true, the
+  // Module 4 agent writes a 'pending_user_approval' row instead of
+  // firing launchFourMemeToken; the owner approves/rejects from
+  // Telegram or the mini-app. Default false preserves existing
+  // autonomous behaviour for every existing agent.
+  await run(`ALTER TABLE "Agent" ADD COLUMN IF NOT EXISTS "fourMemeLaunchRequiresApproval" BOOLEAN DEFAULT false`)
   // token_launches — persistent record of every Module 3 launch
   // attempt. The table already exists in production from the
   // marketing-site era with snake_cased columns and an

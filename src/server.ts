@@ -5557,6 +5557,119 @@ app.post('/api/fourmeme/retry', requireTgUser, async (req, res) => {
   }
 })
 
+// Task #64 — per-agent toggle for the HITL launch approval flow. Kept
+// separate from /api/agents/:id/settings (numeric-only) so we don't
+// over-pack the existing schema with booleans. Idempotent: same value
+// in == same value out.
+app.patch('/api/agents/:id/four-meme-approval', requireTgUser, async (req, res) => {
+  try {
+    const user = (req as any).user
+    if (!user?.id) return res.status(401).json({ ok: false, error: 'unauthorized' })
+    const agentId = String(req.params.id)
+    const requireApproval = Boolean(req.body?.requireApproval)
+    // Verify ownership before the UPDATE to surface a clean 403/404.
+    const owner = await db.$queryRawUnsafe<Array<{ userId: string }>>(
+      `SELECT "userId" FROM "Agent" WHERE "id" = $1 LIMIT 1`,
+      agentId,
+    )
+    if (owner.length === 0) return res.status(404).json({ ok: false, error: 'agent not found' })
+    if (owner[0].userId !== user.id) return res.status(403).json({ ok: false, error: 'forbidden' })
+    await db.$executeRawUnsafe(
+      `UPDATE "Agent" SET "fourMemeLaunchRequiresApproval" = $1 WHERE "id" = $2`,
+      requireApproval,
+      agentId,
+    )
+    res.json({ ok: true, agentId, requireApproval })
+  } catch (err: any) {
+    res.status(400).json({ ok: false, error: err?.message ?? String(err) })
+  }
+})
+
+// ── Task #64: HITL approval endpoints ────────────────────────────────
+// Mini-app counterparts to the Telegram inline buttons. Every endpoint
+// is requireTgUser-gated and the underlying service helpers re-check
+// ownership against `user_id`, so a forged launchId can't escape the
+// caller's own pending row.
+app.get('/api/fourmeme/pending-approvals', requireTgUser, async (req, res) => {
+  const user = (req as any).user
+  if (!user?.id) return res.status(401).json({ ok: false, error: 'unauthorized' })
+  try {
+    const rows = await db.$queryRaw<Array<{
+      id: string
+      agent_id: string | null
+      token_name: string
+      token_symbol: string
+      token_description: string | null
+      initial_liquidity_bnb: string | null
+      metadata: string | null
+      created_at: Date
+    }>>`
+      SELECT "id","agent_id","token_name","token_symbol","token_description",
+             "initial_liquidity_bnb","metadata","created_at"
+        FROM "token_launches"
+       WHERE "user_id" = ${user.id}
+         AND "status" = 'pending_user_approval'
+       ORDER BY "created_at" DESC
+       LIMIT 20
+    `
+    const pending = rows.map((r) => {
+      let conviction: number | null = null
+      let reasoning: string | null = null
+      try {
+        if (r.metadata) {
+          const m = JSON.parse(r.metadata)
+          if (typeof m?.conviction === 'number') conviction = m.conviction
+          if (typeof m?.reasoning === 'string') reasoning = m.reasoning
+        }
+      } catch {}
+      return {
+        id: r.id,
+        agentId: r.agent_id,
+        tokenName: r.token_name,
+        tokenSymbol: r.token_symbol,
+        tokenDescription: r.token_description,
+        initialBuyBnb: r.initial_liquidity_bnb,
+        conviction,
+        reasoning,
+        createdAt: r.created_at instanceof Date
+          ? r.created_at.toISOString()
+          : new Date(r.created_at as any).toISOString(),
+      }
+    })
+    res.json({ ok: true, pending })
+  } catch (err: any) {
+    const msg = String(err?.message ?? err)
+    if (/relation .*token_launches.* does not exist/i.test(msg)) {
+      return res.json({ ok: true, pending: [] })
+    }
+    res.status(400).json({ ok: false, error: msg })
+  }
+})
+
+app.post('/api/fourmeme/approve', requireTgUser, async (req, res) => {
+  const user = (req as any).user
+  if (!user?.id) return res.status(401).json({ ok: false, error: 'unauthorized' })
+  try {
+    const launchId = String(req.body?.launchId ?? '')
+    if (!launchId) return res.status(400).json({ ok: false, error: 'launchId required' })
+    const { executeApprovedLaunch, LaunchApprovalError } = await import('./services/fourMemeLaunch')
+    try {
+      const result = await executeApprovedLaunch({ launchId, userId: user.id })
+      res.json({ ok: true, ...result })
+    } catch (inner: any) {
+      if (inner instanceof LaunchApprovalError) {
+        const status = inner.code === 'NOT_FOUND' ? 404
+                     : inner.code === 'FORBIDDEN' ? 403
+                     : 409
+        return res.status(status).json({ ok: false, error: inner.message, code: inner.code })
+      }
+      throw inner
+    }
+  } catch (err: any) {
+    res.status(400).json({ ok: false, error: err?.message ?? String(err), code: err?.code })
+  }
+})
+
 // GET /api/fourmeme/launches/live — for each of the caller's `launched`
 // rows that has a tokenAddress, fetch the bonding-curve state via
 // getTokenInfo and return current price + a rough PnL estimate against
@@ -5645,6 +5758,30 @@ app.get('/api/fourmeme/launches/live', requireTgUser, async (req, res) => {
       return res.json({ ok: true, live: {} })
     }
     res.status(400).json({ ok: false, error: msg, code: err?.code })
+  }
+})
+
+app.post('/api/fourmeme/reject', requireTgUser, async (req, res) => {
+  const user = (req as any).user
+  if (!user?.id) return res.status(401).json({ ok: false, error: 'unauthorized' })
+  try {
+    const launchId = String(req.body?.launchId ?? '')
+    if (!launchId) return res.status(400).json({ ok: false, error: 'launchId required' })
+    const { rejectPendingLaunch, LaunchApprovalError } = await import('./services/fourMemeLaunch')
+    try {
+      await rejectPendingLaunch({ launchId, userId: user.id })
+      res.json({ ok: true })
+    } catch (inner: any) {
+      if (inner instanceof LaunchApprovalError) {
+        const status = inner.code === 'NOT_FOUND' ? 404
+                     : inner.code === 'FORBIDDEN' ? 403
+                     : 409
+        return res.status(status).json({ ok: false, error: inner.message, code: inner.code })
+      }
+      throw inner
+    }
+  } catch (err: any) {
+    res.status(400).json({ ok: false, error: err?.message ?? String(err), code: err?.code })
   }
 })
 
