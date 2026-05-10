@@ -194,7 +194,7 @@ export default function App() {
 
       {/* Page content */}
       <div style={{ padding: '0 16px' }}>
-        {page === 'dashboard' && <Dashboard userId={userId} onNavigate={setPage} />}
+        {page === 'dashboard' && <Dashboard userId={userId} onNavigate={setPage} launchEnabled={launchEnabled} />}
         {page === 'agents' && <AgentStudio userId={userId} />}
         {page === 'trade' && <Trade />}
         {page === 'wallet' && <Wallet />}

@@ -3,7 +3,8 @@ import { apiFetch } from '../api'
 
 interface DashboardProps {
   userId: string | null
-  onNavigate?: (page: 'dashboard' | 'agents' | 'wallet' | 'trade' | 'copy' | 'portfolio' | 'predictions' | 'hyperliquid' | 'admin' | 'onboard') => void
+  onNavigate?: (page: 'dashboard' | 'agents' | 'wallet' | 'trade' | 'copy' | 'portfolio' | 'predictions' | 'hyperliquid' | 'admin' | 'onboard' | 'launchToken') => void
+  launchEnabled?: boolean
 }
 
 interface WalletInfo {
@@ -42,7 +43,7 @@ function tradeIcon(t: RecentTrade): string {
   return '·'
 }
 
-export default function Dashboard({ userId, onNavigate }: DashboardProps) {
+export default function Dashboard({ userId, onNavigate, launchEnabled }: DashboardProps) {
   const [portfolio, setPortfolio] = useState<any>(null)
   const [agents, setAgents] = useState<any[]>([])
   const [trades, setTrades] = useState<RecentTrade[]>([])
@@ -300,6 +301,12 @@ export default function Dashboard({ userId, onNavigate }: DashboardProps) {
       testId: 'button-venue-polymarket',
       onClick: goPolymarket,
     },
+    ...(launchEnabled ? [{
+      label: '🚀 Launch Token',
+      sub: 'four.meme',
+      testId: 'button-venue-fourmeme-launch',
+      onClick: () => onNavigate?.('launchToken'),
+    }] : []),
   ]
 
   return (
