@@ -5257,6 +5257,130 @@ async function logPolymarketEvent(opts: {
   }
 }
 
+// ── /api/fourmeme/* — Module 1 (existing-token trading) ─────────────
+//
+// All endpoints check FOUR_MEME_ENABLED at the top and 503 with a
+// structured code when the flag is off. Behaviour with the flag unset
+// (the production default) is identical to the feature not existing
+// at all — no new attack surface, no new error paths in clients that
+// don't know about four.meme yet.
+app.get('/api/fourmeme/token/:address', async (req, res) => {
+  try {
+    const { isFourMemeEnabled, getTokenInfo, quoteBuyByBnb, quoteSell } =
+      await import('./services/fourMemeTrading')
+    if (!isFourMemeEnabled()) return res.status(503).json({ ok: false, code: 'FOUR_MEME_DISABLED' })
+    const addr = String(req.params.address ?? '')
+    const info = await getTokenInfo(addr)
+    // Optional pre-trade quotes when caller supplies amounts
+    const bnb = req.query.bnb ? String(req.query.bnb) : ''
+    const sell = req.query.sell ? String(req.query.sell) : ''
+    const out: any = {
+      ok: true,
+      info: {
+        ...info,
+        lastPriceWei: info.lastPriceWei.toString(),
+        minTradingFeeWei: info.minTradingFeeWei.toString(),
+        offersWei: info.offersWei.toString(),
+        maxOffersWei: info.maxOffersWei.toString(),
+        fundsWei: info.fundsWei.toString(),
+        maxFundsWei: info.maxFundsWei.toString(),
+      },
+    }
+    if (bnb) {
+      const { ethers } = await import('ethers')
+      const q = await quoteBuyByBnb(addr, ethers.parseEther(bnb))
+      out.buyQuote = {
+        estimatedAmountWei: q.estimatedAmountWei.toString(),
+        estimatedCostWei:   q.estimatedCostWei.toString(),
+        estimatedFeeWei:    q.estimatedFeeWei.toString(),
+        amountMsgValueWei:  q.amountMsgValueWei.toString(),
+        amountFundsWei:     q.amountFundsWei.toString(),
+      }
+    }
+    if (sell) {
+      const { ethers } = await import('ethers')
+      const q = await quoteSell(addr, ethers.parseUnits(sell, 18))
+      out.sellQuote = { fundsWei: q.fundsWei.toString(), feeWei: q.feeWei.toString() }
+    }
+    res.json(out)
+  } catch (err: any) {
+    res.status(400).json({ ok: false, error: err?.message ?? String(err), code: err?.code })
+  }
+})
+
+app.post('/api/fourmeme/buy', requireTgUser, async (req, res) => {
+  const user = (req as any).user
+  if (!user?.id) return res.status(401).json({ ok: false, error: 'unauthorized' })
+  try {
+    const { isFourMemeEnabled, buyTokenWithBnb, loadUserBscPrivateKey } =
+      await import('./services/fourMemeTrading')
+    if (!isFourMemeEnabled()) return res.status(503).json({ ok: false, code: 'FOUR_MEME_DISABLED' })
+    const { tokenAddress, bnbAmount, slippageBps } = req.body ?? {}
+    if (!tokenAddress || !bnbAmount) return res.status(400).json({ ok: false, error: 'tokenAddress + bnbAmount required' })
+    const { ethers } = await import('ethers')
+    const bnbWei = ethers.parseEther(String(bnbAmount))
+    const { privateKey } = await loadUserBscPrivateKey(user.id)
+    const result = await buyTokenWithBnb(privateKey, String(tokenAddress), bnbWei, {
+      slippageBps: slippageBps != null ? Number(slippageBps) : undefined,
+    })
+    res.json({
+      ok: true,
+      txHash: result.txHash,
+      tokenAddress: result.tokenAddress,
+      bnbSpentWei: result.bnbSpentWei.toString(),
+      estimatedTokensWei: result.estimatedTokensWei.toString(),
+      minTokensWei: result.minTokensWei.toString(),
+      slippageBps: result.slippageBps,
+    })
+  } catch (err: any) {
+    res.status(400).json({ ok: false, error: err?.message ?? String(err), code: err?.code })
+  }
+})
+
+app.post('/api/fourmeme/sell', requireTgUser, async (req, res) => {
+  const user = (req as any).user
+  if (!user?.id) return res.status(401).json({ ok: false, error: 'unauthorized' })
+  try {
+    const { isFourMemeEnabled, sellTokenForBnb, loadUserBscPrivateKey } =
+      await import('./services/fourMemeTrading')
+    if (!isFourMemeEnabled()) return res.status(503).json({ ok: false, code: 'FOUR_MEME_DISABLED' })
+    const { tokenAddress, tokenAmount, slippageBps } = req.body ?? {}
+    if (!tokenAddress || !tokenAmount) return res.status(400).json({ ok: false, error: 'tokenAddress + tokenAmount required' })
+    const { ethers } = await import('ethers')
+    const tokensWei = ethers.parseUnits(String(tokenAmount), 18)
+    const { privateKey } = await loadUserBscPrivateKey(user.id)
+    const result = await sellTokenForBnb(privateKey, String(tokenAddress), tokensWei, {
+      slippageBps: slippageBps != null ? Number(slippageBps) : undefined,
+    })
+    res.json({
+      ok: true,
+      txHash: result.txHash,
+      tokenAddress: result.tokenAddress,
+      tokensSoldWei: result.tokensSoldWei.toString(),
+      estimatedBnbWei: result.estimatedBnbWei.toString(),
+      minBnbWei: result.minBnbWei.toString(),
+      slippageBps: result.slippageBps,
+    })
+  } catch (err: any) {
+    res.status(400).json({ ok: false, error: err?.message ?? String(err), code: err?.code })
+  }
+})
+
+app.get('/api/fourmeme/agent-status', requireTgUser, async (req, res) => {
+  const user = (req as any).user
+  if (!user?.id) return res.status(401).json({ ok: false, error: 'unauthorized' })
+  try {
+    const { isFourMemeEnabled, isAgentWallet, loadUserBscPrivateKey } =
+      await import('./services/fourMemeTrading')
+    if (!isFourMemeEnabled()) return res.status(503).json({ ok: false, code: 'FOUR_MEME_DISABLED' })
+    const { address } = await loadUserBscPrivateKey(user.id)
+    const isAgent = await isAgentWallet(address)
+    res.json({ ok: true, address, isAgent })
+  } catch (err: any) {
+    res.status(400).json({ ok: false, error: err?.message ?? String(err), code: err?.code })
+  }
+})
+
 app.get('/api/polymarket/wallet', requireTgUser, async (req, res) => {
   const user = (req as any).user
   if (!user?.id) return res.status(401).json({ ok: false, error: 'unauthorized' })

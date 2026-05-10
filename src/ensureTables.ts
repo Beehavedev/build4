@@ -136,6 +136,16 @@ export async function ensureNewTables() {
   // agent (idempotent; never overrides a user who later prunes a
   // venue via the chip toggles in Agent Studio).
   await run(`ALTER TABLE "Agent" ADD COLUMN IF NOT EXISTS "venuesAutoExpanded" BOOLEAN DEFAULT false`)
+  // four.meme integration (Module 1 — trading existing tokens). Both
+  // columns default false so every existing agent stays opted-out
+  // until the operator (or the user via mini-app) flips them on. The
+  // trading flag (`fourMemeEnabled`) gates Module 2 (autonomous agent
+  // trading); the launch flag (`fourMemeLaunchEnabled`) is reserved
+  // for Module 3 (token creation), still blocked on four.meme sharing
+  // the private creation API. Schema-ready now so Module 2/3 don't
+  // need a redeploy.
+  await run(`ALTER TABLE "Agent" ADD COLUMN IF NOT EXISTS "fourMemeEnabled" BOOLEAN DEFAULT false`)
+  await run(`ALTER TABLE "Agent" ADD COLUMN IF NOT EXISTS "fourMemeLaunchEnabled" BOOLEAN DEFAULT false`)
   // Phase 4 (2026-05-03): include 'polymarket' in the auto-expansion so
   // every agent (existing AND brand-new — agentCreation now stamps
   // venuesAutoExpanded=true to opt out of this UPDATE entirely, but
