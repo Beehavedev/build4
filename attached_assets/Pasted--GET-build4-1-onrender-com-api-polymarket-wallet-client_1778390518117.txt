@@ -1,0 +1,99 @@
+[GET]
+build4-1.onrender.com/api/polymarket/wallet clientIP="2.51.180.232" requestID="4f74f0d6-9ddc-49ae" responseTimeMS=4695 responseBytes=180 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/agents/cmo1t9mmh0001mxdkr9kdi8e2/positions clientIP="2.51.180.232" requestID="11d0c0e2-5061-4ebd" responseTimeMS=13526 responseBytes=179 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/agents/cmo9tc1sr001l14o88d9eq74p/positions clientIP="2.51.180.232" requestID="5ec0c24c-b133-4105" responseTimeMS=13541 responseBytes=179 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[Agent Dominic] HOLD on DOGEUSDT — Marginal setup score, mixed timeframe alignment, and diverging volume
+[GET]
+build4-1.onrender.com/api/agents/cmo1t9mmh0001mxdkr9kdi8e2/positions clientIP="2.51.180.232" requestID="53cf61ea-95f8-4f12" responseTimeMS=12993 responseBytes=179 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[Agent SeanBuild4] HOLD on XCNUSDT — conflicting signals and lack of clear trading opportunity
+[GET]
+build4-1.onrender.com/api/agents/cmo9tc1sr001l14o88d9eq74p/positions clientIP="2.51.180.232" requestID="adb7d15e-88e9-43a4" responseTimeMS=13022 responseBytes=179 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/agents/cmo9tc1sr001l14o88d9eq74p/positions clientIP="2.51.180.232" requestID="ee9d5984-447e-4d4e" responseTimeMS=12254 responseBytes=179 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/buybacks clientIP="2.51.180.232" requestID="495b24fd-bceb-4f63" responseTimeMS=1651 responseBytes=179 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/fourmeme/pending-approvals clientIP="2.51.180.232" requestID="328022a7-e538-4cd8" responseTimeMS=1726 responseBytes=179 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/agents/cmo1t9mmh0001mxdkr9kdi8e2/positions clientIP="2.51.180.232" requestID="915ec509-7c0c-4cb3" responseTimeMS=12528 responseBytes=179 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/agents/cmo9tc1sr001l14o88d9eq74p/positions clientIP="2.51.180.232" requestID="8af12d37-253d-4a35" responseTimeMS=11615 responseBytes=179 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/agents/cmo1t9mmh0001mxdkr9kdi8e2/positions clientIP="2.51.180.232" requestID="62a26c00-db55-45ee" responseTimeMS=11464 responseBytes=179 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/fourmeme/launches clientIP="2.51.180.232" requestID="cfeb7f28-f31a-4bb3" responseTimeMS=2273 responseBytes=179 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/polymarket/wallet clientIP="2.51.180.232" requestID="434b6c6c-a0cb-4c3b" responseTimeMS=1610 responseBytes=180 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/polymarket/wallet clientIP="2.51.180.232" requestID="3a543511-17c9-4a26" responseTimeMS=1211 responseBytes=180 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="2.51.180.232" requestID="06cbe3d6-a7e9-4650" responseTimeMS=9886 responseBytes=29 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="2.51.180.232" requestID="0a9bf354-2e71-4132" responseTimeMS=4870 responseBytes=29 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="2.51.180.232" requestID="e0444aeb-6a63-4619" responseTimeMS=1855 responseBytes=29 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="2.51.180.232" requestID="f3da67c8-19d4-41d5" responseTimeMS=855 responseBytes=29 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="2.51.180.232" requestID="9d39c25d-1f2d-4dbb" responseTimeMS=10896 responseBytes=29 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="2.51.180.232" requestID="6d917eba-94cd-4309" responseTimeMS=11898 responseBytes=29 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="2.51.180.232" requestID="254b830e-9b5b-486d" responseTimeMS=7890 responseBytes=29 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="2.51.180.232" requestID="549082cb-1074-4ae1" responseTimeMS=13895 responseBytes=29 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="2.51.180.232" requestID="1a84e4a4-fea2-4de3" responseTimeMS=2870 responseBytes=29 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="2.51.180.232" requestID="3aa05f24-c1c0-44c7" responseTimeMS=6875 responseBytes=29 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="2.51.180.232" requestID="5368d4f4-fa15-4c67" responseTimeMS=15899 responseBytes=29 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="2.51.180.232" requestID="e97aa5cb-3dae-4bde" responseTimeMS=5880 responseBytes=29 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="2.51.180.232" requestID="46b3340f-d740-4b0a" responseTimeMS=8896 responseBytes=29 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="2.51.180.232" requestID="5efe8f68-311b-4135" responseTimeMS=3865 responseBytes=29 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="2.51.180.232" requestID="01a4127b-cd1b-4d46" responseTimeMS=14902 responseBytes=29 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="2.51.180.232" requestID="0c50614d-744b-4f17" responseTimeMS=12907 responseBytes=29 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="2.51.180.232" requestID="4f8d5860-1835-4ca1" responseTimeMS=49782 responseBytes=29 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/app/ clientIP="2.51.180.232" requestID="703b84cf-741d-4382" responseTimeMS=5 responseBytes=1006 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/fourmeme/launch clientIP="2.51.180.232" requestID="edcecba5-2b97-4f9b" responseTimeMS=3 responseBytes=179 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/admin clientIP="2.51.180.232" requestID="94928277-2509-41bb" responseTimeMS=183 responseBytes=179 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/agents/1551641467 clientIP="2.51.180.232" requestID="36d6bed9-596a-4dc9" responseTimeMS=540 responseBytes=180 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/user/1551641467 clientIP="2.51.180.232" requestID="65612627-0003-491e" responseTimeMS=550 responseBytes=181 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/fourmeme/pending-approvals clientIP="2.51.180.232" requestID="48fc3922-1e87-43a2" responseTimeMS=575 responseBytes=179 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/agents/1551641467 clientIP="2.51.180.232" requestID="09dd92af-5c89-423d" responseTimeMS=743 responseBytes=180 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/buybacks clientIP="2.51.180.232" requestID="1976db09-5ae3-4050" responseTimeMS=748 responseBytes=179 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/fourmeme/launches clientIP="2.51.180.232" requestID="50e33ed7-a6f7-4438" responseTimeMS=940 responseBytes=179 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/polymarket/wallet clientIP="2.51.180.232" requestID="264b1973-4ea1-408a" responseTimeMS=1263 responseBytes=180 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="2.51.180.232" requestID="940a8737-904a-4f97" responseTimeMS=3806 responseBytes=29 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="2.51.180.232" requestID="df5f6127-3131-4ce4" responseTimeMS=802 responseBytes=29 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="2.51.180.232" requestID="6fa67d38-7d5f-4a3d" responseTimeMS=3812 responseBytes=29 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="2.51.180.232" requestID="ba546ebe-a126-4e42" responseTimeMS=1802 responseBytes=29 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="2.51.180.232" requestID="c897b7a1-f026-415d" responseTimeMS=2806 responseBytes=29 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[polymarketAgent] previous tick still running, skipping
+[fourMemeLaunchAgent] scanned=0 ticked=0 launched=0 skipped=0 errors=0
+[Aster] /fapi/v3/balance USDT for 0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4 → marginBalance= 5.5637 crossWallet= 5.5637 crossUnPnl= 0.0000 available= 5.5626
+[HL] getAccountState failed, serving stale snapshot: 0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4 age= 46080 ms err= 429 Too Many Requests - null
+[Aster] /fapi/v3/balance USDT for 0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4 → marginBalance= 5.5637 crossWallet= 5.5637 crossUnPnl= 0.0000 available= 5.5626
