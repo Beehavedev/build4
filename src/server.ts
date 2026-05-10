@@ -5557,6 +5557,97 @@ app.post('/api/fourmeme/retry', requireTgUser, async (req, res) => {
   }
 })
 
+// GET /api/fourmeme/launches/live — for each of the caller's `launched`
+// rows that has a tokenAddress, fetch the bonding-curve state via
+// getTokenInfo and return current price + a rough PnL estimate against
+// the dev's recorded initial-buy BNB. Kept as a separate endpoint from
+// /launches so the historical list still loads instantly even when RPC
+// is slow; the mini-app fetches this lazily after the row list renders.
+//
+// PnL is intentionally "rough" — we don't store the exact tokens the
+// dev received at launch, so we estimate them from the curve's avg
+// fill price (fundsWei / boughtTokensWei). Since the dev was the very
+// first buyer, their actual entry price was ≤ avg, meaning this
+// estimate UNDER-counts tokens received and therefore UNDER-states
+// gains / OVER-states losses. That's the safer direction for a
+// "rough" number surfaced to a user.
+app.get('/api/fourmeme/launches/live', requireTgUser, async (req, res) => {
+  const user = (req as any).user
+  if (!user?.id) return res.status(401).json({ ok: false, error: 'unauthorized' })
+  try {
+    const { isFourMemeEnabled, getTokenInfo } = await import('./services/fourMemeTrading')
+    if (!isFourMemeEnabled()) return res.json({ ok: true, live: {} })
+    const rows = await db.$queryRaw<Array<{
+      id: string
+      token_address: string
+      initial_liquidity_bnb: string | null
+    }>>`
+      SELECT "id","token_address","initial_liquidity_bnb"
+        FROM "token_launches"
+       WHERE "user_id" = ${user.id}
+         AND "status" = 'launched'
+         AND "token_address" IS NOT NULL
+       ORDER BY "created_at" DESC
+       LIMIT 20
+    `
+    const live: Record<string, {
+      lastPriceWei?: string
+      quoteIsBnb?: boolean
+      fillPct?: number
+      graduatedToPancake?: boolean
+      pnlPct?: number | null
+      currentValueBnb?: string | null
+      error?: string
+    }> = {}
+    await Promise.all(rows.map(async (r) => {
+      try {
+        const info = await getTokenInfo(r.token_address)
+        let pnlPct: number | null = null
+        let currentValueBnb: string | null = null
+        const initialBnbStr = r.initial_liquidity_bnb
+        if (info.quoteIsBnb && initialBnbStr) {
+          const initialBnb = Number(initialBnbStr)
+          const boughtTokensWei = info.maxOffersWei - info.offersWei
+          if (
+            Number.isFinite(initialBnb) && initialBnb > 0 &&
+            boughtTokensWei > 0n && info.fundsWei > 0n && info.lastPriceWei > 0n
+          ) {
+            const initialBnbWei = BigInt(Math.round(initialBnb * 1e18))
+            // tokensReceived ≈ initialBnbWei / avgPrice
+            //               = initialBnbWei * boughtTokensWei / fundsWei
+            const tokensReceivedWei = (initialBnbWei * boughtTokensWei) / info.fundsWei
+            // currentValueBnbWei = tokensReceivedWei * lastPriceWei / 1e18
+            //   (lastPriceWei is BNB-wei per 1 token-wei * 1e18 scaling)
+            const currentValueWei = (tokensReceivedWei * info.lastPriceWei) / (10n ** 18n)
+            currentValueBnb = (Number(currentValueWei) / 1e18).toString()
+            const initialF = Number(initialBnbWei)
+            if (initialF > 0) {
+              pnlPct = (Number(currentValueWei - initialBnbWei) / initialF) * 100
+            }
+          }
+        }
+        live[r.id] = {
+          lastPriceWei: info.lastPriceWei.toString(),
+          quoteIsBnb: info.quoteIsBnb,
+          fillPct: info.fillPct,
+          graduatedToPancake: info.graduatedToPancake,
+          pnlPct,
+          currentValueBnb,
+        }
+      } catch (e: any) {
+        live[r.id] = { error: e?.message ?? String(e) }
+      }
+    }))
+    res.json({ ok: true, live })
+  } catch (err: any) {
+    const msg = String(err?.message ?? err)
+    if (/relation .*token_launches.* does not exist/i.test(msg)) {
+      return res.json({ ok: true, live: {} })
+    }
+    res.status(400).json({ ok: false, error: msg, code: err?.code })
+  }
+})
+
 app.get('/api/fourmeme/agent-status', requireTgUser, async (req, res) => {
   const user = (req as any).user
   if (!user?.id) return res.status(401).json({ ok: false, error: 'unauthorized' })

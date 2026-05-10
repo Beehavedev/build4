@@ -759,12 +759,39 @@ function statusPill(status: string): { color: string; bg: string; label: string 
   return { color: 'var(--text-secondary)', bg: 'var(--bg-elevated)', label: '⏳ pending' }
 }
 
+interface LiveLaunchInfo {
+  lastPriceWei?: string
+  quoteIsBnb?: boolean
+  fillPct?: number
+  graduatedToPancake?: boolean
+  pnlPct?: number | null
+  currentValueBnb?: string | null
+  error?: string
+}
+
+// Format an 18-decimal BNB-wei-per-token-wei price into a readable
+// "BNB per token" number. Curve prices are tiny so we lean on
+// scientific notation for anything below 1e-6.
+function formatBnbPrice(weiStr: string | undefined): string | null {
+  if (!weiStr) return null
+  try {
+    const n = Number(weiStr) / 1e18
+    if (!Number.isFinite(n) || n <= 0) return null
+    if (n >= 1) return `${n.toFixed(4)} BNB`
+    if (n >= 1e-6) return `${n.toFixed(8)} BNB`
+    return `${n.toExponential(2)} BNB`
+  } catch { return null }
+}
+
 function FourMemeLaunchesSection() {
   const [rows, setRows] = useState<LaunchRow[] | null>(null)
   // Per-row retry state: id -> 'pending' | error string | null. We
   // intentionally keep this in component state (not React Query) so the
   // section stays self-contained.
   const [retrying, setRetrying] = useState<Record<string, 'pending' | string | null>>({})
+  // Live curve data per launched row, fetched lazily after the row
+  // list renders so the section paints instantly even when RPC is slow.
+  const [live, setLive] = useState<Record<string, LiveLaunchInfo>>({})
   const refresh = () => apiFetch<{ ok: boolean; launches: LaunchRow[] }>('/api/fourmeme/launches')
     .then((j) => setRows(j?.ok ? j.launches : []))
     .catch(() => setRows([]))
@@ -795,6 +822,19 @@ function FourMemeLaunchesSection() {
     }
   }
 
+  // Lazily fetch curve state for each launched row.
+  useEffect(() => {
+    if (!rows || rows.length === 0) return
+    const hasLaunched = rows.some((r) => r.status === 'launched' && r.tokenAddress)
+    if (!hasLaunched) return
+    let cancelled = false
+    apiFetch<{ ok: boolean; live: Record<string, LiveLaunchInfo> }>(
+      '/api/fourmeme/launches/live',
+    )
+      .then((j) => { if (!cancelled && j?.ok) setLive(j.live ?? {}) })
+      .catch(() => { /* silent — row still renders with status only */ })
+    return () => { cancelled = true }
+  }, [rows])
   if (!rows || rows.length === 0) return null
   return (
     <>
@@ -812,6 +852,18 @@ function FourMemeLaunchesSection() {
             : r.tokenAddress
               ? ` · ${r.tokenAddress.slice(0, 6)}…${r.tokenAddress.slice(-4)}`
               : ''
+          const liveInfo = live[r.id]
+          const priceLabel = liveInfo && liveInfo.quoteIsBnb
+            ? formatBnbPrice(liveInfo.lastPriceWei)
+            : null
+          const pnl = liveInfo?.pnlPct
+          const hasPnl = typeof pnl === 'number' && Number.isFinite(pnl)
+          const pnlColor = hasPnl
+            ? (pnl >= 0 ? 'var(--green)' : 'var(--red)')
+            : 'var(--text-secondary)'
+          const pnlLabel = hasPnl
+            ? `${pnl >= 0 ? '+' : ''}${pnl.toFixed(pnl >= 100 || pnl <= -100 ? 0 : 1)}%`
+            : null
           const headerInner = (
             <div style={{
               display: 'flex', alignItems: 'center', gap: 10,
@@ -839,8 +891,25 @@ function FourMemeLaunchesSection() {
                 <div style={{
                   fontWeight: 600,
                   overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  display: 'flex', alignItems: 'center', gap: 6,
                 }} data-testid={`text-launch-name-${r.id}`}>
-                  {r.tokenName} <span style={{ color: 'var(--text-muted)' }}>· ${r.tokenSymbol}</span>
+                  <span style={{
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  }}>
+                    {r.tokenName} <span style={{ color: 'var(--text-muted)' }}>· ${r.tokenSymbol}</span>
+                  </span>
+                  {liveInfo?.graduatedToPancake ? (
+                    <span
+                      className="pill"
+                      style={{
+                        fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 999,
+                        color: 'var(--green)', background: 'rgba(16,185,129,0.12)', flexShrink: 0,
+                      }}
+                      data-testid={`badge-launch-graduated-${r.id}`}
+                    >
+                      🎓 PancakeSwap
+                    </span>
+                  ) : null}
                 </div>
                 <div style={{
                   fontSize: 11, color: 'var(--text-secondary)', marginTop: 2,
@@ -848,6 +917,42 @@ function FourMemeLaunchesSection() {
                 }}>
                   {timeAgo(r.createdAt)} ago{subtitle}
                 </div>
+                {priceLabel || pnlLabel || typeof liveInfo?.fillPct === 'number' ? (
+                  <div style={{
+                    fontSize: 11, marginTop: 3, display: 'flex', gap: 8,
+                    alignItems: 'center', flexWrap: 'wrap',
+                  }}>
+                    {priceLabel ? (
+                      <span
+                        style={{ color: 'var(--text-secondary)' }}
+                        data-testid={`text-launch-price-${r.id}`}
+                      >
+                        {priceLabel}
+                      </span>
+                    ) : null}
+                    {pnlLabel ? (
+                      <span
+                        style={{ color: pnlColor, fontWeight: 600 }}
+                        data-testid={`text-launch-pnl-${r.id}`}
+                        title="Estimated from average curve fill price — exact tokens-received not stored"
+                      >
+                        {pnlLabel}
+                        <span style={{
+                          marginLeft: 3, fontSize: 9, fontWeight: 500,
+                          color: 'var(--text-muted)',
+                        }}>est.</span>
+                      </span>
+                    ) : null}
+                    {typeof liveInfo?.fillPct === 'number' && !liveInfo.graduatedToPancake ? (
+                      <span
+                        style={{ color: 'var(--text-muted)' }}
+                        data-testid={`text-launch-fill-${r.id}`}
+                      >
+                        curve {(liveInfo.fillPct * 100).toFixed(1)}%
+                      </span>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
               <span
                 className="pill"
