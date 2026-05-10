@@ -9,6 +9,7 @@ import { Trade } from './pages/Trade'
 import Hyperliquid from './pages/Hyperliquid'
 import Admin from './pages/Admin'
 import Onboard from './pages/Onboard'
+import LaunchToken from './pages/LaunchToken'
 import { apiFetch, type AgentData } from './api'
 
 declare global {
@@ -17,7 +18,7 @@ declare global {
   }
 }
 
-type Page = 'dashboard' | 'agents' | 'wallet' | 'trade' | 'copy' | 'portfolio' | 'predictions' | 'hyperliquid' | 'admin' | 'onboard'
+type Page = 'dashboard' | 'agents' | 'wallet' | 'trade' | 'copy' | 'portfolio' | 'predictions' | 'hyperliquid' | 'admin' | 'onboard' | 'launchToken'
 
 export default function App() {
   const [page, setPage] = useState<Page>('dashboard')
@@ -32,6 +33,12 @@ export default function App() {
   // once via /api/me/wallet on first paint and pass it down — re-fetched
   // whenever the user lands on Onboard via the auto-route below.
   const [asterOnboarded, setAsterOnboarded] = useState(false)
+  // four.meme launch flag — both FOUR_MEME_ENABLED and
+  // FOUR_MEME_LAUNCH_ENABLED must be on server-side. The probe is
+  // public and fast; we hide the overflow-menu entry until it resolves
+  // true so users on environments without the flag never see a CTA
+  // that would just 503.
+  const [launchEnabled, setLaunchEnabled] = useState(false)
 
   useEffect(() => {
     // Init Telegram WebApp
@@ -68,6 +75,12 @@ export default function App() {
     apiFetch<{ aster?: { onboarded?: boolean } }>('/api/me/wallet')
       .then(w => setAsterOnboarded(!!w?.aster?.onboarded))
       .catch(() => { /* assume not onboarded */ })
+
+    // Probe the four.meme launch flag once. Public endpoint, no auth.
+    fetch('/api/fourmeme/launch')
+      .then(r => r.json())
+      .then((j: { enabled?: boolean }) => setLaunchEnabled(!!j?.enabled))
+      .catch(() => setLaunchEnabled(false))
 
     if (!wantOnboard) {
       // Auto-route first-time users (zero agents) to Onboard. Fetch is
@@ -112,7 +125,8 @@ export default function App() {
   // traffic destinations later (e.g. Activity log, Help, Sign out) without
   // having to add another bottom-nav slot for each.
   const overflowItems: { id: Page; label: string; icon: string }[] = [
-    ...(isAdmin ? [{ id: 'admin' as Page, label: 'Admin', icon: '🛠' }] : [])
+    ...(launchEnabled ? [{ id: 'launchToken' as Page, label: 'Launch token', icon: '🚀' }] : []),
+    ...(isAdmin ? [{ id: 'admin' as Page, label: 'Admin', icon: '🛠' }] : []),
   ]
   const hasOverflow = overflowItems.length > 0
 
@@ -189,6 +203,7 @@ export default function App() {
         {page === 'predictions' && <Predictions />}
         {page === 'hyperliquid' && <Hyperliquid />}
         {page === 'admin' && <Admin />}
+        {page === 'launchToken' && <LaunchToken />}
         {page === 'onboard' && (
           <Onboard
             asterOnboarded={asterOnboarded}

@@ -5366,6 +5366,20 @@ app.post('/api/fourmeme/sell', requireTgUser, async (req, res) => {
   }
 })
 
+// GET /api/fourmeme/launch — feature-flag probe so the mini-app can
+// hide the "Launch token" entry point when either FOUR_MEME_ENABLED or
+// FOUR_MEME_LAUNCH_ENABLED is off, without having to attempt a real
+// launch and parse the 503. Cheap, public (no requireTgUser): the
+// answer is identical for every user and only reflects an env flag.
+app.get('/api/fourmeme/launch', async (_req, res) => {
+  try {
+    const { isFourMemeLaunchEnabled } = await import('./services/fourMemeLaunch')
+    res.json({ ok: true, enabled: isFourMemeLaunchEnabled() })
+  } catch (err: any) {
+    res.status(500).json({ ok: false, enabled: false, error: err?.message ?? String(err) })
+  }
+})
+
 // POST /api/fourmeme/launch — Module 3 token creation. Body:
 //   {
 //     tokenName: string,
