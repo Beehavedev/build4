@@ -125,3 +125,9 @@ id = "zo3SxnGLFCXgnwNpUHa7D"
 uri = "file://attached_assets/generated_images/build4_aster_bullish.png"
 type = "image"
 title = "BUILD4 × Aster — Bullish Tweet Image"
+
+[[outputs]]
+id = "b9nOcISIjT50k6kxh2ZU4"
+uri = "file://exports/four_b4l_banner.png"
+type = "image"
+title = "FOUR × B4L Banner"
