@@ -423,6 +423,7 @@ const MAX_UPSTREAM_VALUE_HEADROOM_WEI = ethers.parseEther('0.05')
 async function recordLaunchPending(row: {
   id: string
   userId: string | null
+  agentId: string | null
   walletAddress: string
   tokenName: string
   tokenSymbol: string
@@ -431,12 +432,22 @@ async function recordLaunchPending(row: {
   initialBuyBnb: string
 }): Promise<void> {
   try {
+    // agent_id is included in the pending insert so Module 4's
+    // per-agent cap query (src/agents/fourMemeLaunchAgent.ts) sees the
+    // attempt the moment it's persisted — no back-tagging race. Column
+    // is added by an idempotent ALTER in src/ensureTables.ts; on a
+    // legacy DB that hasn't run ensureTables yet the column would be
+    // missing and this INSERT would throw — which is fine because we
+    // catch + log and the pending row simply isn't recorded (manual
+    // launches still proceed; autonomous agents fail-closed because
+    // their cap query throws separately).
     await db.$executeRawUnsafe(
       `INSERT INTO "token_launches"
-        ("id","user_id","creator_wallet","platform","chain_id","token_name","token_symbol","token_description","image_url","initial_liquidity_bnb","status","created_at")
-       VALUES ($1,$2,$3,'four_meme',56,$4,$5,$6,$7,$8,'pending', now())`,
+        ("id","user_id","agent_id","creator_wallet","platform","chain_id","token_name","token_symbol","token_description","image_url","initial_liquidity_bnb","status","created_at")
+       VALUES ($1,$2,$3,$4,'four_meme',56,$5,$6,$7,$8,$9,'pending', now())`,
       row.id,
       row.userId,
+      row.agentId,
       row.walletAddress,
       row.tokenName,
       row.tokenSymbol,
@@ -487,7 +498,7 @@ async function recordLaunchResult(
 export async function launchFourMemeToken(
   privateKey: string,
   params: LaunchParams,
-  persistContext?: { userId: string | null },
+  persistContext?: { userId: string | null; agentId?: string | null },
 ): Promise<LaunchResult> {
   if (!isFourMemeLaunchEnabled()) {
     const err = new Error('four.meme launch is disabled')
@@ -520,6 +531,7 @@ export async function launchFourMemeToken(
   await recordLaunchPending({
     id: launchId,
     userId: persistContext?.userId ?? null,
+    agentId: persistContext?.agentId ?? null,
     walletAddress: wallet.address,
     tokenName: params.tokenName,
     tokenSymbol: params.tokenSymbol,

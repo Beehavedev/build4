@@ -175,6 +175,36 @@ export function initRunner(bot: Bot) {
   setTimeout(tickPolymarket, 5_000)
   setInterval(tickPolymarket, 60_000)
 
+  // Module 4 — autonomous four.meme token launches. Independent of every
+  // other tick: a launch agent only creates new tokens, never trades.
+  // Master kill-switch is FOUR_MEME_AGENT_LAUNCH_ENABLED (checked inside
+  // tickAllFourMemeLaunchAgents) on top of the existing FOUR_MEME_ENABLED
+  // and FOUR_MEME_LAUNCH_ENABLED flags. Single-flight via the inflight
+  // guard so a slow LLM round-trip + on-chain createToken (which can take
+  // 30s+) can't pile up. Per-agent caps (1 launch/day, 0.05 BNB/launch)
+  // live inside the agent module.
+  const tickFourMemeLaunch = async () => {
+    if (fourMemeLaunchTickInflight) {
+      console.log('[fourMemeLaunchAgent] previous tick still running, skipping')
+      return
+    }
+    fourMemeLaunchTickInflight = true
+    try {
+      const { tickAllFourMemeLaunchAgents } = await import('./fourMemeLaunchAgent')
+      const r = await tickAllFourMemeLaunchAgents()
+      console.log(
+        `[fourMemeLaunchAgent] scanned=${r.scanned} ticked=${r.ticked} ` +
+          `launched=${r.launchesAttempted} skipped=${r.launchesSkipped} errors=${r.errors}`,
+      )
+    } catch (err) {
+      console.error('[fourMemeLaunchAgent] sweep failed:', (err as Error).message)
+    } finally {
+      fourMemeLaunchTickInflight = false
+    }
+  }
+  setTimeout(tickFourMemeLaunch, 7_000)
+  setInterval(tickFourMemeLaunch, 60_000)
+
   // ── BUILD4 × 42.space "Agent vs Community" 48h campaign ──────────────
   // 12 rounds of BTC 8h Price Markets, one round per 4h UTC boundary
   // (00/04/08/12/16/20). For each round we fire 4 ticks:
@@ -229,6 +259,11 @@ export function initRunner(bot: Bot) {
 // parallel-friendly internally, but we never want two concurrent sweeps
 // because they'd contend for the same polymarketCreds rows + LLM quota.
 let polymarketTickInflight = false
+
+// In-flight guard for the four.meme launch agent sweep. createToken
+// can take 30s+ on-chain — we never want a second sweep to start one
+// before the first finishes, since both would race the daily-cap read.
+let fourMemeLaunchTickInflight = false
 
 // ── Swarm divergence watch ─────────────────────────────────────────
 async function runSwarmDivergenceWatch() {

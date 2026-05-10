@@ -145,6 +145,11 @@ export async function ensureNewTables() {
   // login + private/token/create API gated by a wallet signature).
   await run(`ALTER TABLE "Agent" ADD COLUMN IF NOT EXISTS "fourMemeEnabled" BOOLEAN DEFAULT false`)
   await run(`ALTER TABLE "Agent" ADD COLUMN IF NOT EXISTS "fourMemeLaunchEnabled" BOOLEAN DEFAULT false`)
+  // Module 4 — autonomous agent token launches. Per-row tick stamp used
+  // by src/agents/fourMemeLaunchAgent.ts to enforce a per-agent minimum
+  // tick interval (so a fast cron can't double-fire a launch decision).
+  // Daily cap is enforced separately by counting rows in token_launches.
+  await run(`ALTER TABLE "Agent" ADD COLUMN IF NOT EXISTS "lastFourMemeLaunchTickAt" TIMESTAMP(3)`)
   // token_launches — persistent record of every Module 3 launch
   // attempt. The table already exists in production from the
   // marketing-site era with snake_cased columns and an
@@ -176,8 +181,16 @@ export async function ensureNewTables() {
     "created_at" TIMESTAMPTZ NOT NULL DEFAULT now()
   )`)
   await run(`ALTER TABLE "token_launches" ADD COLUMN IF NOT EXISTS "user_id" TEXT`)
+  // Module 4 — autonomous launches need an agent_id column so the
+  // per-agent daily/lifetime caps + dedup query in
+  // src/agents/fourMemeLaunchAgent.ts can find prior attempts. Legacy
+  // production tables (marketing-site era) lack this column, so the
+  // ALTER IF NOT EXISTS is required — without it the daily-cap query
+  // throws and the agent fail-closes to SKIP forever.
+  await run(`ALTER TABLE "token_launches" ADD COLUMN IF NOT EXISTS "agent_id" TEXT`)
   await run(`CREATE INDEX IF NOT EXISTS "token_launches_user_id_idx" ON "token_launches" ("user_id")`)
   await run(`CREATE INDEX IF NOT EXISTS "token_launches_creator_wallet_idx" ON "token_launches" ("creator_wallet")`)
+  await run(`CREATE INDEX IF NOT EXISTS "token_launches_agent_id_idx" ON "token_launches" ("agent_id")`)
   // Phase 4 (2026-05-03): include 'polymarket' in the auto-expansion so
   // every agent (existing AND brand-new — agentCreation now stamps
   // venuesAutoExpanded=true to opt out of this UPDATE entirely, but
