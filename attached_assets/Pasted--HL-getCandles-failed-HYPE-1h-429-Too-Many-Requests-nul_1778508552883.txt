@@ -1,0 +1,309 @@
+[HL] getCandles failed: HYPE 1h 429 Too Many Requests - null
+[HL] getCandles failed: HYPE 15m 429 Too Many Requests - null
+[HL] getCandles failed: HYPE 4h 429 Too Many Requests - null
+[Agent Andromeda9005] Skipping HYPE tick — empty candles (15m=0 1h=0 4h=0); likely venue rate-limit.
+[HL] getCandles failed: HYPE 15m 429 Too Many Requests - null
+[HL] getCandles failed: HYPE 1h 429 Too Many Requests - null
+[Agent Halcyon1391] Skipping HYPE tick — empty candles (15m=0 1h=0 4h=201); likely venue rate-limit.
+[GET]
+build4-1.onrender.com/api/agents/cmoptn82q0jfzkmg4wqkuw8um/positions clientIP="88.226.107.229" requestID="ba4bef52-78ea-45f3" responseTimeMS=8411 responseBytes=180 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[HL] getCandles failed: HYPE 4h 429 Too Many Requests - null
+[HL] getCandles failed: HYPE 15m 429 Too Many Requests - null
+[Agent Halcyon6425] Skipping HYPE tick — empty candles (15m=0 1h=201 4h=0); likely venue rate-limit.
+[HL] getCandles failed: HYPE 1h 429 Too Many Requests - null
+[HL] getCandles failed: HYPE 15m 429 Too Many Requests - null
+[HL] getCandles failed: HYPE 4h 429 Too Many Requests - null
+[Agent testagent] Skipping HYPE tick — empty candles (15m=0 1h=0 4h=0); likely venue rate-limit.
+[HL] getCandles failed: HYPE 1h 429 Too Many Requests - null
+[HL] getCandles failed: HYPE 15m 429 Too Many Requests - null
+[HL] getCandles failed: HYPE 4h 429 Too Many Requests - null
+[Agent Andromeda3316] Skipping HYPE tick — empty candles (15m=0 1h=201 4h=0); likely venue rate-limit.
+[HL] getCandles failed: HYPE 4h 429 Too Many Requests - null
+[Agent Zephyr2017] Skipping HYPE tick — empty candles (15m=201 1h=0 4h=0); likely venue rate-limit.
+[HL] getCandles failed: HYPE 1h 429 Too Many Requests - null
+[HL] getCandles failed: HYPE 15m 429 Too Many Requests - null
+[HL] getCandles failed: HYPE 4h 429 Too Many Requests - null
+[Agent Hahah] Skipping HYPE tick — empty candles (15m=0 1h=0 4h=0); likely venue rate-limit.
+[HL] getCandles failed: HYPE 4h 429 Too Many Requests - null
+[Agent Dominic] Skipping HYPE tick — empty candles (15m=201 1h=201 4h=0); likely venue rate-limit.
+[HL] getCandles failed: HYPE 4h 429 Too Many Requests - null
+[HL] getCandles failed: HYPE 1h 429 Too Many Requests - null
+[HL] getCandles failed: HYPE 15m 429 Too Many Requests - null
+[HL] getCandles failed: HYPE 4h 429 Too Many Requests - null
+[HL] getCandles failed: HYPE 1h 429 Too Many Requests - null
+[Agent Nimbus9438] Skipping HYPE tick — empty candles (15m=0 1h=0 4h=0); likely venue rate-limit.
+[HL] getCandles failed: HYPE 15m 429 Too Many Requests - null
+[Agent Helios4114] Skipping HYPE tick — empty candles (15m=0 1h=0 4h=0); likely venue rate-limit.
+[HL] getCandles failed: HYPE 4h 429 Too Many Requests - null
+[HL] getCandles failed: HYPE 15m 429 Too Many Requests - null
+[HL] getCandles failed: HYPE 4h 429 Too Many Requests - null
+[HL] getCandles failed: HYPE 1h 429 Too Many Requests - null
+[Agent TENSHI] Skipping HYPE tick — empty candles (15m=0 1h=0 4h=0); likely venue rate-limit.
+[HL] getCandles failed: HYPE 1h 429 Too Many Requests - null
+[HL] getCandles failed: HYPE 15m 429 Too Many Requests - null
+[Agent Lyra9262] Skipping HYPE tick — empty candles (15m=0 1h=0 4h=0); likely venue rate-limit.
+[HL] getCandles failed: HYPE 4h 429 Too Many Requests - null
+[HL] getCandles failed: HYPE 15m 429 Too Many Requests - null
+[HL] getCandles failed: HYPE 1h 429 Too Many Requests - null
+[Agent SeanBuild4] Skipping HYPE tick — empty candles (15m=0 1h=0 4h=0); likely venue rate-limit.
+[GET]
+build4-1.onrender.com/api/agents/cmoptn82q0jfzkmg4wqkuw8um/positions clientIP="88.226.107.229" requestID="508f46db-d564-4fc8" responseTimeMS=8646 responseBytes=180 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[Aster] klines fetch (cache miss): { symbol: 'TROLLUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'TROLLUSDT', interval: '5m', limit: 100 }
+}
+[Agent agvvfttcvvcg] Shared scan failed: BadRequestError: 400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."},"request_id":"req_011CavupqPux28iEwaUvjF8Y"}
+    at Function.generate (/opt/render/project/src/node_modules/@anthropic-ai/sdk/src/core/error.ts:75:14)
+    at Anthropic.makeStatusError (/opt/render/project/src/node_modules/@anthropic-ai/sdk/src/client.ts:516:28)
+    at Anthropic.makeRequest (/opt/render/project/src/node_modules/@anthropic-ai/sdk/src/client.ts:752:24)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async callAnthropicForDecision (/opt/render/project/src/src/agents/tradingAgent.ts:739:20)
+    at async runDecisionLLM (/opt/render/project/src/src/agents/tradingAgent.ts:925:37)
+    at async runMarketScan (/opt/render/project/src/src/agents/marketScan.ts:568:17) {
+  status: 400,
+  headers: Headers {
+    date: 'Mon, 11 May 2026 14:07:20 GMT',
+    'content-type': 'application/json',
+    'transfer-encoding': 'chunked',
+    connection: 'keep-alive',
+    'x-should-retry': 'false',
+    'request-id': 'req_011CavupqPux28iEwaUvjF8Y',
+    'strict-transport-security': 'max-age=31536000; includeSubDomains; preload',
+    'anthropic-organization-id': 'faf0b835-a80e-46df-9424-f4f45142fac9',
+    traceresponse: '00-48822ac366c34ef0178e38140928ac5c-c40269c5a3267106-01',
+    server: 'cloudflare',
+    'x-envoy-upstream-service-time': '32',
+    'content-encoding': 'gzip',
+    vary: 'Accept-Encoding',
+    'cf-cache-status': 'DYNAMIC',
+    'set-cookie': '_cfuvid=k.2tG_TzeWbE_wM8kw8c2l5argNRzsxEw0nd7eHhx_E-1778508440.087374-1.0.1.1-7L60HAOvjqzWrJy9rIc3uCalOB9V9sfUkrAaz4d.D6o; HttpOnly; SameSite=None; Secure; Path=/; Domain=api.anthropic.com',
+    'content-security-policy': "default-src 'none'; frame-ancestors 'none'",
+    'x-robots-tag': 'none',
+    'cf-ray': '9fa1bfd68b216017-SIN'
+  },
+  requestID: 'req_011CavupqPux28iEwaUvjF8Y',
+  error: {
+    type: 'error',
+    error: {
+      type: 'invalid_request_error',
+      message: 'Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.'
+    },
+    request_id: 'req_011CavupqPux28iEwaUvjF8Y'
+  },
+  type: 'invalid_request_error'
+}
+[Agent Andromeda5291] Shared scan failed: BadRequestError: 400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."},"request_id":"req_011CavupqPux28iEwaUvjF8Y"}
+    at Function.generate (/opt/render/project/src/node_modules/@anthropic-ai/sdk/src/core/error.ts:75:14)
+    at Anthropic.makeStatusError (/opt/render/project/src/node_modules/@anthropic-ai/sdk/src/client.ts:516:28)
+    at Anthropic.makeRequest (/opt/render/project/src/node_modules/@anthropic-ai/sdk/src/client.ts:752:24)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async callAnthropicForDecision (/opt/render/project/src/src/agents/tradingAgent.ts:739:20)
+    at async runDecisionLLM (/opt/render/project/src/src/agents/tradingAgent.ts:925:37)
+    at async runMarketScan (/opt/render/project/src/src/agents/marketScan.ts:568:17) {
+  status: 400,
+  headers: Headers {
+    date: 'Mon, 11 May 2026 14:07:20 GMT',
+    'content-type': 'application/json',
+    'transfer-encoding': 'chunked',
+    connection: 'keep-alive',
+    'x-should-retry': 'false',
+    'request-id': 'req_011CavupqPux28iEwaUvjF8Y',
+    'strict-transport-security': 'max-age=31536000; includeSubDomains; preload',
+    'anthropic-organization-id': 'faf0b835-a80e-46df-9424-f4f45142fac9',
+    traceresponse: '00-48822ac366c34ef0178e38140928ac5c-c40269c5a3267106-01',
+    server: 'cloudflare',
+    'x-envoy-upstream-service-time': '32',
+    'content-encoding': 'gzip',
+    vary: 'Accept-Encoding',
+    'cf-cache-status': 'DYNAMIC',
+    'set-cookie': '_cfuvid=k.2tG_TzeWbE_wM8kw8c2l5argNRzsxEw0nd7eHhx_E-1778508440.087374-1.0.1.1-7L60HAOvjqzWrJy9rIc3uCalOB9V9sfUkrAaz4d.D6o; HttpOnly; SameSite=None; Secure; Path=/; Domain=api.anthropic.com',
+    'content-security-policy': "default-src 'none'; frame-ancestors 'none'",
+    'x-robots-tag': 'none',
+    'cf-ray': '9fa1bfd68b216017-SIN'
+  },
+  requestID: 'req_011CavupqPux28iEwaUvjF8Y',
+  error: {
+    type: 'error',
+    error: {
+      type: 'invalid_request_error',
+      message: 'Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.'
+    },
+    request_id: 'req_011CavupqPux28iEwaUvjF8Y'
+  },
+  type: 'invalid_request_error'
+}
+[Agent Lyra4800] Shared scan failed: BadRequestError: 400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."},"request_id":"req_011CavupqPux28iEwaUvjF8Y"}
+    at Function.generate (/opt/render/project/src/node_modules/@anthropic-ai/sdk/src/core/error.ts:75:14)
+    at Anthropic.makeStatusError (/opt/render/project/src/node_modules/@anthropic-ai/sdk/src/client.ts:516:28)
+    at Anthropic.makeRequest (/opt/render/project/src/node_modules/@anthropic-ai/sdk/src/client.ts:752:24)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async callAnthropicForDecision (/opt/render/project/src/src/agents/tradingAgent.ts:739:20)
+    at async runDecisionLLM (/opt/render/project/src/src/agents/tradingAgent.ts:925:37)
+    at async runMarketScan (/opt/render/project/src/src/agents/marketScan.ts:568:17) {
+  status: 400,
+  headers: Headers {
+    date: 'Mon, 11 May 2026 14:07:20 GMT',
+    'content-type': 'application/json',
+    'transfer-encoding': 'chunked',
+    connection: 'keep-alive',
+    'x-should-retry': 'false',
+    'request-id': 'req_011CavupqPux28iEwaUvjF8Y',
+    'strict-transport-security': 'max-age=31536000; includeSubDomains; preload',
+    'anthropic-organization-id': 'faf0b835-a80e-46df-9424-f4f45142fac9',
+    traceresponse: '00-48822ac366c34ef0178e38140928ac5c-c40269c5a3267106-01',
+    server: 'cloudflare',
+    'x-envoy-upstream-service-time': '32',
+    'content-encoding': 'gzip',
+    vary: 'Accept-Encoding',
+    'cf-cache-status': 'DYNAMIC',
+    'set-cookie': '_cfuvid=k.2tG_TzeWbE_wM8kw8c2l5argNRzsxEw0nd7eHhx_E-1778508440.087374-1.0.1.1-7L60HAOvjqzWrJy9rIc3uCalOB9V9sfUkrAaz4d.D6o; HttpOnly; SameSite=None; Secure; Path=/; Domain=api.anthropic.com',
+    'content-security-policy': "default-src 'none'; frame-ancestors 'none'",
+    'x-robots-tag': 'none',
+    'cf-ray': '9fa1bfd68b216017-SIN'
+  },
+  requestID: 'req_011CavupqPux28iEwaUvjF8Y',
+  error: {
+    type: 'error',
+    error: {
+      type: 'invalid_request_error',
+      message: 'Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.'
+    },
+    request_id: 'req_011CavupqPux28iEwaUvjF8Y'
+  },
+  type: 'invalid_request_error'
+}
+[Agent Helios4114] Shared scan failed: BadRequestError: 400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."},"request_id":"req_011CavupqPux28iEwaUvjF8Y"}
+    at Function.generate (/opt/render/project/src/node_modules/@anthropic-ai/sdk/src/core/error.ts:75:14)
+    at Anthropic.makeStatusError (/opt/render/project/src/node_modules/@anthropic-ai/sdk/src/client.ts:516:28)
+    at Anthropic.makeRequest (/opt/render/project/src/node_modules/@anthropic-ai/sdk/src/client.ts:752:24)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async callAnthropicForDecision (/opt/render/project/src/src/agents/tradingAgent.ts:739:20)
+    at async runDecisionLLM (/opt/render/project/src/src/agents/tradingAgent.ts:925:37)
+    at async runMarketScan (/opt/render/project/src/src/agents/marketScan.ts:568:17) {
+  status: 400,
+  headers: Headers {
+    date: 'Mon, 11 May 2026 14:07:20 GMT',
+    'content-type': 'application/json',
+    'transfer-encoding': 'chunked',
+    connection: 'keep-alive',
+    'x-should-retry': 'false',
+    'request-id': 'req_011CavupqPux28iEwaUvjF8Y',
+    'strict-transport-security': 'max-age=31536000; includeSubDomains; preload',
+    'anthropic-organization-id': 'faf0b835-a80e-46df-9424-f4f45142fac9',
+    traceresponse: '00-48822ac366c34ef0178e38140928ac5c-c40269c5a3267106-01',
+    server: 'cloudflare',
+    'x-envoy-upstream-service-time': '32',
+    'content-encoding': 'gzip',
+    vary: 'Accept-Encoding',
+    'cf-cache-status': 'DYNAMIC',
+    'set-cookie': '_cfuvid=k.2tG_TzeWbE_wM8kw8c2l5argNRzsxEw0nd7eHhx_E-1778508440.087374-1.0.1.1-7L60HAOvjqzWrJy9rIc3uCalOB9V9sfUkrAaz4d.D6o; HttpOnly; SameSite=None; Secure; Path=/; Domain=api.anthropic.com',
+    'content-security-policy': "default-src 'none'; frame-ancestors 'none'",
+    'x-robots-tag': 'none',
+    'cf-ray': '9fa1bfd68b216017-SIN'
+  },
+  requestID: 'req_011CavupqPux28iEwaUvjF8Y',
+  error: {
+    type: 'error',
+    error: {
+      type: 'invalid_request_error',
+      message: 'Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.'
+    },
+    request_id: 'req_011CavupqPux28iEwaUvjF8Y'
+  },
+  type: 'invalid_request_error'
+}
+[Agent Lyra9262] Shared scan failed: BadRequestError: 400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."},"request_id":"req_011CavupqPux28iEwaUvjF8Y"}
+    at Function.generate (/opt/render/project/src/node_modules/@anthropic-ai/sdk/src/core/error.ts:75:14)
+    at Anthropic.makeStatusError (/opt/render/project/src/node_modules/@anthropic-ai/sdk/src/client.ts:516:28)
+    at Anthropic.makeRequest (/opt/render/project/src/node_modules/@anthropic-ai/sdk/src/client.ts:752:24)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async callAnthropicForDecision (/opt/render/project/src/src/agents/tradingAgent.ts:739:20)
+    at async runDecisionLLM (/opt/render/project/src/src/agents/tradingAgent.ts:925:37)
+    at async runMarketScan (/opt/render/project/src/src/agents/marketScan.ts:568:17) {
+  status: 400,
+  headers: Headers {
+    date: 'Mon, 11 May 2026 14:07:20 GMT',
+    'content-type': 'application/json',
+    'transfer-encoding': 'chunked',
+    connection: 'keep-alive',
+    'x-should-retry': 'false',
+    'request-id': 'req_011CavupqPux28iEwaUvjF8Y',
+    'strict-transport-security': 'max-age=31536000; includeSubDomains; preload',
+    'anthropic-organization-id': 'faf0b835-a80e-46df-9424-f4f45142fac9',
+    traceresponse: '00-48822ac366c34ef0178e38140928ac5c-c40269c5a3267106-01',
+    server: 'cloudflare',
+    'x-envoy-upstream-service-time': '32',
+    'content-encoding': 'gzip',
+    vary: 'Accept-Encoding',
+    'cf-cache-status': 'DYNAMIC',
+    'set-cookie': '_cfuvid=k.2tG_TzeWbE_wM8kw8c2l5argNRzsxEw0nd7eHhx_E-1778508440.087374-1.0.1.1-7L60HAOvjqzWrJy9rIc3uCalOB9V9sfUkrAaz4d.D6o; HttpOnly; SameSite=None; Secure; Path=/; Domain=api.anthropic.com',
+    'content-security-policy': "default-src 'none'; frame-ancestors 'none'",
+    'x-robots-tag': 'none',
+    'cf-ray': '9fa1bfd68b216017-SIN'
+  },
+  requestID: 'req_011CavupqPux28iEwaUvjF8Y',
+  error: {
+    type: 'error',
+    error: {
+      type: 'invalid_request_error',
+      message: 'Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.'
+    },
+    request_id: 'req_011CavupqPux28iEwaUvjF8Y'
+  },
+  type: 'invalid_request_error'
+}
+[Agent Nimbus9438] Shared scan failed: BadRequestError: 400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."},"request_id":"req_011CavupqPux28iEwaUvjF8Y"}
+    at Function.generate (/opt/render/project/src/node_modules/@anthropic-ai/sdk/src/core/error.ts:75:14)
+    at Anthropic.makeStatusError (/opt/render/project/src/node_modules/@anthropic-ai/sdk/src/client.ts:516:28)
+    at Anthropic.makeRequest (/opt/render/project/src/node_modules/@anthropic-ai/sdk/src/client.ts:752:24)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async callAnthropicForDecision (/opt/render/project/src/src/agents/tradingAgent.ts:739:20)
+    at async runDecisionLLM (/opt/render/project/src/src/agents/tradingAgent.ts:925:37)
+    at async runMarketScan (/opt/render/project/src/src/agents/marketScan.ts:568:17) {
+  status: 400,
+  headers: Headers {
+    date: 'Mon, 11 May 2026 14:07:20 GMT',
+    'content-type': 'application/json',
+    'transfer-encoding': 'chunked',
+    connection: 'keep-alive',
+    'x-should-retry': 'false',
+    'request-id': 'req_011CavupqPux28iEwaUvjF8Y',
+    'strict-transport-security': 'max-age=31536000; includeSubDomains; preload',
+    'anthropic-organization-id': 'faf0b835-a80e-46df-9424-f4f45142fac9',
+    traceresponse: '00-48822ac366c34ef0178e38140928ac5c-c40269c5a3267106-01',
+    server: 'cloudflare',
+    'x-envoy-upstream-service-time': '32',
+    'content-encoding': 'gzip',
+    vary: 'Accept-Encoding',
+    'cf-cache-status': 'DYNAMIC',
+    'set-cookie': '_cfuvid=k.2tG_TzeWbE_wM8kw8c2l5argNRzsxEw0nd7eHhx_E-1778508440.087374-1.0.1.1-7L60HAOvjqzWrJy9rIc3uCalOB9V9sfUkrAaz4d.D6o; HttpOnly; SameSite=None; Secure; Path=/; Domain=api.anthropic.com',
+    'content-security-policy': "default-src 'none'; frame-ancestors 'none'",
+    'x-robots-tag': 'none',
+    'cf-ray': '9fa1bfd68b216017-SIN'
+  },
+  requestID: 'req_011CavupqPux28iEwaUvjF8Y',
+  error: {
+    type: 'error',
+    error: {
+      type: 'invalid_request_error',
+      message: 'Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.'
+    },
+    request_id: 'req_011CavupqPux28iEwaUvjF8Y'
+  },
+  type: 'invalid_request_error'
+}
+[Aster] klines fetch (cache miss): { symbol: 'LAYERUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'LAYERUSDT', interval: '5m', limit: 100 }
+[GET]
+build4-1.onrender.com/api/agents/0x7eBB2e59a8c644ac0b984B3e07A44b4c80c8a185/metadata.json clientIP="136.109.218.211" requestID="ddc573cb-6087-4d13" responseTimeMS=373 responseBytes=302 userAgent="8004scan/0.4.163 (+https://www.8004scan.io; bot)"
+[GET]
+build4-1.onrender.com/api/agents/0x42743D70c4a3cE91e3Fe6d6C3aE94F031057835F/metadata.json clientIP="136.109.218.211" requestID="8c5aef6d-a751-464e" responseTimeMS=373 responseBytes=302 userAgent="8004scan/0.4.163 (+https://www.8004scan.io; bot)"
+[GET]
+build4-1.onrender.com/api/agents/0x30b751156794f9b8275b80Aa0Eba93b47064C0AD/metadata.json clientIP="136.109.218.211" requestID="51b28634-a45c-44c7" responseTimeMS=936 responseBytes=1310 userAgent="8004scan/0.4.163 (+https://www.8004scan.io; bot)"
+[GET]
+build4-1.onrender.com/api/agents/0x98c32b41C8bAb5E88bEB961D7C7dE28e7886D8B3/metadata.json clientIP="136.109.218.211" requestID="26654c4a-867f-4778" responseTimeMS=933 responseBytes=1303 userAgent="8004scan/0.4.163 (+https://www.8004scan.io; bot)"
+[GET]
+build4-1.onrender.com/api/agents/0x08E49A7eC82295e90552C1Bfd7e7e3A3f40E52Ac/metadata.json clientIP="136.109.218.211" requestID="860e65cc-9588-4f79" responseTimeMS=913 responseBytes=1305 userAgent="8004scan/0.4.163 (+https://www.8004scan.io; bot)"
+[GET]
+build4-1.onrender.com/api/agents/0xB99d35497f8eD0400A639762A4D71eF1b1232929/metadata.json clientIP="136.109.218.211" requestID="307047f4-49d4-4240" responseTimeMS=377 responseBytes=302 userAgent="8004scan/0.4.163 (+https://www.8004scan.io; bot)"
+[GET]
+build4-1.onrender.com/api/agents/0xa8cc362e13514D578562955EcE1c55c55D08AEA5/metadata.json clientIP="136.109.218.211" requestID="e644c76e-a59f-4beb" responseTimeMS=197 responseBytes=302 userAgent="8004scan/0.4.163 (+https://www.8004scan.io; bot)"

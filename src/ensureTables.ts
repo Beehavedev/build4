@@ -236,6 +236,41 @@ export async function ensureNewTables() {
   await run(`ALTER TABLE "token_launches" ADD COLUMN IF NOT EXISTS "sold_at" TIMESTAMPTZ`)
   await run(`ALTER TABLE "token_launches" ADD COLUMN IF NOT EXISTS "sold_proceeds_bnb" TEXT`)
   await run(`ALTER TABLE "token_launches" ADD COLUMN IF NOT EXISTS "sold_tx_hash" TEXT`)
+
+  // four_meme_holdings — Demo Day: tracks tokens the user TRADED
+  // (manually bought via /api/fourmeme/buy) so the Portfolio "Token
+  // Bags" card can surface them alongside tokens the user LAUNCHED.
+  // Without this table, /api/fourmeme/positions would only ever show
+  // launches; a user who manually bought a token they didn't launch
+  // would see nothing in Portfolio, even though they hold a real
+  // bag on-chain. Cumulative BNB-in / BNB-out are accumulated across
+  // multiple buys and sells of the same (user, token) pair so the
+  // Portfolio card can compute realised + unrealised PnL the same way
+  // it does for launches. `last_action_at` lets us order by recency.
+  // Idempotent CREATE; safe to deploy ahead of any code that reads it.
+  await run(`CREATE TABLE IF NOT EXISTS "four_meme_holdings" (
+    "id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
+    "user_id" TEXT NOT NULL,
+    "token_address" TEXT NOT NULL,
+    "token_name" TEXT,
+    "token_symbol" TEXT,
+    "image_url" TEXT,
+    "first_buy_tx" TEXT,
+    "last_action_tx" TEXT,
+    "total_bnb_in" TEXT NOT NULL DEFAULT '0',
+    "total_bnb_out" TEXT NOT NULL DEFAULT '0',
+    "first_buy_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    "last_action_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT "four_meme_holdings_pkey" PRIMARY KEY ("id")
+  )`)
+  // Token address always stored lowercased (writers normalize), so a
+  // plain composite unique index works for ON CONFLICT — avoids the
+  // expression-index quirk where Postgres requires the exact same
+  // expression in the conflict target.
+  await run(`CREATE UNIQUE INDEX IF NOT EXISTS "four_meme_holdings_user_token_key"
+               ON "four_meme_holdings" ("user_id", "token_address")`)
+  await run(`CREATE INDEX IF NOT EXISTS "four_meme_holdings_user_idx"
+               ON "four_meme_holdings" ("user_id", "last_action_at" DESC)`)
   // Phase 4 (2026-05-03): include 'polymarket' in the auto-expansion so
   // every agent (existing AND brand-new — agentCreation now stamps
   // venuesAutoExpanded=true to opt out of this UPDATE entirely, but

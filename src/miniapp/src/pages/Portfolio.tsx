@@ -602,6 +602,25 @@ export default function Portfolio({ userId }: PortfolioProps) {
                       fontSize: 9, padding: '1px 6px', borderRadius: 4,
                       background: statusBg, color: statusFg, fontWeight: 700, letterSpacing: 0.4,
                     }}>{statusLabel}</span>
+                    {/* Tag the source so judges can see at a glance whether
+                        this bag came from a launch the user (or their agent)
+                        created vs a manual buy via the trade flow. Older
+                        rows without `source` (pre-2026-05-11) silently fall
+                        back to the launch-implied default. */}
+                    {b.source === 'buy' && (
+                      <span style={{
+                        fontSize: 9, padding: '1px 6px', borderRadius: 4,
+                        background: '#3b82f622', color: '#3b82f6',
+                        fontWeight: 700, letterSpacing: 0.4,
+                      }} data-testid={`badge-source-buy-${b.id}`}>BOUGHT</span>
+                    )}
+                    {b.source === 'launch' && (
+                      <span style={{
+                        fontSize: 9, padding: '1px 6px', borderRadius: 4,
+                        background: '#a855f722', color: '#a855f7',
+                        fontWeight: 700, letterSpacing: 0.4,
+                      }} data-testid={`badge-source-launch-${b.id}`}>LAUNCHED</span>
+                    )}
                   </div>
                   <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
                     Entry {b.entryBnb != null ? b.entryBnb.toFixed(4) : '—'} BNB

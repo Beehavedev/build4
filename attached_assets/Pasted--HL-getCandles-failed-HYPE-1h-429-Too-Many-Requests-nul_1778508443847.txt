@@ -1,0 +1,53 @@
+[HL] getCandles failed: HYPE 1h 429 Too Many Requests - null
+[HL] getCandles failed: HYPE 15m 429 Too Many Requests - null
+[HL] getCandles failed: HYPE 4h 429 Too Many Requests - null
+[Agent Andromeda9005] Skipping HYPE tick — empty candles (15m=0 1h=0 4h=0); likely venue rate-limit.
+[HL] getCandles failed: HYPE 15m 429 Too Many Requests - null
+[HL] getCandles failed: HYPE 1h 429 Too Many Requests - null
+[Agent Halcyon1391] Skipping HYPE tick — empty candles (15m=0 1h=0 4h=201); likely venue rate-limit.
+[GET]
+build4-1.onrender.com/api/agents/cmoptn82q0jfzkmg4wqkuw8um/positions clientIP="88.226.107.229" requestID="ba4bef52-78ea-45f3" responseTimeMS=8411 responseBytes=180 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[HL] getCandles failed: HYPE 4h 429 Too Many Requests - null
+[HL] getCandles failed: HYPE 15m 429 Too Many Requests - null
+[Agent Halcyon6425] Skipping HYPE tick — empty candles (15m=0 1h=201 4h=0); likely venue rate-limit.
+[HL] getCandles failed: HYPE 1h 429 Too Many Requests - null
+[HL] getCandles failed: HYPE 15m 429 Too Many Requests - null
+[HL] getCandles failed: HYPE 4h 429 Too Many Requests - null
+[Agent testagent] Skipping HYPE tick — empty candles (15m=0 1h=0 4h=0); likely venue rate-limit.
+[HL] getCandles failed: HYPE 1h 429 Too Many Requests - null
+[HL] getCandles failed: HYPE 15m 429 Too Many Requests - null
+[HL] getCandles failed: HYPE 4h 429 Too Many Requests - null
+[Agent Andromeda3316] Skipping HYPE tick — empty candles (15m=0 1h=201 4h=0); likely venue rate-limit.
+[HL] getCandles failed: HYPE 4h 429 Too Many Requests - null
+[Agent Zephyr2017] Skipping HYPE tick — empty candles (15m=201 1h=0 4h=0); likely venue rate-limit.
+[HL] getCandles failed: HYPE 1h 429 Too Many Requests - null
+[HL] getCandles failed: HYPE 15m 429 Too Many Requests - null
+[HL] getCandles failed: HYPE 4h 429 Too Many Requests - null
+[Agent Hahah] Skipping HYPE tick — empty candles (15m=0 1h=0 4h=0); likely venue rate-limit.
+[HL] getCandles failed: HYPE 4h 429 Too Many Requests - null
+[Agent Dominic] Skipping HYPE tick — empty candles (15m=201 1h=201 4h=0); likely venue rate-limit.
+[HL] getCandles failed: HYPE 4h 429 Too Many Requests - null
+[HL] getCandles failed: HYPE 1h 429 Too Many Requests - null
+[HL] getCandles failed: HYPE 15m 429 Too Many Requests - null
+[HL] getCandles failed: HYPE 4h 429 Too Many Requests - null
+[HL] getCandles failed: HYPE 1h 429 Too Many Requests - null
+[Agent Nimbus9438] Skipping HYPE tick — empty candles (15m=0 1h=0 4h=0); likely venue rate-limit.
+[HL] getCandles failed: HYPE 15m 429 Too Many Requests - null
+[Agent Helios4114] Skipping HYPE tick — empty candles (15m=0 1h=0 4h=0); likely venue rate-limit.
+[HL] getCandles failed: HYPE 4h 429 Too Many Requests - null
+[HL] getCandles failed: HYPE 15m 429 Too Many Requests - null
+[HL] getCandles failed: HYPE 4h 429 Too Many Requests - null
+[HL] getCandles failed: HYPE 1h 429 Too Many Requests - null
+[Agent TENSHI] Skipping HYPE tick — empty candles (15m=0 1h=0 4h=0); likely venue rate-limit.
+[HL] getCandles failed: HYPE 1h 429 Too Many Requests - null
+[HL] getCandles failed: HYPE 15m 429 Too Many Requests - null
+[Agent Lyra9262] Skipping HYPE tick — empty candles (15m=0 1h=0 4h=0); likely venue rate-limit.
+Menu
+[HL] getCandles failed: HYPE 4h 429 Too Many Requests - null
+[HL] getCandles failed: HYPE 15m 429 Too Many Requests - null
+[HL] getCandles failed: HYPE 1h 429 Too Many Requests - null
+[Agent SeanBuild4] Skipping HYPE tick — empty candles (15m=0 1h=0 4h=0); likely venue rate-limit.
+[GET]
+build4-1.onrender.com/api/agents/cmoptn82q0jfzkmg4wqkuw8um/positions clientIP="88.226.107.229" requestID="508f46db-d564-4fc8" responseTimeMS=8646 responseBytes=180 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[Aster] klines fetch (cache miss): { symbol: 'TROLLUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'TROLLUSDT', interval: '5m', limit: 100 }

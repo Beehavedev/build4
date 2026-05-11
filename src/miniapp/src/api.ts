@@ -258,6 +258,10 @@ export interface FourMemePosition {
   sellTxHash: string | null
   sellTxScanUrl: string | null
   status: string
+  // 'launch' = token user (or their agent) created via Module 3.
+  // 'buy'    = token user manually bought via /api/fourmeme/buy.
+  // Older clients tolerate the missing field — it's optional in the UI.
+  source?: 'launch' | 'buy'
   sold: boolean
   soldAt: string | null
   entryBnb: number | null

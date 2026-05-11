@@ -5464,6 +5464,97 @@ app.get('/api/fourmeme/wallet-balance/:tokenAddress', requireTgUser, async (req,
   }
 })
 
+// Demo Day — Portfolio "Token Bags" parity for tokens the user
+// TRADED (not just launched). Records every successful manual buy
+// into four_meme_holdings so /api/fourmeme/positions can UNION it
+// with token_launches and surface the bag in the mini-app. Best-
+// effort: a failure here MUST NOT roll back the on-chain tx the
+// user already paid gas for, so we log and swallow. Token name +
+// symbol are read via ERC20 metadata so the UI has something
+// human-readable; on failure they stay null and the UI falls back
+// to the truncated address.
+async function recordFourMemeHoldingBuy(opts: {
+  userId: string
+  tokenAddress: string
+  bnbAmount: string | number
+  txHash: string
+}): Promise<void> {
+  try {
+    const addr = String(opts.tokenAddress).toLowerCase()
+    const { ethers } = await import('ethers')
+    const { buildBscProvider } = await import('./services/bscProvider')
+    const provider = buildBscProvider(process.env.BSC_RPC_URL)
+    const ERC20 = [
+      'function name() view returns (string)',
+      'function symbol() view returns (string)',
+    ]
+    let name: string | null = null
+    let symbol: string | null = null
+    try {
+      const c = new ethers.Contract(addr, ERC20, provider)
+      const [n, s] = await Promise.all([c.name(), c.symbol()])
+      name = String(n).slice(0, 80)
+      symbol = String(s).slice(0, 20)
+    } catch {
+      // Non-standard ERC20 (very rare for four.meme tokens); the row
+      // still upserts with name/symbol = null.
+    }
+    // Tx-level idempotency: if the SAME txHash already lives in
+    // last_action_tx (or first_buy_tx for the very first call), the
+    // ON CONFLICT branch becomes a no-op via the WHERE clause. Without
+    // this an accidental double-call (client retry, /buy retried by the
+    // user after a slow response) would double-count total_bnb_in for
+    // a single on-chain action.
+    await db.$executeRawUnsafe(
+      `INSERT INTO "four_meme_holdings"
+         ("user_id","token_address","token_name","token_symbol",
+          "first_buy_tx","last_action_tx","total_bnb_in","total_bnb_out",
+          "first_buy_at","last_action_at")
+       VALUES ($1,$2,$3,$4,$5,$5,$6,'0',NOW(),NOW())
+       ON CONFLICT ("user_id","token_address")
+       DO UPDATE SET
+         "total_bnb_in" = (COALESCE(NULLIF("four_meme_holdings"."total_bnb_in",''),'0')::NUMERIC
+                           + EXCLUDED."total_bnb_in"::NUMERIC)::TEXT,
+         "last_action_tx" = EXCLUDED."last_action_tx",
+         "last_action_at" = NOW(),
+         "token_name"   = COALESCE("four_meme_holdings"."token_name",   EXCLUDED."token_name"),
+         "token_symbol" = COALESCE("four_meme_holdings"."token_symbol", EXCLUDED."token_symbol")
+         WHERE "four_meme_holdings"."last_action_tx" IS DISTINCT FROM EXCLUDED."last_action_tx"
+           AND "four_meme_holdings"."first_buy_tx"   IS DISTINCT FROM EXCLUDED."last_action_tx"`,
+      opts.userId, addr, name, symbol, opts.txHash, String(opts.bnbAmount),
+    )
+  } catch (err: any) {
+    console.warn('[fourmeme] recordHoldingBuy failed:', err?.message ?? err)
+  }
+}
+async function recordFourMemeHoldingSell(opts: {
+  userId: string
+  tokenAddress: string
+  bnbProceeds: string | number
+  txHash: string
+}): Promise<void> {
+  try {
+    const addr = String(opts.tokenAddress).toLowerCase()
+    // UPDATE-only: if there's no holdings row (user sold a token they
+    // never bought via us — e.g. they launched it, or transferred in),
+    // do nothing. Launches still get their proceeds tracked via the
+    // existing token_launches.sold_proceeds_bnb column.
+    // Tx-level idempotency: skip if last_action_tx already equals the
+    // incoming sell tx (accidental retry of the same on-chain action).
+    await db.$executeRawUnsafe(
+      `UPDATE "four_meme_holdings"
+          SET "total_bnb_out" = (COALESCE(NULLIF("total_bnb_out",''),'0')::NUMERIC + $3::NUMERIC)::TEXT,
+              "last_action_tx" = $4,
+              "last_action_at" = NOW()
+        WHERE "user_id" = $1 AND "token_address" = $2
+          AND "last_action_tx" IS DISTINCT FROM $4`,
+      opts.userId, addr, String(opts.bnbProceeds), opts.txHash,
+    )
+  } catch (err: any) {
+    console.warn('[fourmeme] recordHoldingSell failed:', err?.message ?? err)
+  }
+}
+
 app.post('/api/fourmeme/buy', requireTgUser, async (req, res) => {
   const user = (req as any).user
   if (!user?.id) return res.status(401).json({ ok: false, error: 'unauthorized' })
@@ -5492,6 +5583,15 @@ app.post('/api/fourmeme/buy', requireTgUser, async (req, res) => {
       const result = await pancakeBuyTokenWithBnb(privateKey, String(tokenAddress), bnbWei, {
         slippageBps: slippageBps != null ? Number(slippageBps) : undefined,
       })
+      // Demo Day — Portfolio "Token Bags" parity: track this manual
+      // buy in four_meme_holdings so it shows up alongside launches.
+      // Uses the actual BNB spent (post-slippage) for accurate PnL.
+      await recordFourMemeHoldingBuy({
+        userId: user.id,
+        tokenAddress: String(tokenAddress),
+        bnbAmount: Number(ethers.formatEther(result.bnbSpentWei)),
+        txHash: result.txHash,
+      })
       return res.json({
         ok: true, venue: result.venue,
         txHash: result.txHash,
@@ -5504,6 +5604,12 @@ app.post('/api/fourmeme/buy', requireTgUser, async (req, res) => {
     }
     const result = await buyTokenWithBnb(privateKey, String(tokenAddress), bnbWei, {
       slippageBps: slippageBps != null ? Number(slippageBps) : undefined,
+    })
+    await recordFourMemeHoldingBuy({
+      userId: user.id,
+      tokenAddress: String(tokenAddress),
+      bnbAmount: Number(ethers.formatEther(result.bnbSpentWei)),
+      txHash: result.txHash,
     })
     res.json({
       ok: true, venue: 'fourMemeCurve',
@@ -5543,6 +5649,16 @@ app.post('/api/fourmeme/sell', requireTgUser, async (req, res) => {
       const result = await pancakeSellTokenForBnb(privateKey, String(tokenAddress), tokensWei, {
         slippageBps: slippageBps != null ? Number(slippageBps) : undefined,
       })
+      // Track proceeds in four_meme_holdings if we have a row for
+      // this (user, token). Uses the EXPECTED bnb (estimatedBnbWei
+      // pre-slippage) — exact actual is only knowable from the tx
+      // receipt parse which is too slow to await synchronously here.
+      await recordFourMemeHoldingSell({
+        userId: user.id,
+        tokenAddress: String(tokenAddress),
+        bnbProceeds: Number(ethers.formatEther(result.estimatedBnbWei)),
+        txHash: result.txHash,
+      })
       return res.json({
         ok: true, venue: result.venue,
         txHash: result.txHash,
@@ -5556,6 +5672,12 @@ app.post('/api/fourmeme/sell', requireTgUser, async (req, res) => {
     }
     const result = await sellTokenForBnb(privateKey, String(tokenAddress), tokensWei, {
       slippageBps: slippageBps != null ? Number(slippageBps) : undefined,
+    })
+    await recordFourMemeHoldingSell({
+      userId: user.id,
+      tokenAddress: String(tokenAddress),
+      bnbProceeds: Number(ethers.formatEther(result.estimatedBnbWei)),
+      txHash: result.txHash,
     })
     res.json({
       ok: true, venue: 'fourMemeCurve',
@@ -5751,7 +5873,14 @@ app.get('/api/fourmeme/positions', requireTgUser, async (req, res) => {
       // No wallet → still return the launches list (without on-chain
       // enrichment) so the user at least sees their launch history.
     }
-    const rows = await db.$queryRaw<Array<{
+    // Demo Day — Portfolio "Token Bags" sources two tables:
+    //   1. token_launches: tokens the user (or their agent) LAUNCHED
+    //   2. four_meme_holdings: tokens the user TRADED (manual buys
+    //      via /api/fourmeme/buy)
+    // Both are SELECTed here, then merged in JS with launches winning
+    // any duplicate (a launch is the richer record). Final list is
+    // sorted by recency (launch.created_at vs holding.last_action_at).
+    type LaunchRow = {
       id: string
       token_name: string
       token_symbol: string
@@ -5765,7 +5894,8 @@ app.get('/api/fourmeme/positions', requireTgUser, async (req, res) => {
       sold_proceeds_bnb: string | null
       sold_tx_hash: string | null
       created_at: Date
-    }>>`
+    }
+    const launchRows = await db.$queryRaw<LaunchRow[]>`
       SELECT "id","token_name","token_symbol","token_address","tx_hash",
              "launch_url","image_url","initial_liquidity_bnb","status",
              "sold_at","sold_proceeds_bnb","sold_tx_hash","created_at"
@@ -5775,12 +5905,96 @@ app.get('/api/fourmeme/positions', requireTgUser, async (req, res) => {
        ORDER BY "created_at" DESC
        LIMIT 50
     `
+    type HoldingRow = {
+      id: string
+      token_name: string | null
+      token_symbol: string | null
+      token_address: string
+      first_buy_tx: string | null
+      last_action_tx: string | null
+      total_bnb_in: string
+      total_bnb_out: string
+      first_buy_at: Date
+      last_action_at: Date
+    }
+    let holdingRows: HoldingRow[] = []
+    try {
+      holdingRows = await db.$queryRaw<HoldingRow[]>`
+        SELECT "id","token_name","token_symbol","token_address",
+               "first_buy_tx","last_action_tx",
+               "total_bnb_in","total_bnb_out",
+               "first_buy_at","last_action_at"
+          FROM "four_meme_holdings"
+         WHERE "user_id" = ${user.id}
+         ORDER BY "last_action_at" DESC
+         LIMIT 50
+      `
+    } catch (e: any) {
+      // Table may not exist yet on a freshly-deployed DB before
+      // ensureTables runs — degrade silently to launches-only.
+      if (!/relation .*four_meme_holdings.* does not exist/i.test(String(e?.message ?? e))) {
+        console.warn('[fourmeme/positions] holdings query failed:', e?.message ?? e)
+      }
+    }
+    // Merge: launches win on duplicate token_address (lowercased).
+    const launchAddrs = new Set(
+      launchRows.map((r) => (r.token_address ?? '').toLowerCase()).filter(Boolean),
+    )
+    type Row =
+      | { kind: 'launch'; r: LaunchRow }
+      | { kind: 'buy'; r: HoldingRow }
+    const rows: Row[] = [
+      ...launchRows.map((r) => ({ kind: 'launch' as const, r })),
+      ...holdingRows
+        .filter((h) => !launchAddrs.has(h.token_address.toLowerCase()))
+        .map((r) => ({ kind: 'buy' as const, r })),
+    ]
+    rows.sort((a, b) => {
+      const ta = a.kind === 'launch'
+        ? (a.r.created_at instanceof Date ? a.r.created_at.getTime() : new Date(a.r.created_at as any).getTime())
+        : (a.r.last_action_at instanceof Date ? a.r.last_action_at.getTime() : new Date(a.r.last_action_at as any).getTime())
+      const tb = b.kind === 'launch'
+        ? (b.r.created_at instanceof Date ? b.r.created_at.getTime() : new Date(b.r.created_at as any).getTime())
+        : (b.r.last_action_at instanceof Date ? b.r.last_action_at.getTime() : new Date(b.r.last_action_at as any).getTime())
+      return tb - ta
+    })
     const ERC20 = ['function balanceOf(address) view returns (uint256)']
-    const positions = await Promise.all(rows.map(async (r) => {
-      const tokenAddr = r.token_address as string
-      const entryBnb = r.initial_liquidity_bnb ? Number(r.initial_liquidity_bnb) : null
-      const sold = !!r.sold_at
-      const proceedsBnb = r.sold_proceeds_bnb ? Number(r.sold_proceeds_bnb) : null
+    const positions = await Promise.all(rows.map(async (row) => {
+      // Normalize the two row kinds into a single working shape so the
+      // on-chain enrichment block stays simple. For "buy" rows we
+      // synthesize: status='bought', sold flag derives from whether the
+      // current balance is zero (computed below), entryBnb = total_bnb_in,
+      // proceedsBnb = total_bnb_out (used only when balance==0 to flag
+      // realised PnL on a fully-exited bag).
+      const isLaunch = row.kind === 'launch'
+      const r = row.r
+      const tokenAddr = (isLaunch ? (r as LaunchRow).token_address : (r as HoldingRow).token_address) as string
+      const tokenName  = isLaunch ? (r as LaunchRow).token_name   : ((r as HoldingRow).token_name   ?? `${tokenAddr.slice(0, 6)}…${tokenAddr.slice(-4)}`)
+      const tokenSym   = isLaunch ? (r as LaunchRow).token_symbol : ((r as HoldingRow).token_symbol ?? '')
+      const imageUrl   = isLaunch ? (r as LaunchRow).image_url    : null
+      const launchUrl  = (isLaunch ? (r as LaunchRow).launch_url : null) ?? `https://four.meme/token/${tokenAddr}`
+      const txHash     = isLaunch ? (r as LaunchRow).tx_hash      : (r as HoldingRow).first_buy_tx
+      const sellTxHash = isLaunch ? (r as LaunchRow).sold_tx_hash : (r as HoldingRow).last_action_tx
+      const status     = isLaunch ? (r as LaunchRow).status       : 'bought'
+      const createdAt  = isLaunch ? (r as LaunchRow).created_at   : (r as HoldingRow).first_buy_at
+      const entryBnb   = isLaunch
+        ? ((r as LaunchRow).initial_liquidity_bnb ? Number((r as LaunchRow).initial_liquidity_bnb) : null)
+        : Number((r as HoldingRow).total_bnb_in)
+      // Sold detection differs by source:
+      //  - launches: explicit sold_at column (set by the autonomous TP
+      //    sweep or manual sell that wrote sold_at)
+      //  - buys: there's no explicit "fully exited" flag. We mark it as
+      //    sold only if total_bnb_out > 0 AND the live balance comes
+      //    back as 0 below; until then we treat it as held.
+      let sold = isLaunch ? !!(r as LaunchRow).sold_at : false
+      const buyOutBnb = isLaunch ? null : Number((r as HoldingRow).total_bnb_out)
+      const launchProceedsBnb = isLaunch
+        ? ((r as LaunchRow).sold_proceeds_bnb ? Number((r as LaunchRow).sold_proceeds_bnb) : null)
+        : null
+      let proceedsBnb: number | null = launchProceedsBnb ?? (buyOutBnb && buyOutBnb > 0 ? buyOutBnb : null)
+      const soldAtRaw: Date | null = isLaunch
+        ? (r as LaunchRow).sold_at
+        : (sellTxHash && buyOutBnb && buyOutBnb > 0 ? (r as HoldingRow).last_action_at : null)
       let balanceWei: bigint = 0n
       let balanceTokens: number | null = null
       let currentValueBnb: number | null = null
@@ -5803,14 +6017,37 @@ app.get('/api/fourmeme/positions', requireTgUser, async (req, res) => {
               const q = await quoteSell(tokenAddr, balanceWei)
               currentValueBnb = Number(ethers.formatEther(q.fundsWei))
               if (entryBnb != null) {
-                pnlBnb = currentValueBnb - entryBnb
-                pnlPct = entryBnb > 0 ? (pnlBnb / entryBnb) * 100 : null
+                // PnL math:
+                //  - launches: simple unrealized = current − entry.
+                //  - buys (moonbag-aware): TOTAL PnL = realized + unrealized
+                //    = (prior_out − entry) + current_value
+                //    = current_value + prior_out − entry
+                //    This handles the "sold most, holds a moonbag" case
+                //    (out > in) where clamping net entry to 0 would
+                //    DROP the already-realized surplus. Pct uses the
+                //    original entry as the cost basis denominator.
+                if (isLaunch) {
+                  pnlBnb = currentValueBnb - entryBnb
+                  pnlPct = entryBnb > 0 ? (pnlBnb / entryBnb) * 100 : null
+                } else {
+                  pnlBnb = currentValueBnb + (buyOutBnb ?? 0) - entryBnb
+                  pnlPct = entryBnb > 0 ? (pnlBnb / entryBnb) * 100 : null
+                }
               }
             } catch (e: any) {
               // Curve quote failed — most likely token has graduated to
               // PCS (V1 sell unsafe / liquidity migrated). Surface so
               // the UI can hint "graduated, sell on PancakeSwap".
               enrichError = `quote: ${e?.shortMessage ?? e?.message ?? 'failed'}`.slice(0, 120)
+            }
+          } else if (!isLaunch && buyOutBnb && buyOutBnb > 0) {
+            // Buy row, balance==0, and we have recorded sell proceeds
+            // → treat as fully exited. Realised PnL = total_out − total_in.
+            sold = true
+            proceedsBnb = buyOutBnb
+            if (entryBnb != null) {
+              pnlBnb = buyOutBnb - entryBnb
+              pnlPct = entryBnb > 0 ? (pnlBnb / entryBnb) * 100 : null
             }
           }
         } catch (e: any) {
@@ -5819,26 +6056,27 @@ app.get('/api/fourmeme/positions', requireTgUser, async (req, res) => {
       }
       return {
         id: r.id,
-        tokenName: r.token_name,
-        tokenSymbol: r.token_symbol,
+        tokenName,
+        tokenSymbol: tokenSym,
         tokenAddress: tokenAddr,
-        imageUrl: r.image_url,
-        launchUrl: r.launch_url ?? `https://four.meme/token/${tokenAddr}`,
-        bscScanUrl: r.tx_hash ? `https://bscscan.com/tx/${r.tx_hash}` : null,
-        sellTxHash: r.sold_tx_hash,
-        sellTxScanUrl: r.sold_tx_hash ? `https://bscscan.com/tx/${r.sold_tx_hash}` : null,
-        status: r.status,
+        imageUrl,
+        launchUrl,
+        bscScanUrl: txHash ? `https://bscscan.com/tx/${txHash}` : null,
+        sellTxHash,
+        sellTxScanUrl: sellTxHash ? `https://bscscan.com/tx/${sellTxHash}` : null,
+        status,
+        source: isLaunch ? 'launch' as const : 'buy' as const,
         sold,
-        soldAt: r.sold_at ? r.sold_at.toISOString() : null,
+        soldAt: soldAtRaw ? soldAtRaw.toISOString() : null,
         entryBnb,
         balanceTokens,
         currentValueBnb,
         soldProceedsBnb: proceedsBnb,
         pnlBnb,
         pnlPct,
-        createdAt: r.created_at instanceof Date
-          ? r.created_at.toISOString()
-          : new Date(r.created_at as any).toISOString(),
+        createdAt: createdAt instanceof Date
+          ? createdAt.toISOString()
+          : new Date(createdAt as any).toISOString(),
         error: enrichError,
       }
     }))
