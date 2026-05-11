@@ -215,3 +215,9 @@ id = "7ss5_aJly4L28W8TTtj49"
 uri = "file://pitch/renders/slide-14.png"
 type = "image"
 title = "Slide 14 — Closing / The Ask"
+
+[[outputs]]
+id = "O0PIaaUmgaK4pSD09QzKp"
+uri = "file://pitch/BUILD4-pitch-deck.pdf"
+type = "pdf"
+title = "BUILD4 Pitch Deck — 14 slides (1280×720)"
