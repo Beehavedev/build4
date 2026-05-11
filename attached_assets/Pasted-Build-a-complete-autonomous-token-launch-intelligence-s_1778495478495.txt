@@ -1,0 +1,1070 @@
+Build a complete autonomous token launch intelligence system for BUILD4. This system runs continuously, scores narratives across five dimensions, and launches tokens on four.meme when the evidence is strong enough. It is not a meme launcher. It is an alpha detection engine that expresses its conclusions as tokens.
+
+ARCHITECTURE
+src/
+  services/
+    signalScorer/
+      index.ts              — orchestrator, runs every 30 min
+      noveltyScorer.ts      — checks DexScreener for existing tokens
+      velocityScorer.ts     — measures acceleration across X, Telegram, Reddit, Google
+      verifiabilityScorer.ts — validates signal against on-chain and official sources
+      communityFitScorer.ts  — scores meme potential and BSC community alignment
+      timingScorer.ts        — estimates window before narrative goes mainstream
+    launchPacket.ts         — assembles full launch spec before any transaction
+    fourMemeLauncher.ts     — executes the actual launch on four.meme
+    launchTracker.ts        — tracks every launched token for 7 days post launch
+    launchFeedback.ts       — retrospective scoring to improve future launches
+  agents/
+    tokenLaunchAgent.ts     — Claude Sonnet decision layer
+  routes/
+    launchProposals.ts      — admin endpoints to view queue and override
+scripts/
+  runSignalScorer.ts        — manual trigger for testing
+
+STEP 1 — SIGNAL SCORER ORCHESTRATOR
+File: src/services/signalScorer/index.ts
+Runs every 30 minutes via your existing scheduler. Pulls candidate narratives from four parallel sources simultaneously, scores each one, and either queues them for launch or logs them as rejected with the reason.
+typescriptimport { scoreNovelty } from './noveltyScorer';
+import { scoreVelocity } from './velocityScorer';
+import { scoreVerifiability } from './verifiabilityScorer';
+import { scoreCommunityFit } from './communityFitScorer';
+import { scoreTiming } from './timingScorer';
+import { assembleLaunchPacket } from '../launchPacket';
+import { executeLaunch } from '../fourMemeLauncher';
+import { db } from '../../db';
+
+export interface NarrativeCandidate {
+  keyword: string
+  description: string
+  sourceType: 'whale_anomaly' | 'x_phrase' | 'geopolitical' | 'ai_milestone' | 
+               'prediction_winner' | 'dead_revival' | 'volume_anomaly' | 
+               'agent_milestone' | 'swarm_consensus'
+  rawData: any
+  detectedAt: string
+}
+
+export interface SignalScore {
+  novelty: number        // 0 to 20
+  velocity: number       // 0 to 20
+  verifiability: number  // 0 to 20
+  communityFit: number   // 0 to 20
+  timing: number         // 0 to 20
+  total: number          // 0 to 100
+  breakdown: string      // human readable explanation
+  vetoed: boolean        // true if verifiability under 6
+  vetoReason?: string
+}
+
+export async function runSignalScorerLoop(): Promise<void> {
+  console.log('[SignalScorer] Starting scan cycle');
+
+  // Pull candidates from all sources in parallel
+  const candidates = await gatherCandidates();
+  console.log(`[SignalScorer] Evaluating ${candidates.length} candidates`);
+
+  for (const candidate of candidates) {
+    try {
+      await evaluateAndAct(candidate);
+      await sleep(2000); // rate limit between evaluations
+    } catch (err: any) {
+      console.error(`[SignalScorer] Failed on ${candidate.keyword}:`, err.message);
+    }
+  }
+
+  console.log('[SignalScorer] Cycle complete');
+}
+
+async function evaluateAndAct(candidate: NarrativeCandidate): Promise<void> {
+  // Check if already evaluated recently
+  const recentEval = await db.launchProposal.findFirst({
+    where: {
+      keyword: candidate.keyword,
+      evaluatedAt: { gte: new Date(Date.now() - 6 * 60 * 60 * 1000) }
+    }
+  });
+  if (recentEval) return;
+
+  // Score all five dimensions in parallel
+  const [novelty, velocity, verifiability, communityFit, timing] = await Promise.all([
+    scoreNovelty(candidate),
+    scoreVelocity(candidate),
+    scoreVerifiability(candidate),
+    scoreCommunityFit(candidate),
+    scoreTiming(candidate)
+  ]);
+
+  const total = novelty + velocity + verifiability + communityFit + timing;
+  const vetoed = verifiability < 6;
+
+  const score: SignalScore = {
+    novelty, velocity, verifiability, communityFit, timing, total,
+    breakdown: `Novelty ${novelty} | Velocity ${velocity} | Verifiability ${verifiability} | Community ${communityFit} | Timing ${timing}`,
+    vetoed,
+    vetoReason: vetoed ? `Verifiability ${verifiability}/20 is below minimum threshold of 6` : undefined
+  };
+
+  // Log to DB
+  await db.launchProposal.create({
+    data: {
+      keyword: candidate.keyword,
+      description: candidate.description,
+      sourceType: candidate.sourceType,
+      rawData: JSON.stringify(candidate.rawData),
+      scores: JSON.stringify(score),
+      totalScore: total,
+      status: vetoed ? 'vetoed' : total >= 70 ? 'approved' : 'rejected',
+      evaluatedAt: new Date()
+    }
+  });
+
+  console.log(`[SignalScorer] ${candidate.keyword} — Score: ${total}/100 | ${score.breakdown} | ${vetoed ? 'VETOED' : total >= 70 ? 'APPROVED' : 'REJECTED'}`);
+
+  if (vetoed) {
+    await notifyAdmin(`[SignalScorer] VETOED: ${candidate.keyword}\nReason: ${score.vetoReason}`);
+    return;
+  }
+
+  if (total < 70) return;
+
+  // Pass to Claude for final decision and launch packet assembly
+  await handleApprovedCandidate(candidate, score);
+}
+
+async function handleApprovedCandidate(
+  candidate: NarrativeCandidate,
+  score: SignalScore
+): Promise<void> {
+  const packet = await assembleLaunchPacket(candidate, score);
+
+  if (!packet) {
+    console.log(`[SignalScorer] ${candidate.keyword} — packet assembly failed, skipping`);
+    return;
+  }
+
+  // Determine launch tier
+  const tier = score.total >= 90 ? 'priority' :
+               score.total >= 80 ? 'standard' : 'soft';
+
+  const liquidityMap = { priority: '300', standard: '150', soft: '50' };
+  packet.initialLiquidityUsdt = liquidityMap[tier];
+
+  console.log(`[SignalScorer] ${candidate.keyword} — ${tier.toUpperCase()} LAUNCH | liquidity: $${packet.initialLiquidityUsdt}`);
+
+  await executeLaunch(packet, tier);
+}
+
+async function gatherCandidates(): Promise<NarrativeCandidate[]> {
+  const { gatherXPhrases } = await import('./sources/xGatherer');
+  const { gatherWhaleAnomalies } = await import('./sources/whaleGatherer');
+  const { gatherAIMilestones } = await import('./sources/aiGatherer');
+  const { gatherVolumeAnomalies } = await import('./sources/volumeGatherer');
+  const { gatherAgentMilestones } = await import('./sources/agentGatherer');
+  const { gatherPredictionWinners } = await import('./sources/predictionGatherer');
+
+  const results = await Promise.allSettled([
+    gatherXPhrases(),
+    gatherWhaleAnomalies(),
+    gatherAIMilestones(),
+    gatherVolumeAnomalies(),
+    gatherAgentMilestones(),
+    gatherPredictionWinners()
+  ]);
+
+  return results
+    .filter(r => r.status === 'fulfilled')
+    .flatMap(r => (r as PromiseFulfilledResult<NarrativeCandidate[]>).value);
+}
+
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+
+STEP 2 — NOVELTY SCORER
+File: src/services/signalScorer/noveltyScorer.ts
+typescriptimport axios from 'axios';
+import { NarrativeCandidate } from './index';
+
+export async function scoreNovelty(candidate: NarrativeCandidate): Promise<number> {
+  try {
+    const keyword = encodeURIComponent(candidate.keyword.toLowerCase());
+    const { data } = await axios.get(
+      `https://api.dexscreener.com/latest/dex/search?q=${keyword}`,
+      { timeout: 5000 }
+    );
+
+    const bscPairs = (data.pairs ?? []).filter((p: any) => p.chainId === 'bsc');
+
+    if (bscPairs.length === 0) {
+      console.log(`[Novelty] ${candidate.keyword} — no existing token: 20/20`);
+      return 20;
+    }
+
+    // Check if existing tokens have meaningful traction
+    const strongTokens = bscPairs.filter((p: any) => {
+      const age = Date.now() - new Date(p.pairCreatedAt ?? 0).getTime();
+      const ageHours = age / (1000 * 60 * 60);
+      return (p.volume?.h24 ?? 0) > 50000 && ageHours < 72;
+    });
+
+    if (strongTokens.length > 0) {
+      console.log(`[Novelty] ${candidate.keyword} — strong token exists: 0/20`);
+      return 0;
+    }
+
+    // Weak or old tokens exist — partial opportunity
+    const weakTokens = bscPairs.filter((p: any) => (p.volume?.h24 ?? 0) < 50000);
+    if (weakTokens.length > 0) {
+      console.log(`[Novelty] ${candidate.keyword} — weak token exists: 8/20`);
+      return 8;
+    }
+
+    return 12;
+  } catch {
+    console.log(`[Novelty] ${candidate.keyword} — DexScreener error, defaulting to 10`);
+    return 10;
+  }
+}
+
+STEP 3 — VELOCITY SCORER
+File: src/services/signalScorer/velocityScorer.ts
+typescriptimport axios from 'axios';
+import { NarrativeCandidate } from './index';
+
+export async function scoreVelocity(candidate: NarrativeCandidate): Promise<number> {
+  const scores: number[] = [];
+
+  // X velocity via RapidAPI Twitter search
+  const xScore = await scoreXVelocity(candidate.keyword);
+  scores.push(xScore * 0.5); // 50% weight
+
+  // Google Trends
+  const googleScore = await scoreGoogleTrends(candidate.keyword);
+  scores.push(googleScore * 0.2); // 20% weight
+
+  // Telegram via keyword monitoring
+  const telegramScore = scoreTelegramVelocity(candidate);
+  scores.push(telegramScore * 0.3); // 30% weight
+
+  const total = Math.min(20, Math.round(scores.reduce((a, b) => a + b, 0)));
+  console.log(`[Velocity] ${candidate.keyword} — X:${xScore} Google:${googleScore} TG:${telegramScore} → ${total}/20`);
+  return total;
+}
+
+async function scoreXVelocity(keyword: string): Promise<number> {
+  if (!process.env.TWITTER_BEARER_TOKEN) return 8; // neutral fallback
+
+  try {
+    const headers = { Authorization: `Bearer ${process.env.TWITTER_BEARER_TOKEN}` };
+    const query = encodeURIComponent(`${keyword} -is:retweet lang:en`);
+
+    const [recent, older] = await Promise.all([
+      axios.get(`https://api.twitter.com/2/tweets/search/recent?query=${query}&max_results=100&start_time=${hoursAgo(1)}`, { headers }),
+      axios.get(`https://api.twitter.com/2/tweets/search/recent?query=${query}&max_results=100&start_time=${hoursAgo(6)}&end_time=${hoursAgo(1)}`, { headers })
+    ]);
+
+    const recentCount = recent.data.meta?.result_count ?? 0;
+    const olderCount = older.data.meta?.result_count ?? 0;
+
+    if (olderCount === 0) return recentCount > 10 ? 20 : 10;
+
+    const acceleration = recentCount / (olderCount / 5); // normalize to same time window
+    if (acceleration > 5) return 20;
+    if (acceleration > 3) return 15;
+    if (acceleration > 1.5) return 10;
+    if (acceleration > 1) return 5;
+    return 0;
+  } catch {
+    return 8;
+  }
+}
+
+async function scoreGoogleTrends(keyword: string): Promise<number> {
+  // Google Trends does not have an official API
+  // Use SerpAPI or pytrends equivalent
+  // For now return neutral score and improve later
+  return 10;
+}
+
+function scoreTelegramVelocity(candidate: NarrativeCandidate): number {
+  // If the candidate came from Telegram monitoring it already has velocity
+  if (candidate.sourceType === 'x_phrase') return 12;
+  if (candidate.sourceType === 'ai_milestone') return 15;
+  if (candidate.sourceType === 'whale_anomaly') return 8;
+  return 10;
+}
+
+function hoursAgo(h: number): string {
+  return new Date(Date.now() - h * 60 * 60 * 1000).toISOString();
+}
+
+STEP 4 — VERIFIABILITY SCORER
+File: src/services/signalScorer/verifiabilityScorer.ts
+This is the integrity gate. Low scores here veto the entire launch.
+typescriptimport axios from 'axios';
+import { NarrativeCandidate } from './index';
+
+export async function scoreVerifiability(candidate: NarrativeCandidate): Promise<number> {
+  let score = 0;
+  const evidence: string[] = [];
+
+  // On-chain verification via BSCScan
+  const onChainScore = await checkOnChain(candidate);
+  score += onChainScore;
+  if (onChainScore > 0) evidence.push(`on-chain: ${onChainScore}pts`);
+
+  // Official source verification
+  const officialScore = await checkOfficialSources(candidate);
+  score += officialScore;
+  if (officialScore > 0) evidence.push(`official: ${officialScore}pts`);
+
+  // Multi-source cross verification
+  const crossScore = await crossVerify(candidate);
+  score += crossScore;
+  if (crossScore > 0) evidence.push(`cross-verified: ${crossScore}pts`);
+
+  const total = Math.min(20, score);
+  console.log(`[Verifiability] ${candidate.keyword} — ${total}/20 | ${evidence.join(', ')}`);
+  return total;
+}
+
+async function checkOnChain(candidate: NarrativeCandidate): Promise<number> {
+  if (!process.env.BSCSCAN_API_KEY) return 0;
+
+  try {
+    // For whale anomaly signals check the specific wallet activity
+    if (candidate.sourceType === 'whale_anomaly' && candidate.rawData?.walletAddress) {
+      const { data } = await axios.get(`https://api.bscscan.com/api`, {
+        params: {
+          module: 'account',
+          action: 'tokentx',
+          address: candidate.rawData.walletAddress,
+          apikey: process.env.BSCSCAN_API_KEY,
+          sort: 'desc',
+          page: 1,
+          offset: 10
+        }
+      });
+
+      if (data.result?.length > 0) return 8;
+    }
+
+    // For volume anomalies verify the contract exists and has real activity
+    if (candidate.sourceType === 'volume_anomaly' && candidate.rawData?.contractAddress) {
+      const { data } = await axios.get(`https://api.bscscan.com/api`, {
+        params: {
+          module: 'contract',
+          action: 'getabi',
+          address: candidate.rawData.contractAddress,
+          apikey: process.env.BSCSCAN_API_KEY
+        }
+      });
+
+      if (data.status === '1') return 6;
+    }
+
+    return 0;
+  } catch {
+    return 0;
+  }
+}
+
+async function checkOfficialSources(candidate: NarrativeCandidate): Promise<number> {
+  // AI milestones — check if a known official source published this
+  if (candidate.sourceType === 'ai_milestone') {
+    const officialDomains = [
+      'openai.com', 'anthropic.com', 'deepmind.com',
+      'mistral.ai', 'meta.com', 'google.com'
+    ];
+    const sourceUrl = candidate.rawData?.sourceUrl ?? '';
+    if (officialDomains.some(d => sourceUrl.includes(d))) return 8;
+    if (sourceUrl.includes('github.com')) return 6;
+    return 2;
+  }
+
+  // Prediction winner — resolution is on-chain and objective
+  if (candidate.sourceType === 'prediction_winner') return 8;
+
+  // Geopolitical — check Reuters or Bloomberg
+  if (candidate.sourceType === 'geopolitical') {
+    const sourceUrl = candidate.rawData?.sourceUrl ?? '';
+    if (sourceUrl.includes('reuters.com') || sourceUrl.includes('bloomberg.com')) return 8;
+    if (sourceUrl.includes('bbc.com') || sourceUrl.includes('ap.org')) return 6;
+    return 2;
+  }
+
+  return 3;
+}
+
+async function crossVerify(candidate: NarrativeCandidate): Promise<number> {
+  const sourceCount = candidate.rawData?.sourceCount ?? 1;
+  if (sourceCount >= 4) return 4;
+  if (sourceCount >= 3) return 3;
+  if (sourceCount >= 2) return 2;
+  return 0;
+}
+
+STEP 5 — COMMUNITY FIT SCORER
+File: src/services/signalScorer/communityFitScorer.ts
+typescriptimport Anthropic from '@anthropic-ai/sdk';
+import { NarrativeCandidate } from './index';
+
+const client = new Anthropic();
+
+export async function scoreCommunityFit(candidate: NarrativeCandidate): Promise<number> {
+  try {
+    const response = await client.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 500,
+      messages: [{
+        role: 'user',
+        content: `You are scoring a narrative for BSC memecoin community fit. Score each dimension 0 to 4.
+
+Narrative: "${candidate.keyword}"
+Description: "${candidate.description}"
+Source type: "${candidate.sourceType}"
+
+Score these five dimensions (0 to 4 each, total max 20):
+1. Meme potential — does it have a character, face, phrase or image that becomes a meme?
+2. Financial relevance — does it connect directly to money, trading, gains or losses?
+3. Community size — how large is the existing community that recognizes this?
+4. Telegram native — does it spread naturally in group chats? Is it punchy and simple?
+5. BUILD4 alignment — does it connect to AI, agents, trading or the future of finance?
+
+Respond only in JSON:
+{
+  "memePotential": number,
+  "financialRelevance": number,
+  "communitySize": number,
+  "telegramNative": number,
+  "build4Alignment": number,
+  "total": number,
+  "reasoning": "one sentence"
+}`
+      }]
+    });
+
+    const text = response.content[0].type === 'text' ? response.content[0].text : '{}';
+    const parsed = JSON.parse(text.replace(/```json|```/g, '').trim());
+    const total = Math.min(20, parsed.total ?? 0);
+
+    console.log(`[CommunityFit] ${candidate.keyword} — ${total}/20 | ${parsed.reasoning}`);
+    return total;
+  } catch {
+    return 10;
+  }
+}
+
+STEP 6 — TIMING SCORER
+File: src/services/signalScorer/timingScorer.ts
+typescriptimport { NarrativeCandidate } from './index';
+
+export async function scoreTiming(candidate: NarrativeCandidate): Promise<number> {
+  let score = 20;
+  const penalties: string[] = [];
+
+  // Estimate hours until mainstream based on current velocity
+  const hoursUntilMainstream = estimateMainstreamTime(candidate);
+
+  if (hoursUntilMainstream > 24) score = 20;
+  else if (hoursUntilMainstream > 12) score = 15;
+  else if (hoursUntilMainstream > 6) score = 8;
+  else if (hoursUntilMainstream > 2) score = 3;
+  else { score = 0; penalties.push('already mainstream'); }
+
+  // Weekend penalty
+  const day = new Date().getDay();
+  if (day === 0 || day === 6) {
+    score = Math.max(0, score - 3);
+    penalties.push('weekend minus 3');
+  }
+
+  // Market panic penalty — check BTC 4h change
+  const btcChange = candidate.rawData?.btcChange4h ?? 0;
+  if (btcChange < -5) {
+    score = Math.max(0, score - 5);
+    penalties.push(`BTC down ${btcChange.toFixed(1)}% minus 5`);
+  }
+
+  const total = Math.min(20, score);
+  console.log(`[Timing] ${candidate.keyword} — ${total}/20 | ~${hoursUntilMainstream}h to mainstream | ${penalties.join(', ') || 'no penalties'}`);
+  return total;
+}
+
+function estimateMainstreamTime(candidate: NarrativeCandidate): number {
+  const velocity = candidate.rawData?.xPostsLastHour ?? 0;
+
+  // Empirical thresholds based on historical meme velocity patterns
+  if (velocity > 5000) return 1;   // already viral
+  if (velocity > 1000) return 3;
+  if (velocity > 500) return 8;
+  if (velocity > 100) return 16;
+  if (velocity > 50) return 30;
+  return 72; // very early, maximum window
+}
+
+STEP 7 — LAUNCH PACKET ASSEMBLER
+File: src/services/launchPacket.ts
+typescriptimport Anthropic from '@anthropic-ai/sdk';
+import { NarrativeCandidate, SignalScore } from './signalScorer/index';
+
+const client = new Anthropic();
+
+export interface LaunchPacket {
+  tokenName: string
+  ticker: string
+  category: string
+  signalSource: string
+  scoreBreakdown: string
+  verifiableProof: string
+  narrativeHook: string
+  telegramCaption: string
+  xPost: string
+  initialLiquidityUsdt: string
+  expiryLogic: string
+  fortyTwoMarketQuestion?: string
+  candidate: NarrativeCandidate
+  score: SignalScore
+  assembledAt: string
+}
+
+export async function assembleLaunchPacket(
+  candidate: NarrativeCandidate,
+  score: SignalScore
+): Promise<LaunchPacket | null> {
+  try {
+    const response = await client.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 1000,
+      messages: [{
+        role: 'user',
+        content: `You are the token launch strategist for BUILD4, an AI trading bot with 17,000 users on BSC.
+
+You are assembling a launch packet for a token that our autonomous agent detected before the market did.
+
+Narrative: "${candidate.keyword}"
+Description: "${candidate.description}"
+Source: "${candidate.sourceType}"
+Signal score: ${score.total}/100
+Score breakdown: ${score.breakdown}
+
+Create the complete launch packet. Rules:
+- Token name: 2 to 4 words maximum, punchy, memorable
+- Ticker: 4 to 5 characters, all caps, no numbers
+- Narrative hook: under 15 words, must make someone want to buy immediately
+- Telegram caption: under 100 words, includes the score as social proof
+- X post: under 280 characters, creates FOMO without being misleading
+- Expiry logic: when does this narrative naturally die? Be specific
+- 42.space market question: only include if score above 85, make it specific and resolvable
+
+Respond only in JSON:
+{
+  "tokenName": string,
+  "ticker": string,
+  "category": string,
+  "narrativeHook": string,
+  "telegramCaption": string,
+  "xPost": string,
+  "expiryLogic": string,
+  "fortyTwoMarketQuestion": string or null,
+  "reasoning": string
+}`
+      }]
+    });
+
+    const text = response.content[0].type === 'text' ? response.content[0].text : '{}';
+    const parsed = JSON.parse(text.replace(/```json|```/g, '').trim());
+
+    const packet: LaunchPacket = {
+      tokenName: parsed.tokenName,
+      ticker: parsed.ticker,
+      category: parsed.category,
+      signalSource: candidate.sourceType,
+      scoreBreakdown: score.breakdown,
+      verifiableProof: candidate.rawData?.sourceUrl ?? 'on-chain data',
+      narrativeHook: parsed.narrativeHook,
+      telegramCaption: parsed.telegramCaption,
+      xPost: parsed.xPost,
+      initialLiquidityUsdt: '150', // overridden by tier logic in orchestrator
+      expiryLogic: parsed.expiryLogic,
+      fortyTwoMarketQuestion: parsed.fortyTwoMarketQuestion,
+      candidate,
+      score,
+      assembledAt: new Date().toISOString()
+    };
+
+    console.log(`[LaunchPacket] Assembled: ${packet.tokenName} ($${packet.ticker})`);
+    console.log(`[LaunchPacket] Hook: ${packet.narrativeHook}`);
+
+    return packet;
+  } catch (err: any) {
+    console.error('[LaunchPacket] Assembly failed:', err.message);
+    return null;
+  }
+}
+
+STEP 8 — FOUR.MEME LAUNCHER
+File: src/services/fourMemeLauncher.ts
+typescriptimport { LaunchPacket } from './launchPacket';
+import { notifyAdmin, notifyChannel } from './telegram';
+import { db } from '../db';
+
+export type LaunchTier = 'soft' | 'standard' | 'priority';
+
+export async function executeLaunch(
+  packet: LaunchPacket,
+  tier: LaunchTier
+): Promise<void> {
+  console.log(`[Launcher] Executing ${tier} launch: ${packet.tokenName} ($${packet.ticker})`);
+
+  // Save to DB before attempting launch
+  const launch = await db.tokenLaunch.create({
+    data: {
+      tokenName: packet.tokenName,
+      ticker: packet.ticker,
+      category: packet.category,
+      narrativeHook: packet.narrativeHook,
+      signalSource: packet.signalSource,
+      scoreTotal: packet.score.total,
+      scoreBreakdown: packet.scoreBreakdown,
+      initialLiquidityUsdt: parseFloat(packet.initialLiquidityUsdt),
+      tier,
+      status: 'pending',
+      telegramCaption: packet.telegramCaption,
+      xPost: packet.xPost,
+      fortyTwoQuestion: packet.fortyTwoMarketQuestion,
+      expiryLogic: packet.expiryLogic,
+      launchedAt: new Date()
+    }
+  });
+
+  try {
+    // Call your existing four.meme launch service
+    // This should already exist in your codebase from the /launch command
+    const { launchToken } = await import('./fourMeme');
+
+    const result = await launchToken({
+      name: packet.tokenName,
+      symbol: packet.ticker,
+      description: packet.narrativeHook,
+      initialLiquidityUsdt: packet.initialLiquidityUsdt
+    });
+
+    // Update DB with result
+    await db.tokenLaunch.update({
+      where: { id: launch.id },
+      data: {
+        status: 'live',
+        contractAddress: result.contractAddress,
+        txHash: result.txHash,
+        pairAddress: result.pairAddress
+      }
+    });
+
+    console.log(`[Launcher] LIVE: ${packet.tokenName} | contract: ${result.contractAddress} | tx: ${result.txHash}`);
+
+    // Notify based on tier
+    const message = buildLaunchMessage(packet, result, tier);
+
+    if (tier === 'priority') {
+      await notifyChannel(message); // broadcast to all users
+      await notifyAdmin(message);
+    } else if (tier === 'standard') {
+      await notifyAdmin(message);
+    } else {
+      console.log(`[Launcher] Soft launch — monitoring before promoting`);
+      // Check again in 2 hours, promote if holding
+      setTimeout(() => evaluateSoftLaunch(launch.id, message), 2 * 60 * 60 * 1000);
+    }
+
+    // If score above 85 and 42.space question exists, create market proposal
+    if (packet.score.total >= 85 && packet.fortyTwoMarketQuestion) {
+      await propose42Market(packet, result.contractAddress);
+    }
+
+  } catch (err: any) {
+    console.error(`[Launcher] Launch failed for ${packet.tokenName}:`, err.message);
+    await db.tokenLaunch.update({
+      where: { id: launch.id },
+      data: { status: 'failed', failReason: err.message }
+    });
+    await notifyAdmin(`[Launcher] FAILED: ${packet.tokenName}\nReason: ${err.message}`);
+  }
+}
+
+function buildLaunchMessage(packet: LaunchPacket, result: any, tier: LaunchTier): string {
+  const tierEmoji = tier === 'priority' ? '🔥' : tier === 'standard' ? '🚀' : '👀';
+  return `${tierEmoji} NEW TOKEN LAUNCHED BY BUILD4 AGENT
+
+${packet.tokenName} ($${packet.ticker})
+${packet.narrativeHook}
+
+Signal score: ${packet.score.total}/100
+Source: ${packet.signalSource}
+Liquidity: $${packet.initialLiquidityUsdt} USDT
+
+${packet.telegramCaption}
+
+Contract: ${result.contractAddress}
+Chart: https://dexscreener.com/bsc/${result.pairAddress}
+BSCScan: https://bscscan.com/tx/${result.txHash}`;
+}
+
+async function evaluateSoftLaunch(launchId: string, message: string): Promise<void> {
+  const launch = await db.tokenLaunch.findUnique({ where: { id: launchId } });
+  if (!launch || launch.status !== 'live') return;
+  // Check volume after 2 hours — if above $5k promote it
+  // Implementation depends on your DexScreener polling setup
+  console.log(`[Launcher] Soft launch evaluation for ${launchId}`);
+}
+
+async function propose42Market(packet: LaunchPacket, contractAddress: string): Promise<void> {
+  await db.predictionMarketProposal.create({
+    data: {
+      question: packet.fortyTwoMarketQuestion!,
+      category: packet.category,
+      resolutionSource: 'DexScreener price feed',
+      resolutionDate: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(),
+      linkedTokenContract: contractAddress,
+      status: 'pending',
+      createdBy: 'signal-scorer-agent'
+    }
+  });
+  console.log(`[Launcher] 42.space market proposed: ${packet.fortyTwoMarketQuestion}`);
+}
+
+STEP 9 — LAUNCH TRACKER
+File: src/services/launchTracker.ts
+Tracks every launched token for 7 days and feeds results back to improve future scoring.
+typescriptimport axios from 'axios';
+import { db } from '../db';
+
+export async function runLaunchTrackerLoop(): Promise<void> {
+  const activeLaunches = await db.tokenLaunch.findMany({
+    where: {
+      status: 'live',
+      launchedAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) }
+    }
+  });
+
+  for (const launch of activeLaunches) {
+    if (!launch.pairAddress) continue;
+
+    try {
+      const { data } = await axios.get(
+        `https://api.dexscreener.com/latest/dex/pairs/bsc/${launch.pairAddress}`,
+        { timeout: 5000 }
+      );
+
+      const pair = data.pair;
+      if (!pair) continue;
+
+      const snapshot = {
+        launchId: launch.id,
+        volume24h: pair.volume?.h24 ?? 0,
+        priceUsd: parseFloat(pair.priceUsd ?? '0'),
+        priceChange24h: pair.priceChange?.h24 ?? 0,
+        liquidity: pair.liquidity?.usd ?? 0,
+        holders: pair.holders ?? 0,
+        recordedAt: new Date()
+      };
+
+      await db.launchSnapshot.create({ data: snapshot });
+
+      const hoursLive = (Date.now() - new Date(launch.launchedAt).getTime()) / (1000 * 60 * 60);
+
+      console.log(`[Tracker] ${launch.tokenName} | ${hoursLive.toFixed(0)}h live | vol $${snapshot.volume24h.toFixed(0)} | price $${snapshot.priceUsd.toFixed(6)} | liq $${snapshot.liquidity.toFixed(0)}`);
+
+    } catch (err: any) {
+      console.error(`[Tracker] Failed for ${launch.tokenName}:`, err.message);
+    }
+  }
+}
+
+export async function generateWeeklyReport(): Promise<string> {
+  const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+  const launches = await db.tokenLaunch.findMany({
+    where: { launchedAt: { gte: oneWeekAgo }, status: 'live' },
+    include: { snapshots: { orderBy: { recordedAt: 'desc' }, take: 1 } }
+  });
+
+  const successful = launches.filter(l => (l.snapshots[0]?.volume24h ?? 0) > 10000);
+  const totalVolume = launches.reduce((sum, l) => sum + (l.snapshots[0]?.volume24h ?? 0), 0);
+  const totalLiquidityDeployed = launches.reduce((sum, l) => sum + l.initialLiquidityUsdt, 0);
+
+  const report = `
+WEEKLY LAUNCH REPORT
+
+Launches this week: ${launches.length}
+Successful (over $10k volume): ${successful.length}
+Success rate: ${((successful.length / launches.length) * 100).toFixed(1)}%
+Total volume generated: $${totalVolume.toFixed(0)}
+Total liquidity deployed: $${totalLiquidityDeployed.toFixed(0)}
+
+Top performers:
+${successful.slice(0, 3).map(l => `  ${l.tokenName} ($${l.ticker}) — $${(l.snapshots[0]?.volume24h ?? 0).toFixed(0)} volume`).join('\n')}
+
+Signal type performance:
+${generateSourceTypeBreakdown(launches)}
+  `.trim();
+
+  console.log(`[WeeklyReport]\n${report}`);
+  return report;
+}
+
+function generateSourceTypeBreakdown(launches: any[]): string {
+  const byType: Record<string, { count: number; avgVolume: number }> = {};
+
+  for (const launch of launches) {
+    if (!byType[launch.signalSource]) {
+      byType[launch.signalSource] = { count: 0, avgVolume: 0 };
+    }
+    byType[launch.signalSource].count++;
+    byType[launch.signalSource].avgVolume += (launch.snapshots[0]?.volume24h ?? 0);
+  }
+
+  return Object.entries(byType)
+    .map(([type, data]) => `  ${type}: ${data.count} launches, avg $${(data.avgVolume / data.count).toFixed(0)} volume`)
+    .join('\n');
+}
+
+STEP 10 — CANDIDATE SOURCES
+File: src/services/signalScorer/sources/xGatherer.ts
+typescriptimport axios from 'axios';
+import { NarrativeCandidate } from '../index';
+
+export async function gatherXPhrases(): Promise<NarrativeCandidate[]> {
+  if (!process.env.TWITTER_BEARER_TOKEN) return [];
+
+  try {
+    const headers = { Authorization: `Bearer ${process.env.TWITTER_BEARER_TOKEN}` };
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+
+    const { data } = await axios.get(
+      `https://api.twitter.com/2/tweets/search/recent`,
+      {
+        headers,
+        params: {
+          query: '(crypto OR BSC OR BNB OR memecoin) -is:retweet lang:en',
+          max_results: 100,
+          start_time: oneHourAgo,
+          'tweet.fields': 'public_metrics,created_at'
+        }
+      }
+    );
+
+    const tweets = data.data ?? [];
+    const phrases = extractEmergingPhrases(tweets);
+
+    return phrases.map(phrase => ({
+      keyword: phrase,
+      description: `Emerging phrase on X with accelerating mention velocity`,
+      sourceType: 'x_phrase' as const,
+      rawData: {
+        xPostsLastHour: tweets.filter((t: any) =>
+          t.text.toLowerCase().includes(phrase.toLowerCase())
+        ).length,
+        sourceUrl: `https://twitter.com/search?q=${encodeURIComponent(phrase)}`,
+        sourceCount: 1,
+        btcChange4h: 0
+      },
+      detectedAt: new Date().toISOString()
+    }));
+  } catch {
+    return [];
+  }
+}
+
+function extractEmergingPhrases(tweets: any[]): string[] {
+  const wordFreq: Record<string, number> = {};
+
+  for (const tweet of tweets) {
+    const words = tweet.text
+      .split(/\s+/)
+      .filter((w: string) => w.length > 4 && !w.startsWith('http') && !w.startsWith('@'))
+      .map((w: string) => w.replace(/[^a-zA-Z0-9]/g, '').toLowerCase());
+
+    for (const word of words) {
+      wordFreq[word] = (wordFreq[word] ?? 0) + 1;
+    }
+  }
+
+  return Object.entries(wordFreq)
+    .filter(([word, count]) => count >= 5 && word.length > 4)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([word]) => word);
+}
+File: src/services/signalScorer/sources/agentGatherer.ts
+typescriptimport { db } from '../../../db';
+import { NarrativeCandidate } from '../index';
+
+export async function gatherAgentMilestones(): Promise<NarrativeCandidate[]> {
+  const candidates: NarrativeCandidate[] = [];
+
+  // Check for agents hitting trade milestones
+  const agents = await db.agent.findMany({
+    where: { isActive: true },
+    include: {
+      trades: { orderBy: { createdAt: 'desc' }, take: 100 }
+    }
+  });
+
+  for (const agent of agents) {
+    const tradeCount = agent.trades.length;
+    const milestones = [10, 50, 100, 250, 500, 1000];
+
+    if (milestones.includes(tradeCount)) {
+      const winRate = agent.trades.filter((t: any) => t.pnl > 0).length / tradeCount;
+      const totalPnl = agent.trades.reduce((sum: number, t: any) => sum + (t.pnl ?? 0), 0);
+
+      if (winRate > 0.55 || totalPnl > 50) {
+        candidates.push({
+          keyword: agent.name,
+          description: `Agent ${agent.name} hit ${tradeCount} trades with ${(winRate * 100).toFixed(0)}% win rate and $${totalPnl.toFixed(2)} PnL`,
+          sourceType: 'agent_milestone',
+          rawData: {
+            agentId: agent.id,
+            tradeCount,
+            winRate,
+            totalPnl,
+            sourceCount: 2,
+            btcChange4h: 0
+          },
+          detectedAt: new Date().toISOString()
+        });
+      }
+    }
+  }
+
+  return candidates;
+}
+
+STEP 11 — ADMIN ROUTES
+File: src/routes/launchProposals.ts
+typescriptimport { Router } from 'express';
+import { db } from '../db';
+import { requireAdmin } from '../middleware/auth';
+
+const router = Router();
+
+// View all proposals with scores
+router.get('/api/admin/launch-proposals', requireAdmin, async (req, res) => {
+  const proposals = await db.launchProposal.findMany({
+    orderBy: { evaluatedAt: 'desc' },
+    take: 50
+  });
+  res.json(proposals);
+});
+
+// View launched tokens with performance
+router.get('/api/admin/launches', requireAdmin, async (req, res) => {
+  const launches = await db.tokenLaunch.findMany({
+    orderBy: { launchedAt: 'desc' },
+    take: 20,
+    include: {
+      snapshots: { orderBy: { recordedAt: 'desc' }, take: 1 }
+    }
+  });
+  res.json(launches);
+});
+
+// Manual trigger for testing
+router.post('/api/admin/signal-scorer/run', requireAdmin, async (req, res) => {
+  const { runSignalScorerLoop } = await import('../services/signalScorer/index');
+  res.json({ message: 'Signal scorer triggered' });
+  await runSignalScorerLoop(); // runs after response sent
+});
+
+// Override — force launch a specific proposal
+router.post('/api/admin/launch-proposals/:id/force-launch', requireAdmin, async (req, res) => {
+  const proposal = await db.launchProposal.findUnique({ where: { id: req.params.id } });
+  if (!proposal) return res.status(404).json({ error: 'Not found' });
+
+  res.json({ message: 'Force launch initiated' });
+  // Implementation: rerun packet assembly and launch
+});
+
+export default router;
+
+STEP 12 — SCHEDULER INTEGRATION
+Add to your existing cron scheduler:
+typescriptimport { runSignalScorerLoop } from './services/signalScorer/index';
+import { runLaunchTrackerLoop } from './services/launchTracker';
+import { generateWeeklyReport } from './services/launchTracker';
+
+// Signal scanner — every 30 minutes
+schedule.every(30).minutes.do(runSignalScorerLoop);
+
+// Launch tracker — every hour
+schedule.every(1).hours.do(runLaunchTrackerLoop);
+
+// Weekly report — every Monday 9am UTC
+schedule.every().monday.at('09:00').do(generateWeeklyReport);
+
+// Manual trigger endpoint already added in routes
+
+ENV VARS TO ADD
+TWITTER_BEARER_TOKEN=        # X API v2 bearer token
+BSCSCAN_API_KEY=             # free at bscscan.com/apis
+GNEWS_API_KEY=               # free at gnews.io
+LAUNCH_MIN_SCORE=70          # override threshold without code change
+LAUNCH_ENABLED=true          # kill switch — set false to pause all launches
+SOFT_LAUNCH_LIQUIDITY=50
+STANDARD_LAUNCH_LIQUIDITY=150
+PRIORITY_LAUNCH_LIQUIDITY=300
+
+PRISMA SCHEMA ADDITIONS
+prismamodel LaunchProposal {
+  id           String   @id @default(cuid())
+  keyword      String
+  description  String
+  sourceType   String
+  rawData      String
+  scores       String
+  totalScore   Float
+  status       String   // approved, rejected, vetoed
+  evaluatedAt  DateTime
+}
+
+model TokenLaunch {
+  id                   String          @id @default(cuid())
+  tokenName            String
+  ticker               String
+  category             String
+  narrativeHook        String
+  signalSource         String
+  scoreTotal           Float
+  scoreBreakdown       String
+  initialLiquidityUsdt Float
+  tier                 String
+  status               String          // pending, live, failed
+  contractAddress      String?
+  txHash               String?
+  pairAddress          String?
+  telegramCaption      String
+  xPost                String
+  fortyTwoQuestion     String?
+  expiryLogic          String
+  failReason           String?
+  launchedAt           DateTime
+  snapshots            LaunchSnapshot[]
+}
+
+model LaunchSnapshot {
+  id             String      @id @default(cuid())
+  launchId       String
+  launch         TokenLaunch @relation(fields: [launchId], references: [id])
+  volume24h      Float
+  priceUsd       Float
+  priceChange24h Float
+  liquidity      Float
+  holders        Int
+  recordedAt     DateTime
+}
+
+THE ONE HARD RULE IN THE CODEBASE
+Add this comment at the top of fourMemeLauncher.ts and never remove it:
+typescript// INTEGRITY RULE: This system never launches tokens on unverified narratives.
+// Verifiability score below 6 is a hard veto regardless of total score.
+// The agent's reputation is built on signal quality not launch volume.
+// One bad launch destroys more trust than ten good launches build.
+Type-check clean. Add the Prisma schema changes and run npx prisma migrate dev before starting. The kill switch LAUNCH_ENABLED=false must work instantly with no code changes required.
