@@ -205,6 +205,25 @@ export function initRunner(bot: Bot) {
   setTimeout(tickFourMemeLaunch, 7_000)
   setInterval(tickFourMemeLaunch, 60_000)
 
+  // Module 4 — auto-expire stale launch approval requests. The agent's
+  // pending-dedup gate refuses to propose new launches while any
+  // pending_user_approval row sits open. Without a sweeper, an owner
+  // who never taps Approve/Reject silently blocks the agent forever.
+  // We run hourly (cheap UPDATE) and let the helper read the TTL from
+  // FOUR_MEME_APPROVAL_TTL_HOURS (default 24h). Fail-safe: any error
+  // is logged inside the helper, never thrown.
+  const sweepStaleApprovals = async () => {
+    try {
+      const { expireStalePendingApprovals } = await import('../services/fourMemeLaunch')
+      const n = await expireStalePendingApprovals()
+      if (n > 0) console.log(`[fourMemeLaunch] expired ${n} stale pending_user_approval row(s)`)
+    } catch (err) {
+      console.error('[fourMemeLaunch] approval expiry sweep failed:', (err as Error).message)
+    }
+  }
+  setTimeout(sweepStaleApprovals, 15_000)
+  setInterval(sweepStaleApprovals, 60 * 60 * 1000)
+
   // ── BUILD4 × 42.space "Agent vs Community" 48h campaign ──────────────
   // 12 rounds of BTC 8h Price Markets, one round per 4h UTC boundary
   // (00/04/08/12/16/20). For each round we fire 4 ticks:

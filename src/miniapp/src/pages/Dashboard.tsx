@@ -764,6 +764,9 @@ function statusPill(status: string): { color: string; bg: string; label: string 
   if (status === 'launched') return { color: 'var(--green)', bg: 'rgba(16,185,129,0.12)', label: '✅ launched' }
   if (status === 'failed')   return { color: 'var(--red)',   bg: 'rgba(239,68,68,0.12)',  label: '❌ failed' }
   if (status === 'stale')    return { color: 'var(--yellow, #f59e0b)', bg: 'rgba(245,158,11,0.12)', label: '⚠️ stale' }
+  if (status === 'expired')  return { color: 'var(--text-muted, #9ca3af)', bg: 'rgba(156,163,175,0.12)', label: '⌛ expired' }
+  if (status === 'rejected') return { color: 'var(--red)', bg: 'rgba(239,68,68,0.12)', label: '✋ rejected' }
+  if (status === 'pending_user_approval') return { color: 'var(--text-secondary)', bg: 'var(--bg-elevated)', label: '👤 awaiting approval' }
   return { color: 'var(--text-secondary)', bg: 'var(--bg-elevated)', label: '⏳ pending' }
 }
 

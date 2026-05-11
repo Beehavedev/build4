@@ -709,6 +709,57 @@ export async function markUserPendingStale(userId: string): Promise<number> {
   }
 }
 
+// ── Stale-approval expirer ───────────────────────────────────────────
+// Module 4's HITL flow writes a `pending_user_approval` row whenever an
+// agent proposes a launch that requires owner sign-off. The agent's
+// dedup gate then refuses to propose anything new while any pending row
+// (including pending_user_approval) is open against that agent. If the
+// owner never approves or rejects, the row sits forever and the agent
+// is silently blocked.
+//
+// This sweeper flips pending_user_approval rows older than `ttlHours`
+// to status `expired` so the dedup gate clears on the next agent tick.
+// TTL is env-driven via FOUR_MEME_APPROVAL_TTL_HOURS (default 24h).
+// Scope is global (sweeps every user) so the runner cron can fire it
+// once per interval rather than per-user. Idempotent and silent on
+// table-missing, matching markUserPendingStale.
+const DEFAULT_APPROVAL_TTL_HOURS = 24
+function resolveApprovalTtlHours(override?: number): number {
+  if (typeof override === 'number' && Number.isFinite(override) && override > 0) {
+    return override
+  }
+  const raw = process.env.FOUR_MEME_APPROVAL_TTL_HOURS
+  if (raw) {
+    const parsed = parseFloat(raw)
+    if (Number.isFinite(parsed) && parsed > 0) return parsed
+  }
+  return DEFAULT_APPROVAL_TTL_HOURS
+}
+
+export async function expireStalePendingApprovals(ttlHours?: number): Promise<number> {
+  const hours = resolveApprovalTtlHours(ttlHours)
+  try {
+    const n = await db.$executeRawUnsafe(
+      `UPDATE "token_launches"
+          SET "status" = 'expired',
+              "error_message" = COALESCE(
+                "error_message",
+                'approval window expired — owner did not approve within ' || $1 || 'h'
+              )
+        WHERE "status" = 'pending_user_approval'
+          AND "created_at" < now() - ($1 || ' hours')::interval`,
+      String(hours),
+    )
+    return Number(n) || 0
+  } catch (err: any) {
+    const msg = String(err?.message ?? err)
+    if (!/relation .*token_launches.* does not exist/i.test(msg)) {
+      console.warn('[fourMemeLaunch] expireStalePendingApprovals failed:', msg)
+    }
+    return 0
+  }
+}
+
 export class LaunchRetryError extends Error {
   code: string
   constructor(msg: string, code = 'LAUNCH_RETRY_INVALID') {
