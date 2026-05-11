@@ -1233,6 +1233,11 @@ function FourMemeTradeModal(props: {
   const { row, side, graduated, onClose, onSuccess } = props
   const venueLabel = graduated ? 'PancakeSwap V2' : 'four.meme bonding curve'
   const [amount, setAmount] = useState('')
+  // Slippage stored as a STRING so the user can type freely (incl. '.').
+  // Parsed to a number on submit. Default 1% — user can adjust 0.1–20%.
+  const [slippagePct, setSlippagePct] = useState('1')
+  const [showAdvanced, setShowAdvanced] = useState(false)
+  const [balance, setBalance] = useState<{ bnbBalance: string; tokenBalance: string } | null>(null)
   const [quote, setQuote] = useState<{
     estimatedAmountWei?: string
     estimatedCostWei?: string
@@ -1242,6 +1247,31 @@ function FourMemeTradeModal(props: {
   const [submitting, setSubmitting] = useState(false)
   const [submitErr, setSubmitErr] = useState<string | null>(null)
   const [success, setSuccess] = useState<{ txHash: string } | null>(null)
+
+  // Fetch BNB + token balance once on open so the Max button works
+  // instantly without a round-trip when the user taps it.
+  useEffect(() => {
+    if (!row.tokenAddress) return
+    let cancelled = false
+    apiFetch<any>(`/api/fourmeme/wallet-balance/${row.tokenAddress}`)
+      .then((j) => { if (!cancelled && j?.ok) setBalance({ bnbBalance: j.bnbBalance, tokenBalance: j.tokenBalance }) })
+      .catch(() => { /* silent — Max button just won't appear */ })
+    return () => { cancelled = true }
+  }, [row.tokenAddress])
+
+  // Reserve a small BNB buffer for gas when the user taps Max on a buy.
+  // Pancake swap on BSC costs ~0.0008 BNB; we keep 0.002 BNB to be safe.
+  const GAS_RESERVE_BNB = 0.002
+  function handleMax() {
+    if (!balance) return
+    if (side === 'buy') {
+      const max = Math.max(0, Number(balance.bnbBalance) - GAS_RESERVE_BNB)
+      setAmount(max > 0 ? max.toFixed(6) : '0')
+    } else {
+      // For sells we use the full token balance — gas is paid in BNB.
+      setAmount(balance.tokenBalance)
+    }
+  }
 
   // Debounced quote fetch on amount change. We bail if the input isn't a
   // positive number so we don't ping the RPC for every keystroke.
@@ -1267,16 +1297,26 @@ function FourMemeTradeModal(props: {
     return () => { cancelled = true; clearTimeout(t) }
   }, [amount, side, row.tokenAddress])
 
+  // Validate slippage: must be a number in (0, 20]. Out-of-range values
+  // are blocked at submit (server also enforces 0..2000 bps).
+  function validatedSlippageBps(): number | null {
+    const pct = Number(slippagePct)
+    if (!Number.isFinite(pct) || pct <= 0 || pct > 20) return null
+    return Math.round(pct * 100)
+  }
+
   async function submit() {
     if (!row.tokenAddress) return
     const v = Number(amount)
     if (!Number.isFinite(v) || v <= 0) { setSubmitErr('Enter an amount'); return }
+    const bps = validatedSlippageBps()
+    if (bps == null) { setSubmitErr('Slippage must be between 0.1% and 20%'); return }
     setSubmitting(true); setSubmitErr(null)
     try {
       const path = side === 'buy' ? '/api/fourmeme/buy' : '/api/fourmeme/sell'
       const body = side === 'buy'
-        ? { tokenAddress: row.tokenAddress, bnbAmount: amount }
-        : { tokenAddress: row.tokenAddress, tokenAmount: amount }
+        ? { tokenAddress: row.tokenAddress, bnbAmount: amount, slippageBps: bps }
+        : { tokenAddress: row.tokenAddress, tokenAmount: amount, slippageBps: bps }
       const j = await apiFetch<any>(path, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1359,24 +1399,55 @@ function FourMemeTradeModal(props: {
           </div>
         ) : (
           <>
-            <label style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'block', marginBottom: 6 }}>
-              {inputLabel}
-            </label>
-            <input
-              type="number"
-              inputMode="decimal"
-              autoFocus
-              placeholder="0.0"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              data-testid="input-trade-amount"
-              style={{
-                width: '100%', padding: '12px 14px', fontSize: 18,
-                borderRadius: 10, border: '1px solid var(--border)',
-                background: 'var(--bg-elevated)', color: 'var(--text-primary)',
-                marginBottom: 12, boxSizing: 'border-box',
-              }}
-            />
+            <div style={{
+              display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
+              marginBottom: 6,
+            }}>
+              <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                {inputLabel}
+              </label>
+              {balance && (
+                <span
+                  style={{ fontSize: 11, color: 'var(--text-muted)' }}
+                  data-testid="text-trade-balance"
+                >
+                  Bal: {side === 'buy'
+                    ? `${Number(balance.bnbBalance).toFixed(4)} BNB`
+                    : `${Number(balance.tokenBalance).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${row.tokenSymbol}`}
+                </span>
+              )}
+            </div>
+            <div style={{ position: 'relative', marginBottom: 12 }}>
+              <input
+                type="number"
+                inputMode="decimal"
+                autoFocus
+                placeholder="0.0"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                data-testid="input-trade-amount"
+                style={{
+                  width: '100%', padding: '12px 60px 12px 14px', fontSize: 18,
+                  borderRadius: 10, border: '1px solid var(--border)',
+                  background: 'var(--bg-elevated)', color: 'var(--text-primary)',
+                  boxSizing: 'border-box',
+                }}
+              />
+              {balance && (
+                <button
+                  type="button"
+                  onClick={handleMax}
+                  data-testid="button-trade-max"
+                  style={{
+                    position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
+                    padding: '5px 10px', fontSize: 11, fontWeight: 700,
+                    borderRadius: 6, border: '1px solid var(--border)',
+                    background: 'var(--bg-card)', color: 'var(--accent-primary, #6c5ce7)',
+                    cursor: 'pointer',
+                  }}
+                >MAX</button>
+              )}
+            </div>
 
             <div style={{
               padding: '12px 14px', borderRadius: 10,
@@ -1384,26 +1455,28 @@ function FourMemeTradeModal(props: {
               fontSize: 12, color: 'var(--text-secondary)',
             }}>
               {side === 'buy' ? (
-                <>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                    <span>Est. tokens</span>
-                    <span style={{ color: 'var(--text-primary)', fontWeight: 600 }} data-testid="text-trade-est">
-                      {estTokens ?? '—'} {row.tokenSymbol}
-                    </span>
-                  </div>
-                </>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                  <span>Est. tokens</span>
+                  <span style={{ color: 'var(--text-primary)', fontWeight: 600 }} data-testid="text-trade-est">
+                    {estTokens ?? '—'} {row.tokenSymbol}
+                  </span>
+                </div>
               ) : (
-                <>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                    <span>Est. BNB out</span>
-                    <span style={{ color: 'var(--text-primary)', fontWeight: 600 }} data-testid="text-trade-est">
-                      {estBnb ?? '—'} BNB
-                    </span>
-                  </div>
-                </>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                  <span>Est. BNB out</span>
+                  <span style={{ color: 'var(--text-primary)', fontWeight: 600 }} data-testid="text-trade-est">
+                    {estBnb ?? '—'} BNB
+                  </span>
+                </div>
               )}
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                <span>Slippage tolerance</span>
+                <span style={{ color: 'var(--text-primary)', fontWeight: 600 }} data-testid="text-trade-slippage">
+                  {slippagePct}%
+                </span>
+              </div>
               <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 4 }}>
-                Slippage: 1% (default). Routed via {venueLabel}.
+                Routed via {venueLabel}.
                 {graduated && side === 'sell' ? ' One-time token approval may be required on first sell.' : ''}
               </div>
               {quoteErr && (
@@ -1412,6 +1485,80 @@ function FourMemeTradeModal(props: {
                 </div>
               )}
             </div>
+
+            {/* Advanced settings: slippage. Collapsed by default so the
+                modal stays clean for the 90% of users who keep 1%. */}
+            <button
+              type="button"
+              onClick={() => setShowAdvanced((s) => !s)}
+              data-testid="button-trade-advanced"
+              style={{
+                width: '100%', padding: '8px 12px',
+                background: 'transparent', border: 'none',
+                color: 'var(--text-secondary)', fontSize: 11,
+                cursor: 'pointer', textAlign: 'left',
+                marginBottom: showAdvanced ? 8 : 12,
+              }}
+            >
+              {showAdvanced ? '▼' : '▶'} Advanced settings
+            </button>
+            {showAdvanced && (
+              <div style={{
+                padding: '12px 14px', borderRadius: 10,
+                background: 'var(--bg-elevated)', marginBottom: 12,
+              }}>
+                <label style={{
+                  fontSize: 12, color: 'var(--text-secondary)',
+                  display: 'block', marginBottom: 6,
+                }}>
+                  Slippage tolerance
+                </label>
+                <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+                  {['0.5', '1', '3', '5'].map((p) => (
+                    <button
+                      key={p}
+                      type="button"
+                      onClick={() => setSlippagePct(p)}
+                      data-testid={`button-slippage-${p}`}
+                      style={{
+                        flex: 1, padding: '6px 0', fontSize: 12, fontWeight: 600,
+                        borderRadius: 6,
+                        border: slippagePct === p ? '1px solid var(--accent-primary, #6c5ce7)' : '1px solid var(--border)',
+                        background: slippagePct === p ? 'rgba(108,92,231,0.12)' : 'var(--bg-card)',
+                        color: slippagePct === p ? 'var(--accent-primary, #6c5ce7)' : 'var(--text-primary)',
+                        cursor: 'pointer',
+                      }}
+                    >{p}%</button>
+                  ))}
+                </div>
+                <div style={{ position: 'relative' }}>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    step="0.1"
+                    min="0.1"
+                    max="20"
+                    placeholder="Custom"
+                    value={slippagePct}
+                    onChange={(e) => setSlippagePct(e.target.value)}
+                    data-testid="input-trade-slippage"
+                    style={{
+                      width: '100%', padding: '10px 30px 10px 12px', fontSize: 13,
+                      borderRadius: 8, border: '1px solid var(--border)',
+                      background: 'var(--bg-card)', color: 'var(--text-primary)',
+                      boxSizing: 'border-box',
+                    }}
+                  />
+                  <span style={{
+                    position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)',
+                    fontSize: 13, color: 'var(--text-secondary)', pointerEvents: 'none',
+                  }}>%</span>
+                </div>
+                <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 6 }}>
+                  Higher slippage = more likely to fill on volatile tokens, but you may receive less. Range: 0.1–20%.
+                </div>
+              </div>
+            )}
 
             {submitErr && (
               <div

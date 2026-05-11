@@ -5330,6 +5330,45 @@ app.get('/api/fourmeme/token/:address', async (req, res) => {
   }
 })
 
+// GET /api/fourmeme/wallet-balance/:tokenAddress
+// Returns the caller's BSC wallet BNB balance + the ERC20 balance of
+// the given token. Used by the mini-app trade modal to power "Max"
+// pre-fill on the amount input. Read-only, no signing.
+app.get('/api/fourmeme/wallet-balance/:tokenAddress', requireTgUser, async (req, res) => {
+  const user = (req as any).user
+  if (!user?.id) return res.status(401).json({ ok: false, error: 'unauthorized' })
+  try {
+    const { isFourMemeEnabled, loadUserBscPrivateKey } = await import('./services/fourMemeTrading')
+    if (!isFourMemeEnabled()) return res.status(503).json({ ok: false, code: 'FOUR_MEME_DISABLED' })
+    const { ethers } = await import('ethers')
+    const { buildBscProvider } = await import('./services/bscProvider')
+    const tokenAddress = ethers.getAddress(String(req.params.tokenAddress))
+    const { address } = await loadUserBscPrivateKey(user.id)
+    const provider = buildBscProvider(process.env.BSC_RPC_URL)
+    const erc20 = new ethers.Contract(
+      tokenAddress,
+      ['function balanceOf(address) view returns (uint256)', 'function decimals() view returns (uint8)'],
+      provider,
+    )
+    let bnbWei = 0n, tokenWei = 0n, decimals = 18, errs: string[] = []
+    try { bnbWei = await provider.getBalance(address) } catch (e: any) { errs.push(`bnb:${e?.shortMessage ?? e?.message}`) }
+    try { tokenWei = await erc20.balanceOf(address) } catch (e: any) { errs.push(`token:${e?.shortMessage ?? e?.message}`) }
+    try { decimals = Number(await erc20.decimals()) } catch { /* keep 18 */ }
+    res.json({
+      ok: true,
+      address,
+      bnbWei: bnbWei.toString(),
+      bnbBalance: ethers.formatEther(bnbWei),
+      tokenWei: tokenWei.toString(),
+      tokenBalance: ethers.formatUnits(tokenWei, decimals),
+      tokenDecimals: decimals,
+      error: errs.length ? errs.join('; ') : null,
+    })
+  } catch (err: any) {
+    res.status(400).json({ ok: false, error: err?.message ?? String(err) })
+  }
+})
+
 app.post('/api/fourmeme/buy', requireTgUser, async (req, res) => {
   const user = (req as any).user
   if (!user?.id) return res.status(401).json({ ok: false, error: 'unauthorized' })
