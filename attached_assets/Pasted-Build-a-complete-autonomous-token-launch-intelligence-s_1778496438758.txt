@@ -1,0 +1,120 @@
+Build a complete autonomous token launch intelligence system for BUILD4. This system runs continuously, scores narratives across five dimensions, and launches tokens on four.meme when the evidence is strong enough. It is not a meme launcher. It is an alpha detection engine that expresses its conclusions as tokens.
+
+ARCHITECTURE
+src/
+  services/
+    signalScorer/
+      index.ts              — orchestrator, runs every 30 min
+      noveltyScorer.ts      — checks DexScreener for existing tokens
+      velocityScorer.ts     — measures acceleration across X, Telegram, Reddit, Google
+      verifiabilityScorer.ts — validates signal against on-chain and official sources
+      communityFitScorer.ts  — scores meme potential and BSC community alignment
+      timingScorer.ts        — estimates window before narrative goes mainstream
+    launchPacket.ts         — assembles full launch spec before any transaction
+    fourMemeLauncher.ts     — executes the actual launch on four.meme
+    launchTracker.ts        — tracks every launched token for 7 days post launch
+    launchFeedback.ts       — retrospective scoring to improve future launches
+  agents/
+    tokenLaunchAgent.ts     — Claude Sonnet decision layer
+  routes/
+    launchProposals.ts      — admin endpoints to view queue and override
+scripts/
+  runSignalScorer.ts        — manual trigger for testing
+
+STEP 1 — SIGNAL SCORER ORCHESTRATOR
+File: src/services/signalScorer/index.ts
+Runs every 30 minutes via your existing scheduler. Pulls candidate narratives from four parallel sources simultaneously, scores each one, and either queues them for launch or logs them as rejected with the reason.
+typescriptimport { scoreNovelty } from './noveltyScorer';
+import { scoreVelocity } from './velocityScorer';
+import { scoreVerifiability } from './verifiabilityScorer';
+import { scoreCommunityFit } from './communityFitScorer';
+import { scoreTiming } from './timingScorer';
+import { assembleLaunchPacket } from '../launchPacket';
+import { executeLaunch } from '../fourMemeLauncher';
+import { db } from '../../db';
+
+export interface NarrativeCandidate {
+  keyword: string
+  description: string
+  sourceType: 'whale_anomaly' | 'x_phrase' | 'geopolitical' | 'ai_milestone' | 
+               'prediction_winner' | 'dead_revival' | 'volume_anomaly' | 
+               'agent_milestone' | 'swarm_consensus'
+  rawData: any
+  detectedAt: string
+}
+
+export interface SignalScore {
+  novelty: number        // 0 to 20
+  velocity: number       // 0 to 20
+  verifiability: number  // 0 to 20
+  communityFit: number   // 0 to 20
+  timing: number         // 0 to 20
+  total: number          // 0 to 100
+  breakdown: string      // human readable explanation
+  vetoed: boolean        // true if verifiability under 6
+  vetoReason?: string
+}
+
+export async function runSignalScorerLoop(): Promise<void> {
+  console.log('[SignalScorer] Starting scan cycle');
+
+  // Pull candidates from all sources in parallel
+  const candidates = await gatherCandidates();
+  console.log(`[SignalScorer] Evaluating ${candidates.length} candidates`);
+
+  for (const candidate of candidates) {
+    try {
+      await evaluateAndAct(candidate);
+      await sleep(2000); // rate limit between evaluations
+    } catch (err: any) {
+      console.error(`[SignalScorer] Failed on ${candidate.keyword}:`, err.message);
+    }
+  }
+
+  console.log('[SignalScorer] Cycle complete');
+}
+
+async function evaluateAndAct(candidate: NarrativeCandidate): Promise<void> {
+  // Check if already evaluated recently
+  const recentEval = await db.launchProposal.findFirst({
+    where: {
+      keyword: candidate.keyword,
+      evaluatedAt: { gte: new Date(Date.now() - 6 * 60 * 60 * 1000) }
+    }
+  });
+  if (recentEval) return;
+
+  // Score all five dimensions in parallel
+  const [novelty, velocity, verifiability, communityFit, timing] = await Promise.all([
+    scoreNovelty(candidate),
+    scoreVelocity(candidate),
+    scoreVerifiability(candidate),
+    scoreCommunityFit(candidate),
+    scoreTiming(candidate)
+  ]);
+
+  const total = novelty + velocity + verifiability + communityFit + timing;
+  const vetoed = verifiability < 6;
+
+  const score: SignalScore = {
+    novelty, velocity, verifiability, communityFit, timing, total,
+    breakdown: `Novelty ${novelty} | Velocity ${velocity} | Verifiability ${verifiability} | Community ${communityFit} | Timing ${timing}`,
+    vetoed,
+    vetoReason: vetoed ? `Verifiability ${verifiability}/20 is below minimum threshold of 6` : undefined
+  };
+
+  // Log to DB
+  await db.launchProposal.create({
+    data: {
+      keyword: candidate.keyword,
+      description: candidate.description,
+      sourceType: candidate.sourceType,
+      rawData: JSON.stringify(candidate.rawData),
+      scores: JSON.stringify(score),
+      totalScore: total,
+      status: vetoed ? 'vetoed' : total >= 70 ? 'approved' : 'rejected',
+      evaluatedAt: new Date()
+    }
+  });
+
+  console.log(`[SignalScorer] ${candidate.keyword} — Score: ${total}/100 | ${score.breakdown} | ${vetoed ? 'VETOED...
