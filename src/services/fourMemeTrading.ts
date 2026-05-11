@@ -363,8 +363,14 @@ interface SellOpts {
 /**
  * Sell tokens back to the four.meme curve.
  *
- * Caller is responsible for having approved the TokenManager to spend
- * `tokenAmountWei` on the token's ERC20 BEFORE this call.
+ * Approval is handled internally: this function checks the user's
+ * current ERC20 allowance toward the resolved TokenManager and, if
+ * insufficient, broadcasts an `approve(MaxUint256)` and waits for it
+ * to mine before placing the sell. The approval is idempotent — once
+ * granted, future sells of the same token from the same wallet skip
+ * straight to the sell tx. Callers that pre-approved (e.g. the
+ * fourMemeLaunchAgent take-profit loop) are unaffected: the allowance
+ * check sees max-uint and proceeds directly to sell.
  *
  * Slippage enforcement strategy by version:
  *
@@ -417,6 +423,29 @@ export async function sellTokenForBnb(
   if (minFunds <= 0n) throw new Error('Computed minFunds <= 0; refusing to broadcast')
 
   const tm = tokenManagerForVersion(BigInt(info.version), info.tokenManager, signer)
+
+  // ── Approve-if-needed ──────────────────────────────────────────────
+  // The V2 TokenManager.sellToken does an ERC20 transferFrom on the
+  // user's tokens, which requires a prior approve() of >=
+  // tokenAmountWei. Without this the trade reverts with the canonical
+  // OpenZeppelin "ERC20: insufficient allowance". We grant MaxUint256
+  // so the user pays for one approve tx ever per (wallet, token), then
+  // every subsequent sell of that bag is a single sellToken call.
+  const tmAddr = ethers.getAddress(info.tokenManager)
+  const erc20 = new ethers.Contract(
+    addr,
+    [
+      'function allowance(address owner, address spender) view returns (uint256)',
+      'function approve(address spender, uint256 amount) returns (bool)',
+    ],
+    signer,
+  )
+  const currentAllowance: bigint = await erc20.allowance(signer.address, tmAddr)
+  if (currentAllowance < tokenAmountWei) {
+    const approveTx = await erc20.approve(tmAddr, ethers.MaxUint256)
+    await approveTx.wait()
+  }
+
   // Disambiguate the overloaded sellToken — ethers v6 requires the
   // explicit signature when multiple overloads exist on one ABI.
   const sellFn = tm.getFunction('sellToken(uint256,address,uint256,uint256,uint256,address)')
