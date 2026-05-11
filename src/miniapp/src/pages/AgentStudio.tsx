@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { apiFetch, deleteAgent, getMyFeed, setAgentFourMemeApproval, updateAgentSettings, type FeedEntry } from '../api'
+import { apiFetch, deleteAgent, getMyFeed, setAgentFourMemeApproval, setAgentFourMemeLaunchEnabled, updateAgentSettings, type FeedEntry } from '../api'
 import { TradingChart } from '../components/TradingChart'
 import { MarketTicker } from '../components/MarketTicker'
 
@@ -408,6 +408,23 @@ export default function AgentStudio(_props: AgentStudioProps) {
       setAgents(prev)
     } finally {
       setApprovalSaving(s => { const n = { ...s }; delete n[agentId]; return n })
+    }
+  }
+
+  // Demo Day — flip the master per-agent four.meme auto-launch switch.
+  // Same optimistic-update + per-agent busy pattern as toggleFourMemeApproval.
+  const [launchEnabledSaving, setLaunchEnabledSaving] = useState<Record<string, boolean>>({})
+  const toggleFourMemeLaunchEnabled = async (agentId: string, next: boolean) => {
+    if (launchEnabledSaving[agentId]) return
+    const prev = agents
+    setLaunchEnabledSaving(s => ({ ...s, [agentId]: true }))
+    setAgents(curr => curr.map(a => a.id === agentId ? { ...a, fourMemeLaunchEnabled: next } : a))
+    try {
+      await setAgentFourMemeLaunchEnabled(agentId, next)
+    } catch {
+      setAgents(prev)
+    } finally {
+      setLaunchEnabledSaving(s => { const n = { ...s }; delete n[agentId]; return n })
     }
   }
 
@@ -978,6 +995,61 @@ export default function AgentStudio(_props: AgentStudioProps) {
             })}
           </div>
         </div>
+
+        {/* Demo Day — master ON/OFF for autonomous four.meme launches.
+            When ON, the agent ticks every 60s, scans DexScreener trending,
+            asks the LLM "should I launch?", and writes a brain-feed entry
+            every cycle (LAUNCH or SKIP with verbose reasoning). When OFF
+            the agent is dormant for token launches and writes nothing.
+            Lives ABOVE the approval toggle because if this is OFF the
+            approval toggle is irrelevant. */}
+        {(() => {
+          const launchEnabled = !!(agent as any).fourMemeLaunchEnabled
+          const saving = !!launchEnabledSaving[agent.id]
+          return (
+            <div style={{
+              marginTop: 10, padding: '8px 10px',
+              background: launchEnabled ? '#0a1f15' : '#0a0a0f',
+              border: `1px solid ${launchEnabled ? '#10b98155' : '#1e1e2e'}`,
+              borderRadius: 8,
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+            }}>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: '#e2e8f0' }}>
+                  🪙 Auto-launch tokens on four.meme
+                </div>
+                <div style={{ fontSize: 10, color: '#64748b', marginTop: 2 }}>
+                  {launchEnabled
+                    ? 'Agent is scanning trending narratives every 60s. Watch its brain in the feed below.'
+                    : 'Off — agent will not consider launching any tokens.'}
+                </div>
+              </div>
+              <button
+                role="switch"
+                aria-checked={launchEnabled}
+                aria-label="Enable autonomous four.meme launches"
+                disabled={saving}
+                onClick={() => toggleFourMemeLaunchEnabled(agent.id, !launchEnabled)}
+                data-testid={`toggle-agent-${agent.id}-launch-enabled`}
+                style={{
+                  flex: '0 0 auto',
+                  width: 40, height: 22, borderRadius: 999,
+                  border: 'none', cursor: saving ? 'wait' : 'pointer',
+                  background: launchEnabled ? '#10b981' : '#374151',
+                  position: 'relative', padding: 0,
+                  opacity: saving ? 0.6 : 1,
+                  transition: 'background 0.15s',
+                }}
+              >
+                <span style={{
+                  position: 'absolute', top: 2, left: launchEnabled ? 20 : 2,
+                  width: 18, height: 18, borderRadius: '50%',
+                  background: '#fff', transition: 'left 0.15s',
+                }} />
+              </button>
+            </div>
+          )
+        })()}
 
         {/* Task #70 — HITL approval toggle for four.meme launches.
             When ON, the launch agent files a pending row and waits

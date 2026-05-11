@@ -194,6 +194,20 @@ export function setAgentFourMemeApproval(agentId: string, requireApproval: boole
   );
 }
 
+// Demo Day — flip the master per-agent four.meme launch switch from
+// the mini-app. When ON the agent enters the 60s tick loop and writes
+// a brain-feed line every cycle so judges can watch it think live.
+export function setAgentFourMemeLaunchEnabled(agentId: string, enabled: boolean) {
+  return apiFetch<{ ok: true; agentId: string; enabled: boolean }>(
+    `/api/agents/${agentId}/four-meme-launch-enabled`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    },
+  );
+}
+
 export function getTelegramUser() {
   const tg = window.Telegram?.WebApp;
   return tg?.initDataUnsafe?.user || null;

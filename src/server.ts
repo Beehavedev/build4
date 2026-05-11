@@ -5729,6 +5729,34 @@ app.post('/api/fourmeme/retry', requireTgUser, async (req, res) => {
 // separate from /api/agents/:id/settings (numeric-only) so we don't
 // over-pack the existing schema with booleans. Idempotent: same value
 // in == same value out.
+// Demo Day toggle — flip the master per-agent four.meme launch
+// switch from the mini-app. Mirror of /four-meme-approval but writes
+// to the `fourMemeLaunchEnabled` column. When ON the agent enters
+// the 60s tick loop and writes a brain-feed line every cycle (LAUNCH
+// or SKIP with a verbose reason), so judges can watch it think live.
+app.patch('/api/agents/:id/four-meme-launch-enabled', requireTgUser, async (req, res) => {
+  try {
+    const user = (req as any).user
+    if (!user?.id) return res.status(401).json({ ok: false, error: 'unauthorized' })
+    const agentId = String(req.params.id)
+    const enabled = Boolean(req.body?.enabled)
+    const owner = await db.$queryRawUnsafe<Array<{ userId: string }>>(
+      `SELECT "userId" FROM "Agent" WHERE "id" = $1 LIMIT 1`,
+      agentId,
+    )
+    if (owner.length === 0) return res.status(404).json({ ok: false, error: 'agent not found' })
+    if (owner[0].userId !== user.id) return res.status(403).json({ ok: false, error: 'forbidden' })
+    await db.$executeRawUnsafe(
+      `UPDATE "Agent" SET "fourMemeLaunchEnabled" = $1 WHERE "id" = $2`,
+      enabled,
+      agentId,
+    )
+    res.json({ ok: true, agentId, enabled })
+  } catch (err: any) {
+    res.status(400).json({ ok: false, error: err?.message ?? String(err) })
+  }
+})
+
 app.patch('/api/agents/:id/four-meme-approval', requireTgUser, async (req, res) => {
   try {
     const user = (req as any).user

@@ -249,6 +249,19 @@ async function tickOneAgent(
     agent.id,
   )
 
+  // Demo Day — single tick context object passed to every brain-feed
+  // log call. Lets every SKIP/LAUNCH line carry the same trending
+  // snapshot the agent was looking at this cycle, so judges watching
+  // the feed see the agent's actual evaluation context, not just
+  // "SKIP - low_conviction". bnbBalance gets filled in below once
+  // we've read the wallet.
+  const tickCtx: { trending: DexToken[]; bnbBalance?: number } = { trending }
+  // Closure wrapper so the call sites stay readable.
+  const skip = (
+    proposal: LaunchProposal | null,
+    effective: LaunchProposal,
+  ) => skipWith(agent, proposal, effective, tickCtx)
+
   // Cap + dedup gate. Single query returns three counts:
   //   - lifetime: every row this agent has ever produced (hard ceiling).
   //   - recent24h: rows created in the last 24h (daily cap).
@@ -289,7 +302,7 @@ async function tickOneAgent(
       `[fourMemeLaunchAgent] cap-count query failed for ${agent.id}:`,
       (err as Error).message,
     )
-    return await skipWith(agent, null, {
+    return await skip(null, {
       action: 'SKIP', name: '', ticker: '', description: '',
       initialBuyBnb: 0, conviction: 0,
       reasoning: `cap_query_failed: ${(err as Error).message.slice(0, 160)}`,
@@ -297,14 +310,14 @@ async function tickOneAgent(
   }
 
   if (lifetimeCount >= MAX_LAUNCHES_LIFETIME) {
-    return await skipWith(agent, null, {
+    return await skip(null, {
       action: 'SKIP', name: '', ticker: '', description: '',
       initialBuyBnb: 0, conviction: 0,
       reasoning: `lifetime_cap_reached: ${lifetimeCount}/${MAX_LAUNCHES_LIFETIME} launches ever`,
     })
   }
   if (recent24hCount >= MAX_LAUNCHES_PER_DAY) {
-    return await skipWith(agent, null, {
+    return await skip(null, {
       action: 'SKIP', name: '', ticker: '', description: '',
       initialBuyBnb: 0, conviction: 0,
       reasoning: `daily_cap_reached: ${recent24hCount}/${MAX_LAUNCHES_PER_DAY} launches in last 24h`,
@@ -314,7 +327,7 @@ async function tickOneAgent(
   // pending row from days ago should block until status is resolved
   // (operator can manually mark 'failed' to clear it).
   if (pendingAnyCount > 0) {
-    return await skipWith(agent, null, {
+    return await skip(null, {
       action: 'SKIP', name: '', ticker: '', description: '',
       initialBuyBnb: 0, conviction: 0,
       reasoning: `pending_launch_exists: ${pendingAnyCount} pending row(s) — clear or wait for completion`,
@@ -331,7 +344,7 @@ async function tickOneAgent(
     walletAddress = c.address
     privateKey = c.privateKey
   } catch (err) {
-    return await skipWith(agent, null, {
+    return await skip(null, {
       action: 'SKIP', name: '', ticker: '', description: '',
       initialBuyBnb: 0, conviction: 0,
       reasoning: `wallet_load_failed: ${(err as Error).message.slice(0, 160)}`,
@@ -349,12 +362,13 @@ async function tickOneAgent(
       (err as Error).message,
     )
   }
+  tickCtx.bnbBalance = bnbBalance
 
   // Need enough BNB for the smallest meaningful launch (just gas) +
   // headroom. We let the launch path itself enforce the exact amount.
   const minBnbFloor = 0.005
   if (bnbBalance < minBnbFloor) {
-    return await skipWith(agent, null, {
+    return await skip(null, {
       action: 'SKIP', name: '', ticker: '', description: '',
       initialBuyBnb: 0, conviction: 0,
       reasoning: `insufficient_bnb: have ${bnbBalance.toFixed(5)} BNB, need ≥ ${minBnbFloor}`,
@@ -366,7 +380,7 @@ async function tickOneAgent(
   try {
     proposal = await proposeLaunch(agent, trending, bnbBalance)
   } catch (err) {
-    return await skipWith(agent, null, {
+    return await skip(null, {
       action: 'SKIP', name: '', ticker: '', description: '',
       initialBuyBnb: 0, conviction: 0,
       reasoning: `llm_failed: ${(err as Error).message.slice(0, 200)}`,
@@ -382,7 +396,7 @@ async function tickOneAgent(
     const reason = proposal.action !== 'LAUNCH'
       ? proposal.reasoning
       : `low_conviction: ${proposal.conviction.toFixed(2)} < ${MIN_CONVICTION} — ${proposal.reasoning}`
-    return await skipWith(agent, proposal, {
+    return await skip(proposal, {
       ...proposal,
       action: 'SKIP',
       reasoning: reason,
@@ -399,7 +413,7 @@ async function tickOneAgent(
   )
 
   if (cleanName.length < 2 || cleanTicker.length < 1 || !/^[A-Z0-9$]+$/.test(cleanTicker)) {
-    return await skipWith(agent, proposal, {
+    return await skip(proposal, {
       ...proposal,
       action: 'SKIP',
       reasoning: `invalid_proposal: name=${JSON.stringify(cleanName)} ticker=${JSON.stringify(cleanTicker)}`,
@@ -409,7 +423,7 @@ async function tickOneAgent(
   // Final BNB check: clamped initial buy + 0.005 gas reserve must fit.
   const required = clampedBuy + 0.005
   if (bnbBalance < required) {
-    return await skipWith(agent, proposal, {
+    return await skip(proposal, {
       ...proposal,
       action: 'SKIP',
       reasoning: `insufficient_bnb_for_buy: have ${bnbBalance.toFixed(5)}, need ${required.toFixed(5)}`,
@@ -450,7 +464,7 @@ async function tickOneAgent(
         console.warn('[fourMemeLaunchAgent] notify failed:', (e as Error).message)
       })
     }
-    return await skipWith(agent, proposal, {
+    return await skip(proposal, {
       ...proposal,
       action: 'SKIP',
       reasoning: pendingId
@@ -487,6 +501,7 @@ async function tickOneAgent(
   void walletAddress
 
   await logDecision(agent, proposal, {
+    ...tickCtx,
     execution: launchOk
       ? `launched tx=${launchInfo.txHash} token=${launchInfo.tokenAddress ?? '?'} url=${launchInfo.launchUrl ?? '?'}`
       : `launch_failed: ${launchErr?.slice(0, 200) ?? 'unknown'}`,
@@ -586,11 +601,32 @@ export function parseProposal(raw: string): LaunchProposal {
 async function logDecision(
   agent: LaunchAgentRow,
   proposal: LaunchProposal | null,
-  extras: { execution?: string } = {},
+  extras: {
+    execution?: string
+    // Demo Day — when present, the brain-feed line gets prefixed with
+    // a one-line snapshot of what the agent looked at. Lets judges see
+    // "Scanned 8 trending: PEPE +180%, FLOKI +95%, ..." even when the
+    // tick ends in SKIP, which is most of the time by design.
+    trending?: DexToken[]
+    bnbBalance?: number
+  } = {},
 ): Promise<void> {
   try {
     const action = proposal?.action === 'LAUNCH' ? 'four_meme_launch' : 'four_meme_launch_skip'
     const parts: string[] = []
+    // Brain-feed prefix: what the agent scanned this tick. Top 3 only
+    // so the line stays readable. Symbols are uppercased & truncated.
+    if (extras.trending && extras.trending.length > 0) {
+      const top = extras.trending.slice(0, 3).map((t) => {
+        const sym = (t.symbol ?? '?').toString().toUpperCase().slice(0, 8)
+        const ch = Number.isFinite(t.priceChange24h) ? `${t.priceChange24h >= 0 ? '+' : ''}${t.priceChange24h.toFixed(0)}%` : ''
+        return ch ? `${sym} ${ch}` : sym
+      }).join(', ')
+      parts.push(`Scanned ${extras.trending.length} trending [${top}]`)
+    }
+    if (typeof extras.bnbBalance === 'number') {
+      parts.push(`wallet ${extras.bnbBalance.toFixed(4)} BNB`)
+    }
     if (extras.execution) parts.push(extras.execution)
     if (proposal) {
       parts.push(`${proposal.action} ${proposal.ticker || '-'} (conv ${proposal.conviction.toFixed(2)})`)
@@ -707,12 +743,18 @@ async function notifyUserOfPendingApproval(
 }
 
 // Convenience wrapper used by the early-return SKIP paths above.
+// Demo Day — accepts optional ctx so SKIP brain-feed lines can include
+// the trending snapshot + wallet balance the agent looked at, not just
+// the cap/conviction reason. Caller passes the same `tickCtx` it built
+// once per tick; cap/balance early-skips that fire BEFORE trending is
+// fetched simply pass nothing and get a concise line.
 async function skipWith(
   agent: LaunchAgentRow,
   proposal: LaunchProposal | null,
   effective: LaunchProposal,
+  ctx: { trending?: DexToken[]; bnbBalance?: number } = {},
 ): Promise<{ launchesAttempted: number; launchesSkipped: number }> {
-  await logDecision(agent, effective)
+  await logDecision(agent, effective, ctx)
   void proposal
   return { launchesAttempted: 0, launchesSkipped: 1 }
 }
