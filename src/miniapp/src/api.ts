@@ -247,6 +247,34 @@ export function setAgentFourMemeLaunchTakeProfit(agentId: string, pct: number | 
   );
 }
 
+export interface FourMemePosition {
+  id: string
+  tokenName: string
+  tokenSymbol: string
+  tokenAddress: string
+  imageUrl: string | null
+  launchUrl: string
+  bscScanUrl: string | null
+  sellTxHash: string | null
+  sellTxScanUrl: string | null
+  status: string
+  sold: boolean
+  soldAt: string | null
+  entryBnb: number | null
+  balanceTokens: number | null
+  currentValueBnb: number | null
+  soldProceedsBnb: number | null
+  pnlBnb: number | null
+  pnlPct: number | null
+  createdAt: string
+  error: string | null
+}
+export function getFourMemePositions() {
+  return apiFetch<{ ok: boolean; walletAddress: string | null; positions: FourMemePosition[] }>(
+    '/api/fourmeme/positions',
+  )
+}
+
 export function getTelegramUser() {
   const tg = window.Telegram?.WebApp;
   return tg?.initDataUnsafe?.user || null;

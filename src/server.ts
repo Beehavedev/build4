@@ -5726,6 +5726,132 @@ app.get('/api/fourmeme/launches', requireTgUser, async (req, res) => {
   }
 })
 
+// GET /api/fourmeme/positions — enriched view of every four.meme bag
+// the caller has touched (launched, currently held, or sold). Joins
+// `token_launches` (canonical "user has touched this token" record)
+// with on-chain reads: live ERC20 balanceOf at the user's BSC wallet
+// + bonding-curve quoteSell so the mini-app's Portfolio tab can show
+// each bag with its current BNB value and unrealised PnL alongside
+// the realised PnL on already-sold rows. Per-row enrichment failures
+// degrade to a balance/value of null with `error` populated, so a
+// single graduated/V1 token can never blank the whole list.
+app.get('/api/fourmeme/positions', requireTgUser, async (req, res) => {
+  const user = (req as any).user
+  if (!user?.id) return res.status(401).json({ ok: false, error: 'unauthorized' })
+  try {
+    const { ethers } = await import('ethers')
+    const { buildBscProvider } = await import('./services/bscProvider')
+    const { quoteSell, loadUserBscPrivateKey } = await import('./services/fourMemeTrading')
+    const provider = buildBscProvider(process.env.BSC_RPC_URL)
+    let walletAddress: string | null = null
+    try {
+      const c = await loadUserBscPrivateKey(user.id)
+      walletAddress = c.address
+    } catch {
+      // No wallet → still return the launches list (without on-chain
+      // enrichment) so the user at least sees their launch history.
+    }
+    const rows = await db.$queryRaw<Array<{
+      id: string
+      token_name: string
+      token_symbol: string
+      token_address: string | null
+      tx_hash: string | null
+      launch_url: string | null
+      image_url: string | null
+      initial_liquidity_bnb: string | null
+      status: string
+      sold_at: Date | null
+      sold_proceeds_bnb: string | null
+      sold_tx_hash: string | null
+      created_at: Date
+    }>>`
+      SELECT "id","token_name","token_symbol","token_address","tx_hash",
+             "launch_url","image_url","initial_liquidity_bnb","status",
+             "sold_at","sold_proceeds_bnb","sold_tx_hash","created_at"
+        FROM "token_launches"
+       WHERE "user_id" = ${user.id}
+         AND "token_address" IS NOT NULL
+       ORDER BY "created_at" DESC
+       LIMIT 50
+    `
+    const ERC20 = ['function balanceOf(address) view returns (uint256)']
+    const positions = await Promise.all(rows.map(async (r) => {
+      const tokenAddr = r.token_address as string
+      const entryBnb = r.initial_liquidity_bnb ? Number(r.initial_liquidity_bnb) : null
+      const sold = !!r.sold_at
+      const proceedsBnb = r.sold_proceeds_bnb ? Number(r.sold_proceeds_bnb) : null
+      let balanceWei: bigint = 0n
+      let balanceTokens: number | null = null
+      let currentValueBnb: number | null = null
+      let pnlBnb: number | null = null
+      let pnlPct: number | null = null
+      let enrichError: string | null = null
+      if (sold) {
+        // Realised: pnl is proceeds − entry, position is closed.
+        if (proceedsBnb != null && entryBnb != null) {
+          pnlBnb = proceedsBnb - entryBnb
+          pnlPct = entryBnb > 0 ? (pnlBnb / entryBnb) * 100 : null
+        }
+      } else if (walletAddress) {
+        try {
+          const erc20 = new ethers.Contract(tokenAddr, ERC20, provider)
+          balanceWei = BigInt(await erc20.balanceOf(walletAddress))
+          balanceTokens = Number(ethers.formatUnits(balanceWei, 18))
+          if (balanceWei > 0n) {
+            try {
+              const q = await quoteSell(tokenAddr, balanceWei)
+              currentValueBnb = Number(ethers.formatEther(q.fundsWei))
+              if (entryBnb != null) {
+                pnlBnb = currentValueBnb - entryBnb
+                pnlPct = entryBnb > 0 ? (pnlBnb / entryBnb) * 100 : null
+              }
+            } catch (e: any) {
+              // Curve quote failed — most likely token has graduated to
+              // PCS (V1 sell unsafe / liquidity migrated). Surface so
+              // the UI can hint "graduated, sell on PancakeSwap".
+              enrichError = `quote: ${e?.shortMessage ?? e?.message ?? 'failed'}`.slice(0, 120)
+            }
+          }
+        } catch (e: any) {
+          enrichError = `balance: ${e?.shortMessage ?? e?.message ?? 'rpc_failed'}`.slice(0, 120)
+        }
+      }
+      return {
+        id: r.id,
+        tokenName: r.token_name,
+        tokenSymbol: r.token_symbol,
+        tokenAddress: tokenAddr,
+        imageUrl: r.image_url,
+        launchUrl: r.launch_url ?? `https://four.meme/token/${tokenAddr}`,
+        bscScanUrl: r.tx_hash ? `https://bscscan.com/tx/${r.tx_hash}` : null,
+        sellTxHash: r.sold_tx_hash,
+        sellTxScanUrl: r.sold_tx_hash ? `https://bscscan.com/tx/${r.sold_tx_hash}` : null,
+        status: r.status,
+        sold,
+        soldAt: r.sold_at ? r.sold_at.toISOString() : null,
+        entryBnb,
+        balanceTokens,
+        currentValueBnb,
+        soldProceedsBnb: proceedsBnb,
+        pnlBnb,
+        pnlPct,
+        createdAt: r.created_at instanceof Date
+          ? r.created_at.toISOString()
+          : new Date(r.created_at as any).toISOString(),
+        error: enrichError,
+      }
+    }))
+    res.json({ ok: true, walletAddress, positions })
+  } catch (err: any) {
+    const msg = String(err?.message ?? err)
+    if (/relation .*token_launches.* does not exist/i.test(msg)) {
+      return res.json({ ok: true, walletAddress: null, positions: [] })
+    }
+    res.status(400).json({ ok: false, error: msg })
+  }
+})
+
 // POST /api/fourmeme/retry — re-runs a previously-failed (or
 // auto-marked stale) launch using the original tokenName / symbol /
 // description / initialBuy / image from the row. Body: { launchId }.

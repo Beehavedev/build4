@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
-import { apiFetch } from '../api'
+import { apiFetch, getFourMemePositions, type FourMemePosition } from '../api'
 
 interface PortfolioProps {
   userId: string | null
@@ -36,6 +36,10 @@ export default function Portfolio({ userId }: PortfolioProps) {
   const [loading, setLoading] = useState(true)
   const [wallet, setWallet] = useState<WalletInfo | null>(null)
   const [predictions, setPredictions] = useState<PredictionPosition[]>([])
+  // four.meme bags the user has launched (and possibly already sold).
+  // Refreshed on the same poll cadence as the rest of the page so the
+  // live bag value tracks the curve in real time.
+  const [fourMemeBags, setFourMemeBags] = useState<FourMemePosition[]>([])
 
   // 1s realtime polling on every Portfolio data source. The user's
   // directive: every venue surface (Aster perps, Hyperliquid clearing,
@@ -56,6 +60,7 @@ export default function Portfolio({ userId }: PortfolioProps) {
     let portfolioBusy = false
     let walletBusy = false
     let predBusy = false
+    let bagsBusy = false
     const loadPortfolio = () => {
       if (portfolioBusy || cancelled) return
       portfolioBusy = true
@@ -81,16 +86,31 @@ export default function Portfolio({ userId }: PortfolioProps) {
         .catch(() => { /* keep last good state */ })
         .finally(() => { predBusy = false })
     }
+    const loadBags = () => {
+      if (bagsBusy || cancelled) return
+      bagsBusy = true
+      getFourMemePositions()
+        .then((r) => { if (!cancelled && r?.ok) setFourMemeBags(r.positions ?? []) })
+        .catch(() => { /* keep last good state */ })
+        .finally(() => { bagsBusy = false })
+    }
     loadPortfolio()
     loadWallet()
     loadPredictions()
+    loadBags()
     const t = setInterval(() => {
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
       loadPortfolio()
       loadWallet()
       loadPredictions()
     }, 1000)
-    return () => { cancelled = true; clearInterval(t) }
+    // Bags involve N on-chain calls per row (balanceOf + quoteSell) so
+    // they ride a slower 5s cadence to keep BSC dataseed traffic sane.
+    const tBags = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
+      loadBags()
+    }, 5000)
+    return () => { cancelled = true; clearInterval(t); clearInterval(tBags) }
   }, [userId])
 
   // Strip anything that isn't a real, on-venue trade. The user's
@@ -524,6 +544,102 @@ export default function Portfolio({ userId }: PortfolioProps) {
           </LineChart>
         </ResponsiveContainer>
       </div>
+
+      {/* four.meme Token Bags — every token the caller has launched
+          (and not yet liquidated by the agent or by hand). Realised PnL
+          for sold bags, unrealised mark-to-market for held bags via
+          live curve quoteSell. Hidden when there are zero bags so the
+          card doesn't clutter accounts that haven't used the launcher. */}
+      {fourMemeBags.length > 0 && (
+        <div className="card" style={{ marginBottom: 16 }} data-testid="card-fourmeme-bags">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <div style={{ fontSize: 13, fontWeight: 600 }}>
+              <span style={{
+                fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 3,
+                background: '#22c55e22', color: '#22c55e', letterSpacing: 0.3,
+                marginRight: 6, verticalAlign: 'middle',
+              }}>fourmeme</span>
+              Token Bags
+            </div>
+            <div style={{ fontSize: 10, color: '#64748b' }}>
+              {fourMemeBags.filter(b => !b.sold).length} held · {fourMemeBags.filter(b => b.sold).length} sold
+            </div>
+          </div>
+          {fourMemeBags.slice(0, 12).map((b) => {
+            const pnlVal = b.pnlBnb
+            const pnlPct = b.pnlPct
+            const pnlColor = pnlVal == null
+              ? '#64748b'
+              : pnlVal > 0 ? '#10b981' : pnlVal < 0 ? '#ef4444' : '#64748b'
+            const statusLabel = b.sold
+              ? 'SOLD'
+              : (b.error ? 'GRAD?' : (b.balanceTokens && b.balanceTokens > 0 ? 'HELD' : 'EMPTY'))
+            const statusBg =
+              statusLabel === 'SOLD'  ? '#64748b22' :
+              statusLabel === 'HELD'  ? '#22c55e22' :
+              statusLabel === 'GRAD?' ? '#f59e0b22' : '#1e293b'
+            const statusFg =
+              statusLabel === 'SOLD'  ? '#94a3b8' :
+              statusLabel === 'HELD'  ? '#22c55e' :
+              statusLabel === 'GRAD?' ? '#f59e0b' : '#64748b'
+            return (
+              <div key={b.id} style={{
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                padding: '8px 0', borderBottom: '1px solid #1e1e2e', gap: 10,
+              }} data-testid={`row-fourmeme-bag-${b.id}`}>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                    <a
+                      href={b.launchUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ fontSize: 13, fontWeight: 600, color: '#e2e8f0', textDecoration: 'none' }}
+                    >
+                      ${b.tokenSymbol}
+                    </a>
+                    <span style={{ fontSize: 11, color: '#64748b' }}>{b.tokenName}</span>
+                    <span style={{
+                      fontSize: 9, padding: '1px 6px', borderRadius: 4,
+                      background: statusBg, color: statusFg, fontWeight: 700, letterSpacing: 0.4,
+                    }}>{statusLabel}</span>
+                  </div>
+                  <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
+                    Entry {b.entryBnb != null ? b.entryBnb.toFixed(4) : '—'} BNB
+                    {b.sold && b.soldProceedsBnb != null && (
+                      <> · Sold {b.soldProceedsBnb.toFixed(4)} BNB</>
+                    )}
+                    {!b.sold && b.currentValueBnb != null && (
+                      <> · Now {b.currentValueBnb.toFixed(4)} BNB</>
+                    )}
+                    {!b.sold && b.balanceTokens != null && b.balanceTokens > 0 && (
+                      <> · {b.balanceTokens.toLocaleString(undefined, { maximumFractionDigits: 0 })} tokens</>
+                    )}
+                  </div>
+                  {b.error && !b.sold && (
+                    <div style={{ fontSize: 10, color: '#f59e0b', marginTop: 2 }}>
+                      Curve unavailable — likely graduated to PancakeSwap. Sell on PCS.
+                    </div>
+                  )}
+                </div>
+                <div style={{ textAlign: 'right', minWidth: 78 }}>
+                  {pnlVal != null ? (
+                    <>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: pnlColor }}>
+                        {pnlVal >= 0 ? '+' : '−'}{Math.abs(pnlVal).toFixed(4)}
+                      </div>
+                      <div style={{ fontSize: 10, color: pnlColor, opacity: 0.85 }}>
+                        BNB{pnlPct != null && <> · {pnlPct >= 0 ? '+' : ''}{pnlPct.toFixed(1)}%</>}
+                      </div>
+                    </>
+                  ) : (
+                    <div style={{ fontSize: 11, color: '#64748b' }}>—</div>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
 
       {/* Trade history — every open holding + closed trade across every
           venue (Aster perps, Hyperliquid perps, 42.space predictions),
