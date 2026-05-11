@@ -515,14 +515,32 @@ export function registerAgents(bot: Bot) {
     return next()
   })
 
-  const showMyAgents = async (ctx: any) => {
-    const user = ctx.dbUser
-    if (!user) return
-
+  // Task #72 — extracted rendering so the inline launch-approval toggle
+  // can reuse the exact same text+keyboard via editMessageText.
+  const buildMyAgentsView = async (user: any): Promise<{ text: string; keyboard: InlineKeyboard } | null> => {
     let agents = await db.agent.findMany({
       where: { userId: user.id },
       orderBy: { createdAt: 'desc' }
     })
+
+    // Task #72 — backfill the per-agent four.meme approval flag via raw
+    // SQL. The column is added by ensureTables but not in the deployed
+    // Prisma schema, so a typed findMany() never SELECTs it. Mirrors the
+    // same pattern used by GET /api/me/agents.
+    const fourMemeApprovalById = new Map<string, boolean>()
+    if (agents.length > 0) {
+      try {
+        const ids = agents.map(a => a.id)
+        const placeholders = ids.map((_, i) => `$${i + 1}`).join(', ')
+        const rows = await db.$queryRawUnsafe<Array<{ id: string; v: boolean | null }>>(
+          `SELECT "id", "fourMemeLaunchRequiresApproval" AS "v" FROM "Agent" WHERE "id" IN (${placeholders})`,
+          ...ids,
+        )
+        for (const r of rows) fourMemeApprovalById.set(r.id, !!r.v)
+      } catch (e: any) {
+        console.warn('[/myagents] fourMeme approval backfill failed:', e?.message)
+      }
+    }
 
     // Self-heal: backfill missing on-chain identifiers from BSC. Runs in
     // parallel and only touches agents that look unsynced. Failures are
@@ -593,11 +611,7 @@ export function registerAgents(bot: Bot) {
     }))
 
     if (agents.length === 0) {
-      const keyboard = new InlineKeyboard().text('🤖 Create your first agent', 'create_agent')
-      await ctx.reply('No agents yet. Create your first on-chain AI agent!', {
-        reply_markup: keyboard
-      })
-      return
+      return null
     }
 
     let text = `🤖 *Your On-Chain Agents*\n\n_Every agent below is registered on the ERC-8004 IdentityRegistry. Chain shown per agent._\n\n`
@@ -630,6 +644,13 @@ export function registerAgents(bot: Bot) {
       if (a.erc8004AgentId && dbChainToRegistryChain(a.onchainChain) === 'bsc') {
         text += `📊 [View on 8004scan](${erc8004RegistryScanUrl(a.erc8004AgentId)})\n`
       }
+      // Task #72 — surface the four.meme HITL approval flag so users
+      // can see at a glance whether the launch agent will auto-fire or
+      // wait for confirmation.
+      const requireApproval = fourMemeApprovalById.get(a.id) ?? false
+      text += requireApproval
+        ? `🚀 *Token launches:* ✅ approval required\n`
+        : `🚀 *Token launches:* ⚡ auto-launch\n`
       text += `📊 PnL: ${a.totalPnl >= 0 ? '+' : ''}$${a.totalPnl.toFixed(2)} | WR: ${a.winRate.toFixed(0)}% (${a.totalTrades} trades)\n\n`
     })
 
@@ -645,17 +666,100 @@ export function registerAgents(bot: Bot) {
         // self-healing and will recover the tokenId from the existing receipt.
         keyboard.text(`💎 Upgrade ${a.name} → NFA`, `upgrade_bap578_${a.id}`).row()
       }
+      // Task #72 — Telegram parity for the mini-app launch-approval toggle.
+      const requireApproval = fourMemeApprovalById.get(a.id) ?? false
+      keyboard.text(
+        requireApproval
+          ? `🚀 ${a.name}: launches need approval — tap to auto-launch`
+          : `🚀 ${a.name}: launches auto-fire — tap to require approval`,
+        `toggle_4m_appr_${a.id}`,
+      ).row()
       keyboard.text(`🗑 Remove ${a.name}`, `remove_agent_confirm_${a.id}`).row()
     })
     keyboard.text('➕ New Agent', 'create_agent')
 
-    await ctx.reply(text, { parse_mode: 'Markdown', reply_markup: keyboard })
+    return { text, keyboard }
+  }
+
+  const showMyAgents = async (ctx: any) => {
+    const user = ctx.dbUser
+    if (!user) return
+    const view = await buildMyAgentsView(user)
+    if (!view) {
+      const keyboard = new InlineKeyboard().text('🤖 Create your first agent', 'create_agent')
+      await ctx.reply('No agents yet. Create your first on-chain AI agent!', {
+        reply_markup: keyboard,
+      })
+      return
+    }
+    await ctx.reply(view.text, { parse_mode: 'Markdown', reply_markup: view.keyboard })
   }
 
   bot.command('myagents', showMyAgents)
   bot.callbackQuery('my_agents', async (ctx) => {
     await ctx.answerCallbackQuery()
     await showMyAgents(ctx)
+  })
+
+  // Task #72 — toggle the four.meme HITL launch-approval flag from the
+  // /myagents menu. Owner-gated (re-checks `userId` before UPDATE),
+  // edits the message in place so the user sees the new state without
+  // re-running /myagents. Same column the mini-app PATCH writes to.
+  bot.callbackQuery(/^toggle_4m_appr_(.+)$/, async (ctx) => {
+    const user = (ctx as any).dbUser
+    const agentId = ctx.match![1]
+    if (!user) {
+      await ctx.answerCallbackQuery({ text: 'Sign in via /start first.', show_alert: true })
+      return
+    }
+    try {
+      const rows = await db.$queryRawUnsafe<Array<{
+        userId: string
+        v: boolean | null
+      }>>(
+        `SELECT "userId", COALESCE("fourMemeLaunchRequiresApproval", false) AS "v"
+           FROM "Agent" WHERE "id" = $1 LIMIT 1`,
+        agentId,
+      )
+      if (rows.length === 0) {
+        await ctx.answerCallbackQuery({ text: 'Agent not found.', show_alert: true })
+        return
+      }
+      if (rows[0].userId !== user.id) {
+        await ctx.answerCallbackQuery({ text: 'Not your agent.', show_alert: true })
+        return
+      }
+      const next = !rows[0].v
+      await db.$executeRawUnsafe(
+        `UPDATE "Agent" SET "fourMemeLaunchRequiresApproval" = $1 WHERE "id" = $2`,
+        next,
+        agentId,
+      )
+      await ctx.answerCallbackQuery({
+        text: next
+          ? '✅ Launches now require your approval.'
+          : '⚡ Launches will fire automatically.',
+      })
+      const view = await buildMyAgentsView(user)
+      if (view) {
+        try {
+          await ctx.editMessageText(view.text, {
+            parse_mode: 'Markdown',
+            reply_markup: view.keyboard,
+          })
+        } catch (e: any) {
+          // Telegram throws if nothing changed or the message is too old.
+          // Either way the toast already confirmed the new state, so we
+          // log and move on rather than spamming a new /myagents reply.
+          console.warn('[/myagents] editMessageText after toggle failed:', e?.message)
+        }
+      }
+    } catch (err: any) {
+      console.error('[/myagents] toggle_4m_appr failed:', err)
+      try {
+        await ctx.answerCallbackQuery({ text: 'Toggle failed. Try again.', show_alert: true })
+      } catch {}
+    }
   })
 
   bot.callbackQuery(/^upgrade_bap578_(.+)$/, async (ctx) => {
