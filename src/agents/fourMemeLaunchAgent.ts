@@ -186,7 +186,6 @@ export async function tickAllFourMemeLaunchAgents(): Promise<{
               a."fourMemeLaunchTakeProfitPct"
          FROM "Agent" a
         WHERE a."isActive" = true
-          AND a."isPaused" = false
           AND a."fourMemeLaunchEnabled" = true`,
     )
     agents = rows.map<LaunchAgentRow>((r) => ({
@@ -1072,8 +1071,7 @@ export async function tickAllFourMemeTakeProfit(): Promise<TakeProfitSweepResult
           AND t."initial_liquidity_bnb" IS NOT NULL
           AND a."fourMemeLaunchTakeProfitPct" IS NOT NULL
           AND a."fourMemeLaunchTakeProfitPct" > 0
-          AND a."isActive" = true
-          AND a."isPaused" = false`,
+          AND a."isActive" = true`,
     )
   } catch (err) {
     console.warn('[fourMemeTakeProfit] query failed:', (err as Error).message)

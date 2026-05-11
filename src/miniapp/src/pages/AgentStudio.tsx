@@ -295,6 +295,7 @@ export function venueChip(ex: string | null | undefined): { label: string; color
   if (x === 'hyperliquid') return { label: 'HL',    color: '#22d3ee' }
   if (x === 'fortytwo')    return { label: '42',    color: '#a78bfa' }
   if (x === 'polymarket')  return { label: 'POLY',  color: '#3b82f6' }
+  if (x === 'four_meme')   return { label: 'fourmeme', color: '#22c55e' }
   return null
 }
 
