@@ -427,7 +427,15 @@ export default function AgentStudio(_props: AgentStudioProps) {
     setAgents(curr => curr.map(a => a.id === agentId ? { ...a, fourMemeLaunchEnabled: next } : a))
     try {
       await setAgentFourMemeLaunchEnabled(agentId, next)
-    } catch {
+    } catch (e: any) {
+      console.error('[AgentStudio] four.meme launch toggle failed:', e?.status, e?.message, e?.body)
+      const why = e?.body?.error ?? e?.message ?? 'unknown error'
+      const status = e?.status ? ` (HTTP ${e.status})` : ''
+      try {
+        const tg: any = (window as any).Telegram?.WebApp
+        if (tg?.showAlert) tg.showAlert(`Couldn't save the toggle${status}: ${why}`)
+        else alert(`Couldn't save the toggle${status}: ${why}`)
+      } catch { /* showAlert can throw outside a Telegram WebApp context */ }
       setAgents(prev)
     } finally {
       setLaunchEnabledSaving(s => { const n = { ...s }; delete n[agentId]; return n })

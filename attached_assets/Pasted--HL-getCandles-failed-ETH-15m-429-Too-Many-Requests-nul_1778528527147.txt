@@ -1,0 +1,51 @@
+[HL] getCandles failed: ETH 15m 429 Too Many Requests - null
+[Agent Goku] Skipping ETH tick — empty candles (15m=0 1h=0 4h=0); likely venue rate-limit.
+[HL] getCandles failed: ETH 4h 429 Too Many Requests - null
+[HL] getCandles failed: ETH 15m 429 Too Many Requests - null
+[HL] getCandles failed: ETH 1h 429 Too Many Requests - null
+[Agent Andromeda3316] Skipping ETH tick — empty candles (15m=0 1h=0 4h=0); likely venue rate-limit.
+[HL] getCandles failed: TIA 1h 429 Too Many Requests - null
+[HL] getCandles failed: TIA 15m 429 Too Many Requests - null
+[HL] getCandles failed: TIA 4h 429 Too Many Requests - null
+[Agent agvvfttcvvcg] Skipping TIA tick — empty candles (15m=0 1h=0 4h=0); likely venue rate-limit.
+[HL] getCandles failed: ETH 15m 429 Too Many Requests - null
+[HL] getCandles failed: ETH 4h 429 Too Many Requests - null
+[HL] getCandles failed: ETH 1h 429 Too Many Requests - null
+[Agent agvvfttcvvcg] Skipping ETH tick — empty candles (15m=0 1h=0 4h=0); likely venue rate-limit.
+[Aster] klines fetch (cache miss): { symbol: 'TROLLUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'TROLLUSDT', interval: '5m', limit: 100 }
+[Agent Miiiiiiiiiineeeii] HOLD on XRPUSDT — Setup score 4/10 below threshold 5. Volume divergence (0.31x), negative 15m MACD
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '15m', limit: 200 }
+[Agent BNT] HOLD on BTWUSDT — INSUFFICIENT SETUP — Volume collapsed 89%, last 5 candles red but no breakdown s
+[Aster] klines fetch (cache miss): { symbol: 'BTWUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'PLUMEUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'PLUMEUSDT', interval: '5m', limit: 100 }
+[Agent TENSHI] HOLD on BTWUSDT — INSUFFICIENT SETUP — Volume collapsed 89%, last 5 candles red but no breakdown s
+[Agent SeanBuild4] HOLD on BTWUSDT — INSUFFICIENT SETUP — Volume collapsed 89%, last 5 candles red but no breakdown s
+[Aster] klines fetch (cache miss): { symbol: 'STORJUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'STORJUSDT', interval: '5m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'LAYERUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'LAYERUSDT', interval: '5m', limit: 100 }
+[DB] Backfilled 0 users to live 42.space trading
+[DB] All new tables ready
+[Migration] Checking for old user data to migrate...
+[Migration] Already have 1899 users in new tables, skipping migration
+[Agent Dominic] HOLD on ARBUSDT — Setup score 2/10: Low ADX (12.8) indicates no trend, volume at 0.05x average inv
+[Migration] All agents already on AUTO mode
+[Runner] Agent runner initialized
+[Runner] Agent runner started
+[Server] Running on port 500
+[Bot] Initialized as @BUILD4_BOT
+[Bot] Webhook set to https://build4-1.onrender.com/api/webhook
+==> Your service is live 🎉
+==> 
+==> ///////////////////////////////////////////////////////////
+==> 
+==> Available at your primary URL https://build4-1.onrender.com
+==> 
+==> ///////////////////////////////////////////////////////////
+[GET]
+build4-1.onrender.com/ clientIP="35.230.74.10" requestID="422d4da0-edf5-42e9" responseTimeMS=4 responseBytes=4388 userAgent="Go-http-client/2.0"
+[Listing] Baseline pair set captured
+[fourMemeLaunchAgent] scanned=0 — DB probe: enabled=0 active=60 both=0 total=63
+[fourMemeLaunchAgent] scanned=0 ticked=0 launched=0 skipped=0 errors=0
