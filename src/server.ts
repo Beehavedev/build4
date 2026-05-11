@@ -203,7 +203,14 @@ app.get('/api/me/agents', requireTgUser, async (req, res) => {
       ...a,
       fourMemeLaunchRequiresApproval: approvalById.get(a.id) ?? false,
       fourMemeLaunchEnabled: launchEnabledById.get(a.id) ?? (a as any).fourMemeLaunchEnabled ?? false,
-      fourMemeLaunchIntervalMinutes: intervalById.has(a.id) ? intervalById.get(a.id) : null,
+      // Demo Day — DEFAULT and MINIMUM = 1 minute. Coerce null/<1
+      // legacy values to 1 so the UI input always shows a sensible
+      // floor. The agent's tick gate uses the same floor server-side.
+      fourMemeLaunchIntervalMinutes: (() => {
+        const raw = intervalById.has(a.id) ? intervalById.get(a.id) : null
+        const n = Number(raw)
+        return Number.isFinite(n) && n >= 1 && n <= 60 ? n : 1
+      })(),
       fourMemeLaunchInitialBuyBnb: initialBuyById.has(a.id) ? initialBuyById.get(a.id) : null,
       fourMemeLaunchTakeProfitPct: takeProfitById.has(a.id) ? takeProfitById.get(a.id) : null,
     })))

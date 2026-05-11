@@ -281,9 +281,11 @@ export async function tickAllFourMemeLaunchAgents(): Promise<{
     // Per-agent interval: user-configured minutes (1..60), else fall
     // back to the hardcoded floor. Clamp defensively in case a stale
     // value sneaks through.
+    // Demo Day — DEFAULT and MINIMUM cadence = 1 minute. Anything <1,
+    // null, or out of range falls back to MIN_TICK_INTERVAL_MS (60_000ms).
     const minutes = agent.fourMemeLaunchIntervalMinutes
     const intervalMs = (minutes != null && minutes >= 1 && minutes <= 60)
-      ? minutes * 60_000
+      ? Math.max(minutes, 1) * 60_000
       : MIN_TICK_INTERVAL_MS
     if (Date.now() - last < intervalMs) continue
 
@@ -798,7 +800,13 @@ async function logDecision(
         parsedAction: proposal ? `${proposal.action}_${proposal.ticker || 'NONE'}` : 'SKIP_NONE',
         executionResult: extras.execution ?? null,
         error: null,
-        pair: proposal?.ticker ? proposal.ticker.slice(0, 20) : null,
+        // Brain feed filters `pair IS NOT NULL`. If the LLM SKIPs without
+        // proposing a ticker (common on credit/cred failures, also any
+        // generic skip path) we still want the tick to show up so judges
+        // can SEE the agent thinking — so fall back to a generic '4M'
+        // venue tag instead of null. Real proposals still surface their
+        // ticker normally.
+        pair: proposal?.ticker ? proposal.ticker.slice(0, 20) : '4M',
         price: null,
         reason: parts.join(' · ').slice(0, 500),
         adx: null,
