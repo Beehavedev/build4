@@ -360,6 +360,11 @@ export default function AgentStudio(_props: AgentStudioProps) {
   const [loading, setLoading] = useState(true)
   const [feed, setFeed] = useState<FeedEntry[]>([])
   const [feedError, setFeedError] = useState(false)
+  // Venue filter for the brain-feed (client-side, applied to the
+  // already-loaded `feed` array). 'all' = no filter; otherwise matches
+  // the row's `exchange` column (lowercased) exactly. Replaces the
+  // "Scanning markets every ~60s" pulse text in the feed header.
+  const [feedVenueFilter, setFeedVenueFilter] = useState<string>('all')
   // "Load older" pagination state. `loadingMore` drives the spinner on
   // the button; `noMoreOlder` flips true the first time a paginated
   // fetch returns zero new rows so we can swap the button for a "no
@@ -1529,16 +1534,24 @@ export default function AgentStudio(_props: AgentStudioProps) {
           🧠 Live Agent Brain
         </div>
         {hasActive && (
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 6,
-            fontSize: 11, color: '#10b981',
-          }}>
-            <span style={{
-              width: 7, height: 7, borderRadius: '50%', background: '#10b981',
-              animation: 'pulse 1.6s ease-in-out infinite',
-            }} />
-            Scanning markets every ~60s
-          </div>
+          <select
+            value={feedVenueFilter}
+            onChange={(e) => setFeedVenueFilter(e.target.value)}
+            data-testid="select-feed-venue-filter"
+            style={{
+              fontSize: 11, fontWeight: 600, color: '#cbd5e1',
+              background: '#0f172a', border: '1px solid #1e293b',
+              borderRadius: 8, padding: '4px 8px', cursor: 'pointer',
+              outline: 'none',
+            }}
+          >
+            <option value="all">All venues</option>
+            <option value="aster">ASTER</option>
+            <option value="hyperliquid">HL</option>
+            <option value="fortytwo">42</option>
+            <option value="polymarket">POLY</option>
+            <option value="four_meme">fourmeme</option>
+          </select>
         )}
       </div>
 
@@ -1556,7 +1569,25 @@ export default function AgentStudio(_props: AgentStudioProps) {
         </div>
       )}
 
-      {!feedError && feed.map((e) => {
+      {(() => {
+        const filteredFeed = feedVenueFilter === 'all'
+          ? feed
+          : feed.filter(e => (e.exchange ?? '').toLowerCase() === feedVenueFilter)
+        if (!feedError && feed.length > 0 && filteredFeed.length === 0) {
+          return (
+            <div className="card" style={{ padding: 14, fontSize: 12, color: '#64748b' }}
+                 data-testid="text-feed-filter-empty">
+              No <b>{feedVenueFilter === 'four_meme' ? 'fourmeme' : feedVenueFilter.toUpperCase()}</b> decisions in the loaded window. Either no agent is scanning this venue or the next cycle will appear here within ~60s.
+            </div>
+          )
+        }
+        return null
+      })()}
+
+      {!feedError && (feedVenueFilter === 'all'
+        ? feed
+        : feed.filter(e => (e.exchange ?? '').toLowerCase() === feedVenueFilter)
+      ).map((e) => {
         const meta = actionMeta(e.action)
         return (
           <div
