@@ -515,9 +515,24 @@ export function registerAgents(bot: Bot) {
     return next()
   })
 
+  // Task #75 — per-user cooldown for the on-chain self-heal pass below.
+  // Self-heal can't change between two clicks of the same user (it only
+  // backfills missing on-chain identifiers), so re-running it on every
+  // toggle re-render burns ~1-3s of RPC latency before editMessageText
+  // fires. Cache the last sync timestamp per user and skip the heal if
+  // we synced recently OR the caller explicitly opts out.
+  const SELF_HEAL_COOLDOWN_MS = 60_000
+  const lastSelfHealAt = new Map<string, number>()
+
   // Task #72 — extracted rendering so the inline launch-approval toggle
   // can reuse the exact same text+keyboard via editMessageText.
-  const buildMyAgentsView = async (user: any): Promise<{ text: string; keyboard: InlineKeyboard } | null> => {
+  // Task #75 — `opts.skipSelfHeal` lets quick re-renders (e.g. the
+  // launch-approval toggle) bypass the on-chain re-sync entirely so the
+  // edit feels instant; otherwise the cooldown above gates it.
+  const buildMyAgentsView = async (
+    user: any,
+    opts: { skipSelfHeal?: boolean } = {},
+  ): Promise<{ text: string; keyboard: InlineKeyboard } | null> => {
     let agents = await db.agent.findMany({
       where: { userId: user.id },
       orderBy: { createdAt: 'desc' }
@@ -545,9 +560,19 @@ export function registerAgents(bot: Bot) {
     // Self-heal: backfill missing on-chain identifiers from BSC. Runs in
     // parallel and only touches agents that look unsynced. Failures are
     // swallowed so a flaky RPC never breaks the menu.
-    const ownerWallet = (await db.wallet.findFirst({ where: { userId: user.id } }))?.address
+    // Task #75 — gated by an explicit skip flag (used by the toggle
+    // re-render path) and a per-user cooldown so quick re-opens of
+    // /myagents don't re-pay the full RPC latency. The first call still
+    // syncs; subsequent calls within SELF_HEAL_COOLDOWN_MS reuse the
+    // last sync's results (which were persisted to the DB).
+    const lastSyncAt = lastSelfHealAt.get(user.id) ?? 0
+    const withinCooldown = Date.now() - lastSyncAt < SELF_HEAL_COOLDOWN_MS
+    const shouldSelfHeal = !opts.skipSelfHeal && !withinCooldown
+    const ownerWallet = shouldSelfHeal
+      ? (await db.wallet.findFirst({ where: { userId: user.id } }))?.address
+      : undefined
     const hasApiKey = !!(process.env.BSCSCAN_API_KEY ?? process.env.ETHERSCAN_API_KEY)
-    await Promise.all(agents.map(async (a) => {
+    if (shouldSelfHeal) await Promise.all(agents.map(async (a) => {
       console.log(`[Sync] agent="${a.name}" wallet=${a.walletAddress ?? 'NONE'} ercId=${a.erc8004AgentId ?? 'NONE'} ercTx=${a.erc8004TxHash ?? 'NONE'} bapId=${a.bap578TokenId ?? 'NONE'} bapTx=${a.bap578TxHash ?? 'NONE'}`)
       if (!a.walletAddress) {
         console.log(`[Sync] agent="${a.name}" SKIP: no walletAddress`)
@@ -609,6 +634,11 @@ export function registerAgents(bot: Bot) {
           'stack=', e?.stack?.split('\n').slice(0, 4).join(' | '))
       }
     }))
+    // Task #75 — only mark the cooldown as fresh after the heal pass
+    // actually completed. If a transient RPC failure threw before this
+    // point we want the next /myagents to retry rather than be silently
+    // suppressed for a full minute.
+    if (shouldSelfHeal) lastSelfHealAt.set(user.id, Date.now())
 
     if (agents.length === 0) {
       return null
@@ -740,7 +770,10 @@ export function registerAgents(bot: Bot) {
           ? '✅ Launches now require your approval.'
           : '⚡ Launches will fire automatically.',
       })
-      const view = await buildMyAgentsView(user)
+      // Task #75 — toggling the launch-approval flag never affects the
+      // on-chain identity rows, so skip the self-heal RPC pass entirely
+      // and let editMessageText fire as quickly as the DB read allows.
+      const view = await buildMyAgentsView(user, { skipSelfHeal: true })
       if (view) {
         try {
           await ctx.editMessageText(view.text, {
