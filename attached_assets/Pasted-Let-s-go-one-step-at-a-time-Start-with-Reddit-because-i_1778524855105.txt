@@ -1,0 +1,127 @@
+Let's go one step at a time. Start with Reddit because it is free, requires zero signup, and you can have it working in 20 minutes.
+
+STEP 1 — Reddit (do this now)
+Open your Replit and paste this exactly:
+
+Create the file src/services/signalScorer/sources/redditGatherer.ts with this exact content:
+
+typescriptimport axios from 'axios';
+import { NarrativeCandidate } from '../index';
+
+const SUBREDDITS = ['CryptoCurrency', 'BSC', 'memecoin', 'singularity', 'artificial'];
+
+const HEADERS = {
+  'User-Agent': 'BUILD4SignalBot/1.0 (autonomous trading agent)'
+};
+
+interface RedditPost {
+  title: string
+  score: number
+  numComments: number
+  url: string
+  createdUtc: number
+  subreddit: string
+}
+
+async function searchSubreddit(keyword: string, subreddit: string): Promise<RedditPost[]> {
+  try {
+    const { data } = await axios.get(
+      `https://www.reddit.com/r/${subreddit}/search.json`,
+      {
+        headers: HEADERS,
+        params: {
+          q: keyword,
+          sort: 'new',
+          limit: 25,
+          t: 'hour',
+          restrict_sr: true
+        },
+        timeout: 5000
+      }
+    );
+
+    return (data?.data?.children ?? []).map((child: any) => ({
+      title: child.data.title,
+      score: child.data.score,
+      numComments: child.data.num_comments,
+      url: `https://reddit.com${child.data.permalink}`,
+      createdUtc: child.data.created_utc,
+      subreddit
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export async function searchReddit(keyword: string): Promise<RedditPost[]> {
+  const results = await Promise.all(
+    SUBREDDITS.map(sub => searchSubreddit(keyword, sub))
+  );
+  return results.flat();
+}
+
+export async function gatherRedditCandidates(): Promise<NarrativeCandidate[]> {
+  const keywords = ['BSC', 'BNB', 'memecoin', 'AI agent', 'token launch'];
+  const candidates: NarrativeCandidate[] = [];
+
+  for (const keyword of keywords) {
+    const posts = await searchReddit(keyword);
+
+    if (posts.length === 0) continue;
+
+    const hotPosts = posts.filter(p =>
+      p.score > 10 || p.numComments > 5
+    );
+
+    if (hotPosts.length === 0) continue;
+
+    const topPost = hotPosts.sort((a, b) => b.score - a.score)[0];
+
+    candidates.push({
+      keyword: topPost.title.slice(0, 50),
+      description: `Reddit post gaining traction across ${SUBREDDITS.join(', ')}`,
+      sourceType: 'x_phrase',
+      rawData: {
+        postCount: posts.length,
+        topPostScore: topPost.score,
+        topPostComments: topPost.numComments,
+        sourceUrl: topPost.url,
+        sourceCount: posts.length > 5 ? 3 : 2,
+        btcChange4h: 0,
+        xPostsLastHour: posts.length * 10
+      },
+      detectedAt: new Date().toISOString()
+    });
+  }
+
+  return candidates;
+}
+Then tell your Replit agent:
+
+Test it by adding this to scripts/testReddit.ts and running npx tsx scripts/testReddit.ts:
+
+typescriptimport { searchReddit, gatherRedditCandidates } from '../src/services/signalScorer/sources/redditGatherer';
+
+async function main() {
+  console.log('Testing Reddit search...');
+
+  const posts = await searchReddit('memecoin');
+  console.log(`Found ${posts.length} posts about memecoin`);
+  if (posts[0]) {
+    console.log('Top post:', posts[0].title);
+    console.log('Score:', posts[0].score);
+    console.log('Comments:', posts[0].numComments);
+    console.log('URL:', posts[0].url);
+  }
+
+  console.log('\nGathering candidates...');
+  const candidates = await gatherRedditCandidates();
+  console.log(`Generated ${candidates.length} candidates`);
+  candidates.forEach(c => {
+    console.log(`\nKeyword: ${c.keyword}`);
+    console.log(`Source count: ${c.rawData.sourceCount}`);
+    console.log(`Post count: ${c.rawData.postCount}`);
+  });
+}
+
+main().catch(console.error);
