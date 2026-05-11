@@ -148,7 +148,28 @@ app.get('/api/me/agents', requireTgUser, async (req, res) => {
       where: { userId: user.id },
       orderBy: { createdAt: 'desc' }
     })
-    res.json(agents)
+    // Backfill `fourMemeLaunchRequiresApproval` via raw SQL — the column
+    // is added by ensureTables but not in the deployed Prisma schema, so
+    // a typed findMany() never SELECTs it. Without this the mini-app
+    // toggle has no read source and would always render OFF on reload.
+    let approvalById = new Map<string, boolean>()
+    if (agents.length > 0) {
+      try {
+        const ids = agents.map(a => a.id)
+        const placeholders = ids.map((_, i) => `$${i + 1}`).join(', ')
+        const rows = await db.$queryRawUnsafe<Array<{ id: string; v: boolean | null }>>(
+          `SELECT "id", "fourMemeLaunchRequiresApproval" AS "v" FROM "Agent" WHERE "id" IN (${placeholders})`,
+          ...ids,
+        )
+        for (const r of rows) approvalById.set(r.id, !!r.v)
+      } catch (e: any) {
+        console.warn('[API] /me/agents fourMeme approval backfill failed:', e?.message)
+      }
+    }
+    res.json(agents.map(a => ({
+      ...a,
+      fourMemeLaunchRequiresApproval: approvalById.get(a.id) ?? false,
+    })))
   } catch (err) {
     console.error('[API] /me/agents failed:', err)
     res.status(500).json({ error: 'Internal error' })

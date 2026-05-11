@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { apiFetch, deleteAgent, getMyFeed, updateAgentSettings, type FeedEntry } from '../api'
+import { apiFetch, deleteAgent, getMyFeed, setAgentFourMemeApproval, updateAgentSettings, type FeedEntry } from '../api'
 import { TradingChart } from '../components/TradingChart'
 import { MarketTicker } from '../components/MarketTicker'
 
@@ -392,6 +392,24 @@ export default function AgentStudio(_props: AgentStudioProps) {
     maxLeverage?: string
   }>>({})
   const [riskSaving, setRiskSaving] = useState<Record<string, boolean>>({})
+
+  // Task #70 — per-agent busy flag for the four.meme HITL approval toggle
+  // so a fast double-tap can't race the optimistic update.
+  const [approvalSaving, setApprovalSaving] = useState<Record<string, boolean>>({})
+
+  const toggleFourMemeApproval = async (agentId: string, next: boolean) => {
+    if (approvalSaving[agentId]) return
+    const prev = agents
+    setApprovalSaving(s => ({ ...s, [agentId]: true }))
+    setAgents(curr => curr.map(a => a.id === agentId ? { ...a, fourMemeLaunchRequiresApproval: next } : a))
+    try {
+      await setAgentFourMemeApproval(agentId, next)
+    } catch {
+      setAgents(prev)
+    } finally {
+      setApprovalSaving(s => { const n = { ...s }; delete n[agentId]; return n })
+    }
+  }
 
   // Clear the per-agent draft for one field so the input falls back to
   // showing the persisted value from `agents`. We always do this after a
@@ -960,6 +978,59 @@ export default function AgentStudio(_props: AgentStudioProps) {
             })}
           </div>
         </div>
+
+        {/* Task #70 — HITL approval toggle for four.meme launches.
+            When ON, the launch agent files a pending row and waits
+            for the user to approve via Telegram or the mini-app
+            before broadcasting the on-chain tx. When OFF, the agent
+            launches autonomously the moment its model+budget gates
+            pass. Persists immediately via PATCH; reflected on reload
+            because /api/me/agents backfills the column over raw SQL. */}
+        {(() => {
+          const requireApproval = !!agent.fourMemeLaunchRequiresApproval
+          const saving = !!approvalSaving[agent.id]
+          return (
+            <div style={{
+              marginTop: 10, padding: '8px 10px',
+              background: '#0a0a0f', border: '1px solid #1e1e2e', borderRadius: 8,
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+            }}>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: '#e2e8f0' }}>
+                  Approve token launches
+                </div>
+                <div style={{ fontSize: 10, color: '#64748b', marginTop: 2 }}>
+                  {requireApproval
+                    ? 'Agent will wait for your approval before launching a four.meme token.'
+                    : 'Agent launches four.meme tokens automatically when its rules trigger.'}
+                </div>
+              </div>
+              <button
+                role="switch"
+                aria-checked={requireApproval}
+                aria-label="Require approval before token launch"
+                disabled={saving}
+                onClick={() => toggleFourMemeApproval(agent.id, !requireApproval)}
+                data-testid={`toggle-agent-${agent.id}-launch-approval`}
+                style={{
+                  flex: '0 0 auto',
+                  width: 40, height: 22, borderRadius: 999,
+                  border: 'none', cursor: saving ? 'wait' : 'pointer',
+                  background: requireApproval ? '#10b981' : '#374151',
+                  position: 'relative', padding: 0,
+                  opacity: saving ? 0.6 : 1,
+                  transition: 'background 0.15s',
+                }}
+              >
+                <span style={{
+                  position: 'absolute', top: 2, left: requireApproval ? 20 : 2,
+                  width: 18, height: 18, borderRadius: '50%',
+                  background: '#fff', transition: 'left 0.15s',
+                }} />
+              </button>
+            </div>
+          )
+        })()}
 
         {/* Status badge + Remove on the same row — Remove sits to the
             right so it's discoverable without dominating the card. We

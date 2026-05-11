@@ -48,6 +48,11 @@ export interface AgentData {
   erc8004TokenId: string | null;
   erc8004Chain: string | null;
   creatorWallet: string | null;
+  // Task #70 — when true, the four.meme launch agent files a pending
+  // approval row instead of broadcasting the launch tx; the user must
+  // confirm via Telegram inline buttons or the mini-app before the
+  // launch fires. Defaults to false (auto-launch) for backward compat.
+  fourMemeLaunchRequiresApproval?: boolean;
 }
 
 export interface TradeData {
@@ -173,6 +178,20 @@ export function updateAgentSettings(agentId: string, patch: AgentSettingsUpdate)
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(patch),
   });
+}
+
+// Task #70 — flip the per-agent four.meme HITL approval requirement.
+// Backed by PATCH /api/agents/:id/four-meme-approval which only accepts
+// a boolean and is idempotent.
+export function setAgentFourMemeApproval(agentId: string, requireApproval: boolean) {
+  return apiFetch<{ ok: true; agentId: string; requireApproval: boolean }>(
+    `/api/agents/${agentId}/four-meme-approval`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ requireApproval }),
+    },
+  );
 }
 
 export function getTelegramUser() {
