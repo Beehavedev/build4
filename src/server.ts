@@ -5311,6 +5311,24 @@ app.get('/api/fourmeme/token/:address', async (req, res) => {
       info.fillPct = 1
     }
     void isFallback
+    // Always enrich with ERC20 metadata. The four.meme bonding-curve
+    // helper doesn't return name/symbol/decimals, so without this the
+    // mini-app would render "$TOKEN" for every graduated four.meme
+    // token. Reading name/symbol is best-effort — some tokens use
+    // bytes32 or omit the call entirely; we silently keep whatever
+    // value the caller-side path already set.
+    try {
+      const { ethers } = await import('ethers')
+      const { buildBscProvider } = await import('./services/bscProvider')
+      const erc20 = new ethers.Contract(addr, [
+        'function name() view returns (string)',
+        'function symbol() view returns (string)',
+        'function decimals() view returns (uint8)',
+      ], buildBscProvider(process.env.BSC_RPC_URL))
+      if (!info.name)     { try { info.name     = String(await erc20.name()) }     catch {} }
+      if (!info.symbol)   { try { info.symbol   = String(await erc20.symbol()) }   catch {} }
+      if (info.decimals == null) { try { info.decimals = Number(await erc20.decimals()) } catch {} }
+    } catch { /* network glitch — fall through without metadata */ }
     // Optional pre-trade quotes when caller supplies amounts. When the
     // token has graduated to PancakeSwap the bonding-curve helper would
     // throw `GRADUATED` (and revert on-chain), so we transparently route
