@@ -111,6 +111,68 @@ export async function fetchTrendingBNBTokens(
   return filtered.slice(0, limit)
 }
 
+// ── Fresh BNB launches (Demo Day — four.meme launch agent input) ────
+//
+// "What new BSC tokens just appeared on DexScreener?" The agent uses
+// this as a trend-shift signal — when 5+ fresh tokens appear with the
+// same theme in the same hour, the meme is already cooking and the
+// agent should think about whether to ride or fade.
+//
+// We use DexScreener's /token-profiles/latest/v1 endpoint (public,
+// no auth) which returns the most recently profiled tokens across
+// every chain, then filter to BSC. Quietly returns [] on failure.
+export interface FreshBnbLaunch {
+  address: string
+  symbol: string         // empty when DexScreener hasn't indexed the pair yet
+  description: string    // free-text from the token profile (often empty)
+  links: Array<{ label: string; url: string }>  // socials + website if profiled
+  iconUrl: string | null
+  url: string            // dexscreener.com link
+}
+
+export async function fetchLatestBnbLaunches(
+  opts: { limit?: number; fetchImpl?: typeof fetch } = {},
+): Promise<FreshBnbLaunch[]> {
+  const limit = opts.limit ?? 10
+  const fetchImpl = opts.fetchImpl ?? fetch
+  const url = `${DEXSCREENER_BASE}/token-profiles/latest/v1`
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
+  try {
+    const r = await fetchImpl(url, { signal: controller.signal })
+    if (!r.ok) {
+      console.warn(`[dexScreener] latest profiles HTTP ${r.status}`)
+      return []
+    }
+    const raw = (await r.json()) as any[]
+    if (!Array.isArray(raw)) return []
+    const out: FreshBnbLaunch[] = []
+    for (const p of raw) {
+      if (p?.chainId !== 'bsc' || !p?.tokenAddress) continue
+      out.push({
+        address: String(p.tokenAddress),
+        symbol: String(p.symbol ?? p.header ?? '').slice(0, 20),
+        description: String(p.description ?? '').slice(0, 240),
+        links: Array.isArray(p.links)
+          ? p.links.slice(0, 4).map((l: any) => ({
+              label: String(l?.label ?? l?.type ?? 'link').slice(0, 20),
+              url: String(l?.url ?? '').slice(0, 200),
+            })).filter((l: any) => l.url)
+          : [],
+        iconUrl: typeof p.icon === 'string' ? p.icon : null,
+        url: typeof p.url === 'string' ? p.url : `https://dexscreener.com/bsc/${p.tokenAddress}`,
+      })
+      if (out.length >= limit) break
+    }
+    return out
+  } catch (err) {
+    console.warn('[dexScreener] latest launches fetch failed:', (err as Error).message)
+    return []
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 /** Fetch the best pair for a single token address on BSC. */
 async function fetchTokenPair(
   tokenAddress: string,
