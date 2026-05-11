@@ -5291,7 +5291,26 @@ app.get('/api/fourmeme/token/:address', async (req, res) => {
       await import('./services/fourMemeTrading')
     if (!isFourMemeEnabled()) return res.status(503).json({ ok: false, code: 'FOUR_MEME_DISABLED' })
     const addr = String(req.params.address ?? '')
-    const info = await getTokenInfo(addr)
+    // Try four.meme first, fall back to PancakeSwap V2 for arbitrary
+    // BSC tokens (CAKE, BONK, etc.) so the in-app trade UI works on
+    // anything with PCS liquidity, not just four.meme launches.
+    let info: any
+    let isFallback = false
+    try {
+      info = await getTokenInfo(addr)
+    } catch (e: any) {
+      const { pancakeGetTokenInfo } = await import('./services/pancakeSwapTrading')
+      info = await pancakeGetTokenInfo(addr)
+      isFallback = true
+      // Pad missing four.meme fields so the wire format stays uniform.
+      info.minTradingFeeWei = 0n
+      info.offersWei = 0n
+      info.maxOffersWei = 0n
+      info.fundsWei = 0n
+      info.maxFundsWei = 0n
+      info.fillPct = 1
+    }
+    void isFallback
     // Optional pre-trade quotes when caller supplies amounts. When the
     // token has graduated to PancakeSwap the bonding-curve helper would
     // throw `GRADUATED` (and revert on-chain), so we transparently route
@@ -5404,7 +5423,15 @@ app.post('/api/fourmeme/buy', requireTgUser, async (req, res) => {
     const { privateKey } = await loadUserBscPrivateKey(user.id)
     // Auto-route post-migration tokens through PancakeSwap V2 so the
     // mini-app can call this single endpoint regardless of venue.
-    const info = await getTokenInfo(String(tokenAddress))
+    // For arbitrary PCS-only tokens (non-four.meme), getTokenInfo
+    // throws — we synthesize a graduated-style info via the PCS
+    // helper so the same routing works.
+    let info: any
+    try { info = await getTokenInfo(String(tokenAddress)) }
+    catch {
+      const { pancakeGetTokenInfo } = await import('./services/pancakeSwapTrading')
+      info = await pancakeGetTokenInfo(String(tokenAddress))
+    }
     if (info.graduatedToPancake) {
       const { pancakeBuyTokenWithBnb } = await import('./services/pancakeSwapTrading')
       const result = await pancakeBuyTokenWithBnb(privateKey, String(tokenAddress), bnbWei, {
@@ -5449,7 +5476,13 @@ app.post('/api/fourmeme/sell', requireTgUser, async (req, res) => {
     const { ethers } = await import('ethers')
     const tokensWei = ethers.parseUnits(String(tokenAmount), 18)
     const { privateKey } = await loadUserBscPrivateKey(user.id)
-    const info = await getTokenInfo(String(tokenAddress))
+    // Fallback to a PCS-synthesized info for non-four.meme tokens.
+    let info: any
+    try { info = await getTokenInfo(String(tokenAddress)) }
+    catch {
+      const { pancakeGetTokenInfo } = await import('./services/pancakeSwapTrading')
+      info = await pancakeGetTokenInfo(String(tokenAddress))
+    }
     if (info.graduatedToPancake) {
       const { pancakeSellTokenForBnb } = await import('./services/pancakeSwapTrading')
       const result = await pancakeSellTokenForBnb(privateKey, String(tokenAddress), tokensWei, {

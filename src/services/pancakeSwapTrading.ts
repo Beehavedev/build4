@@ -34,7 +34,81 @@ const ERC20_ABI = [
   'function allowance(address owner, address spender) view returns (uint256)',
   'function approve(address spender, uint256 amount) returns (bool)',
   'function balanceOf(address owner) view returns (uint256)',
+  'function name() view returns (string)',
+  'function symbol() view returns (string)',
+  'function decimals() view returns (uint8)',
 ]
+
+// ── Synthetic info for tokens that aren't on the four.meme curve ──────
+//
+// `getTokenInfo` from fourMemeTrading.ts only resolves four.meme tokens.
+// For arbitrary BSC tokens that live directly on PancakeSwap V2 (e.g.
+// CAKE, BONK, anything launched outside four.meme), we still want the
+// in-app trade UI to work. This helper returns a shape compatible with
+// the four.meme info object so the server route can fall back to it on
+// a getTokenInfo failure without changing the wire format.
+//
+// Probe strategy:
+//   1. Read ERC20 metadata (name/symbol/decimals)
+//   2. Get a 0.01 BNB → token quote via the V2 router. If it reverts
+//      (no WBNB pair / no liquidity), throw NO_PCS_LIQUIDITY so the
+//      caller can surface a useful error.
+//   3. Derive lastPriceWei (BNB per whole token, 18-dec) from the quote.
+//
+// Returns `graduatedToPancake: true` so downstream routing always picks
+// the PCS path for these tokens.
+
+export interface PancakeTokenInfo {
+  name: string
+  symbol: string
+  decimals: number
+  lastPriceWei: bigint  // BNB wei per 1 whole token
+  graduatedToPancake: true
+  liquidityAdded: true
+  source: 'pancakeV2'
+}
+
+export async function pancakeGetTokenInfo(tokenAddress: string): Promise<PancakeTokenInfo> {
+  const addr = ethers.getAddress(tokenAddress)
+  const erc20 = new ethers.Contract(addr, ERC20_ABI, provider())
+  // ERC20 metadata. Some tokens omit `name` so we fall back to symbol.
+  let name = ''
+  let symbol = ''
+  let decimals = 18
+  try { name = String(await erc20.name()) } catch { /* keep empty */ }
+  try { symbol = String(await erc20.symbol()) } catch { /* keep empty */ }
+  try { decimals = Number(await erc20.decimals()) } catch { /* keep 18 */ }
+  if (!symbol) symbol = addr.slice(0, 6)
+  if (!name) name = symbol
+  // Probe price with a 0.01 BNB quote. Reverts if no WBNB pair exists.
+  const probeBnbWei = 10n ** 16n // 0.01 BNB
+  let tokensOut: bigint
+  try {
+    const q = await pancakeQuoteBuy(addr, probeBnbWei)
+    tokensOut = q.estimatedAmountWei
+  } catch (e: any) {
+    const err: any = new Error('No PancakeSwap V2 liquidity for this token (no WBNB pair).')
+    err.code = 'NO_PCS_LIQUIDITY'
+    err.cause = e
+    throw err
+  }
+  if (tokensOut <= 0n) {
+    const err: any = new Error('PancakeSwap V2 pair has zero liquidity.')
+    err.code = 'NO_PCS_LIQUIDITY'
+    throw err
+  }
+  // price (BNB wei per whole token) = probeBnb * 1eDecimals / tokensOut
+  // Express as 18-dec BNB-per-whole-token to match four.meme's lastPriceWei.
+  const wholeTokenUnit = 10n ** BigInt(decimals)
+  const lastPriceWei = (probeBnbWei * wholeTokenUnit) / tokensOut
+  return {
+    name, symbol, decimals,
+    lastPriceWei,
+    graduatedToPancake: true,
+    liquidityAdded: true,
+    source: 'pancakeV2',
+  }
+}
 
 function provider() { return buildBscProvider(process.env.BSC_RPC_URL) }
 function router(signerOrProvider: ethers.Signer | ethers.AbstractProvider) {

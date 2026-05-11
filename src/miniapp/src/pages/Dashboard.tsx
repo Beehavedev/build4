@@ -276,18 +276,29 @@ export default function Dashboard({ userId, onNavigate, launchEnabled }: Dashboa
     onNavigate?.('predictions')
   }
 
-  const quickActions: Array<{ label: string; sub: string; testId: string; onClick: () => void; disabled?: boolean }> = [
+  const quickActions: Array<{ label: string; sub: string; testId: string; onClick: () => void; disabled?: boolean; featured?: boolean }> = [
+    // Featured row 1 — the two four.meme actions go first because the
+    // hackathon judges + new users land here first and these are the
+    // headline product surfaces.
+    {
+      label: '🪙 Trade Tokens',
+      sub: 'four.meme · DEX',
+      testId: 'button-venue-token-trade',
+      onClick: () => onNavigate?.('tokenTrade'),
+      featured: true,
+    },
+    ...(launchEnabled ? [{
+      label: '🚀 Launch Token',
+      sub: 'four.meme',
+      testId: 'button-venue-fourmeme-launch',
+      onClick: () => onNavigate?.('launchToken'),
+      featured: true,
+    }] : []),
     {
       label: 'Aster',
       sub: 'Perps',
       testId: 'button-venue-aster',
       onClick: () => onNavigate?.('trade'),
-    },
-    {
-      label: '42.space',
-      sub: 'Predict',
-      testId: 'button-venue-42',
-      onClick: () => onNavigate?.('predictions'),
     },
     {
       label: 'Hyperliquid',
@@ -296,23 +307,17 @@ export default function Dashboard({ userId, onNavigate, launchEnabled }: Dashboa
       onClick: () => onNavigate?.('hyperliquid'),
     },
     {
+      label: '42.space',
+      sub: 'Predict',
+      testId: 'button-venue-42',
+      onClick: () => onNavigate?.('predictions'),
+    },
+    {
       label: 'Polymarket',
       sub: 'Predict',
       testId: 'button-venue-polymarket',
       onClick: goPolymarket,
     },
-    {
-      label: '🪙 Trade Tokens',
-      sub: 'four.meme · DEX',
-      testId: 'button-venue-token-trade',
-      onClick: () => onNavigate?.('tokenTrade'),
-    },
-    ...(launchEnabled ? [{
-      label: '🚀 Launch Token',
-      sub: 'four.meme',
-      testId: 'button-venue-fourmeme-launch',
-      onClick: () => onNavigate?.('launchToken'),
-    }] : []),
   ]
 
   return (

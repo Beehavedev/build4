@@ -15,10 +15,12 @@ interface TokenInfo {
   lastPriceWei: string
   fundsWei: string
   maxFundsWei: string
-  // four.meme fields — present even on graduated tokens (cached on
-  // launch). Falls back to the contract if missing in the response.
+  fillPct?: number
+  // four.meme + PCS-fallback fields. Falls back to the contract if
+  // missing in the response.
   symbol?: string
   name?: string
+  source?: 'pancakeV2' | 'fourMeme'
 }
 
 interface TokenResponse {
@@ -276,6 +278,64 @@ export default function TokenTrade() {
             }} data-testid="badge-venue">
               {info.venue === 'pancakeV2' ? '🥞 PancakeSwap' : '🚀 four.meme'}
             </div>
+          </div>
+
+          {/* Stats row — price + (curve fill OR liquidity badge) */}
+          <div style={{
+            display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8,
+            marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border)',
+          }}>
+            <div>
+              <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                Price
+              </div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginTop: 2 }}
+                   data-testid="text-token-price">
+                {(() => {
+                  try {
+                    const wei = BigInt(info.info.lastPriceWei || '0')
+                    if (wei <= 0n) return '—'
+                    const bnb = Number(wei) / 1e18
+                    if (bnb >= 0.001) return `${bnb.toFixed(6)} BNB`
+                    if (bnb >= 1e-9) return `${bnb.toExponential(3)} BNB`
+                    return '< 1e-9 BNB'
+                  } catch { return '—' }
+                })()}
+              </div>
+            </div>
+            {info.venue === 'fourMemeCurve' ? (
+              <div>
+                <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                  Curve fill
+                </div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginTop: 2 }}
+                     data-testid="text-fill-pct">
+                  {typeof info.info.fillPct === 'number'
+                    ? `${(info.info.fillPct * 100).toFixed(1)}%`
+                    : '—'}
+                </div>
+                {typeof info.info.fillPct === 'number' && (
+                  <div style={{
+                    height: 4, marginTop: 4, borderRadius: 2, overflow: 'hidden',
+                    background: 'var(--bg-elevated)',
+                  }}>
+                    <div style={{
+                      width: `${Math.min(100, info.info.fillPct * 100)}%`,
+                      height: '100%', background: 'var(--purple)',
+                    }} />
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div>
+                <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                  Venue
+                </div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#f7931e', marginTop: 2 }}>
+                  PancakeSwap V2
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
