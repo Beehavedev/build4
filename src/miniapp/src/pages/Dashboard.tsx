@@ -925,6 +925,8 @@ function FourMemeLaunchesSection() {
   // Live curve data per launched row, fetched lazily after the row
   // list renders so the section paints instantly even when RPC is slow.
   const [live, setLive] = useState<Record<string, LiveLaunchInfo>>({})
+  // Active trade modal: which row is open + which side. Closed when null.
+  const [tradeModal, setTradeModal] = useState<{ row: LaunchRow; side: 'buy' | 'sell' } | null>(null)
   const refresh = () => apiFetch<{ ok: boolean; launches: LaunchRow[] }>('/api/fourmeme/launches')
     .then((j) => setRows(j?.ok ? j.launches : []))
     .catch(() => setRows([]))
@@ -1116,6 +1118,14 @@ function FourMemeLaunchesSection() {
           ) : (
             headerInner
           )
+          // Trading actions: only show on launched + has-address rows.
+          // Pre-migration → in-app Buy/Sell on the bonding curve.
+          // Post-migration (graduatedToPancake) → external PancakeSwap link.
+          const canTrade = r.status === 'launched' && !!r.tokenAddress
+          const graduated = !!liveInfo?.graduatedToPancake
+          const pancakeUrl = r.tokenAddress
+            ? `https://pancakeswap.finance/swap?outputCurrency=${r.tokenAddress}`
+            : null
           return (
             <div
               key={r.id}
@@ -1123,6 +1133,63 @@ function FourMemeLaunchesSection() {
               data-testid={`row-launch-${r.id}`}
             >
               {clickableHeader}
+              {canTrade && (
+                <div style={{
+                  padding: '0 14px 12px 14px',
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  fontSize: 12,
+                }}>
+                  {graduated ? (
+                    <a
+                      href={pancakeUrl ?? '#'}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      data-testid={`button-trade-pancake-${r.id}`}
+                      style={{
+                        fontSize: 12, fontWeight: 600,
+                        padding: '8px 14px', borderRadius: 8,
+                        background: 'var(--accent-primary, #6c5ce7)',
+                        color: 'white',
+                        textDecoration: 'none',
+                        flex: 1, textAlign: 'center',
+                      }}
+                    >
+                      Trade on PancakeSwap ↗
+                    </a>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setTradeModal({ row: r, side: 'buy' })}
+                        data-testid={`button-buy-${r.id}`}
+                        style={{
+                          flex: 1, fontSize: 12, fontWeight: 700,
+                          padding: '8px 12px', borderRadius: 8,
+                          border: 'none',
+                          background: 'var(--green, #10b981)',
+                          color: 'white', cursor: 'pointer',
+                        }}
+                      >
+                        Buy
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setTradeModal({ row: r, side: 'sell' })}
+                        data-testid={`button-sell-${r.id}`}
+                        style={{
+                          flex: 1, fontSize: 12, fontWeight: 700,
+                          padding: '8px 12px', borderRadius: 8,
+                          border: 'none',
+                          background: 'var(--red, #ef4444)',
+                          color: 'white', cursor: 'pointer',
+                        }}
+                      >
+                        Sell
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
               {isRetryable && (
                 <div style={{
                   padding: '0 14px 12px 14px',
@@ -1160,6 +1227,242 @@ function FourMemeLaunchesSection() {
           )
         })}
       </div>
+      {tradeModal && (
+        <FourMemeTradeModal
+          row={tradeModal.row}
+          side={tradeModal.side}
+          onClose={() => setTradeModal(null)}
+          onSuccess={() => { setTradeModal(null); refresh() }}
+        />
+      )}
     </>
+  )
+}
+
+// ─── four.meme trade modal (in-app Buy/Sell on the bonding curve) ─────
+// Minimal modal that wraps POST /api/fourmeme/buy and /api/fourmeme/sell
+// (Module 1). Shows a quote refresh on input change so users see the
+// price impact + min-out before they confirm. After a successful tx the
+// modal closes and the parent refreshes the launches list so the row's
+// live PnL re-fetches against the new on-chain state.
+function FourMemeTradeModal(props: {
+  row: LaunchRow
+  side: 'buy' | 'sell'
+  onClose: () => void
+  onSuccess: () => void
+}) {
+  const { row, side, onClose, onSuccess } = props
+  const [amount, setAmount] = useState('')
+  const [quote, setQuote] = useState<{
+    estimatedAmountWei?: string
+    estimatedCostWei?: string
+    fundsWei?: string
+  } | null>(null)
+  const [quoteErr, setQuoteErr] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+  const [submitErr, setSubmitErr] = useState<string | null>(null)
+  const [success, setSuccess] = useState<{ txHash: string } | null>(null)
+
+  // Debounced quote fetch on amount change. We bail if the input isn't a
+  // positive number so we don't ping the RPC for every keystroke.
+  useEffect(() => {
+    const v = Number(amount)
+    if (!row.tokenAddress || !Number.isFinite(v) || v <= 0) {
+      setQuote(null); setQuoteErr(null); return
+    }
+    let cancelled = false
+    const t = setTimeout(() => {
+      const params = new URLSearchParams()
+      if (side === 'buy') params.set('bnb', amount)
+      else params.set('sell', amount)
+      apiFetch<any>(`/api/fourmeme/token/${row.tokenAddress}?${params}`)
+        .then((j) => {
+          if (cancelled) return
+          if (j?.ok && side === 'buy' && j.buyQuote) setQuote(j.buyQuote)
+          else if (j?.ok && side === 'sell' && j.sellQuote) setQuote(j.sellQuote)
+          else { setQuote(null); setQuoteErr(j?.error ?? 'no quote') }
+        })
+        .catch((e) => { if (!cancelled) { setQuote(null); setQuoteErr(e?.message ?? 'quote failed') } })
+    }, 350)
+    return () => { cancelled = true; clearTimeout(t) }
+  }, [amount, side, row.tokenAddress])
+
+  async function submit() {
+    if (!row.tokenAddress) return
+    const v = Number(amount)
+    if (!Number.isFinite(v) || v <= 0) { setSubmitErr('Enter an amount'); return }
+    setSubmitting(true); setSubmitErr(null)
+    try {
+      const path = side === 'buy' ? '/api/fourmeme/buy' : '/api/fourmeme/sell'
+      const body = side === 'buy'
+        ? { tokenAddress: row.tokenAddress, bnbAmount: amount }
+        : { tokenAddress: row.tokenAddress, tokenAmount: amount }
+      const j = await apiFetch<any>(path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      if (!j?.ok) { setSubmitErr(j?.error ?? 'trade failed'); return }
+      setSuccess({ txHash: j.txHash })
+      // Auto-close after 2.5s so the user sees the success toast.
+      setTimeout(onSuccess, 2500)
+    } catch (err: any) {
+      setSubmitErr(err?.message ?? 'trade failed')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const fmt18 = (wei?: string) => {
+    if (!wei) return '—'
+    try {
+      const n = Number(wei) / 1e18
+      if (!Number.isFinite(n)) return '—'
+      if (n >= 1) return n.toFixed(4)
+      if (n >= 0.0001) return n.toFixed(6)
+      return n.toExponential(3)
+    } catch { return '—' }
+  }
+  const estTokens = side === 'buy' ? fmt18(quote?.estimatedAmountWei) : null
+  const estBnb = side === 'sell' ? fmt18(quote?.fundsWei) : null
+  const inputLabel = side === 'buy' ? 'BNB to spend' : `${row.tokenSymbol} to sell`
+  const ctaColor = side === 'buy' ? 'var(--green, #10b981)' : 'var(--red, #ef4444)'
+  const titleVerb = side === 'buy' ? 'Buy' : 'Sell'
+
+  return (
+    <div
+      onClick={onClose}
+      data-testid={`modal-trade-${row.id}`}
+      style={{
+        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)',
+        display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+        zIndex: 1000,
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: '100%', maxWidth: 520,
+          background: 'var(--bg-card)', borderRadius: '16px 16px 0 0',
+          padding: 20, color: 'var(--text-primary)',
+          maxHeight: '90vh', overflowY: 'auto',
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+          <div style={{ fontSize: 17, fontWeight: 700 }}>
+            {titleVerb} {row.tokenSymbol}
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            data-testid="button-trade-close"
+            style={{
+              background: 'transparent', border: 'none', color: 'var(--text-secondary)',
+              fontSize: 22, cursor: 'pointer', padding: 0, lineHeight: 1,
+            }}
+          >×</button>
+        </div>
+
+        {success ? (
+          <div data-testid="text-trade-success" style={{ textAlign: 'center', padding: '20px 0' }}>
+            <div style={{ fontSize: 36, marginBottom: 8 }}>✅</div>
+            <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 8 }}>
+              {titleVerb} sent
+            </div>
+            <a
+              href={`https://bscscan.com/tx/${success.txHash}`}
+              target="_blank" rel="noopener noreferrer"
+              style={{ fontSize: 12, color: 'var(--accent-primary, #6c5ce7)' }}
+            >
+              View on BscScan ↗
+            </a>
+          </div>
+        ) : (
+          <>
+            <label style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'block', marginBottom: 6 }}>
+              {inputLabel}
+            </label>
+            <input
+              type="number"
+              inputMode="decimal"
+              autoFocus
+              placeholder="0.0"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              data-testid="input-trade-amount"
+              style={{
+                width: '100%', padding: '12px 14px', fontSize: 18,
+                borderRadius: 10, border: '1px solid var(--border)',
+                background: 'var(--bg-elevated)', color: 'var(--text-primary)',
+                marginBottom: 12, boxSizing: 'border-box',
+              }}
+            />
+
+            <div style={{
+              padding: '12px 14px', borderRadius: 10,
+              background: 'var(--bg-elevated)', marginBottom: 12,
+              fontSize: 12, color: 'var(--text-secondary)',
+            }}>
+              {side === 'buy' ? (
+                <>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                    <span>Est. tokens</span>
+                    <span style={{ color: 'var(--text-primary)', fontWeight: 600 }} data-testid="text-trade-est">
+                      {estTokens ?? '—'} {row.tokenSymbol}
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                    <span>Est. BNB out</span>
+                    <span style={{ color: 'var(--text-primary)', fontWeight: 600 }} data-testid="text-trade-est">
+                      {estBnb ?? '—'} BNB
+                    </span>
+                  </div>
+                </>
+              )}
+              <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 4 }}>
+                Slippage: 1% (default). Routed via four.meme bonding curve.
+              </div>
+              {quoteErr && (
+                <div style={{ color: 'var(--red)', marginTop: 6 }} data-testid="text-quote-error">
+                  {quoteErr.slice(0, 100)}
+                </div>
+              )}
+            </div>
+
+            {submitErr && (
+              <div
+                data-testid="text-trade-error"
+                style={{
+                  padding: '10px 12px', borderRadius: 8,
+                  background: 'rgba(239,68,68,0.12)', color: 'var(--red)',
+                  fontSize: 12, marginBottom: 12,
+                }}
+              >
+                {submitErr.slice(0, 200)}
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={submit}
+              disabled={submitting || !amount || Number(amount) <= 0}
+              data-testid="button-trade-submit"
+              style={{
+                width: '100%', padding: '14px', borderRadius: 10,
+                border: 'none', background: ctaColor, color: 'white',
+                fontSize: 15, fontWeight: 700,
+                cursor: submitting ? 'wait' : 'pointer',
+                opacity: submitting || !amount || Number(amount) <= 0 ? 0.6 : 1,
+              }}
+            >
+              {submitting ? 'Submitting…' : `${titleVerb} ${row.tokenSymbol}`}
+            </button>
+          </>
+        )}
+      </div>
+    </div>
   )
 }
