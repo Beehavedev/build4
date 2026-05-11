@@ -95,6 +95,11 @@ export interface LaunchSweepStatus {
   lastError: string | null
 }
 let lastSweepStatus: LaunchSweepStatus | null = null
+// Throttle for the scanned=0 diagnostic probe (DB count of enabled
+// agents). Ticks every 60s so we don't spam the log when no agent
+// has the toggle on, while still surfacing the count fast enough to
+// debug a missing PATCH on the next minute.
+let lastEmptyProbeAt = 0
 export function getLastFourMemeLaunchSweepStatus(): LaunchSweepStatus | null {
   return lastSweepStatus
 }
@@ -227,6 +232,35 @@ export async function tickAllFourMemeLaunchAgents(): Promise<{
 
   scanned = agents.length
   if (agents.length === 0) {
+    // Demo Day diagnostics — when scanned=0 we want to know WHY
+    // immediately. Run a one-shot probe to count enabled-only and
+    // active-only rows so the next log line tells us whether the
+    // problem is "no one has flipped the toggle" vs "toggle is set
+    // but the agent isn't active". Throttled so it logs at most once
+    // per minute regardless of sweep cadence.
+    const now = Date.now()
+    if (now - lastEmptyProbeAt > 60_000) {
+      lastEmptyProbeAt = now
+      try {
+        const probe = await db.$queryRawUnsafe<Array<{
+          enabled_only: number; active_only: number; both: number; total: number
+        }>>(
+          `SELECT
+             COUNT(*) FILTER (WHERE "fourMemeLaunchEnabled"=true)::int                       AS enabled_only,
+             COUNT(*) FILTER (WHERE "isActive"=true)::int                                    AS active_only,
+             COUNT(*) FILTER (WHERE "isActive"=true AND "fourMemeLaunchEnabled"=true)::int   AS both,
+             COUNT(*)::int                                                                   AS total
+           FROM "Agent"`,
+        )
+        const p = probe[0]
+        console.log(
+          `[fourMemeLaunchAgent] scanned=0 — DB probe: enabled=${p?.enabled_only ?? 0} ` +
+          `active=${p?.active_only ?? 0} both=${p?.both ?? 0} total=${p?.total ?? 0}`,
+        )
+      } catch (e) {
+        console.warn('[fourMemeLaunchAgent] probe failed:', (e as Error).message)
+      }
+    }
     lastSweepStatus = {
       at: new Date().toISOString(),
       scanned, ticked, launchesAttempted, launchesSkipped, errors,

@@ -6023,13 +6023,28 @@ app.patch('/api/agents/:id/four-meme-launch-enabled', requireTgUser, async (req,
     )
     if (owner.length === 0) return res.status(404).json({ ok: false, error: 'agent not found' })
     if (owner[0].userId !== user.id) return res.status(403).json({ ok: false, error: 'forbidden' })
-    await db.$executeRawUnsafe(
+    const updated = await db.$executeRawUnsafe(
       `UPDATE "Agent" SET "fourMemeLaunchEnabled" = $1 WHERE "id" = $2`,
       enabled,
       agentId,
     )
-    res.json({ ok: true, agentId, enabled })
+    // Demo Day diagnostics — log every toggle so we can grep Render
+    // logs for "[fourMemeToggle]" and confirm the PATCH actually
+    // reached this DB. Without this we have no way to tell apart
+    // (a) toggle never reached the server vs (b) PATCH succeeded but
+    // the sweep query disagrees vs (c) different DB on Render.
+    // PII note: only log the last 4 digits of the Telegram ID. Full
+    // telegramId in centralized Render logs would be a leak; the last
+    // 4 are enough to correlate with the user when they ask "did my
+    // toggle persist?" without exposing their account identifier.
+    const tgTail = String(user.telegramId ?? '').slice(-4)
+    console.log(
+      `[fourMemeToggle] user=${user.id.slice(0, 8)} tg=…${tgTail} ` +
+      `agent=${agentId.slice(0, 12)} enabled=${enabled} rowsAffected=${updated}`,
+    )
+    res.json({ ok: true, agentId, enabled, rowsAffected: Number(updated) })
   } catch (err: any) {
+    console.error('[fourMemeToggle] PATCH failed:', err?.message ?? err)
     res.status(400).json({ ok: false, error: err?.message ?? String(err) })
   }
 })
