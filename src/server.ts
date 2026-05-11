@@ -5271,7 +5271,11 @@ app.get('/api/fourmeme/token/:address', async (req, res) => {
     if (!isFourMemeEnabled()) return res.status(503).json({ ok: false, code: 'FOUR_MEME_DISABLED' })
     const addr = String(req.params.address ?? '')
     const info = await getTokenInfo(addr)
-    // Optional pre-trade quotes when caller supplies amounts
+    // Optional pre-trade quotes when caller supplies amounts. When the
+    // token has graduated to PancakeSwap the bonding-curve helper would
+    // throw `GRADUATED` (and revert on-chain), so we transparently route
+    // both quote and trade through the PancakeSwap V2 router instead —
+    // keeps the API surface identical to the mini-app.
     const bnb = req.query.bnb ? String(req.query.bnb) : ''
     const sell = req.query.sell ? String(req.query.sell) : ''
     const out: any = {
@@ -5285,22 +5289,40 @@ app.get('/api/fourmeme/token/:address', async (req, res) => {
         fundsWei: info.fundsWei.toString(),
         maxFundsWei: info.maxFundsWei.toString(),
       },
+      venue: info.graduatedToPancake ? 'pancakeV2' : 'fourMemeCurve',
     }
     if (bnb) {
       const { ethers } = await import('ethers')
-      const q = await quoteBuyByBnb(addr, ethers.parseEther(bnb))
-      out.buyQuote = {
-        estimatedAmountWei: q.estimatedAmountWei.toString(),
-        estimatedCostWei:   q.estimatedCostWei.toString(),
-        estimatedFeeWei:    q.estimatedFeeWei.toString(),
-        amountMsgValueWei:  q.amountMsgValueWei.toString(),
-        amountFundsWei:     q.amountFundsWei.toString(),
+      const bnbWei = ethers.parseEther(bnb)
+      if (info.graduatedToPancake) {
+        const { pancakeQuoteBuy } = await import('./services/pancakeSwapTrading')
+        const q = await pancakeQuoteBuy(addr, bnbWei)
+        out.buyQuote = {
+          estimatedAmountWei: q.estimatedAmountWei.toString(),
+          amountMsgValueWei:  q.amountInWei.toString(),
+        }
+      } else {
+        const q = await quoteBuyByBnb(addr, bnbWei)
+        out.buyQuote = {
+          estimatedAmountWei: q.estimatedAmountWei.toString(),
+          estimatedCostWei:   q.estimatedCostWei.toString(),
+          estimatedFeeWei:    q.estimatedFeeWei.toString(),
+          amountMsgValueWei:  q.amountMsgValueWei.toString(),
+          amountFundsWei:     q.amountFundsWei.toString(),
+        }
       }
     }
     if (sell) {
       const { ethers } = await import('ethers')
-      const q = await quoteSell(addr, ethers.parseUnits(sell, 18))
-      out.sellQuote = { fundsWei: q.fundsWei.toString(), feeWei: q.feeWei.toString() }
+      const tokensWei = ethers.parseUnits(sell, 18)
+      if (info.graduatedToPancake) {
+        const { pancakeQuoteSell } = await import('./services/pancakeSwapTrading')
+        const q = await pancakeQuoteSell(addr, tokensWei)
+        out.sellQuote = { fundsWei: q.estimatedBnbWei.toString(), feeWei: '0' }
+      } else {
+        const q = await quoteSell(addr, tokensWei)
+        out.sellQuote = { fundsWei: q.fundsWei.toString(), feeWei: q.feeWei.toString() }
+      }
     }
     res.json(out)
   } catch (err: any) {
@@ -5312,7 +5334,7 @@ app.post('/api/fourmeme/buy', requireTgUser, async (req, res) => {
   const user = (req as any).user
   if (!user?.id) return res.status(401).json({ ok: false, error: 'unauthorized' })
   try {
-    const { isFourMemeEnabled, buyTokenWithBnb, loadUserBscPrivateKey } =
+    const { isFourMemeEnabled, buyTokenWithBnb, loadUserBscPrivateKey, getTokenInfo } =
       await import('./services/fourMemeTrading')
     if (!isFourMemeEnabled()) return res.status(503).json({ ok: false, code: 'FOUR_MEME_DISABLED' })
     const { tokenAddress, bnbAmount, slippageBps } = req.body ?? {}
@@ -5320,11 +5342,29 @@ app.post('/api/fourmeme/buy', requireTgUser, async (req, res) => {
     const { ethers } = await import('ethers')
     const bnbWei = ethers.parseEther(String(bnbAmount))
     const { privateKey } = await loadUserBscPrivateKey(user.id)
+    // Auto-route post-migration tokens through PancakeSwap V2 so the
+    // mini-app can call this single endpoint regardless of venue.
+    const info = await getTokenInfo(String(tokenAddress))
+    if (info.graduatedToPancake) {
+      const { pancakeBuyTokenWithBnb } = await import('./services/pancakeSwapTrading')
+      const result = await pancakeBuyTokenWithBnb(privateKey, String(tokenAddress), bnbWei, {
+        slippageBps: slippageBps != null ? Number(slippageBps) : undefined,
+      })
+      return res.json({
+        ok: true, venue: result.venue,
+        txHash: result.txHash,
+        tokenAddress: result.tokenAddress,
+        bnbSpentWei: result.bnbSpentWei.toString(),
+        estimatedTokensWei: result.estimatedTokensWei.toString(),
+        minTokensWei: result.minTokensWei.toString(),
+        slippageBps: result.slippageBps,
+      })
+    }
     const result = await buyTokenWithBnb(privateKey, String(tokenAddress), bnbWei, {
       slippageBps: slippageBps != null ? Number(slippageBps) : undefined,
     })
     res.json({
-      ok: true,
+      ok: true, venue: 'fourMemeCurve',
       txHash: result.txHash,
       tokenAddress: result.tokenAddress,
       bnbSpentWei: result.bnbSpentWei.toString(),
@@ -5341,7 +5381,7 @@ app.post('/api/fourmeme/sell', requireTgUser, async (req, res) => {
   const user = (req as any).user
   if (!user?.id) return res.status(401).json({ ok: false, error: 'unauthorized' })
   try {
-    const { isFourMemeEnabled, sellTokenForBnb, loadUserBscPrivateKey } =
+    const { isFourMemeEnabled, sellTokenForBnb, loadUserBscPrivateKey, getTokenInfo } =
       await import('./services/fourMemeTrading')
     if (!isFourMemeEnabled()) return res.status(503).json({ ok: false, code: 'FOUR_MEME_DISABLED' })
     const { tokenAddress, tokenAmount, slippageBps } = req.body ?? {}
@@ -5349,11 +5389,28 @@ app.post('/api/fourmeme/sell', requireTgUser, async (req, res) => {
     const { ethers } = await import('ethers')
     const tokensWei = ethers.parseUnits(String(tokenAmount), 18)
     const { privateKey } = await loadUserBscPrivateKey(user.id)
+    const info = await getTokenInfo(String(tokenAddress))
+    if (info.graduatedToPancake) {
+      const { pancakeSellTokenForBnb } = await import('./services/pancakeSwapTrading')
+      const result = await pancakeSellTokenForBnb(privateKey, String(tokenAddress), tokensWei, {
+        slippageBps: slippageBps != null ? Number(slippageBps) : undefined,
+      })
+      return res.json({
+        ok: true, venue: result.venue,
+        txHash: result.txHash,
+        approvalTxHash: result.approvalTxHash,
+        tokenAddress: result.tokenAddress,
+        tokensSoldWei: result.tokensSoldWei.toString(),
+        estimatedBnbWei: result.estimatedBnbWei.toString(),
+        minBnbWei: result.minBnbWei.toString(),
+        slippageBps: result.slippageBps,
+      })
+    }
     const result = await sellTokenForBnb(privateKey, String(tokenAddress), tokensWei, {
       slippageBps: slippageBps != null ? Number(slippageBps) : undefined,
     })
     res.json({
-      ok: true,
+      ok: true, venue: 'fourMemeCurve',
       txHash: result.txHash,
       tokenAddress: result.tokenAddress,
       tokensSoldWei: result.tokensSoldWei.toString(),

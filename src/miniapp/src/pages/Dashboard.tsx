@@ -925,8 +925,8 @@ function FourMemeLaunchesSection() {
   // Live curve data per launched row, fetched lazily after the row
   // list renders so the section paints instantly even when RPC is slow.
   const [live, setLive] = useState<Record<string, LiveLaunchInfo>>({})
-  // Active trade modal: which row is open + which side. Closed when null.
-  const [tradeModal, setTradeModal] = useState<{ row: LaunchRow; side: 'buy' | 'sell' } | null>(null)
+  // Active trade modal: which row is open + which side + venue. Closed when null.
+  const [tradeModal, setTradeModal] = useState<{ row: LaunchRow; side: 'buy' | 'sell'; graduated: boolean } | null>(null)
   const refresh = () => apiFetch<{ ok: boolean; launches: LaunchRow[] }>('/api/fourmeme/launches')
     .then((j) => setRows(j?.ok ? j.launches : []))
     .catch(() => setRows([]))
@@ -1118,14 +1118,12 @@ function FourMemeLaunchesSection() {
           ) : (
             headerInner
           )
-          // Trading actions: only show on launched + has-address rows.
-          // Pre-migration → in-app Buy/Sell on the bonding curve.
-          // Post-migration (graduatedToPancake) → external PancakeSwap link.
+          // Trading actions: shown on every launched row with an address.
+          // Backend auto-routes to four.meme bonding curve pre-migration
+          // and to PancakeSwap V2 post-migration — same endpoints either
+          // way, so the mini-app stays venue-agnostic.
           const canTrade = r.status === 'launched' && !!r.tokenAddress
           const graduated = !!liveInfo?.graduatedToPancake
-          const pancakeUrl = r.tokenAddress
-            ? `https://pancakeswap.finance/swap?outputCurrency=${r.tokenAddress}`
-            : null
           return (
             <div
               key={r.id}
@@ -1139,55 +1137,34 @@ function FourMemeLaunchesSection() {
                   display: 'flex', alignItems: 'center', gap: 8,
                   fontSize: 12,
                 }}>
-                  {graduated ? (
-                    <a
-                      href={pancakeUrl ?? '#'}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      data-testid={`button-trade-pancake-${r.id}`}
-                      style={{
-                        fontSize: 12, fontWeight: 600,
-                        padding: '8px 14px', borderRadius: 8,
-                        background: 'var(--accent-primary, #6c5ce7)',
-                        color: 'white',
-                        textDecoration: 'none',
-                        flex: 1, textAlign: 'center',
-                      }}
-                    >
-                      Trade on PancakeSwap ↗
-                    </a>
-                  ) : (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => setTradeModal({ row: r, side: 'buy' })}
-                        data-testid={`button-buy-${r.id}`}
-                        style={{
-                          flex: 1, fontSize: 12, fontWeight: 700,
-                          padding: '8px 12px', borderRadius: 8,
-                          border: 'none',
-                          background: 'var(--green, #10b981)',
-                          color: 'white', cursor: 'pointer',
-                        }}
-                      >
-                        Buy
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setTradeModal({ row: r, side: 'sell' })}
-                        data-testid={`button-sell-${r.id}`}
-                        style={{
-                          flex: 1, fontSize: 12, fontWeight: 700,
-                          padding: '8px 12px', borderRadius: 8,
-                          border: 'none',
-                          background: 'var(--red, #ef4444)',
-                          color: 'white', cursor: 'pointer',
-                        }}
-                      >
-                        Sell
-                      </button>
-                    </>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => setTradeModal({ row: r, side: 'buy', graduated })}
+                    data-testid={`button-buy-${r.id}`}
+                    style={{
+                      flex: 1, fontSize: 12, fontWeight: 700,
+                      padding: '8px 12px', borderRadius: 8,
+                      border: 'none',
+                      background: 'var(--green, #10b981)',
+                      color: 'white', cursor: 'pointer',
+                    }}
+                  >
+                    Buy
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTradeModal({ row: r, side: 'sell', graduated })}
+                    data-testid={`button-sell-${r.id}`}
+                    style={{
+                      flex: 1, fontSize: 12, fontWeight: 700,
+                      padding: '8px 12px', borderRadius: 8,
+                      border: 'none',
+                      background: 'var(--red, #ef4444)',
+                      color: 'white', cursor: 'pointer',
+                    }}
+                  >
+                    Sell
+                  </button>
                 </div>
               )}
               {isRetryable && (
@@ -1231,6 +1208,7 @@ function FourMemeLaunchesSection() {
         <FourMemeTradeModal
           row={tradeModal.row}
           side={tradeModal.side}
+          graduated={tradeModal.graduated}
           onClose={() => setTradeModal(null)}
           onSuccess={() => { setTradeModal(null); refresh() }}
         />
@@ -1248,10 +1226,12 @@ function FourMemeLaunchesSection() {
 function FourMemeTradeModal(props: {
   row: LaunchRow
   side: 'buy' | 'sell'
+  graduated: boolean
   onClose: () => void
   onSuccess: () => void
 }) {
-  const { row, side, onClose, onSuccess } = props
+  const { row, side, graduated, onClose, onSuccess } = props
+  const venueLabel = graduated ? 'PancakeSwap V2' : 'four.meme bonding curve'
   const [amount, setAmount] = useState('')
   const [quote, setQuote] = useState<{
     estimatedAmountWei?: string
@@ -1423,7 +1403,8 @@ function FourMemeTradeModal(props: {
                 </>
               )}
               <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 4 }}>
-                Slippage: 1% (default). Routed via four.meme bonding curve.
+                Slippage: 1% (default). Routed via {venueLabel}.
+                {graduated && side === 'sell' ? ' One-time token approval may be required on first sell.' : ''}
               </div>
               {quoteErr && (
                 <div style={{ color: 'var(--red)', marginTop: 6 }} data-testid="text-quote-error">
