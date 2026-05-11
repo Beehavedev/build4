@@ -10,6 +10,7 @@ import Hyperliquid from './pages/Hyperliquid'
 import Admin from './pages/Admin'
 import Onboard from './pages/Onboard'
 import LaunchToken from './pages/LaunchToken'
+import TokenTrade from './pages/TokenTrade'
 import { apiFetch, type AgentData } from './api'
 
 declare global {
@@ -18,7 +19,7 @@ declare global {
   }
 }
 
-type Page = 'dashboard' | 'agents' | 'wallet' | 'trade' | 'copy' | 'portfolio' | 'predictions' | 'hyperliquid' | 'admin' | 'onboard' | 'launchToken'
+type Page = 'dashboard' | 'agents' | 'wallet' | 'trade' | 'copy' | 'portfolio' | 'predictions' | 'hyperliquid' | 'admin' | 'onboard' | 'launchToken' | 'tokenTrade'
 
 export default function App() {
   const [page, setPage] = useState<Page>('dashboard')
@@ -204,6 +205,7 @@ export default function App() {
         {page === 'hyperliquid' && <Hyperliquid />}
         {page === 'admin' && <Admin />}
         {page === 'launchToken' && <LaunchToken />}
+        {page === 'tokenTrade' && <TokenTrade />}
         {page === 'onboard' && (
           <Onboard
             asterOnboarded={asterOnboarded}

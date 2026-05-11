@@ -301,6 +301,12 @@ export default function Dashboard({ userId, onNavigate, launchEnabled }: Dashboa
       testId: 'button-venue-polymarket',
       onClick: goPolymarket,
     },
+    {
+      label: '🪙 Trade Tokens',
+      sub: 'four.meme · DEX',
+      testId: 'button-venue-token-trade',
+      onClick: () => onNavigate?.('tokenTrade'),
+    },
     ...(launchEnabled ? [{
       label: '🚀 Launch Token',
       sub: 'four.meme',
