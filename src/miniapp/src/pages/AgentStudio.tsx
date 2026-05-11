@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { apiFetch, deleteAgent, getMyFeed, setAgentFourMemeApproval, setAgentFourMemeLaunchEnabled, setAgentFourMemeLaunchInterval, updateAgentSettings, type FeedEntry } from '../api'
+import { apiFetch, deleteAgent, getMyFeed, setAgentFourMemeApproval, setAgentFourMemeLaunchEnabled, setAgentFourMemeLaunchInitialBuy, setAgentFourMemeLaunchInterval, setAgentFourMemeLaunchTakeProfit, updateAgentSettings, type FeedEntry } from '../api'
 import { TradingChart } from '../components/TradingChart'
 import { MarketTicker } from '../components/MarketTicker'
 
@@ -433,6 +433,79 @@ export default function AgentStudio(_props: AgentStudioProps) {
   // we commit on blur. Same lock pattern as the toggles.
   const [intervalDraft, setIntervalDraft] = useState<Record<string, string>>({})
   const [intervalSaving, setIntervalSaving] = useState<Record<string, boolean>>({})
+  // Demo Day — draft state for the dev-buy + take-profit inputs in the
+  // auto-launch card. Same pattern as intervalDraft: optimistic update
+  // on blur, revert on PATCH failure or invalid input.
+  const [initialBuyDraft, setInitialBuyDraft] = useState<Record<string, string>>({})
+  const [initialBuySaving, setInitialBuySaving] = useState<Record<string, boolean>>({})
+  const [takeProfitDraft, setTakeProfitDraft] = useState<Record<string, string>>({})
+  const [takeProfitSaving, setTakeProfitSaving] = useState<Record<string, boolean>>({})
+  const commitFourMemeInitialBuy = async (agentId: string, raw: string) => {
+    const trimmed = raw.trim()
+    const current = agents.find(a => a.id === agentId)
+    if (!current) { setInitialBuyDraft(d => { const n = { ...d }; delete n[agentId]; return n }); return }
+    let bnb: string | null
+    if (trimmed === '') {
+      bnb = null
+    } else {
+      const n = Number(trimmed)
+      if (!Number.isFinite(n) || n <= 0 || n > 0.05) {
+        // Invalid — revert draft, no PATCH. Hard cap is 0.05 BNB
+        // (MAX_INITIAL_BUY_BNB on the agent side).
+        setInitialBuyDraft(d => { const x = { ...d }; delete x[agentId]; return x })
+        return
+      }
+      bnb = String(n)
+    }
+    const currentVal = (current as any).fourMemeLaunchInitialBuyBnb ?? null
+    if (bnb === currentVal) {
+      setInitialBuyDraft(d => { const x = { ...d }; delete x[agentId]; return x })
+      return
+    }
+    const prev = agents
+    setInitialBuySaving(s => ({ ...s, [agentId]: true }))
+    setAgents(curr => curr.map(a => a.id === agentId ? { ...a, fourMemeLaunchInitialBuyBnb: bnb } as any : a))
+    try {
+      await setAgentFourMemeLaunchInitialBuy(agentId, bnb)
+    } catch {
+      setAgents(prev)
+    } finally {
+      setInitialBuySaving(s => { const n = { ...s }; delete n[agentId]; return n })
+      setInitialBuyDraft(d => { const x = { ...d }; delete x[agentId]; return x })
+    }
+  }
+  const commitFourMemeTakeProfit = async (agentId: string, raw: string) => {
+    const trimmed = raw.trim()
+    const current = agents.find(a => a.id === agentId)
+    if (!current) { setTakeProfitDraft(d => { const n = { ...d }; delete n[agentId]; return n }); return }
+    let pct: number | null
+    if (trimmed === '') {
+      pct = null
+    } else {
+      const n = Number(trimmed)
+      if (!Number.isFinite(n) || !Number.isInteger(n) || n < 1 || n > 10000) {
+        setTakeProfitDraft(d => { const x = { ...d }; delete x[agentId]; return x })
+        return
+      }
+      pct = n
+    }
+    const currentVal = (current as any).fourMemeLaunchTakeProfitPct ?? null
+    if (pct === currentVal) {
+      setTakeProfitDraft(d => { const x = { ...d }; delete x[agentId]; return x })
+      return
+    }
+    const prev = agents
+    setTakeProfitSaving(s => ({ ...s, [agentId]: true }))
+    setAgents(curr => curr.map(a => a.id === agentId ? { ...a, fourMemeLaunchTakeProfitPct: pct } as any : a))
+    try {
+      await setAgentFourMemeLaunchTakeProfit(agentId, pct)
+    } catch {
+      setAgents(prev)
+    } finally {
+      setTakeProfitSaving(s => { const n = { ...s }; delete n[agentId]; return n })
+      setTakeProfitDraft(d => { const x = { ...d }; delete x[agentId]; return x })
+    }
+  }
   const commitFourMemeInterval = async (agentId: string, raw: string) => {
     const trimmed = raw.trim()
     const current = agents.find(a => a.id === agentId)
@@ -1051,8 +1124,9 @@ export default function AgentStudio(_props: AgentStudioProps) {
               background: launchEnabled ? '#0a1f15' : '#0a0a0f',
               border: `1px solid ${launchEnabled ? '#10b98155' : '#1e1e2e'}`,
               borderRadius: 8,
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+              display: 'flex', flexDirection: 'column', gap: 8,
             }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
               <div style={{ minWidth: 0, flex: 1 }}>
                 <div style={{ fontSize: 12, fontWeight: 600, color: '#e2e8f0' }}>
                   🪙 Auto-launch tokens on four.meme
@@ -1128,6 +1202,80 @@ export default function AgentStudio(_props: AgentStudioProps) {
                   }} />
                 </button>
               </div>
+              </div>
+
+              {/* Demo Day — second row inside the same card: dev-buy
+                  size + take-profit %. Both default to placeholders that
+                  describe the fallback behavior so a user who leaves them
+                  blank knows exactly what they get. Greyed out when the
+                  master toggle is OFF since neither matters without an
+                  enabled agent. */}
+              {(() => {
+                const buyPersisted = (agent as any).fourMemeLaunchInitialBuyBnb ?? null
+                const buyDraft = initialBuyDraft[agent.id]
+                const buyValue = buyDraft !== undefined ? buyDraft : (buyPersisted == null ? '' : String(buyPersisted))
+                const buyBusy = !!initialBuySaving[agent.id]
+                const tpPersisted = (agent as any).fourMemeLaunchTakeProfitPct ?? null
+                const tpDraft = takeProfitDraft[agent.id]
+                const tpValue = tpDraft !== undefined ? tpDraft : (tpPersisted == null ? '' : String(tpPersisted))
+                const tpBusy = !!takeProfitSaving[agent.id]
+                const cellLabelStyle: React.CSSProperties = {
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  fontSize: 10, color: launchEnabled ? '#94a3b8' : '#475569',
+                  opacity: launchEnabled ? 1 : 0.5,
+                  flex: 1, minWidth: 0,
+                }
+                const cellInputStyle: React.CSSProperties = {
+                  height: 22, borderRadius: 6,
+                  border: '1px solid #334155',
+                  background: launchEnabled ? '#0a0a0f' : '#0a0a0f55',
+                  color: '#e2e8f0', textAlign: 'center', fontSize: 11,
+                  padding: '0 4px',
+                }
+                return (
+                  <div style={{
+                    display: 'flex', alignItems: 'center', gap: 12,
+                    paddingTop: 6, borderTop: '1px solid #1e293b55',
+                  }}>
+                    <label style={cellLabelStyle}>
+                      <span style={{ whiteSpace: 'nowrap' }}>💰 Dev buy</span>
+                      <input
+                        type="number"
+                        min={0.0001}
+                        max={0.05}
+                        step={0.001}
+                        placeholder="0.005"
+                        value={buyValue}
+                        disabled={!launchEnabled || buyBusy}
+                        onChange={(e) => setInitialBuyDraft(d => ({ ...d, [agent.id]: e.target.value }))}
+                        onBlur={(e) => commitFourMemeInitialBuy(agent.id, e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+                        data-testid={`input-agent-${agent.id}-launch-initial-buy`}
+                        style={{ ...cellInputStyle, width: 64 }}
+                      />
+                      <span>BNB</span>
+                    </label>
+                    <label style={cellLabelStyle}>
+                      <span style={{ whiteSpace: 'nowrap' }}>🎯 Auto-sell at +</span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={10000}
+                        step={10}
+                        placeholder="manual"
+                        value={tpValue}
+                        disabled={!launchEnabled || tpBusy}
+                        onChange={(e) => setTakeProfitDraft(d => ({ ...d, [agent.id]: e.target.value }))}
+                        onBlur={(e) => commitFourMemeTakeProfit(agent.id, e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+                        data-testid={`input-agent-${agent.id}-launch-tp`}
+                        style={{ ...cellInputStyle, width: 60 }}
+                      />
+                      <span>%</span>
+                    </label>
+                  </div>
+                )
+              })()}
             </div>
           )
         })()}

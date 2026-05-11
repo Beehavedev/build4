@@ -205,6 +205,35 @@ export function initRunner(bot: Bot) {
   setTimeout(tickFourMemeLaunch, 7_000)
   setInterval(tickFourMemeLaunch, 60_000)
 
+  // Demo Day — autonomous take-profit sweep for already-launched dev
+  // bags. Independent of the launch sweep above so a slow LLM round
+  // can't block exits, and vice versa. Per-agent TP% lives on the
+  // Agent row (NULL = leave it to the user, no autonomous exit).
+  let fourMemeTpTickInflight = false
+  const tickFourMemeTakeProfit = async () => {
+    if (fourMemeTpTickInflight) {
+      console.log('[fourMemeTakeProfit] previous tick still running, skipping')
+      return
+    }
+    fourMemeTpTickInflight = true
+    try {
+      const { tickAllFourMemeTakeProfit } = await import('./fourMemeLaunchAgent')
+      const r = await tickAllFourMemeTakeProfit()
+      if (r.scanned > 0 || r.sold > 0 || r.errors > 0) {
+        console.log(
+          `[fourMemeTakeProfit] scanned=${r.scanned} evaluated=${r.evaluated} ` +
+            `sold=${r.sold} errors=${r.errors}`,
+        )
+      }
+    } catch (err) {
+      console.error('[fourMemeTakeProfit] sweep failed:', (err as Error).message)
+    } finally {
+      fourMemeTpTickInflight = false
+    }
+  }
+  setTimeout(tickFourMemeTakeProfit, 12_000)
+  setInterval(tickFourMemeTakeProfit, 60_000)
+
   // Module 4 — auto-expire stale launch approval requests. The agent's
   // pending-dedup gate refuses to propose new launches while any
   // pending_user_approval row sits open. Without a sweeper, an owner

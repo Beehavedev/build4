@@ -36,6 +36,8 @@ import { callLLM } from '../services/inference'
 import {
   loadUserBscPrivateKey,
   isFourMemeEnabled,
+  quoteSell,
+  sellTokenForBnb,
 } from '../services/fourMemeTrading'
 import {
   launchFourMemeToken,
@@ -111,6 +113,13 @@ interface LaunchAgentRow {
   // Demo Day — per-agent scan cadence in minutes (1..60). null = use
   // the hardcoded MIN_TICK_INTERVAL_MS floor.
   fourMemeLaunchIntervalMinutes: number | null
+  // Demo Day — user-set initial dev buy in BNB. Decimal string. When
+  // present (and parseable + within MAX_INITIAL_BUY_BNB) overrides
+  // the LLM's proposed initialBuyBnb at launch time.
+  fourMemeLaunchInitialBuyBnb: string | null
+  // Demo Day — auto-sell threshold in percent profit. null = manual
+  // management (no autonomous exit ever).
+  fourMemeLaunchTakeProfitPct: number | null
 }
 
 // Demo Day — the four narrative sources the agent looks at every tick.
@@ -172,7 +181,9 @@ export async function tickAllFourMemeLaunchAgents(): Promise<{
       `SELECT a."id", a."userId", a."name", a."description",
               a."fourMemeLaunchEnabled", a."lastFourMemeLaunchTickAt",
               COALESCE(a."fourMemeLaunchRequiresApproval", false) AS "fourMemeLaunchRequiresApproval",
-              a."fourMemeLaunchIntervalMinutes"
+              a."fourMemeLaunchIntervalMinutes",
+              a."fourMemeLaunchInitialBuyBnb",
+              a."fourMemeLaunchTakeProfitPct"
          FROM "Agent" a
         WHERE a."isActive" = true
           AND a."isPaused" = false
@@ -188,6 +199,14 @@ export async function tickAllFourMemeLaunchAgents(): Promise<{
       fourMemeLaunchIntervalMinutes:
         Number.isFinite(Number(r.fourMemeLaunchIntervalMinutes))
           ? Number(r.fourMemeLaunchIntervalMinutes)
+          : null,
+      fourMemeLaunchInitialBuyBnb:
+        typeof r.fourMemeLaunchInitialBuyBnb === 'string' && r.fourMemeLaunchInitialBuyBnb.trim() !== ''
+          ? r.fourMemeLaunchInitialBuyBnb
+          : null,
+      fourMemeLaunchTakeProfitPct:
+        Number.isFinite(Number(r.fourMemeLaunchTakeProfitPct))
+          ? Number(r.fourMemeLaunchTakeProfitPct)
           : null,
       lastFourMemeLaunchTickAt:
         r.lastFourMemeLaunchTickAt instanceof Date
@@ -428,9 +447,20 @@ async function tickOneAgent(
   const cleanName = (proposal.name ?? '').trim().slice(0, 100)
   const cleanTicker = (proposal.ticker ?? '').trim().toUpperCase().slice(0, 10)
   const cleanDesc = (proposal.description ?? '').trim().slice(0, 500)
+  // Demo Day — user-set initial dev buy WINS over the LLM proposal.
+  // The user is paying for the buy with their own BNB so they get to
+  // pick the size; the LLM only controls name/ticker/description/
+  // conviction. Still clamped to MAX_INITIAL_BUY_BNB defensively in
+  // case a stale value sneaks through.
+  let userInitialBuy: number | null = null
+  if (agent.fourMemeLaunchInitialBuyBnb && agent.fourMemeLaunchInitialBuyBnb.trim() !== '') {
+    const n = Number(agent.fourMemeLaunchInitialBuyBnb)
+    if (Number.isFinite(n) && n > 0) userInitialBuy = n
+  }
+  const proposedBuy = Number.isFinite(proposal.initialBuyBnb) ? proposal.initialBuyBnb : 0
   const clampedBuy = Math.max(
     0,
-    Math.min(MAX_INITIAL_BUY_BNB, Number.isFinite(proposal.initialBuyBnb) ? proposal.initialBuyBnb : 0),
+    Math.min(MAX_INITIAL_BUY_BNB, userInitialBuy != null ? userInitialBuy : proposedBuy),
   )
 
   if (cleanName.length < 2 || cleanTicker.length < 1 || !/^[A-Z0-9$]+$/.test(cleanTicker)) {
@@ -918,4 +948,326 @@ async function gatherMarketContext(): Promise<MarketContext> {
   }
 
   return { trending, news, asterMovers, polyEvents }
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Demo Day — autonomous take-profit sweep for the dev bag
+//
+// Companion to the launch sweep above. Runs on the same 60s cadence in
+// the runner; per-agent it scans `token_launches` rows the agent is
+// still holding (status='launched', sold_at IS NULL) and the moment
+// `quoteSell(fullBag)` returns proceeds ≥ initial_liquidity_bnb ×
+// (1 + tp/100) it fires `sellTokenForBnb` for the entire balance and
+// stamps sold_at + sold_proceeds_bnb + sold_tx_hash so we never try
+// twice.
+//
+// Design notes:
+//   • There is intentionally no stop-loss. A four.meme dev firing the
+//     first buy on the bonding curve has the lowest cost basis on the
+//     entire token — anything below entry would be selling under the
+//     literal market floor. Users with TP=null are opting into pure
+//     manual management (the screen still shows the bag, they trade it
+//     themselves).
+//   • One ALTER on the user side: agent-level TP%. Per-token override
+//     is a future feature. For Demo Day every position from the same
+//     agent shares the same threshold.
+//   • V2-only: sellTokenForBnb refuses V1 tokens (the underlying ABI
+//     has no minFunds slippage cap, so we fail-closed). On a V1 row
+//     we simply mark the position as sold-failed in metadata so we
+//     don't keep retrying.
+//   • Token approval is one-shot infinite via the ERC20 contract; we
+//     check allowance first to avoid wasting gas on already-approved
+//     tokens. The TokenManager that needs spend rights comes back from
+//     `quoteSell` (`tokenManager` field) — same one we then sell into.
+// ─────────────────────────────────────────────────────────────────────
+
+// Minimal ERC20 ABI — only the three calls the TP sweep makes against
+// the launched bonding-curve token.
+const ERC20_TP_ABI = [
+  'function balanceOf(address) view returns (uint256)',
+  'function allowance(address,address) view returns (uint256)',
+  'function approve(address,uint256) returns (bool)',
+] as const
+
+interface TpHeldRow {
+  id: string
+  agentId: string
+  userId: string
+  tokenAddress: string
+  initialLiquidityBnb: string | null
+  takeProfitPct: number
+  metadata: string | null
+}
+
+export interface TakeProfitSweepResult {
+  scanned: number
+  evaluated: number
+  sold: number
+  errors: number
+}
+
+let lastTpSweepStatus: TakeProfitSweepResult | null = null
+export function getLastFourMemeTakeProfitSweepStatus(): TakeProfitSweepResult | null {
+  return lastTpSweepStatus
+}
+
+async function markPositionSold(
+  rowId: string,
+  proceedsBnb: string,
+  txHash: string,
+): Promise<void> {
+  await db.$executeRawUnsafe(
+    `UPDATE "token_launches"
+        SET "sold_at" = now(),
+            "sold_proceeds_bnb" = $1,
+            "sold_tx_hash" = $2
+      WHERE "id" = $3`,
+    proceedsBnb,
+    txHash,
+    rowId,
+  )
+}
+
+async function markPositionPermanentlyClosed(rowId: string, reason: string): Promise<void> {
+  // Stamp sold_at with a sentinel proceeds value so the sweep gate
+  // skips this row forever. Used when sellTokenForBnb refuses (V1,
+  // graduated-to-pancake, etc.) — those bags are no longer tradeable
+  // through the bonding-curve sell path and must be handled manually.
+  await db.$executeRawUnsafe(
+    `UPDATE "token_launches"
+        SET "sold_at" = now(),
+            "sold_proceeds_bnb" = '0',
+            "sold_tx_hash" = $1
+      WHERE "id" = $2`,
+    `[skipped: ${reason.slice(0, 80)}]`,
+    rowId,
+  )
+}
+
+export async function tickAllFourMemeTakeProfit(): Promise<TakeProfitSweepResult> {
+  const result: TakeProfitSweepResult = { scanned: 0, evaluated: 0, sold: 0, errors: 0 }
+  if (!isFourMemeEnabled()) {
+    lastTpSweepStatus = result
+    return result
+  }
+
+  let rows: TpHeldRow[] = []
+  try {
+    rows = await db.$queryRawUnsafe<TpHeldRow[]>(
+      // sold_tx_hash IS NULL filter ensures we don't even consider a
+      // row another worker has already CAS-claimed (see the per-row
+      // claim UPDATE below). Without it we'd waste an RPC roundtrip
+      // per tick on rows we couldn't act on anyway.
+      `SELECT t."id", t."agent_id" AS "agentId", t."user_id" AS "userId",
+              t."token_address" AS "tokenAddress",
+              t."initial_liquidity_bnb" AS "initialLiquidityBnb",
+              a."fourMemeLaunchTakeProfitPct" AS "takeProfitPct",
+              t."metadata"
+         FROM "token_launches" t
+         JOIN "Agent" a ON a."id" = t."agent_id"
+        WHERE t."status" = 'launched'
+          AND t."sold_at" IS NULL
+          AND t."sold_tx_hash" IS NULL
+          AND t."token_address" IS NOT NULL
+          AND t."initial_liquidity_bnb" IS NOT NULL
+          AND a."fourMemeLaunchTakeProfitPct" IS NOT NULL
+          AND a."fourMemeLaunchTakeProfitPct" > 0
+          AND a."isActive" = true
+          AND a."isPaused" = false`,
+    )
+  } catch (err) {
+    console.warn('[fourMemeTakeProfit] query failed:', (err as Error).message)
+    lastTpSweepStatus = { ...result, errors: 1 }
+    return lastTpSweepStatus
+  }
+
+  result.scanned = rows.length
+  if (rows.length === 0) {
+    lastTpSweepStatus = result
+    return result
+  }
+
+  const provider = buildBscProvider()
+
+  for (const row of rows) {
+    try {
+      const tokenAddr = ethers.getAddress(row.tokenAddress)
+      const tp = Number(row.takeProfitPct)
+      const entryBnb = Number(row.initialLiquidityBnb)
+      if (!Number.isFinite(tp) || tp <= 0 || !Number.isFinite(entryBnb) || entryBnb <= 0) {
+        continue
+      }
+
+      // Load the dev wallet (same secp256k1 keypair used at launch).
+      let creds: { address: string; privateKey: string }
+      try {
+        creds = await loadUserBscPrivateKey(row.userId)
+      } catch (e) {
+        console.warn(`[fourMemeTakeProfit] ${row.id}: load PK failed:`, (e as Error).message)
+        continue
+      }
+
+      const erc20 = new ethers.Contract(tokenAddr, ERC20_TP_ABI, provider)
+      const balanceWei: bigint = await erc20.balanceOf(creds.address)
+      if (balanceWei <= 0n) {
+        // Bag is empty — user already sold manually. Close the row so
+        // we stop scanning it every minute.
+        await markPositionPermanentlyClosed(row.id, 'balance_zero')
+        continue
+      }
+
+      // Quote the full sale. This also tells us which TokenManager
+      // needs to be approved before we can call sellTokenForBnb.
+      let quote: { tokenManager: string; fundsWei: bigint }
+      try {
+        const q = await quoteSell(tokenAddr, balanceWei)
+        quote = { tokenManager: q.tokenManager, fundsWei: q.fundsWei }
+      } catch (e) {
+        // Most common reason: token graduated to PancakeSwap → curve
+        // sells refused. Don't keep banging the RPC for this row.
+        const msg = (e as Error).message
+        console.warn(`[fourMemeTakeProfit] ${row.id}: quoteSell failed:`, msg)
+        if (/graduated|GRADUATED/.test(msg)) {
+          await markPositionPermanentlyClosed(row.id, 'graduated')
+        }
+        result.errors += 1
+        continue
+      }
+
+      result.evaluated += 1
+
+      // Profit gate. proceedsBnb / entryBnb - 1 ≥ tp/100  ⇔
+      // proceedsBnb ≥ entryBnb * (1 + tp/100).
+      const proceedsBnb = Number(ethers.formatEther(quote.fundsWei))
+      const targetBnb = entryBnb * (1 + tp / 100)
+      const profitPct = ((proceedsBnb / entryBnb) - 1) * 100
+
+      // Brain-feed line every tick — judges see live HOLD/SELL
+      // reasoning, same shape as the launch sweep's logs.
+      try {
+        const status = proceedsBnb >= targetBnb ? 'TP_HIT' : 'HOLD'
+        await db.$executeRawUnsafe(
+          `INSERT INTO "AgentLog" ("id","agentId","userId","exchange","level","message","createdAt")
+           VALUES ($1,$2,$3,'four_meme','info',$4,now())`,
+          `tplog_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+          row.agentId,
+          row.userId,
+          `[TP ${status}] ${tokenAddr.slice(0, 10)}… entry=${entryBnb.toFixed(5)} BNB · ` +
+            `quote=${proceedsBnb.toFixed(5)} BNB · ` +
+            `pnl=${profitPct >= 0 ? '+' : ''}${profitPct.toFixed(1)}% · ` +
+            `tp=+${tp}% (target ${targetBnb.toFixed(5)} BNB)`,
+        )
+      } catch (e) {
+        console.warn('[fourMemeTakeProfit] log insert failed:', (e as Error).message)
+      }
+
+      if (proceedsBnb < targetBnb) {
+        continue
+      }
+
+      // ── TP hit ── claim the row atomically BEFORE any on-chain
+      // action. sold_tx_hash doubles as a CAS lock: the conditional
+      // UPDATE only succeeds if the row is still un-sold AND
+      // un-claimed. If RETURNING comes back empty, another worker
+      // has already started selling this bag — bail out cleanly.
+      const claimSentinel = `__claim_${Date.now()}_${Math.random().toString(36).slice(2, 6)}__`
+      const claimRows = await db.$queryRawUnsafe<Array<{ id: string }>>(
+        `UPDATE "token_launches"
+            SET "sold_tx_hash" = $1
+          WHERE "id" = $2
+            AND "sold_at" IS NULL
+            AND "sold_tx_hash" IS NULL
+        RETURNING "id"`,
+        claimSentinel,
+        row.id,
+      )
+      if (claimRows.length === 0) {
+        // Lost the race — another worker has the row. Don't double-sell.
+        continue
+      }
+
+      // Helper to release the claim on retryable failures so the next
+      // tick can try again. On terminal failures we instead let
+      // markPositionPermanentlyClosed overwrite sold_tx_hash with the
+      // skip-reason sentinel (which also stamps sold_at), which is
+      // permanent.
+      const releaseClaim = async () => {
+        try {
+          await db.$executeRawUnsafe(
+            `UPDATE "token_launches"
+                SET "sold_tx_hash" = NULL
+              WHERE "id" = $1 AND "sold_tx_hash" = $2`,
+            row.id,
+            claimSentinel,
+          )
+        } catch (e) {
+          console.warn(`[fourMemeTakeProfit] ${row.id}: release claim failed:`, (e as Error).message)
+        }
+      }
+
+      const signer = new ethers.Wallet(creds.privateKey, provider)
+      const erc20Signed = new ethers.Contract(tokenAddr, ERC20_TP_ABI, signer)
+      const tmAddr = ethers.getAddress(quote.tokenManager)
+      const currentAllowance: bigint = await erc20Signed.allowance(creds.address, tmAddr)
+      if (currentAllowance < balanceWei) {
+        try {
+          const aTx = await erc20Signed.approve(tmAddr, ethers.MaxUint256)
+          await aTx.wait()
+        } catch (e) {
+          console.warn(`[fourMemeTakeProfit] ${row.id}: approve failed:`, (e as Error).message)
+          await releaseClaim()
+          result.errors += 1
+          continue
+        }
+      }
+
+      let sellRes: Awaited<ReturnType<typeof sellTokenForBnb>>
+      try {
+        sellRes = await sellTokenForBnb(creds.privateKey, tokenAddr, balanceWei)
+      } catch (e) {
+        const msg = (e as Error).message
+        console.warn(`[fourMemeTakeProfit] ${row.id}: sell failed:`, msg)
+        if (/V1_SELL_UNSAFE|GRADUATED/.test(msg)) {
+          // Terminal — markPositionPermanentlyClosed overwrites the
+          // claim sentinel with the skip reason and stamps sold_at,
+          // so no separate release is needed.
+          await markPositionPermanentlyClosed(row.id, msg.slice(0, 40))
+        } else {
+          // Retryable RPC/nonce/etc. error — release the claim so the
+          // next tick can try again.
+          await releaseClaim()
+        }
+        result.errors += 1
+        continue
+      }
+
+      const proceedsActualBnb = ethers.formatEther(sellRes.estimatedBnbWei)
+      await markPositionSold(row.id, proceedsActualBnb, sellRes.txHash)
+      result.sold += 1
+
+      // Fire-and-forget brain-feed receipt.
+      try {
+        await db.$executeRawUnsafe(
+          `INSERT INTO "AgentLog" ("id","agentId","userId","exchange","level","message","createdAt")
+           VALUES ($1,$2,$3,'four_meme','info',$4,now())`,
+          `tpsold_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+          row.agentId,
+          row.userId,
+          `[TP SOLD] ${tokenAddr.slice(0, 10)}… ` +
+            `entry=${entryBnb.toFixed(5)} BNB → ` +
+            `proceeds=${Number(proceedsActualBnb).toFixed(5)} BNB · ` +
+            `pnl=${(((Number(proceedsActualBnb) / entryBnb) - 1) * 100).toFixed(1)}% · ` +
+            `tx=${sellRes.txHash.slice(0, 12)}…`,
+        )
+      } catch {
+        /* non-fatal */
+      }
+    } catch (e) {
+      result.errors += 1
+      console.error(`[fourMemeTakeProfit] ${row.id}: unexpected:`, (e as Error).message)
+    }
+  }
+
+  lastTpSweepStatus = result
+  return result
 }

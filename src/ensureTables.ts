@@ -161,6 +161,26 @@ export async function ensureNewTables() {
   // controls how often the launch agent re-scans the 4 narrative
   // sources and fires an LLM decision.
   await run(`ALTER TABLE "Agent" ADD COLUMN IF NOT EXISTS "fourMemeLaunchIntervalMinutes" INTEGER`)
+  // Demo Day — user-configured initial dev buy size in BNB. Stored as
+  // TEXT to avoid float drift on the wire (parsed via ethers.parseEther
+  // server-side). NULL = let the LLM propose (clamped to
+  // MAX_INITIAL_BUY_BNB). When set, this OVERRIDES the LLM proposal.
+  await run(`ALTER TABLE "Agent" ADD COLUMN IF NOT EXISTS "fourMemeLaunchInitialBuyBnb" TEXT`)
+  // Demo Day — auto-sell take-profit threshold in percent (1..10000,
+  // typical 100..500). NULL = leave it to the user (no autonomous
+  // exits ever). When set, the take-profit sweep liquidates the entire
+  // dev bag in one tx the moment quoteSell proceeds clear the
+  // threshold above the original initial_liquidity_bnb. There is
+  // intentionally NO stop-loss: a dev who fired the first buy on the
+  // bonding curve is at the lowest cost basis on Earth — there's no
+  // "below entry" exit that makes economic sense.
+  await run(`ALTER TABLE "Agent" ADD COLUMN IF NOT EXISTS "fourMemeLaunchTakeProfitPct" INTEGER`)
+  // The token_launches ALTERs for autonomous-TP tracking live AFTER
+  // the CREATE TABLE IF NOT EXISTS block below — see the comment that
+  // immediately follows the existing user_id/agent_id ALTERs. We
+  // intentionally do NOT touch token_launches here because that table
+  // is created lower down and ALTERing a not-yet-created relation
+  // would throw 42P01 on a fresh deployment.
   // token_launches — persistent record of every Module 3 launch
   // attempt. The table already exists in production from the
   // marketing-site era with snake_cased columns and an
@@ -202,6 +222,20 @@ export async function ensureNewTables() {
   await run(`CREATE INDEX IF NOT EXISTS "token_launches_user_id_idx" ON "token_launches" ("user_id")`)
   await run(`CREATE INDEX IF NOT EXISTS "token_launches_creator_wallet_idx" ON "token_launches" ("creator_wallet")`)
   await run(`CREATE INDEX IF NOT EXISTS "token_launches_agent_id_idx" ON "token_launches" ("agent_id")`)
+  // Demo Day — autonomous take-profit exit tracking. Three columns:
+  //   • sold_at — non-NULL means the position is closed (success OR
+  //     a permanent skip like graduated/V1). Primary scan-gate.
+  //   • sold_proceeds_bnb — BNB received (decimal text); '0' on a
+  //     skipped close so the brain feed can render it cleanly.
+  //   • sold_tx_hash — doubles as an atomic CLAIM token. The TP sweep
+  //     compare-and-sets this to a sentinel "__claim_<ts>__" BEFORE
+  //     any on-chain call; a second worker hitting the same row sees
+  //     the non-NULL value and skips. After success it's overwritten
+  //     with the real tx hash; on a retryable failure it's reset to
+  //     NULL so the next tick can retry.
+  await run(`ALTER TABLE "token_launches" ADD COLUMN IF NOT EXISTS "sold_at" TIMESTAMPTZ`)
+  await run(`ALTER TABLE "token_launches" ADD COLUMN IF NOT EXISTS "sold_proceeds_bnb" TEXT`)
+  await run(`ALTER TABLE "token_launches" ADD COLUMN IF NOT EXISTS "sold_tx_hash" TEXT`)
   // Phase 4 (2026-05-03): include 'polymarket' in the auto-expansion so
   // every agent (existing AND brand-new — agentCreation now stamps
   // venuesAutoExpanded=true to opt out of this UPDATE entirely, but

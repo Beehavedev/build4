@@ -221,6 +221,32 @@ export function setAgentFourMemeLaunchInterval(agentId: string, minutes: number 
   );
 }
 
+// Demo Day — set per-agent initial dev-buy in BNB (decimal string, 0 <
+// x ≤ 0.05). Pass null to let the LLM choose (clamped to 0.05).
+export function setAgentFourMemeLaunchInitialBuy(agentId: string, bnb: string | null) {
+  return apiFetch<{ ok: true; agentId: string; bnb: string | null }>(
+    `/api/agents/${agentId}/four-meme-launch-initial-buy`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bnb }),
+    },
+  );
+}
+
+// Demo Day — set per-agent auto-sell threshold in percent profit
+// (1..10000). Pass null for manual management (no autonomous exit).
+export function setAgentFourMemeLaunchTakeProfit(agentId: string, pct: number | null) {
+  return apiFetch<{ ok: true; agentId: string; pct: number | null }>(
+    `/api/agents/${agentId}/four-meme-launch-take-profit`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pct }),
+    },
+  );
+}
+
 export function getTelegramUser() {
   const tg = window.Telegram?.WebApp;
   return tg?.initDataUnsafe?.user || null;

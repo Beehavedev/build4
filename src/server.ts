@@ -156,6 +156,8 @@ app.get('/api/me/agents', requireTgUser, async (req, res) => {
     let approvalById = new Map<string, boolean>()
     let launchEnabledById = new Map<string, boolean>()
     let intervalById = new Map<string, number | null>()
+    let initialBuyById = new Map<string, string | null>()
+    let takeProfitById = new Map<string, number | null>()
     if (agents.length > 0) {
       try {
         const ids = agents.map(a => a.id)
@@ -165,11 +167,15 @@ app.get('/api/me/agents', requireTgUser, async (req, res) => {
           requiresApproval: boolean | null
           launchEnabled: boolean | null
           intervalMinutes: number | null
+          initialBuyBnb: string | null
+          takeProfitPct: number | null
         }>>(
           `SELECT "id",
                   "fourMemeLaunchRequiresApproval" AS "requiresApproval",
                   "fourMemeLaunchEnabled"          AS "launchEnabled",
-                  "fourMemeLaunchIntervalMinutes"  AS "intervalMinutes"
+                  "fourMemeLaunchIntervalMinutes"  AS "intervalMinutes",
+                  "fourMemeLaunchInitialBuyBnb"    AS "initialBuyBnb",
+                  "fourMemeLaunchTakeProfitPct"    AS "takeProfitPct"
              FROM "Agent" WHERE "id" IN (${placeholders})`,
           ...ids,
         )
@@ -179,6 +185,14 @@ app.get('/api/me/agents', requireTgUser, async (req, res) => {
           intervalById.set(
             r.id,
             Number.isFinite(Number(r.intervalMinutes)) ? Number(r.intervalMinutes) : null,
+          )
+          initialBuyById.set(
+            r.id,
+            typeof r.initialBuyBnb === 'string' && r.initialBuyBnb.trim() !== '' ? r.initialBuyBnb : null,
+          )
+          takeProfitById.set(
+            r.id,
+            Number.isFinite(Number(r.takeProfitPct)) ? Number(r.takeProfitPct) : null,
           )
         }
       } catch (e: any) {
@@ -190,6 +204,8 @@ app.get('/api/me/agents', requireTgUser, async (req, res) => {
       fourMemeLaunchRequiresApproval: approvalById.get(a.id) ?? false,
       fourMemeLaunchEnabled: launchEnabledById.get(a.id) ?? (a as any).fourMemeLaunchEnabled ?? false,
       fourMemeLaunchIntervalMinutes: intervalById.has(a.id) ? intervalById.get(a.id) : null,
+      fourMemeLaunchInitialBuyBnb: initialBuyById.has(a.id) ? initialBuyById.get(a.id) : null,
+      fourMemeLaunchTakeProfitPct: takeProfitById.has(a.id) ? takeProfitById.get(a.id) : null,
     })))
   } catch (err) {
     console.error('[API] /me/agents failed:', err)
@@ -5786,6 +5802,84 @@ app.patch('/api/agents/:id/four-meme-launch-interval', requireTgUser, async (req
       agentId,
     )
     res.json({ ok: true, agentId, minutes })
+  } catch (err: any) {
+    res.status(400).json({ ok: false, error: err?.message ?? String(err) })
+  }
+})
+
+// Demo Day — set per-agent initial dev-buy size in BNB. Decimal string,
+// 0 < value ≤ 0.05 (MAX_INITIAL_BUY_BNB). NULL/empty falls back to
+// "let the LLM propose, capped at 0.05 BNB". When set, the launch
+// agent OVERRIDES the LLM's proposed buy with this exact amount.
+app.patch('/api/agents/:id/four-meme-launch-initial-buy', requireTgUser, async (req, res) => {
+  try {
+    const user = (req as any).user
+    if (!user?.id) return res.status(401).json({ ok: false, error: 'unauthorized' })
+    const agentId = String(req.params.id)
+    const raw = req.body?.bnb
+    let bnb: string | null = null
+    if (raw === null || raw === undefined || raw === '') {
+      bnb = null
+    } else {
+      const s = String(raw).trim()
+      const n = Number(s)
+      if (!Number.isFinite(n) || n <= 0 || n > 0.05) {
+        return res.status(400).json({ ok: false, error: 'bnb must be > 0 and ≤ 0.05, or null' })
+      }
+      // Re-stringify to canonical form (max 6 decimals matches LaunchParams).
+      bnb = n.toFixed(6).replace(/\.?0+$/, '')
+      if (bnb === '' || bnb === '0') bnb = '0.000001'
+    }
+    const owner = await db.$queryRawUnsafe<Array<{ userId: string }>>(
+      `SELECT "userId" FROM "Agent" WHERE "id" = $1 LIMIT 1`,
+      agentId,
+    )
+    if (owner.length === 0) return res.status(404).json({ ok: false, error: 'agent not found' })
+    if (owner[0].userId !== user.id) return res.status(403).json({ ok: false, error: 'forbidden' })
+    await db.$executeRawUnsafe(
+      `UPDATE "Agent" SET "fourMemeLaunchInitialBuyBnb" = $1 WHERE "id" = $2`,
+      bnb,
+      agentId,
+    )
+    res.json({ ok: true, agentId, bnb })
+  } catch (err: any) {
+    res.status(400).json({ ok: false, error: err?.message ?? String(err) })
+  }
+})
+
+// Demo Day — set per-agent auto-sell take-profit threshold in percent
+// (1..10000). NULL = manual management (no autonomous exit ever).
+// When set, the TP sweep liquidates the entire dev bag the moment
+// curve sell-quote ≥ entry × (1 + pct/100). No stop-loss because a
+// dev's first buy IS the bonding-curve floor.
+app.patch('/api/agents/:id/four-meme-launch-take-profit', requireTgUser, async (req, res) => {
+  try {
+    const user = (req as any).user
+    if (!user?.id) return res.status(401).json({ ok: false, error: 'unauthorized' })
+    const agentId = String(req.params.id)
+    const raw = req.body?.pct
+    let pct: number | null = null
+    if (raw === null || raw === undefined || raw === '') {
+      pct = null
+    } else {
+      const n = Number(raw)
+      if (!Number.isFinite(n) || !Number.isInteger(n) || n < 1 || n > 10000) {
+        return res.status(400).json({ ok: false, error: 'pct must be an integer 1..10000 or null' })
+      }
+      pct = n
+    }
+    const owner = await db.$queryRawUnsafe<Array<{ userId: string }>>(
+      `SELECT "userId" FROM "Agent" WHERE "id" = $1 LIMIT 1`,
+      agentId,
+    )
+    if (owner.length === 0) return res.status(404).json({ ok: false, error: 'agent not found' })
+    if (owner[0].userId !== user.id) return res.status(403).json({ ok: false, error: 'forbidden' })
+    await db.$executeRawUnsafe(
+      `UPDATE "Agent" SET "fourMemeLaunchTakeProfitPct" = $1 WHERE "id" = $2`,
+      pct,
+      agentId,
+    )
+    res.json({ ok: true, agentId, pct })
   } catch (err: any) {
     res.status(400).json({ ok: false, error: err?.message ?? String(err) })
   }
