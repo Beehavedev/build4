@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { apiFetch, deleteAgent, getMyFeed, setAgentFourMemeApproval, setAgentFourMemeLaunchEnabled, updateAgentSettings, type FeedEntry } from '../api'
+import { apiFetch, deleteAgent, getMyFeed, setAgentFourMemeApproval, setAgentFourMemeLaunchEnabled, setAgentFourMemeLaunchInterval, updateAgentSettings, type FeedEntry } from '../api'
 import { TradingChart } from '../components/TradingChart'
 import { MarketTicker } from '../components/MarketTicker'
 
@@ -425,6 +425,45 @@ export default function AgentStudio(_props: AgentStudioProps) {
       setAgents(prev)
     } finally {
       setLaunchEnabledSaving(s => { const n = { ...s }; delete n[agentId]; return n })
+    }
+  }
+
+  // Demo Day — per-agent scan cadence in minutes (1..60). Local draft
+  // so the input is editable without firing a PATCH on every keystroke;
+  // we commit on blur. Same lock pattern as the toggles.
+  const [intervalDraft, setIntervalDraft] = useState<Record<string, string>>({})
+  const [intervalSaving, setIntervalSaving] = useState<Record<string, boolean>>({})
+  const commitFourMemeInterval = async (agentId: string, raw: string) => {
+    const trimmed = raw.trim()
+    const current = agents.find(a => a.id === agentId)
+    if (!current) { setIntervalDraft(d => { const n = { ...d }; delete n[agentId]; return n }); return }
+    let minutes: number | null
+    if (trimmed === '') {
+      minutes = null
+    } else {
+      const n = Number(trimmed)
+      if (!Number.isFinite(n) || !Number.isInteger(n) || n < 1 || n > 60) {
+        // Invalid — revert draft, no PATCH.
+        setIntervalDraft(d => { const x = { ...d }; delete x[agentId]; return x })
+        return
+      }
+      minutes = n
+    }
+    const currentVal = (current as any).fourMemeLaunchIntervalMinutes ?? null
+    if (minutes === currentVal) {
+      setIntervalDraft(d => { const x = { ...d }; delete x[agentId]; return x })
+      return
+    }
+    const prev = agents
+    setIntervalSaving(s => ({ ...s, [agentId]: true }))
+    setAgents(curr => curr.map(a => a.id === agentId ? { ...a, fourMemeLaunchIntervalMinutes: minutes } as any : a))
+    try {
+      await setAgentFourMemeLaunchInterval(agentId, minutes)
+    } catch {
+      setAgents(prev)
+    } finally {
+      setIntervalSaving(s => { const n = { ...s }; delete n[agentId]; return n })
+      setIntervalDraft(d => { const x = { ...d }; delete x[agentId]; return x })
     }
   }
 
@@ -1024,29 +1063,71 @@ export default function AgentStudio(_props: AgentStudioProps) {
                     : 'Off — agent will not consider launching any tokens.'}
                 </div>
               </div>
-              <button
-                role="switch"
-                aria-checked={launchEnabled}
-                aria-label="Enable autonomous four.meme launches"
-                disabled={saving}
-                onClick={() => toggleFourMemeLaunchEnabled(agent.id, !launchEnabled)}
-                data-testid={`toggle-agent-${agent.id}-launch-enabled`}
-                style={{
-                  flex: '0 0 auto',
-                  width: 40, height: 22, borderRadius: 999,
-                  border: 'none', cursor: saving ? 'wait' : 'pointer',
-                  background: launchEnabled ? '#10b981' : '#374151',
-                  position: 'relative', padding: 0,
-                  opacity: saving ? 0.6 : 1,
-                  transition: 'background 0.15s',
-                }}
-              >
-                <span style={{
-                  position: 'absolute', top: 2, left: launchEnabled ? 20 : 2,
-                  width: 18, height: 18, borderRadius: '50%',
-                  background: '#fff', transition: 'left 0.15s',
-                }} />
-              </button>
+              <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+                {/* Demo Day — scan cadence input. Greyed out when the
+                    auto-launch toggle is OFF since cadence is meaningless
+                    without an enabled agent. Default placeholder shows
+                    the server-side fallback (1 min) so users know what
+                    they get if they leave it blank. */}
+                {(() => {
+                  const persisted = (agent as any).fourMemeLaunchIntervalMinutes ?? null
+                  const draft = intervalDraft[agent.id]
+                  const value = draft !== undefined ? draft : (persisted == null ? '' : String(persisted))
+                  const intervalBusy = !!intervalSaving[agent.id]
+                  return (
+                    <label style={{
+                      display: 'flex', alignItems: 'center', gap: 4,
+                      fontSize: 10, color: launchEnabled ? '#94a3b8' : '#475569',
+                      opacity: launchEnabled ? 1 : 0.5,
+                    }}>
+                      <span>every</span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={60}
+                        step={1}
+                        placeholder="1"
+                        value={value}
+                        disabled={!launchEnabled || intervalBusy}
+                        onChange={(e) => setIntervalDraft(d => ({ ...d, [agent.id]: e.target.value }))}
+                        onBlur={(e) => commitFourMemeInterval(agent.id, e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+                        data-testid={`input-agent-${agent.id}-launch-interval`}
+                        style={{
+                          width: 38, height: 22, borderRadius: 6,
+                          border: '1px solid #334155',
+                          background: launchEnabled ? '#0a0a0f' : '#0a0a0f55',
+                          color: '#e2e8f0', textAlign: 'center', fontSize: 11,
+                          padding: '0 4px',
+                        }}
+                      />
+                      <span>min</span>
+                    </label>
+                  )
+                })()}
+                <button
+                  role="switch"
+                  aria-checked={launchEnabled}
+                  aria-label="Enable autonomous four.meme launches"
+                  disabled={saving}
+                  onClick={() => toggleFourMemeLaunchEnabled(agent.id, !launchEnabled)}
+                  data-testid={`toggle-agent-${agent.id}-launch-enabled`}
+                  style={{
+                    width: 40, height: 22, borderRadius: 999,
+                    border: 'none', cursor: saving ? 'wait' : 'pointer',
+                    background: launchEnabled ? '#10b981' : '#374151',
+                    position: 'relative', padding: 0,
+                    opacity: saving ? 0.6 : 1,
+                    transition: 'background 0.15s',
+                  }}
+                >
+                  <span style={{
+                    position: 'absolute', top: 2, left: launchEnabled ? 20 : 2,
+                    width: 18, height: 18, borderRadius: '50%',
+                    background: '#fff', transition: 'left 0.15s',
+                  }} />
+                </button>
+              </div>
             </div>
           )
         })()}

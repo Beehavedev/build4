@@ -156,6 +156,11 @@ export async function ensureNewTables() {
   // Telegram or the mini-app. Default false preserves existing
   // autonomous behaviour for every existing agent.
   await run(`ALTER TABLE "Agent" ADD COLUMN IF NOT EXISTS "fourMemeLaunchRequiresApproval" BOOLEAN DEFAULT false`)
+  // Demo Day — per-agent scan cadence in minutes (1..60). NULL = use the
+  // hardcoded MIN_TICK_INTERVAL_MS floor (60s). Set via mini-app pill;
+  // controls how often the launch agent re-scans the 4 narrative
+  // sources and fires an LLM decision.
+  await run(`ALTER TABLE "Agent" ADD COLUMN IF NOT EXISTS "fourMemeLaunchIntervalMinutes" INTEGER`)
   // token_launches — persistent record of every Module 3 launch
   // attempt. The table already exists in production from the
   // marketing-site era with snake_cased columns and an

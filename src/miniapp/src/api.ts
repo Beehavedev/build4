@@ -208,6 +208,19 @@ export function setAgentFourMemeLaunchEnabled(agentId: string, enabled: boolean)
   );
 }
 
+// Demo Day — set per-agent four.meme scan cadence in minutes (1..60),
+// or pass null to fall back to the server-side default.
+export function setAgentFourMemeLaunchInterval(agentId: string, minutes: number | null) {
+  return apiFetch<{ ok: true; agentId: string; minutes: number | null }>(
+    `/api/agents/${agentId}/four-meme-launch-interval`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ minutes }),
+    },
+  );
+}
+
 export function getTelegramUser() {
   const tg = window.Telegram?.WebApp;
   return tg?.initDataUnsafe?.user || null;

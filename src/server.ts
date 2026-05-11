@@ -148,27 +148,48 @@ app.get('/api/me/agents', requireTgUser, async (req, res) => {
       where: { userId: user.id },
       orderBy: { createdAt: 'desc' }
     })
-    // Backfill `fourMemeLaunchRequiresApproval` via raw SQL — the column
-    // is added by ensureTables but not in the deployed Prisma schema, so
-    // a typed findMany() never SELECTs it. Without this the mini-app
-    // toggle has no read source and would always render OFF on reload.
+    // Backfill four.meme columns via raw SQL — these columns are added
+    // by ensureTables but not all are in the deployed Prisma schema, so
+    // a typed findMany() may not SELECT them. Without this the mini-app
+    // toggle + interval input have no read source and would visibly
+    // reset on reload even though the PATCH writes succeed.
     let approvalById = new Map<string, boolean>()
+    let launchEnabledById = new Map<string, boolean>()
+    let intervalById = new Map<string, number | null>()
     if (agents.length > 0) {
       try {
         const ids = agents.map(a => a.id)
         const placeholders = ids.map((_, i) => `$${i + 1}`).join(', ')
-        const rows = await db.$queryRawUnsafe<Array<{ id: string; v: boolean | null }>>(
-          `SELECT "id", "fourMemeLaunchRequiresApproval" AS "v" FROM "Agent" WHERE "id" IN (${placeholders})`,
+        const rows = await db.$queryRawUnsafe<Array<{
+          id: string
+          requiresApproval: boolean | null
+          launchEnabled: boolean | null
+          intervalMinutes: number | null
+        }>>(
+          `SELECT "id",
+                  "fourMemeLaunchRequiresApproval" AS "requiresApproval",
+                  "fourMemeLaunchEnabled"          AS "launchEnabled",
+                  "fourMemeLaunchIntervalMinutes"  AS "intervalMinutes"
+             FROM "Agent" WHERE "id" IN (${placeholders})`,
           ...ids,
         )
-        for (const r of rows) approvalById.set(r.id, !!r.v)
+        for (const r of rows) {
+          approvalById.set(r.id, !!r.requiresApproval)
+          launchEnabledById.set(r.id, !!r.launchEnabled)
+          intervalById.set(
+            r.id,
+            Number.isFinite(Number(r.intervalMinutes)) ? Number(r.intervalMinutes) : null,
+          )
+        }
       } catch (e: any) {
-        console.warn('[API] /me/agents fourMeme approval backfill failed:', e?.message)
+        console.warn('[API] /me/agents fourMeme columns backfill failed:', e?.message)
       }
     }
     res.json(agents.map(a => ({
       ...a,
       fourMemeLaunchRequiresApproval: approvalById.get(a.id) ?? false,
+      fourMemeLaunchEnabled: launchEnabledById.get(a.id) ?? (a as any).fourMemeLaunchEnabled ?? false,
+      fourMemeLaunchIntervalMinutes: intervalById.has(a.id) ? intervalById.get(a.id) : null,
     })))
   } catch (err) {
     console.error('[API] /me/agents failed:', err)
@@ -5734,6 +5755,42 @@ app.post('/api/fourmeme/retry', requireTgUser, async (req, res) => {
 // to the `fourMemeLaunchEnabled` column. When ON the agent enters
 // the 60s tick loop and writes a brain-feed line every cycle (LAUNCH
 // or SKIP with a verbose reason), so judges can watch it think live.
+// Demo Day — set per-agent four.meme scan cadence in minutes (1..60).
+// NULL or out-of-range falls back to the hardcoded MIN_TICK_INTERVAL_MS
+// floor in src/agents/fourMemeLaunchAgent.ts.
+app.patch('/api/agents/:id/four-meme-launch-interval', requireTgUser, async (req, res) => {
+  try {
+    const user = (req as any).user
+    if (!user?.id) return res.status(401).json({ ok: false, error: 'unauthorized' })
+    const agentId = String(req.params.id)
+    const raw = req.body?.minutes
+    let minutes: number | null = null
+    if (raw === null || raw === undefined || raw === '') {
+      minutes = null
+    } else {
+      const n = Number(raw)
+      if (!Number.isFinite(n) || !Number.isInteger(n) || n < 1 || n > 60) {
+        return res.status(400).json({ ok: false, error: 'minutes must be an integer 1..60 or null' })
+      }
+      minutes = n
+    }
+    const owner = await db.$queryRawUnsafe<Array<{ userId: string }>>(
+      `SELECT "userId" FROM "Agent" WHERE "id" = $1 LIMIT 1`,
+      agentId,
+    )
+    if (owner.length === 0) return res.status(404).json({ ok: false, error: 'agent not found' })
+    if (owner[0].userId !== user.id) return res.status(403).json({ ok: false, error: 'forbidden' })
+    await db.$executeRawUnsafe(
+      `UPDATE "Agent" SET "fourMemeLaunchIntervalMinutes" = $1 WHERE "id" = $2`,
+      minutes,
+      agentId,
+    )
+    res.json({ ok: true, agentId, minutes })
+  } catch (err: any) {
+    res.status(400).json({ ok: false, error: err?.message ?? String(err) })
+  }
+})
+
 app.patch('/api/agents/:id/four-meme-launch-enabled', requireTgUser, async (req, res) => {
   try {
     const user = (req as any).user
