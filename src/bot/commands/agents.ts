@@ -531,8 +531,12 @@ export function registerAgents(bot: Bot) {
   // edit feels instant; otherwise the cooldown above gates it.
   const buildMyAgentsView = async (
     user: any,
-    opts: { skipSelfHeal?: boolean } = {},
+    opts: { skipSelfHeal?: boolean; forceSelfHeal?: boolean } = {},
   ): Promise<{ text: string; keyboard: InlineKeyboard } | null> => {
+    // Task #76 — `forceSelfHeal` resets the per-user cooldown so the
+    // refresh button always runs a fresh on-chain sync regardless of
+    // when /myagents was last opened.
+    if (opts.forceSelfHeal) lastSelfHealAt.delete(user.id)
     let agents = await db.agent.findMany({
       where: { userId: user.id },
       orderBy: { createdAt: 'desc' }
@@ -706,7 +710,11 @@ export function registerAgents(bot: Bot) {
       ).row()
       keyboard.text(`🗑 Remove ${a.name}`, `remove_agent_confirm_${a.id}`).row()
     })
-    keyboard.text('➕ New Agent', 'create_agent')
+    keyboard.text('➕ New Agent', 'create_agent').row()
+    // Task #76 — manual on-chain refresh. Bypasses the per-user
+    // self-heal cooldown so a user who just confirmed a mint/register
+    // tx can force a fresh sync without waiting up to 60s.
+    keyboard.text('🔄 Refresh on-chain status', 'refresh_my_agents')
 
     return { text, keyboard }
   }
@@ -729,6 +737,53 @@ export function registerAgents(bot: Bot) {
   bot.callbackQuery('my_agents', async (ctx) => {
     await ctx.answerCallbackQuery()
     await showMyAgents(ctx)
+  })
+
+  // Task #76 — manual refresh button. Forces a fresh on-chain self-heal
+  // pass (bypassing the per-user cooldown) and edits the existing
+  // /myagents message in place with the synced status.
+  bot.callbackQuery('refresh_my_agents', async (ctx) => {
+    const user = (ctx as any).dbUser
+    if (!user) {
+      await ctx.answerCallbackQuery({ text: 'Sign in via /start first.', show_alert: true })
+      return
+    }
+    // Telegram only honours the first answerCallbackQuery for a given
+    // callback, so defer the toast until we know the actual outcome
+    // (synced / already-up-to-date / failed). The message edit itself
+    // is the primary user-visible feedback; the toast is just a hint.
+    let toast: { text: string; show_alert?: boolean } = { text: '✅ Synced.' }
+    try {
+      const view = await buildMyAgentsView(user, { forceSelfHeal: true })
+      if (!view) {
+        try {
+          await ctx.editMessageText('No agents yet. Create your first on-chain AI agent!', {
+            reply_markup: new InlineKeyboard().text('🤖 Create your first agent', 'create_agent'),
+          })
+        } catch {}
+      } else {
+        try {
+          await ctx.editMessageText(view.text, {
+            parse_mode: 'Markdown',
+            reply_markup: view.keyboard,
+          })
+        } catch (e: any) {
+          // Telegram throws "message is not modified" if nothing changed —
+          // surface a distinct toast so the user knows the refresh ran.
+          const msg = e?.message ?? ''
+          if (/not modified/i.test(msg)) {
+            toast = { text: '✅ Already up to date.' }
+          } else {
+            console.warn('[/myagents] refresh editMessageText failed:', msg)
+            toast = { text: 'Refresh ran but the message could not be updated.' }
+          }
+        }
+      }
+    } catch (err: any) {
+      console.error('[/myagents] refresh failed:', err)
+      toast = { text: 'Refresh failed. Try again.', show_alert: true }
+    }
+    try { await ctx.answerCallbackQuery(toast) } catch {}
   })
 
   // Task #72 — toggle the four.meme HITL launch-approval flag from the
