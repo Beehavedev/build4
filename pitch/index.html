@@ -1,0 +1,980 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=1280" />
+<title>BUILD4 — Pitch Deck</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #060906;
+    --bg-2: #0c110d;
+    --surface: #111813;
+    --border: #1e2a21;
+    --green: #2eff8b;
+    --green-dim: #1ec370;
+    --green-glow: rgba(46, 255, 139, 0.15);
+    --purple: #a78bfa;
+    --orange: #ff9f4a;
+    --cyan: #5eead4;
+    --text: #ffffff;
+    --muted: #93a097;
+    --faint: #5a6961;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    background: #000;
+    color: var(--text);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    font-feature-settings: "ss01", "cv11";
+  }
+  body { display: flex; flex-direction: column; align-items: center; padding: 24px 0; gap: 32px; }
+  .slide {
+    width: 1280px; height: 720px;
+    background: var(--bg);
+    color: var(--text);
+    position: relative;
+    overflow: hidden;
+    border-radius: 6px;
+    page-break-after: always;
+    box-shadow: 0 24px 80px rgba(0,0,0,0.6);
+  }
+  .slide::before {
+    content: "";
+    position: absolute; inset: 0;
+    background:
+      radial-gradient(1100px 600px at 90% -10%, rgba(46, 255, 139, 0.08), transparent 60%),
+      radial-gradient(900px 500px at -10% 110%, rgba(167, 139, 250, 0.06), transparent 60%);
+    pointer-events: none;
+  }
+  .slide-num {
+    position: absolute; bottom: 28px; right: 36px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px; color: var(--faint);
+    letter-spacing: 0.08em;
+  }
+  .slide-brand {
+    position: absolute; bottom: 24px; left: 36px;
+    display: flex; align-items: center; gap: 10px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px; color: var(--faint);
+    letter-spacing: 0.18em; text-transform: uppercase;
+  }
+  .slide-brand .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); box-shadow: 0 0 10px var(--green); }
+
+  .pad { padding: 48px 72px 60px; height: 100%; position: relative; z-index: 1; display: flex; flex-direction: column; }
+
+  .eyebrow {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px; letter-spacing: 0.2em; text-transform: uppercase;
+    color: var(--green);
+  }
+  h1 { font-size: 88px; line-height: 0.96; letter-spacing: -0.035em; font-weight: 800; }
+  h2 { font-size: 50px; line-height: 1.0; letter-spacing: -0.025em; font-weight: 800; }
+  h3 { font-size: 32px; line-height: 1.15; letter-spacing: -0.015em; font-weight: 700; }
+  h4 { font-size: 22px; line-height: 1.25; font-weight: 700; }
+  p { font-size: 22px; line-height: 1.45; color: var(--muted); font-weight: 400; }
+  p.lead { font-size: 26px; color: #d6e0d9; }
+  .tag {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 8px 14px; border-radius: 999px;
+    background: rgba(46, 255, 139, 0.08);
+    border: 1px solid rgba(46, 255, 139, 0.25);
+    color: var(--green);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 600;
+  }
+  .tag .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px var(--green); }
+
+  .row { display: flex; gap: 32px; }
+  .col { flex: 1; display: flex; flex-direction: column; }
+  .grow { flex: 1; }
+  .gap-sm { gap: 12px; }
+  .gap-md { gap: 20px; }
+  .gap-lg { gap: 32px; }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 16px 20px;
+  }
+  .card .icn { font-size: 28px; margin-bottom: 10px; display: block; }
+  .card h4 { color: var(--text); margin-bottom: 6px; }
+  .card p { font-size: 16px; line-height: 1.45; color: var(--muted); }
+
+  .phone-frame {
+    background: linear-gradient(180deg, #1a221c 0%, #0d130f 100%);
+    border: 1px solid var(--border);
+    border-radius: 28px;
+    padding: 14px;
+    width: 360px;
+    box-shadow:
+      0 30px 80px rgba(0,0,0,0.5),
+      0 0 0 1px rgba(46,255,139,0.05),
+      0 0 60px rgba(46,255,139,0.04);
+  }
+  .phone-frame img {
+    width: 100%; display: block; border-radius: 18px;
+  }
+
+  .callout-list { display: flex; flex-direction: column; gap: 10px; }
+  .callout {
+    display: flex; gap: 14px; align-items: flex-start;
+    padding: 11px 14px;
+    background: rgba(255,255,255,0.02);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+  }
+  .callout .num {
+    flex: none;
+    width: 30px; height: 30px; border-radius: 8px;
+    background: rgba(46,255,139,0.1);
+    color: var(--green);
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 13px;
+  }
+  .callout .body { display: flex; flex-direction: column; gap: 4px; }
+  .callout .body strong { color: var(--text); font-size: 16px; font-weight: 700; }
+  .callout .body span { color: var(--muted); font-size: 13.5px; line-height: 1.35; }
+
+  .pill-row { display: flex; gap: 10px; flex-wrap: wrap; }
+  .pill {
+    padding: 6px 12px; border-radius: 999px;
+    font-family: 'JetBrains Mono', monospace; font-size: 12px;
+    background: rgba(255,255,255,0.04); border: 1px solid var(--border);
+    color: var(--muted); letter-spacing: 0.08em; text-transform: uppercase;
+  }
+  .pill.green { color: var(--green); border-color: rgba(46,255,139,0.3); background: rgba(46,255,139,0.06); }
+  .pill.purple { color: var(--purple); border-color: rgba(167,139,250,0.3); background: rgba(167,139,250,0.06); }
+  .pill.orange { color: var(--orange); border-color: rgba(255,159,74,0.3); background: rgba(255,159,74,0.06); }
+  .pill.cyan { color: var(--cyan); border-color: rgba(94,234,212,0.3); background: rgba(94,234,212,0.06); }
+
+  .stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+  .stat {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    padding: 14px 18px;
+  }
+  .stat .label {
+    font-family: 'JetBrains Mono', monospace; font-size: 11px;
+    color: var(--faint); letter-spacing: 0.18em; text-transform: uppercase;
+  }
+  .stat .value { font-size: 26px; font-weight: 800; margin-top: 4px; letter-spacing: -0.02em; }
+  .stat .sub { font-size: 13px; color: var(--muted); margin-top: 4px; }
+
+  .ascii {
+    font-family: 'JetBrains Mono', monospace; font-size: 14px; color: var(--green);
+    line-height: 1.5; white-space: pre;
+  }
+
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 18px; }
+  .grid-4 { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 18px; }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+
+  .kbd {
+    font-family: 'JetBrains Mono', monospace;
+    background: rgba(46,255,139,0.08); color: var(--green);
+    padding: 1px 8px; border-radius: 6px; font-size: 0.85em;
+    border: 1px solid rgba(46,255,139,0.18);
+  }
+
+  /* Cover slide special */
+  .cover {
+    background:
+      radial-gradient(900px 600px at 80% 20%, rgba(46, 255, 139, 0.13), transparent 60%),
+      radial-gradient(700px 500px at 10% 80%, rgba(167, 139, 250, 0.10), transparent 60%),
+      var(--bg);
+  }
+  .cover .pad { justify-content: space-between; }
+  .cover .wordmark {
+    font-size: 220px; font-weight: 900; letter-spacing: -0.06em; line-height: 0.85;
+    background: linear-gradient(180deg, #ffffff 0%, #6fdc99 100%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    margin-top: 12px;
+  }
+  .cover .tagline { font-size: 32px; color: #d6e0d9; font-weight: 500; max-width: 720px; line-height: 1.25; }
+  .cover .meta {
+    display: flex; align-items: center; justify-content: space-between; gap: 20px;
+  }
+  .cover .meta .left { display: flex; align-items: center; gap: 14px; }
+  .cover .meta .left img { width: 48px; height: 48px; border-radius: 10px; }
+  .cover .meta .left .stack .a { font-size: 14px; color: var(--muted); font-family: 'JetBrains Mono', monospace; letter-spacing: 0.12em; text-transform: uppercase; }
+  .cover .meta .left .stack .b { font-size: 22px; font-weight: 700; }
+  .cover .meta .right { display: flex; align-items: center; gap: 14px;
+    background: rgba(46,255,139,0.06);
+    border: 1px solid rgba(46,255,139,0.25);
+    border-radius: 14px; padding: 14px 18px;
+  }
+  .cover .meta .right img { width: 44px; height: 44px; border-radius: 10px; }
+  .cover .meta .right .stack .a { font-size: 12px; color: var(--green); font-family: 'JetBrains Mono', monospace; letter-spacing: 0.18em; text-transform: uppercase; }
+  .cover .meta .right .stack .b { font-size: 18px; font-weight: 700; color: var(--text); }
+
+  /* Problem slide */
+  .problem-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 22px; margin-top: 36px; }
+  .problem-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 16px;
+    padding: 28px 26px; min-height: 260px; display: flex; flex-direction: column; gap: 12px;
+    position: relative; overflow: hidden;
+  }
+  .problem-card .glyph { font-size: 40px; }
+  .problem-card h3 { font-size: 26px; }
+  .problem-card p { font-size: 17px; line-height: 1.45; }
+
+  /* Architecture diagram */
+  .arch {
+    display: grid; grid-template-columns: 1fr 1fr 1fr;
+    gap: 14px; align-items: center;
+    margin-top: 20px;
+  }
+  .arch .box {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+    padding: 18px; text-align: center;
+  }
+  .arch .box .l { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--faint); letter-spacing: 0.16em; text-transform: uppercase; }
+  .arch .box .v { font-size: 22px; font-weight: 700; margin-top: 4px; }
+  .arch .arrow { text-align: center; color: var(--green); font-family: 'JetBrains Mono', monospace; font-size: 22px; }
+
+  /* Differentiator slide */
+  .diff-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 28px; }
+  .diff {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 16px;
+    padding: 24px; display: flex; gap: 18px; align-items: flex-start;
+  }
+  .diff .glyph {
+    width: 56px; height: 56px; border-radius: 12px; flex: none;
+    display: flex; align-items: center; justify-content: center; font-size: 26px;
+    background: rgba(46,255,139,0.08); border: 1px solid rgba(46,255,139,0.2);
+  }
+  .diff h4 { font-size: 21px; margin-bottom: 6px; }
+  .diff p { font-size: 16px; line-height: 1.45; }
+
+  /* Roadmap */
+  .roadmap { display: flex; flex-direction: column; gap: 14px; margin-top: 24px; }
+  .road-row {
+    display: grid; grid-template-columns: 180px 1fr;
+    gap: 24px; align-items: flex-start;
+    padding: 18px 22px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+  }
+  .road-row .when {
+    font-family: 'JetBrains Mono', monospace; font-size: 13px;
+    color: var(--green); letter-spacing: 0.12em; text-transform: uppercase; font-weight: 600;
+    padding-top: 4px;
+  }
+  .road-row .what strong { font-size: 19px; color: var(--text); display: block; margin-bottom: 4px; }
+  .road-row .what span { font-size: 15px; color: var(--muted); }
+
+  /* Closing slide */
+  .closing-cta {
+    margin-top: 32px;
+    padding: 32px;
+    border-radius: 18px;
+    background: linear-gradient(135deg, rgba(46,255,139,0.10), rgba(167,139,250,0.06));
+    border: 1px solid rgba(46,255,139,0.25);
+  }
+  .closing-cta h3 { font-size: 30px; margin-bottom: 8px; }
+  .closing-cta p { font-size: 18px; }
+
+  .nav {
+    position: fixed; top: 12px; left: 12px;
+    background: rgba(15,20,16,0.92); border: 1px solid var(--border);
+    border-radius: 12px; padding: 10px 14px;
+    font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--muted);
+    z-index: 100;
+  }
+  @media print {
+    body { padding: 0; gap: 0; background: #000; }
+    .nav { display: none; }
+    .slide { box-shadow: none; border-radius: 0; margin: 0; }
+  }
+</style>
+</head>
+<body>
+
+<div class="nav">BUILD4 deck · 14 slides · 1280×720</div>
+
+<script>
+  // Single-slide preview mode: ?slide=N renders only slide N at 1280x720
+  // so screenshot tooling can capture one at a time without scrolling.
+  window.addEventListener('DOMContentLoaded', () => {
+    const params = new URLSearchParams(location.search);
+    const n = parseInt(params.get('slide') || '0', 10);
+    if (!n) return;
+    const slides = document.querySelectorAll('section.slide');
+    slides.forEach((s, i) => { if (i + 1 !== n) s.style.display = 'none'; });
+    document.querySelector('.nav')?.remove();
+    document.body.style.padding = '0';
+    document.body.style.gap = '0';
+    document.body.style.background = '#000';
+  });
+</script>
+
+<!-- ─────────────── 01 · COVER ─────────────── -->
+<section class="slide cover">
+  <div class="pad">
+    <div>
+      <span class="tag"><span class="dot"></span> Demo Day · May 13 · four.meme</span>
+    </div>
+    <div>
+      <div class="wordmark">BUILD4</div>
+      <p class="tagline" style="margin-top: 28px;">
+        The AI Agent Economy on BNB Chain.<br>
+        Trade perps, predict markets, launch memes — all from one Telegram chat.
+      </p>
+    </div>
+    <div class="meta">
+      <div class="left">
+        <img src="assets/b4-logo.jpg" alt="BUILD4" />
+        <div class="stack">
+          <div class="a">build4.io</div>
+          <div class="b">@Build4Bot · Telegram</div>
+        </div>
+      </div>
+      <div class="right">
+        <img src="assets/four-logo.jpg" alt="four.meme" />
+        <div class="stack">
+          <div class="a">Native partner</div>
+          <div class="b">four.meme launches</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="slide-num">01 / 14</div>
+</section>
+
+<!-- ─────────────── 02 · THE PROBLEM ─────────────── -->
+<section class="slide">
+  <div class="pad">
+    <span class="eyebrow">The problem</span>
+    <h2 style="margin-top: 14px; max-width: 1000px;">Crypto trading is broken<br>for everyone except whales.</h2>
+    <p class="lead" style="margin-top: 18px; max-width: 900px;">
+      Retail loses because the toolchain is fragmented, exhausting, and skill-gated.
+      Whales and bots win because they're not.
+    </p>
+
+    <div class="problem-grid">
+      <div class="problem-card">
+        <div class="glyph">🪟</div>
+        <h3>Too many windows</h3>
+        <p>Perps on one DEX. Predictions on another. Meme launches on a third. Five tabs, five wallets, five places your money can disappear.</p>
+      </div>
+      <div class="problem-card">
+        <div class="glyph">⏱️</div>
+        <h3>Too much time</h3>
+        <p>Markets are 24/7 but humans aren't. The best entries happen at 3am — when retail is asleep and bots are wide awake.</p>
+      </div>
+      <div class="problem-card">
+        <div class="glyph">🧠</div>
+        <h3>Too much skill</h3>
+        <p>TA, narrative-tracking, on-chain reading, risk sizing. No retail trader has all four. Most don't have any.</p>
+      </div>
+    </div>
+  </div>
+  <div class="slide-brand"><span class="dot"></span> BUILD4 · The Agent Economy</div>
+  <div class="slide-num">02 / 14</div>
+</section>
+
+<!-- ─────────────── 03 · THE SOLUTION ─────────────── -->
+<section class="slide">
+  <div class="pad">
+    <span class="eyebrow">The solution</span>
+    <h2 style="margin-top: 14px; max-width: 1100px;">Your AI agent trades for you.<br>On every venue. From one chat.</h2>
+
+    <div class="row gap-lg" style="margin-top: 36px; flex: 1;">
+      <div class="col gap-md" style="flex: 1.1;">
+        <p class="lead" style="max-width: 560px; font-size: 21px;">
+          A Telegram mini app where you spin up an AI agent, fund it, and watch it trade four venues — with hard risk caps.
+        </p>
+        <div class="callout-list" style="margin-top: 12px;">
+          <div class="callout">
+            <div class="num">1</div>
+            <div class="body">
+              <strong>One Telegram. One USDT deposit.</strong>
+              <span>Custodial BSC wallet, AES-256 encrypted. Top up once, agents trade everywhere.</span>
+            </div>
+          </div>
+          <div class="callout">
+            <div class="num">2</div>
+            <div class="body">
+              <strong>Four venues, unified.</strong>
+              <span>Aster perps · Hyperliquid perps · 42.space predictions · Polymarket predictions.</span>
+            </div>
+          </div>
+          <div class="callout">
+            <div class="num">3</div>
+            <div class="body">
+              <strong>Every decision is shown.</strong>
+              <span>Brain feed logs why it bought, sold, held or skipped. Auditable. Copyable.</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="col" style="flex: 0.9; align-items: center; justify-content: center;">
+        <div class="phone-frame">
+          <img src="assets/screen-home.jpeg" alt="BUILD4 home" />
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="slide-brand"><span class="dot"></span> BUILD4 · The Agent Economy</div>
+  <div class="slide-num">03 / 14</div>
+</section>
+
+<!-- ─────────────── 04 · THE HUB ─────────────── -->
+<section class="slide">
+  <div class="pad">
+    <span class="eyebrow">Feature 01 · The hub</span>
+    <h2 style="margin-top: 14px;">One mini app. Four trading venues. Live.</h2>
+
+    <div class="row gap-lg" style="margin-top: 32px; flex: 1;">
+      <div class="col" style="flex: 0.85; align-items: center; justify-content: center;">
+        <div class="phone-frame">
+          <img src="assets/screen-home.jpeg" alt="Home" />
+        </div>
+      </div>
+      <div class="col gap-md" style="flex: 1.15; justify-content: center;">
+        <p class="lead" style="margin-bottom: 8px;">Each venue is a card with live balance, status, and a one-tap entry into manual or AI trading.</p>
+        <div class="grid-2" style="gap: 14px;">
+          <div class="stat">
+            <div class="label" style="color: var(--orange);">Aster · BSC</div>
+            <div class="value">Perps</div>
+            <div class="sub">EIP-712 wallet signing · up to 50× leverage</div>
+          </div>
+          <div class="stat">
+            <div class="label" style="color: var(--cyan);">Hyperliquid · L1</div>
+            <div class="value">Perps</div>
+            <div class="sub">Native L1 SDK · sub-second order fills</div>
+          </div>
+          <div class="stat">
+            <div class="label" style="color: var(--purple);">42.space · BSC</div>
+            <div class="value">Predictions</div>
+            <div class="sub">On-chain AMM · agents + manual</div>
+          </div>
+          <div class="stat">
+            <div class="label" style="color: var(--green);">Polymarket · Polygon</div>
+            <div class="value">Gasless</div>
+            <div class="sub">Safe + relayer · zero MATIC required, ever</div>
+          </div>
+        </div>
+        <div class="card" style="margin-top: 8px; background: rgba(46,255,139,0.05); border-color: rgba(46,255,139,0.25);">
+          <h4 style="color: var(--green); margin-bottom: 6px;">Quick actions</h4>
+          <p style="color: #cfe6d8; font-size: 16px;">🌑 Trade four.meme tokens · 🚀 Launch a four.meme token — both one tap from home.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="slide-brand"><span class="dot"></span> BUILD4 · The Agent Economy</div>
+  <div class="slide-num">04 / 14</div>
+</section>
+
+<!-- ─────────────── 05 · AGENT STUDIO ─────────────── -->
+<section class="slide">
+  <div class="pad">
+    <span class="eyebrow">Feature 02 · Agent Studio</span>
+    <h2 style="margin-top: 14px;">Build your agent in 30 seconds.</h2>
+
+    <div class="row gap-lg" style="margin-top: 32px; flex: 1;">
+      <div class="col" style="flex: 0.85; align-items: center; justify-content: center;">
+        <div class="phone-frame">
+          <img src="assets/screen-agent-studio.jpeg" alt="Agent Studio" />
+        </div>
+      </div>
+      <div class="col gap-md" style="flex: 1.15; justify-content: center;">
+        <p class="lead">Pick a persona, pick which venues it can touch, fund it. Done. Same agent, any combination of platforms — toggle on or off without rebuilding.</p>
+
+        <div class="callout-list" style="margin-top: 14px;">
+          <div class="callout">
+            <div class="num">⚙</div>
+            <div class="body">
+              <strong>Multi-venue toggles</strong>
+              <span>Same agent can trade Aster, Hyperliquid, 42.space, and Polymarket. Flip switches at any time.</span>
+            </div>
+          </div>
+          <div class="callout">
+            <div class="num">🔐</div>
+            <div class="body">
+              <strong>Dedicated wallet per agent</strong>
+              <span>Every agent gets its own BSC wallet (AES-256 encrypted PK). Funds are isolated — one rogue agent can't drain another.</span>
+            </div>
+          </div>
+          <div class="callout">
+            <div class="num">🧬</div>
+            <div class="body">
+              <strong>Persona-driven brain</strong>
+              <span>Name + description shape the LLM's trading style — from "conservative scalper" to "degen narrative chaser".</span>
+            </div>
+          </div>
+          <div class="callout">
+            <div class="num">⏸</div>
+            <div class="body">
+              <strong>Pause anytime · Daily-loss circuit breaker</strong>
+              <span>One tap pauses an agent. A daily PnL floor pauses it automatically.</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="slide-brand"><span class="dot"></span> BUILD4 · The Agent Economy</div>
+  <div class="slide-num">05 / 14</div>
+</section>
+
+<!-- ─────────────── 06 · AGENT BRAIN — CONFIG ─────────────── -->
+<section class="slide">
+  <div class="pad">
+    <span class="eyebrow">Feature 03 · Agent control</span>
+    <h2 style="margin-top: 14px;">You set the rules.<br>The agent stays inside them.</h2>
+
+    <div class="row gap-lg" style="margin-top: 28px; flex: 1;">
+      <div class="col" style="flex: 0.85; align-items: center; justify-content: center;">
+        <div class="phone-frame">
+          <img src="assets/screen-agent-config.jpeg" alt="Agent config" />
+        </div>
+      </div>
+      <div class="col gap-md" style="flex: 1.15; justify-content: center;">
+        <div class="grid-3" style="gap: 12px;">
+          <div class="stat"><div class="label">Total PnL</div><div class="value" style="color: var(--green);">+$7.99</div></div>
+          <div class="stat"><div class="label">Win rate</div><div class="value">63%</div></div>
+          <div class="stat"><div class="label">Trades</div><div class="value">8</div></div>
+        </div>
+
+        <div class="card" style="background: rgba(46,255,139,0.04); border-color: rgba(46,255,139,0.25);">
+          <h4 style="color: var(--green); margin-bottom: 6px;">🌑 four.meme auto-launch</h4>
+          <p style="font-size: 15px; color: #cfe6d8; line-height: 1.4;">
+            Scans narratives every <span class="kbd">1–60 min</span>, proposes a token, launches it. You set dev-buy in BNB + auto-sell %. Optional human approval before mint.
+          </p>
+        </div>
+
+        <div class="grid-2" style="gap: 10px;">
+          <div class="card" style="padding: 10px 14px;">
+            <h4 style="font-size: 16px; margin-bottom: 2px;">🎚 Risk caps</h4>
+            <p style="font-size: 12px; line-height: 1.3;">Position · loss/day · leverage. Server-enforced.</p>
+          </div>
+          <div class="card" style="padding: 10px 14px;">
+            <h4 style="font-size: 16px; margin-bottom: 2px;">📊 Live positions</h4>
+            <p style="font-size: 12px; line-height: 1.3;">Tagged ASTER · HL · 42 · POLY. One-tap close.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="slide-brand"><span class="dot"></span> BUILD4 · The Agent Economy</div>
+  <div class="slide-num">06 / 14</div>
+</section>
+
+<!-- ─────────────── 07 · AGENT BRAIN — REASONING ─────────────── -->
+<section class="slide">
+  <div class="pad">
+    <span class="eyebrow">Feature 04 · Brain feed</span>
+    <h2 style="margin-top: 14px;">No black boxes. Every decision is shown.</h2>
+
+    <div class="row gap-lg" style="margin-top: 28px; flex: 1;">
+      <div class="col" style="flex: 0.85; align-items: center; justify-content: center;">
+        <div class="phone-frame">
+          <img src="assets/screen-agent-brain.jpeg" alt="Brain feed" />
+        </div>
+      </div>
+      <div class="col gap-md" style="flex: 1.15; justify-content: center;">
+        <p class="lead">Every tick — HOLD, SKIP, BUY, SELL, LAUNCH — gets a logged entry with the conviction score, the data sources scanned, and a one-line rationale.</p>
+
+        <div class="callout-list" style="margin-top: 12px;">
+          <div class="callout">
+            <div class="num">🔬</div>
+            <div class="body">
+              <strong>Multi-source scan, every cycle</strong>
+              <span>RSS macro news · meme-narrative news · X chatter (twexapi) · DexScreener BSC trending · fresh launches · on-chain bucket data.</span>
+            </div>
+          </div>
+          <div class="callout">
+            <div class="num">📈</div>
+            <div class="body">
+              <strong>Scored 0/10</strong>
+              <span>Conviction must clear a per-feature threshold before capital moves. Below threshold → SKIP, fully logged.</span>
+            </div>
+          </div>
+          <div class="callout">
+            <div class="num">👁</div>
+            <div class="body">
+              <strong>Built for trust</strong>
+              <span>Judges, copy-traders, users audit every move. No "trust me bro" AI.</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="slide-brand"><span class="dot"></span> BUILD4 · The Agent Economy</div>
+  <div class="slide-num">07 / 14</div>
+</section>
+
+<!-- ─────────────── 08 · MANUAL PERPS ─────────────── -->
+<section class="slide">
+  <div class="pad">
+    <span class="eyebrow">Feature 05 · Manual trading</span>
+    <h2 style="margin-top: 14px;">Want to drive yourself? Full DEX perps in two taps.</h2>
+
+    <div class="row gap-lg" style="margin-top: 28px; flex: 1; align-items: center;">
+      <div class="col" style="flex: 0.4; align-items: center;">
+        <div class="phone-frame" style="width: 320px;">
+          <img src="assets/screen-trade.jpeg" alt="Trade ticket" />
+        </div>
+      </div>
+      <div class="col" style="flex: 0.4; align-items: center;">
+        <div class="phone-frame" style="width: 320px;">
+          <img src="assets/screen-chart.jpeg" alt="Chart" />
+        </div>
+      </div>
+      <div class="col gap-md" style="flex: 0.55; justify-content: center;">
+        <div class="callout-list">
+          <div class="callout">
+            <div class="num">🎟</div>
+            <div class="body">
+              <strong>One-screen ticket</strong>
+              <span>Size · leverage · LONG / SHORT · quick-pick chips ($10 / $25 / $100 / $500).</span>
+            </div>
+          </div>
+          <div class="callout">
+            <div class="num">📉</div>
+            <div class="body">
+              <strong>TradingView candles</strong>
+              <span>1m · 5m · 15m · 1h · 4h · 1D — same chart desktop traders use.</span>
+            </div>
+          </div>
+          <div class="callout">
+            <div class="num">🔁</div>
+            <div class="body">
+              <strong>Aster ↔ Hyperliquid toggle</strong>
+              <span>Switch venue without leaving the screen. Open positions list with one-tap close.</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="slide-brand"><span class="dot"></span> BUILD4 · The Agent Economy</div>
+  <div class="slide-num">08 / 14</div>
+</section>
+
+<!-- ─────────────── 09 · PREDICTIONS ─────────────── -->
+<section class="slide">
+  <div class="pad">
+    <span class="eyebrow">Feature 06 · Prediction markets</span>
+    <h2 style="margin-top: 14px;">Bet on outcomes. Two networks. Zero gas.</h2>
+
+    <div class="row gap-lg" style="margin-top: 28px; flex: 1;">
+      <div class="col" style="flex: 0.85; align-items: center; justify-content: center;">
+        <div class="phone-frame">
+          <img src="assets/screen-predict.jpeg" alt="Predictions" />
+        </div>
+      </div>
+      <div class="col gap-md" style="flex: 1.15; justify-content: center;">
+        <div class="grid-2" style="gap: 14px;">
+          <div class="card" style="border-color: rgba(167,139,250,0.3);">
+            <h4 style="color: var(--purple);">42.space · BSC AMM</h4>
+            <p style="font-size: 15px;">On-chain AMM markets. Agents and manual taps execute on-chain. Per-trade caps: ≤$2 per AI agent, ≤$25 per manual user.</p>
+          </div>
+          <div class="card" style="border-color: rgba(46,255,139,0.3);">
+            <h4 style="color: var(--green);">Polymarket · Polygon CLOB</h4>
+            <p style="font-size: 15px;">Every order is <strong>gasless</strong>. Each user gets a Gnosis Safe; the Polymarket relayer pays gas. <span class="kbd">Zero MATIC required, ever.</span></p>
+          </div>
+        </div>
+        <div class="callout-list" style="margin-top: 4px;">
+          <div class="callout">
+            <div class="num">🐝</div>
+            <div class="body">
+              <strong>Swarm Agreement bar</strong>
+              <span>See how many AI agents agree on each outcome before you commit — built-in consensus signal.</span>
+            </div>
+          </div>
+          <div class="callout">
+            <div class="num">♻️</div>
+            <div class="body">
+              <strong>One-tap redeem</strong>
+              <span>Resolved-win positions redeem in one tap (gasless on Polymarket — supports both vanilla CTF and NegRiskAdapter).</span>
+            </div>
+          </div>
+          <div class="callout">
+            <div class="num">🤖</div>
+            <div class="body">
+              <strong>Market Creator agent</strong>
+              <span>Researches trending events (DexScreener + GNews) and proposes new markets.</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="slide-brand"><span class="dot"></span> BUILD4 · The Agent Economy</div>
+  <div class="slide-num">09 / 14</div>
+</section>
+
+<!-- ─────────────── 10 · PORTFOLIO ─────────────── -->
+<section class="slide">
+  <div class="pad">
+    <span class="eyebrow">Feature 07 · Portfolio</span>
+    <h2 style="margin-top: 14px;">Every position, every venue, one PnL line.</h2>
+
+    <div class="row gap-lg" style="margin-top: 28px; flex: 1;">
+      <div class="col" style="flex: 0.85; align-items: center; justify-content: center;">
+        <div class="phone-frame">
+          <img src="assets/screen-portfolio.jpeg" alt="Portfolio" />
+        </div>
+      </div>
+      <div class="col gap-md" style="flex: 1.15; justify-content: center;">
+        <p class="lead">Open and closed trades across all four venues, in one stream.</p>
+        <div class="callout-list">
+          <div class="callout">
+            <div class="num">🏷</div>
+            <div class="body">
+              <strong>Venue + source tags</strong>
+              <span>Every line shows where it ran (ASTER / HL / 42 / POLY) and who pulled the trigger (AI / manual).</span>
+            </div>
+          </div>
+          <div class="callout">
+            <div class="num">💱</div>
+            <div class="body">
+              <strong>Live mark-price PnL</strong>
+              <span>Open positions update in real time. Closed trades log final PnL in USDT.</span>
+            </div>
+          </div>
+          <div class="callout">
+            <div class="num">📜</div>
+            <div class="body">
+              <strong>Full agent history</strong>
+              <span>Audit trail per agent — useful for copy-traders deciding who to follow.</span>
+            </div>
+          </div>
+          <div class="callout">
+            <div class="num">💸</div>
+            <div class="body">
+              <strong>Spot ↔ perps margin moves</strong>
+              <span>Move margin in/out of perps in Telegram. One USDT pool funds it all.</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="slide-brand"><span class="dot"></span> BUILD4 · The Agent Economy</div>
+  <div class="slide-num">10 / 14</div>
+</section>
+
+<!-- ─────────────── 11 · WHY THIS MATTERS TO FOUR.MEME ─────────────── -->
+<section class="slide">
+  <div class="pad">
+    <span class="eyebrow">For four.meme</span>
+    <h2 style="margin-top: 14px;">Native four.meme integration — purpose-built.</h2>
+
+    <div class="row gap-lg" style="margin-top: 28px; flex: 1;">
+      <div class="col gap-md" style="flex: 1; justify-content: center;">
+        <div class="callout-list">
+          <div class="callout">
+            <div class="num">🚀</div>
+            <div class="body">
+              <strong>Auto-launch tokens via AI agents</strong>
+              <span>Per-agent toggle: scan → propose → launch on four.meme. Configurable cadence (1–60 min), dev-buy size in BNB, auto-sell take-profit %, hard daily + lifetime caps.</span>
+            </div>
+          </div>
+          <div class="callout">
+            <div class="num">📡</div>
+            <div class="body">
+              <strong>Six narrative sources, every tick</strong>
+              <span>DexScreener BSC trending · meme-keyword RSS lane · X chatter (#memecoin, #pumpfun, four.meme, pump.fun, new launch) · fresh BSC launches · macro news · on-chain price action.</span>
+            </div>
+          </div>
+          <div class="callout">
+            <div class="num">📈</div>
+            <div class="body">
+              <strong>Real four.meme volume from day one</strong>
+              <span>Every agent that launches is a live token on four.meme — not a simulator. Builder attribution wired in fail-closed.</span>
+            </div>
+          </div>
+          <div class="callout">
+            <div class="num">🔍</div>
+            <div class="body">
+              <strong>Auditable attribution</strong>
+              <span>Every launch is tagged on-chain to its agent and persisted in our DB. Judges can trace any token back to the brain that proposed it.</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="col" style="flex: 0.45; align-items: center; justify-content: center;">
+        <div class="card" style="background: linear-gradient(160deg, rgba(46,255,139,0.10), rgba(94,234,212,0.05)); border-color: rgba(46,255,139,0.3); padding: 28px; text-align: center; width: 100%;">
+          <img src="assets/four-logo.jpg" alt="four.meme" style="width: 100px; height: 100px; border-radius: 18px; margin-bottom: 18px;" />
+          <h3 style="margin-bottom: 10px;">BSC-first by design</h3>
+          <p style="font-size: 16px;">Aster, 42.space, four.meme — three of our four core venues live on BNB Chain. One USDT deposit funds the whole stack.</p>
+          <div style="display: flex; gap: 8px; justify-content: center; margin-top: 16px; flex-wrap: wrap;">
+            <span class="pill green">BSC native</span>
+            <span class="pill green">EIP-712 signed</span>
+            <span class="pill green">Custodial · AES-256</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="slide-brand"><span class="dot"></span> BUILD4 · The Agent Economy</div>
+  <div class="slide-num">11 / 14</div>
+</section>
+
+<!-- ─────────────── 12 · DIFFERENTIATORS ─────────────── -->
+<section class="slide">
+  <div class="pad">
+    <span class="eyebrow">Why we stand out</span>
+    <h2 style="margin-top: 14px;">Four edges no competitor has all of.</h2>
+
+    <div class="diff-grid">
+      <div class="diff">
+        <div class="glyph" style="background: rgba(255,159,74,0.1); border-color: rgba(255,159,74,0.25); color: var(--orange);">🧩</div>
+        <div>
+          <h4>Four venues, one app</h4>
+          <p>Aster + Hyperliquid + 42.space + Polymarket. No competitor unifies perps, predictions, and meme launches in a single Telegram chat.</p>
+        </div>
+      </div>
+      <div class="diff">
+        <div class="glyph" style="background: rgba(167,139,250,0.1); border-color: rgba(167,139,250,0.25); color: var(--purple);">🧠</div>
+        <div>
+          <h4>Multi-LLM swarm trading</h4>
+          <p>Claude + xAI + Hyperbolic + Akash vote on every decision. Quorum-based verdicts cut single-model risk and hallucinations.</p>
+        </div>
+      </div>
+      <div class="diff">
+        <div class="glyph" style="background: rgba(46,255,139,0.1); border-color: rgba(46,255,139,0.25); color: var(--green);">🔍</div>
+        <div>
+          <h4>Brain-feed transparency</h4>
+          <p>Every AI decision is logged with score + sources + rationale. Auditability is a feature, not a future promise.</p>
+        </div>
+      </div>
+      <div class="diff">
+        <div class="glyph" style="background: rgba(94,234,212,0.1); border-color: rgba(94,234,212,0.25); color: var(--cyan);">⛽</div>
+        <div>
+          <h4>Gasless across the stack</h4>
+          <p>Polymarket via Safe + relayer (zero MATIC, ever). Aster + 42.space + four.meme funded from one BSC USDT deposit. No native-token friction.</p>
+        </div>
+      </div>
+    </div>
+
+    <div style="margin-top: 24px; display: flex; gap: 10px; flex-wrap: wrap;">
+      <span class="pill green">Daily-loss circuit breaker</span>
+      <span class="pill green">AES-256 encrypted PKs</span>
+      <span class="pill green">Per-agent isolated wallets</span>
+      <span class="pill green">Admin-gated endpoints</span>
+      <span class="pill green">Builder attribution fail-closed</span>
+      <span class="pill green">Server-side slippage caps</span>
+    </div>
+  </div>
+  <div class="slide-brand"><span class="dot"></span> BUILD4 · The Agent Economy</div>
+  <div class="slide-num">12 / 14</div>
+</section>
+
+<!-- ─────────────── 13 · FUTURE VISION ─────────────── -->
+<section class="slide">
+  <div class="pad">
+    <span class="eyebrow">Future vision</span>
+    <h2 style="margin-top: 14px;">The Agent Economy.</h2>
+    <p class="lead" style="margin-top: 14px; max-width: 1000px;">
+      Every retail trader will have an AI agent. We're building the platform they all run on — starting with BNB Chain.
+    </p>
+
+    <div class="roadmap">
+      <div class="road-row">
+        <div class="when">Now · Demo Day</div>
+        <div class="what">
+          <strong>4 venues live · autonomous four.meme launches · transparent brain feed</strong>
+          <span>Aster, Hyperliquid, 42.space, Polymarket all in production. Real users, real volume.</span>
+        </div>
+      </div>
+      <div class="road-row">
+        <div class="when">Next 30 days</div>
+        <div class="what">
+          <strong>Copy-trade leaderboard</strong>
+          <span>Follow top agents with one tap. Their brain feed is already public — discoverability is the missing piece.</span>
+        </div>
+      </div>
+      <div class="road-row">
+        <div class="when">Q3 2026</div>
+        <div class="what">
+          <strong>WalletConnect web dApp (in progress)</strong>
+          <span>Same engine, no Telegram required. Already scaffolded under <span class="kbd">web4/</span> with SIWE auth.</span>
+        </div>
+      </div>
+      <div class="road-row">
+        <div class="when">Q4 2026</div>
+        <div class="what">
+          <strong>Agent marketplace</strong>
+          <span>Persona creators monetize. Users subscribe. Performance is on-chain and provable.</span>
+        </div>
+      </div>
+      <div class="road-row">
+        <div class="when">2027</div>
+        <div class="what">
+          <strong>On-chain agent identities</strong>
+          <span>Agents earn reputation. Reputation earns capital. Trading becomes a social graph, not a solo grind.</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="slide-brand"><span class="dot"></span> BUILD4 · The Agent Economy</div>
+  <div class="slide-num">13 / 14</div>
+</section>
+
+<!-- ─────────────── 14 · CLOSING / ASK ─────────────── -->
+<section class="slide cover">
+  <div class="pad">
+    <div>
+      <span class="tag"><span class="dot"></span> The ask</span>
+    </div>
+
+    <div>
+      <h1 style="font-size: 96px; max-width: 1100px;">Let's launch the<br>Agent Economy together.</h1>
+    </div>
+
+    <div class="closing-cta">
+      <div class="row gap-lg">
+        <div class="col" style="flex: 1.2;">
+          <h3>What we're asking four.meme for</h3>
+          <p style="margin-top: 10px;">
+            <strong style="color: var(--green);">Builder grant</strong> &nbsp;·&nbsp;
+            <strong style="color: var(--green);">Featured-agent slot</strong> &nbsp;·&nbsp;
+            <strong style="color: var(--green);">Co-marketing on launch</strong>
+          </p>
+          <p style="margin-top: 16px; font-size: 17px;">
+            In return: real four.meme volume from day one, transparent AI attribution, and BSC-native distribution through every BUILD4 user.
+          </p>
+        </div>
+        <div class="col" style="flex: 0.8;">
+          <h3>Try it now</h3>
+          <p style="margin-top: 10px;">
+            <strong>Telegram:</strong> <span class="kbd" style="font-size: 16px;">@Build4Bot</span>
+          </p>
+          <p style="margin-top: 6px;"><strong>Web:</strong> build4.io</p>
+          <p style="margin-top: 6px;"><strong>Demo:</strong> live in this room</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="meta">
+      <div class="left">
+        <img src="assets/b4-logo.jpg" alt="BUILD4" />
+        <div class="stack">
+          <div class="a">BUILD4</div>
+          <div class="b">The AI Agent Economy on BNB Chain</div>
+        </div>
+      </div>
+      <div class="right">
+        <img src="assets/four-logo.jpg" alt="four.meme" />
+        <div class="stack">
+          <div class="a">Demo Day · May 13</div>
+          <div class="b">four.meme</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="slide-num">14 / 14</div>
+</section>
+
+</body>
+</html>

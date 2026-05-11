@@ -131,3 +131,87 @@ id = "b9nOcISIjT50k6kxh2ZU4"
 uri = "file://exports/four_b4l_banner.png"
 type = "image"
 title = "B4L × FOUR Banner"
+
+[[outputs]]
+id = "0GktfC7OZ1NNFgq6lak4e"
+uri = "file://pitch/renders/slide-1.png"
+type = "image"
+title = "Slide 1 — Cover"
+
+[[outputs]]
+id = "M2t-E5Ws4iYZ51c_QTvGV"
+uri = "file://pitch/renders/slide-2.png"
+type = "image"
+title = "Slide 2 — The Problem"
+
+[[outputs]]
+id = "oNuFI0DREn3V_BQv2qUhc"
+uri = "file://pitch/renders/slide-3.png"
+type = "image"
+title = "Slide 3 — The Solution"
+
+[[outputs]]
+id = "ecXt1cLWaW6k-Lqe1W9bR"
+uri = "file://pitch/renders/slide-4.png"
+type = "image"
+title = "Slide 4 — Feature 01: The Hub"
+
+[[outputs]]
+id = "okyUPCvpQTewy-xdpqffd"
+uri = "file://pitch/renders/slide-5.png"
+type = "image"
+title = "Slide 5 — Feature 02: Agent Studio"
+
+[[outputs]]
+id = "O7EIyM8xEzew135ZqZY3X"
+uri = "file://pitch/renders/slide-6.png"
+type = "image"
+title = "Slide 6 — Feature 03: Agent Control"
+
+[[outputs]]
+id = "wUOw7HO_F1DKjwBQ_1YzO"
+uri = "file://pitch/renders/slide-7.png"
+type = "image"
+title = "Slide 7 — Feature 04: Brain Feed"
+
+[[outputs]]
+id = "UA391hJhhXRjTSTGRKV6h"
+uri = "file://pitch/renders/slide-8.png"
+type = "image"
+title = "Slide 8 — Feature 05: Manual Perps"
+
+[[outputs]]
+id = "dLofC51riKUa66cB95ilQ"
+uri = "file://pitch/renders/slide-9.png"
+type = "image"
+title = "Slide 9 — Feature 06: Predictions"
+
+[[outputs]]
+id = "zHgA4B4eYcS2eO-YkDlPr"
+uri = "file://pitch/renders/slide-10.png"
+type = "image"
+title = "Slide 10 — Feature 07: Portfolio"
+
+[[outputs]]
+id = "OrC1Ea4w9WIjsevyNncTb"
+uri = "file://pitch/renders/slide-11.png"
+type = "image"
+title = "Slide 11 — Why this matters to four.meme"
+
+[[outputs]]
+id = "ECaOurASGzeWkadSTauyL"
+uri = "file://pitch/renders/slide-12.png"
+type = "image"
+title = "Slide 12 — Differentiators"
+
+[[outputs]]
+id = "s5VyUAnlocWlBKUotrnJp"
+uri = "file://pitch/renders/slide-13.png"
+type = "image"
+title = "Slide 13 — Future Vision"
+
+[[outputs]]
+id = "7ss5_aJly4L28W8TTtj49"
+uri = "file://pitch/renders/slide-14.png"
+type = "image"
+title = "Slide 14 — Closing / The Ask"

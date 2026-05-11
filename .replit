@@ -55,6 +55,10 @@ args = "test"
 task = "workflow.run"
 args = "Web dApp preview"
 
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Pitch deck preview"
+
 [[workflows.workflow]]
 name = "Start application"
 author = "agent"
@@ -89,6 +93,18 @@ outputType = "console"
 task = "shell.exec"
 args = "DAPP_PORT=8080 npx tsx web4/server/dapp-server.ts"
 waitForPort = 8080
+
+[[workflows.workflow]]
+name = "Pitch deck preview"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd pitch && python3 -m http.server 8080"
+waitForPort = 8080
+
+[workflows.workflow.metadata]
+outputType = "console"
 
 [userenv]
 
