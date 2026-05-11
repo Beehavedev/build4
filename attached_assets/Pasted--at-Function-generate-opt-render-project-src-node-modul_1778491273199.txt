@@ -1,0 +1,51 @@
+    at Function.generate (/opt/render/project/src/node_modules/@anthropic-ai/sdk/src/core/error.ts:75:14)
+    at Anthropic.makeStatusError (/opt/render/project/src/node_modules/@anthropic-ai/sdk/src/client.ts:516:28)
+    at Anthropic.makeRequest (/opt/render/project/src/node_modules/@anthropic-ai/sdk/src/client.ts:752:24)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async callAnthropicForDecision (/opt/render/project/src/src/agents/tradingAgent.ts:739:20)
+    at async runDecisionLLM (/opt/render/project/src/src/agents/tradingAgent.ts:925:37)
+    at async runMarketScan (/opt/render/project/src/src/agents/marketScan.ts:568:17) {
+  status: 400,
+  headers: Headers {
+    date: 'Mon, 11 May 2026 09:20:15 GMT',
+    'content-type': 'application/json',
+    'transfer-encoding': 'chunked',
+    connection: 'keep-alive',
+    'x-should-retry': 'false',
+    'request-id': 'req_011CavXw8MEzA3u51APDS6wA',
+    'strict-transport-security': 'max-age=31536000; includeSubDomains; preload',
+    'anthropic-organization-id': 'faf0b835-a80e-46df-9424-f4f45142fac9',
+    traceresponse: '00-5e4cbcbf7bc666d7de44a593f1a4f032-4e16514781bd3a0b-01',
+    server: 'cloudflare',
+    'x-envoy-upstream-service-time': '64',
+    'content-encoding': 'gzip',
+    vary: 'Accept-Encoding',
+    'set-cookie': '_cfuvid=D332GmM6zklnTr7A7alwX05o2uQRNqIhlwJ0v2Af95k-1778491215.378907-1.0.1.1-P_Bb7OGjfh9LVwPmf8E1OErk1UeTT6pUC9mS82TqwBE; HttpOnly; SameSite=None; Secure; Path=/; Domain=api.anthropic.com',
+    'x-robots-tag': 'none',
+    'cf-cache-status': 'DYNAMIC',
+    'content-security-policy': "default-src 'none'; frame-ancestors 'none'",
+    'cf-ray': '9fa01b501c62b5e2-SIN'
+  },
+  requestID: 'req_011CavXw8MEzA3u51APDS6wA',
+  error: {
+    type: 'error',
+    error: {
+      type: 'invalid_request_error',
+      message: 'Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.'
+    },
+    request_id: 'req_011CavXw8MEzA3u51APDS6wA'
+  },
+  type: 'invalid_request_error'
+}
+[Agent Andromeda3316] HOLD on BTWUSDT — Unclear market direction and insufficient data
+[Agent Orion1687] HOLD on BTWUSDT — Unclear market direction and insufficient data
+[Agent SeanBuild4] HOLD on BTWUSDT — Unclear market direction and insufficient data
+[Agent testagent] HOLD on BTWUSDT — Unclear market direction and insufficient data
+[Agent BNT] HOLD on BTWUSDT — Unclear market direction and insufficient data
+[Agent TENSHI] HOLD on BTWUSDT — Unclear market direction and insufficient data
+[LLM] error: 400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."},"request_id":"req_011CavXwHXtMRvFsxNx4tb5c"}
+[POST]
+build4-1.onrender.com/api/webhook clientIP="91.108.5.66" requestID="5749d333-2722-46dd" responseTimeMS=1459 responseBytes=270 userAgent=""
+[polymarketAgent] previous tick still running, skipping
+[fourMemeLaunchAgent] scanned=0 ticked=0 launched=0 skipped=0 errors=0
+[polymarketAgent] scanned=55 ticked=55 placed=0 skipped=63 errors=0
