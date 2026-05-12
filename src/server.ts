@@ -509,8 +509,28 @@ app.get('/api/me/feed', requireTgUser, async (req, res) => {
 // view of the campaign agent's reasoning. Only returns rows for the
 // agent pinned by FT_CAMPAIGN_AGENT_ID, so non-campaign agents (and
 // non-campaign trading data) stay private.
+//
+// In-memory 10s cache. The mini-app polls every 20s per viewer; with
+// a viral campaign share that could be hundreds of concurrent visitors
+// hammering the DB. Caching the (small) JSON response by query-string
+// key for 10s collapses N concurrent requests into 1 DB roundtrip
+// while keeping the feed feeling live (max 10s staleness vs a 20s
+// poll cadence). Pre-paginated requests (?before=...) get distinct
+// cache slots so "Load older" still works correctly.
+const brainCache = new Map<string, { exp: number; body: any }>()
+const BRAIN_CACHE_TTL_MS = 10_000
 app.get('/api/public/campaign/brain', async (req, res) => {
   try {
+    const cacheKey = `${req.query.limit ?? ''}|${req.query.before ?? ''}`
+    const cached = brainCache.get(cacheKey)
+    if (cached && cached.exp > Date.now()) {
+      return res.json(cached.body)
+    }
+    // Opportunistic GC: prune expired entries when the map grows.
+    if (brainCache.size > 100) {
+      const now = Date.now()
+      for (const [k, v] of brainCache) if (v.exp <= now) brainCache.delete(k)
+    }
     const agentId = process.env.FT_CAMPAIGN_AGENT_ID
     if (!agentId) {
       return res.json({ agent: null, entries: [] })
@@ -601,7 +621,7 @@ app.get('/api/public/campaign/brain', async (req, res) => {
       },
     } as any)
 
-    res.json({
+    const body = {
       agent: {
         id: agent.id,
         name: agent.name,
@@ -618,7 +638,9 @@ app.get('/api/public/campaign/brain', async (req, res) => {
         price: r.price ?? null,
         createdAt: r.createdAt,
       })),
-    })
+    }
+    brainCache.set(cacheKey, { exp: Date.now() + BRAIN_CACHE_TTL_MS, body })
+    res.json(body)
   } catch (err: any) {
     console.error('[API] /public/campaign/brain failed:', err?.message)
     res.status(500).json({ error: 'Internal error' })
