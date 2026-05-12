@@ -57,9 +57,9 @@ export function registerCampaignWallet(bot: Bot) {
       await ctx.reply('No user record found for your Telegram ID.');
       return;
     }
-    const agentId = (ctx.message?.text ?? '').split(/\s+/).slice(1).join(' ').trim();
-    if (!agentId) {
-      await ctx.reply('Usage: `/bindcampaignwallet <agentId>`', { parse_mode: 'Markdown' });
+    const arg = (ctx.message?.text ?? '').split(/\s+/).slice(1).join(' ').trim();
+    if (!arg) {
+      await ctx.reply('Usage: `/bindcampaignwallet <agentName-or-id>`', { parse_mode: 'Markdown' });
       return;
     }
     // Find the most-recent Campaign-labelled wallet for this user.
@@ -71,15 +71,40 @@ export function registerCampaignWallet(bot: Bot) {
       await ctx.reply('No "Campaign"-labelled wallet found. Run `/newcampaignwallet` first.', { parse_mode: 'Markdown' });
       return;
     }
-    // Verify the agent exists and belongs to this user (tighten blast radius —
-    // an admin shouldn't be able to bind a wallet to someone else's agent).
-    const agentRows = await db.$queryRawUnsafe<Array<{ id: string; userId: string; name: string; walletId: string | null }>>(
-      `SELECT id, "userId", name, "walletId" FROM "Agent" WHERE id = $1 LIMIT 1`,
-      agentId,
+    // Resolve <arg> to an Agent owned by this user, accepting either:
+    //   1. The internal cuid (Agent.id) — exact match, fastest path.
+    //   2. The display name (case-insensitive, exact) — UX shortcut for
+    //      admins who only see the name in /myagents output.
+    // Restricted to this user's agents so a name collision with someone
+    // else's agent can never bind cross-user. If the name resolves to
+    // multiple of *your own* agents, we refuse and ask for the cuid so
+    // the operator never accidentally binds the wrong one mid-campaign.
+    let agent: { id: string; userId: string; name: string; walletId: string | null } | undefined;
+    const byId = await db.$queryRawUnsafe<Array<{ id: string; userId: string; name: string; walletId: string | null }>>(
+      `SELECT id, "userId", name, "walletId" FROM "Agent" WHERE id = $1 AND "userId" = $2 LIMIT 1`,
+      arg,
+      user.id,
     );
-    const agent = agentRows[0];
+    if (byId[0]) {
+      agent = byId[0];
+    } else {
+      const byName = await db.$queryRawUnsafe<Array<{ id: string; userId: string; name: string; walletId: string | null }>>(
+        `SELECT id, "userId", name, "walletId" FROM "Agent" WHERE LOWER(name) = LOWER($1) AND "userId" = $2`,
+        arg,
+        user.id,
+      );
+      if (byName.length > 1) {
+        await ctx.reply(
+          `Multiple agents named \`${arg}\` (${byName.length}). Use the cuid instead:\n\n` +
+            byName.map((a) => `• \`${a.id}\``).join('\n'),
+          { parse_mode: 'Markdown' },
+        );
+        return;
+      }
+      agent = byName[0];
+    }
     if (!agent) {
-      await ctx.reply(`Agent \`${agentId}\` not found.`, { parse_mode: 'Markdown' });
+      await ctx.reply(`Agent \`${arg}\` not found in your account.`, { parse_mode: 'Markdown' });
       return;
     }
     if (agent.userId !== user.id) {
@@ -89,7 +114,7 @@ export function registerCampaignWallet(bot: Bot) {
     await db.$executeRawUnsafe(
       `UPDATE "Agent" SET "walletId" = $1 WHERE id = $2`,
       w.id,
-      agentId,
+      agent.id,
     );
     await ctx.reply(
       `✅ *Bound*\n\n` +

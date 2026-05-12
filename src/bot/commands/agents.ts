@@ -685,7 +685,11 @@ export function registerAgents(bot: Bot) {
       text += requireApproval
         ? `🚀 *Token launches:* ✅ approval required\n`
         : `🚀 *Token launches:* ⚡ auto-launch\n`
-      text += `📊 PnL: ${a.totalPnl >= 0 ? '+' : ''}$${a.totalPnl.toFixed(2)} | WR: ${a.winRate.toFixed(0)}% (${a.totalTrades} trades)\n\n`
+      text += `📊 PnL: ${a.totalPnl >= 0 ? '+' : ''}$${a.totalPnl.toFixed(2)} | WR: ${a.winRate.toFixed(0)}% (${a.totalTrades} trades)\n`
+      // Surface the internal cuid so admins can copy it for env vars
+      // (FT_CAMPAIGN_AGENT_ID, etc.). Code-blocked for one-tap copy in
+      // Telegram. Not sensitive — the user already owns the agent.
+      text += `🔑 \`${a.id}\`\n\n`
     })
 
     const keyboard = new InlineKeyboard()
