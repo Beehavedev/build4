@@ -25,8 +25,11 @@ type Entry = {
 type AgentSummary = {
   id: string
   name: string
-  totalPnl: number | null
-  totalTrades: number | null
+  openPositions: number
+  resolved: number
+  wins: number
+  totalVolume: number
+  realisedPnl: number
   winRate: number | null
 } | null
 
@@ -44,6 +47,27 @@ function timeAgo(iso: string): string {
   const h = Math.floor(m / 60)
   if (h < 24) return `${h}h ago`
   return `${Math.floor(h / 24)}d ago`
+}
+
+function Stat({ label, value, color }: { label: string; value: string; color?: string }) {
+  return (
+    <div
+      style={{
+        background: 'rgba(0,0,0,0.25)',
+        border: '1px solid rgba(255,255,255,0.06)',
+        borderRadius: 8,
+        padding: '8px 6px',
+        textAlign: 'center',
+      }}
+    >
+      <div style={{ fontSize: 14, fontWeight: 700, color: color ?? '#fff', lineHeight: 1.1 }}>
+        {value}
+      </div>
+      <div style={{ fontSize: 9, color: '#999', marginTop: 3, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+        {label}
+      </div>
+    </div>
+  )
 }
 
 function actionColor(action: string): { bg: string; fg: string; label: string } {
@@ -135,14 +159,22 @@ export default function CampaignBrain() {
           fully transparent. Updates every 20 seconds.
         </p>
         {agent && (
-          <div style={{ display: 'flex', gap: 14, marginTop: 10, fontSize: 11, color: '#ddd' }}>
-            <span><b style={{ color: '#fff' }}>{agent.totalTrades ?? 0}</b> trades</span>
-            <span style={{ color: (agent.totalPnl ?? 0) >= 0 ? '#a3e9c0' : '#fda4af' }}>
-              <b>{(agent.totalPnl ?? 0) >= 0 ? '+' : ''}{(agent.totalPnl ?? 0).toFixed(2)}</b> USDT PnL
-            </span>
-            {agent.winRate != null && (
-              <span><b style={{ color: '#fff' }}>{(agent.winRate * 100).toFixed(0)}%</b> win</span>
-            )}
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(4, 1fr)',
+              gap: 8,
+              marginTop: 12,
+            }}
+          >
+            <Stat label="Open" value={String(agent.openPositions)} />
+            <Stat label="Resolved" value={`${agent.wins}/${agent.resolved}`} />
+            <Stat
+              label="PnL"
+              value={`${agent.realisedPnl >= 0 ? '+' : ''}${agent.realisedPnl.toFixed(2)}`}
+              color={agent.realisedPnl >= 0 ? '#a3e9c0' : '#fda4af'}
+            />
+            <Stat label="Volume" value={`$${agent.totalVolume.toFixed(0)}`} />
           </div>
         )}
       </div>

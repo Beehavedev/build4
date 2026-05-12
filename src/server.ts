@@ -517,10 +517,54 @@ app.get('/api/public/campaign/brain', async (req, res) => {
     }
     const agent = await db.agent.findUnique({
       where: { id: agentId },
-      select: { id: true, name: true, totalPnl: true, totalTrades: true, winRate: true },
+      select: { id: true, name: true },
     })
     if (!agent) {
       return res.json({ agent: null, entries: [] })
+    }
+
+    // Compute REAL campaign stats from OutcomePosition. The Agent table's
+    // totalTrades / totalPnl / winRate counters are updated on perp trades
+    // only, so they always read 0 for the prediction-market campaign agent
+    // and would mislead viewers into thinking the bot hadn't traded yet.
+    // We aggregate the actual prediction positions here:
+    //   - openPositions   = status='open' rows (live exposure)
+    //   - resolved        = resolved_win + resolved_loss (settled rounds)
+    //   - wins            = resolved_win
+    //   - totalVolume     = sum(usdtIn) over ALL rows (cumulative $ traded)
+    //   - realisedPnl     = sum(pnl) over resolved rows
+    //   - winRate         = wins / resolved (null when nothing resolved yet)
+    let stats = {
+      openPositions: 0,
+      resolved: 0,
+      wins: 0,
+      totalVolume: 0,
+      realisedPnl: 0,
+      winRate: null as number | null,
+    }
+    try {
+      const positions = await db.outcomePosition.findMany({
+        where: { agentId: agent.id },
+        select: { status: true, usdtIn: true, pnl: true },
+      })
+      const open = positions.filter((p) => p.status === 'open')
+      const wins = positions.filter((p) => p.status === 'resolved_win')
+      const losses = positions.filter((p) => p.status === 'resolved_loss')
+      const closedManual = positions.filter((p) => p.status === 'closed')
+      const resolved = wins.length + losses.length + closedManual.length
+      stats = {
+        openPositions: open.length,
+        resolved,
+        wins: wins.length,
+        totalVolume: positions.reduce((s, p) => s + (p.usdtIn || 0), 0),
+        realisedPnl: [...wins, ...losses, ...closedManual].reduce(
+          (s, p) => s + (p.pnl || 0),
+          0,
+        ),
+        winRate: resolved > 0 ? wins.length / resolved : null,
+      }
+    } catch (statsErr: any) {
+      console.warn('[API] /public/campaign/brain stats failed:', statsErr?.message)
     }
     const limit = Math.min(parseInt(String(req.query.limit ?? '30')) || 30, 100)
     const beforeStr = req.query.before ? String(req.query.before) : ''
@@ -561,9 +605,7 @@ app.get('/api/public/campaign/brain', async (req, res) => {
       agent: {
         id: agent.id,
         name: agent.name,
-        totalPnl: agent.totalPnl,
-        totalTrades: agent.totalTrades,
-        winRate: agent.winRate,
+        ...stats,
       },
       entries: rows.map((r: any) => ({
         id: r.id,
