@@ -1,0 +1,52 @@
+      referredBy: null,
+      referralCode: 'cmo1lsvsm0001mlupsizjvphq',
+      subscriptionTier: 'free',
+      subscriptionExpiry: null,
+      totalFeesSpent: 0,
+      b4Balance: 100,
+      asterApiKey: '4270d28571fa60376191b8ea:84d299c468c5645f4b325698f50bb93a:ba5ca366f4237b60064b18213c081b882ae0c52e03ed4741b46003cbbcb48f8d545166672a99a0df5478',
+      asterApiSecret: 'a9e7898964f8d168da0e7685:a6e75a2b5be0f3477301c93b29141c85:8b8849da4ea9285a3637c05a1df282f4cae111176c8aba4c6bc86ab3a62fc0fcc183137b9580d8ba0c82f3e478fcd9f5a547b0effa9dba9ef077cf0a208389613ff6',
+      asterAgentAddress: '0xB9DcFAE201F8Cfe65d005C6b1f7BD1AC1c60fFD6',
+      asterAgentEncryptedPK: 'U2FsdGVkX19IFGrJPrUFGqzXFVSC8bnNK9MS/Pni5d6veVjrwMwgf9YW6OHSYxVqA/RqBiPPp1L90vdwB2CY0tQFRw5eYcNKBaMoBhEX3GnbBHPFlXdvmsvRDo1bVYHa',
+      asterOnboarded: true,
+      hyperliquidAgentAddress: '0xEd20B8DCE7a9097a51a7918d2b378fdB1caa9de3',
+      hyperliquidAgentEncryptedPK: 'U2FsdGVkX19gA7C3RIMI1CDuJM8JTIwBQo0F46DLbp9HR/DRv0FNTySbrSe40t+/uk910g1VsAfuH6xvW2biV8S4UuXuhMwdAy8RFR8L/MUpqTlogZENenpsajBuAFQH',
+      hyperliquidOnboarded: true,
+      hyperliquidUnified: true,
+      asterAgentTradingEnabled: true,
+      hyperliquidAgentTradingEnabled: true,
+      polymarketAgentTradingEnabled: true,
+      pinHash: null,
+      pinSalt: null,
+      fortyTwoLiveTrade: true,
+      swarmEnabled: true,
+      botBlocked: false,
+      linkedB4WalletAddress: null,
+      linkedB4Balance: null,
+      linkedB4At: null,
+      createdAt: 2026-04-16T14:57:51.862Z,
+      updatedAt: 2026-04-25T15:22:23.139Z
+    },
+    match: ''
+  },
+  name: 'BotError'
+}
+[POST]
+build4-1.onrender.com/api/webhook clientIP="91.108.5.66" requestID="bcc521ca-e7e1-4541" responseTimeMS=2097 responseBytes=290 userAgent=""
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '4h', limit: 200 }
+[Agent Miiiiiiiiiineeeii] HOLD on ASTERUSDT — Setup score 3/10 with ADX 1.0 ranging regime and 93% below-average volume. Timef
+[Agent BNT] HOLD on ASTERUSDT — Setup score 3/10 with ADX 1.0 ranging regime and 93% below-average volume. Timef
+[Agent SeanBuild4] HOLD on BTWUSDT — Distribution pattern with volume collapse after listing pump. 7 consecutive red 
+[Agent TENSHI] HOLD on BTWUSDT — Distribution pattern with volume collapse after listing pump. 7 consecutive red 
+[Aster] klines fetch (cache miss): { symbol: 'TROLLUSDT', interval: '1m', limit: 120 }
+Menu
+[Aster] klines fetch (cache miss): { symbol: 'STORJUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'STORJUSDT', interval: '5m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'PLUMEUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'LAYERUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'LAYERUSDT', interval: '5m', limit: 100 }
+[polymarketAgent] scanned=57 ticked=57 placed=0 skipped=57 errors=0
+[fourMemeLaunchAgent] scanned=0 — DB probe: enabled=0 active=62 both=0 total=65
+[fourMemeLaunchAgent] scanned=0 ticked=0 launched=0 skipped=0 errors=0
