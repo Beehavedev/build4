@@ -1,0 +1,51 @@
+      hyperliquidAgentAddress: '0x150dB11828Eada7a4b7bbd6CA5a3d69b6120c1e6',
+      hyperliquidAgentEncryptedPK: 'U2FsdGVkX1/d7oTjztDhAuBU9+1pEzzWQY/wbrCu0VG2BYxLvSd2dEBUk7kZIvBM0nuwH3fAxZYu+cUNwunLMnW0lCzX/i8AsDeqawPTxxxiojUB5YMDPTp8W53I3/7a',
+      hyperliquidOnboarded: true,
+      hyperliquidUnified: false,
+      asterAgentTradingEnabled: true,
+      hyperliquidAgentTradingEnabled: true,
+      polymarketAgentTradingEnabled: true,
+      pinHash: null,
+      pinSalt: null,
+      fortyTwoLiveTrade: true,
+      swarmEnabled: true,
+      botBlocked: false,
+      linkedB4WalletAddress: null,
+      linkedB4Balance: null,
+      linkedB4At: null,
+      createdAt: 2026-04-16T16:15:38.240Z,
+      updatedAt: 2026-05-03T08:26:17.169Z
+    },
+    match: ''
+  },
+  name: 'BotError'
+}
+[POST]
+build4-1.onrender.com/api/webhook clientIP="91.108.5.66" requestID="3f88a039-5e87-4629" responseTimeMS=2039 responseBytes=290 userAgent=""
+[Agent Miiiiiiiiiineeeii] 42.space scan: 25 live markets
+[Agent Helios4114] 42.space scan: 25 live markets
+[Agent Lyra4800] 42.space scan: 25 live markets
+[Agent Nimbus9438] 42.space scan: 25 live markets
+[Agent Lyra9262] 42.space scan: 25 live markets
+[Agent Ghost] 42.space scan: 25 live markets
+[Agent SeanBuild4] 42.space scan: 25 live markets
+[Agent agvvfttcvvcg] 42.space scan: 25 live markets
+[Agent TENSHI] 42.space scan: 25 live markets
+[Aster] klines fetch (cache miss): { symbol: 'BTWUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'BTWUSDT', interval: '5m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'PLUMEUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'PLUMEUSDT', interval: '5m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '4h', limit: 200 }
+[Agent BNT] HOLD on ASTERUSDT — Setup score 3/10 (threshold 5+), ADX 4.1 indicates no tradeable regime, conflict
+[Agent Miiiiiiiiiineeeii] HOLD on ASTERUSDT — Setup score 3/10 (threshold 5+), ADX 4.1 indicates no tradeable regime, conflict
+[Aster] klines fetch (cache miss): { symbol: 'BTWUSDT', interval: '1m', limit: 120 }
+[Agent TENSHI] HOLD on BTWUSDT — VOLUME_DEATH + NO_DIRECTIONAL_EDGE: 0.29x volume vs avg, last 2 candles 24k→0 vo
+[Aster] klines fetch (cache miss): { symbol: 'STORJUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'STORJUSDT', interval: '5m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'TROLLUSDT', interval: '1m', limit: 120 }
+[Agent SeanBuild4] HOLD on BTWUSDT — VOLUME_DEATH + NO_DIRECTIONAL_EDGE: 0.29x volume vs avg, last 2 candles 24k→0 vo
+[Aster] klines fetch (cache miss): { symbol: 'LAYERUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'LAYERUSDT', interval: '5m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'PLUMEUSDT', interval: '1m', limit: 120 }
+[fourMemeLaunchAgent] scanned=0 ticked=0 launched=0 skipped=0 errors=0
