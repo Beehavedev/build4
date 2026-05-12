@@ -1,0 +1,55 @@
+Last login: Mon May 11 23:25:10 on console
+bt@BTs-MacBook-Air ~ % postgresql://build4db_user:2VT7sCzcDRyp99TP0H4tjCgyxIFTq16m@dpg-d6qpubpj16oc73es6u9g-a/build4db
+zsh: no such file or directory: postgresql://build4db_user:2VT7sCzcDRyp99TP0H4tjCgyxIFTq16m@dpg-d6qpubpj16oc73es6u9g-a/build4db
+bt@BTs-MacBook-Air ~ % >....                                                                                            
+zsh: no such file or directory: postgresql://build4db_user:2VT7sCzcDRyp99TP0H4tjCgyxIFTq16m@dpg-d6qpubpj16oc73es6u9g-a/build4db
+bt@BTs-MacBook-Air ~ %
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+bt         console                         Mon May 11 23:25   still logged in
+bt         console                         Fri Apr 24 15:36 - 23:22 (17+07:46)
+bt         console                         Sun Apr 12 13:59 - 15:35 (12+01:36)
+bt         console                         Fri Apr  3 13:53 - 13:57 (9+00:03)
+bt         console                         Wed Apr  1 19:58 - 13:53 (1+17:55)
+bt         console                         Wed Mar 11 11:36 - 19:57 (21+08:20)
+root       console                         Wed Mar 11 11:32 - shutdown  (00:01)
+bt         console                         Sun Feb 22 00:17 - 11:32 (17+11:14)
+bt         console                         Sat Feb 21 23:56 - 00:16  (00:20)
+bt         console                         Sat Feb 21 23:25 - 23:55  (00:30)
+bt         console                         Fri Feb 20 11:17 - 23:19 (1+12:02)
+root       console                         Fri Feb 20 11:13 - shutdown  (00:01)
+bt         console                         Fri Feb 20 09:58 - 11:13  (01:14)
+bt         console                         Thu Feb 19 12:25 - 09:57  (21:32)
+bt         console                         Wed Feb 18 13:35 - 12:24  (22:49)
+bt         console                         Fri Feb  6 20:43 - 13:34 (11+16:51)
+bt         console                         Wed Jan 14 12:15 - 20:42 (23+08:26)
+
+wtmp begins Wed Jan 14 12:15:12 +04 2026
+zsh: command not found: bt@BTs-MacBook-Air
+zsh: command not found: zsh:
+zsh: command not found: bt@BTs-MacBook-Air
+bt@BTs-MacBook-Air ~ % 
