@@ -323,8 +323,25 @@ export function initRunner(bot: Bot) {
     cron.schedule('30 1,5,9,13,17,21 * * *', () => { void fireCampaignTick('REASSESS_1') }, cronOpts)
     cron.schedule('0 3,7,11,15,19,23 * * *', () => { void fireCampaignTick('REASSESS_2') }, cronOpts)
     cron.schedule('45 3,7,11,15,19,23 * * *',() => { void fireCampaignTick('FINAL') },      cronOpts)
+
+    // ── ENTRY watchdog ──────────────────────────────────────────────────
+    // Belt-and-suspenders against missing a round. Runs every 5 minutes;
+    // runCampaignTick('ENTRY') is now idempotent (skips if an entry row
+    // already exists for the current 4h round), so calling it on a loop
+    // is safe — it only opens a position if the regular +5m cron failed
+    // to fire (e.g. Render restarted between 16:00 and 16:05 UTC, which
+    // is exactly what burned us on Round 4).
+    cron.schedule('*/5 * * * *', () => { void fireCampaignTick('ENTRY') }, cronOpts)
+
+    // Boot-time catch-up: if the process started mid-round (e.g. operator
+    // redeployed at 16:30 UTC), fire ENTRY immediately rather than waiting
+    // up to 5 min for the watchdog. Same idempotency guard protects us.
+    setTimeout(() => { void fireCampaignTick('ENTRY') }, 10_000)
+
     console.log(
-      '[Runner] 42.space campaign scheduler ARMED — ENTRY +5m, REASSESS +1h30m/+3h, FINAL +3h45m past every 4h UTC boundary',
+      '[Runner] 42.space campaign scheduler ARMED — ENTRY +5m + every-5min watchdog, ' +
+        'REASSESS +1h30m/+3h, FINAL +3h45m past every 4h UTC boundary; ' +
+        'boot-time ENTRY catch-up in 10s',
     )
   }
 

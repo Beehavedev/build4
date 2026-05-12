@@ -123,7 +123,24 @@ export async function runCampaignTick(tick: TickKind): Promise<CampaignTickResul
     return runReassessTick(ctx, market, state, ta, tick, roundBoundaryMs);
   }
 
-  // 6. ENTRY path — run the 4-model swarm.
+  // 6. ENTRY path — IDEMPOTENCY GUARD: if we already opened an entry for
+  //    this round, skip silently. This makes runCampaignTick('ENTRY') safe
+  //    to call repeatedly (boot-time catch-up + every-5-min watchdog cron),
+  //    so a Render restart mid-round can never cause us to miss a round
+  //    AND can never cause us to double-up on an entry. Reassess paths use
+  //    the same `loadRoundPositions` helper, so they correctly see this
+  //    entry on subsequent ticks.
+  const existingEntries = await loadRoundPositions(ctx.agentId, roundBoundaryMs);
+  if (existingEntries.length > 0) {
+    return {
+      ok: true,
+      tick,
+      roundBoundaryMs,
+      marketAddress: market.address,
+      reason: `entry already exists for round=${roundBoundaryMs} (positionId=${existingEntries[0].positionId})`,
+    };
+  }
+
   const prompt = buildEntryPrompt(market, state, ta, roundBoundaryMs);
   const votes = await runSwarm(prompt);
 
