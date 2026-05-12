@@ -434,16 +434,20 @@ function buildReassessPrompt(
 
   const system = [
     'You are a senior BTC quant trader managing an OPEN position on a 42.space',
-    'BTC 8-hour Price Market. You may HOLD, DOUBLE_DOWN on the held bucket,',
-    'or SPREAD into one adjacent bucket. You CANNOT sell. The position pays out',
-    'at expiry if BTC settles in the bucket you bought. Conviction maps to size:',
-    'low(60-69)=$0=HOLD, med(70-84)=$20, high(85+)=$30. Reply with strict JSON.',
+    'BTC 8-hour Price Market. Lifecycle: 4h live-trading phase, then 4h',
+    'settlement phase — resolution = round_open + 8h. You may HOLD, DOUBLE_DOWN',
+    'on the held bucket, or SPREAD into one adjacent bucket. You CANNOT sell.',
+    'The position pays out at the +8h resolution if BTC settles in the bucket',
+    'you hold. Your TA target is BTC at the resolution timestamp, NOT at the',
+    'trading-close timestamp. Conviction maps to size: low(60-69)=$0=HOLD,',
+    'med(70-84)=$20, high(85+)=$30. Reply with strict JSON.',
   ].join(' ');
 
   const user = [
     `Market: ${market.question}`,
-    `Round opened: ${new Date(roundBoundaryMs).toISOString()} UTC`,
-    `Time remaining: ${rctx.minutesRemaining} min` + (rctx.isFinal ? '  (FINAL CALL)' : ''),
+    `Round opened:        ${new Date(roundBoundaryMs).toISOString()}`,
+    `RESOLUTION TARGET:   ${new Date(roundBoundaryMs + 8 * 60 * 60 * 1000).toISOString()}  (round_open + 8h — your prediction horizon)`,
+    `Trading window remaining: ${rctx.minutesRemaining} min` + (rctx.isFinal ? '  (FINAL CALL — last chance to adjust before trading closes)' : ''),
     '',
     `BTC spot now: $${ta.btcSpot.toFixed(2)}`,
     `RSI(14): ${ta.rsi14.toFixed(1)}   ADX(14): ${ta.adx14.toFixed(1)}   ATR(14): $${ta.atr14.toFixed(2)}`,
@@ -818,7 +822,14 @@ function buildEntryPrompt(
   roundBoundaryMs: number,
 ): { system: string; user: string } {
   const minutesIntoRound = Math.floor((Date.now() - roundBoundaryMs) / 60_000);
+  // 42.space BTC 8h Price Markets: 4h LIVE-TRADING phase, then a separate
+  // 4h SETTLEMENT phase. Trading closes at round_open + 4h; the market
+  // resolves (and pays out) at round_open + 8h. The agent must predict
+  // the bucket containing BTC at the +8h resolution timestamp, NOT at the
+  // +4h trading-close — those are different prices and a 2× horizon error.
   const minutesRemaining = Math.max(0, 4 * 60 - minutesIntoRound);
+  const tradingCloseIso = new Date(roundBoundaryMs + 4 * 60 * 60 * 1000).toISOString();
+  const resolutionIso = new Date(roundBoundaryMs + 8 * 60 * 60 * 1000).toISOString();
 
   // Bucket grid — index, label, marginal price (= implied probability),
   // approximate multiplier (1 / impliedProb at this snapshot).
@@ -838,17 +849,22 @@ function buildEntryPrompt(
 
   const system = [
     'You are a senior BTC quant trader on the BUILD4 campaign agent.',
-    'Your job: pick ONE price bucket for the next 4-hour round on a 42.space',
-    'BTC 8-hour Price Market. Buckets are mutually exclusive. The bucket whose',
-    'price range contains BTC at round-end wins; all other buckets pay $0.',
-    'You MUST pick a bucket — abstaining is not allowed (always-trade rule).',
-    'Reply with strict JSON only, no prose, no code fences.',
+    'Your job: predict where BTC will SETTLE at the resolution timestamp on a',
+    '42.space BTC 8-hour Price Market and pick the bucket that contains that price.',
+    'Market lifecycle: 4h live-trading phase, then 4h settlement phase — total',
+    '8h from round-open to resolution. You are entering during the trading phase,',
+    'but your TA target is BTC price 8 HOURS AFTER round-open (NOT 4h).',
+    'Buckets are mutually exclusive. The bucket containing BTC at resolution wins;',
+    'all others pay $0. You MUST pick a bucket — abstaining is not allowed',
+    '(always-trade rule). Reply with strict JSON only, no prose, no code fences.',
   ].join(' ');
 
   const user = [
     `Market: ${market.question}`,
-    `Round opened: ${new Date(roundBoundaryMs).toISOString()} UTC`,
-    `Time elapsed: ${minutesIntoRound} min  |  remaining: ${minutesRemaining} min`,
+    `Round opened:        ${new Date(roundBoundaryMs).toISOString()}`,
+    `Trading closes:      ${tradingCloseIso}  (round_open + 4h)`,
+    `RESOLUTION TARGET:   ${resolutionIso}  (round_open + 8h — your prediction horizon)`,
+    `Trading window remaining: ${minutesRemaining} min  (elapsed ${minutesIntoRound} min)`,
     '',
     `BTC spot now: $${ta.btcSpot.toFixed(2)}`,
     `RSI(14): ${ta.rsi14.toFixed(1)}   ADX(14): ${ta.adx14.toFixed(1)}   ATR(14): $${ta.atr14.toFixed(2)}`,
