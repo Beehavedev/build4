@@ -532,9 +532,20 @@ app.get('/api/public/campaign/brain', async (req, res) => {
     // the per-tick swarm verdicts in `providers`. fetchAgentLogFeed filters
     // on `pair: not null`, which excludes 42.space prediction rows (no
     // pair), so we run a dedicated query here.
+    // Two row types share this agentId in AgentLog:
+    //   1. Campaign-tick rows  → exchange='42', action='CAMPAIGN_*' (the
+    //      ones we actually want to surface — every entry includes the
+    //      4-model swarm verdict in `providers`).
+    //   2. 42.space scanner rows → exchange='fortytwo', action='HOLD'
+    //      (high-volume background noise, ~5/min, would bury the
+    //      campaign signal entirely).
+    // Filter to (1) so the public page is the campaign brain feed, not
+    // a generic agent log. The scanner rows are still readable via the
+    // user-scoped feed for logged-in operators.
     const rows = await db.agentLog.findMany({
       where: {
         agentId: agent.id,
+        exchange: '42',
         ...(before ? { createdAt: { lt: before } } : {}),
       },
       orderBy: { createdAt: 'desc' },
