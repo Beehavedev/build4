@@ -1,0 +1,51 @@
+[Aster] klines fetch (cache miss): { symbol: 'LAYERUSDT', interval: '5m', limit: 100 }
+[Agent testagent] HOLD on BTWUSDT — POST_LISTING_EXHAUSTION_NO_BUYER_CONFIRMATION
+[Agent TENSHI] HOLD on BTWUSDT — POST_LISTING_EXHAUSTION_NO_BUYER_CONFIRMATION
+[Agent Orion1687] HOLD on BTWUSDT — POST_LISTING_EXHAUSTION_NO_BUYER_CONFIRMATION
+[Agent SeanBuild4] HOLD on BTWUSDT — POST_LISTING_EXHAUSTION_NO_BUYER_CONFIRMATION
+[Agent Andromeda3316] HOLD on BTWUSDT — POST_LISTING_EXHAUSTION_NO_BUYER_CONFIRMATION
+[Agent Miiiiiiiiiineeeii] HOLD on ASTERUSDT — Setup score 3/10 fails minimum threshold. ADX <20 requires mean-reversion only, 
+[Agent BNT] HOLD on ASTERUSDT — Setup score 3/10 fails minimum threshold. ADX <20 requires mean-reversion only, 
+[polymarketAgent] previous tick still running, skipping
+[fourMemeLaunchAgent] scanned=0 — DB probe: enabled=0 active=62 both=0 total=65
+[fourMemeLaunchAgent] scanned=0 ticked=0 launched=0 skipped=0 errors=0
+[Agent Sirius5180] HOLD on BTWUSDT — INSUFFICIENT_SETUP - New listing in exhaustion phase with collapsing volume and 
+[Agent Phoenix2848] HOLD on BTWUSDT — INSUFFICIENT_SETUP - New listing in exhaustion phase with collapsing volume and 
+[Agent Lyra9262] HOLD on BTWUSDT — INSUFFICIENT_SETUP - New listing in exhaustion phase with collapsing volume and 
+[Agent Helios4114] HOLD on BTWUSDT — INSUFFICIENT_SETUP - New listing in exhaustion phase with collapsing volume and 
+[Agent agvvfttcvvcg] HOLD on BTWUSDT — INSUFFICIENT_SETUP - New listing in exhaustion phase with collapsing volume and 
+[Agent Lyra4800] HOLD on BTWUSDT — INSUFFICIENT_SETUP - New listing in exhaustion phase with collapsing volume and 
+[Agent Goku] HOLD on BTWUSDT — INSUFFICIENT_SETUP - New listing in exhaustion phase with collapsing volume and 
+[Agent Nimbus9438] HOLD on BTWUSDT — INSUFFICIENT_SETUP - New listing in exhaustion phase with collapsing volume and 
+[Agent Hahah] HOLD on BTWUSDT — INSUFFICIENT_SETUP - New listing in exhaustion phase with collapsing volume and 
+[Agent Halcyon6425] HOLD on BTWUSDT — INSUFFICIENT_SETUP - New listing in exhaustion phase with collapsing volume and 
+[Agent Zephyr2017] HOLD on BTWUSDT — INSUFFICIENT_SETUP - New listing in exhaustion phase with collapsing volume and 
+[Agent Ghost] HOLD on BTWUSDT — INSUFFICIENT_SETUP - New listing in exhaustion phase with collapsing volume and 
+[Agent Andromeda9005] HOLD on BTWUSDT — INSUFFICIENT_SETUP - New listing in exhaustion phase with collapsing volume and 
+[Agent Andromeda5291] HOLD on BTWUSDT — INSUFFICIENT_SETUP - New listing in exhaustion phase with collapsing volume and 
+[Agent Nimbus1637] HOLD on BTWUSDT — INSUFFICIENT_SETUP - New listing in exhaustion phase with collapsing volume and 
+[Agent Halcyon1391] HOLD on BTWUSDT — INSUFFICIENT_SETUP - New listing in exhaustion phase with collapsing volume and 
+[Agent TENSHI] HOLD on BTWUSDT — Unclear direction and insufficient data for a strong trade setup
+[Agent SeanBuild4] HOLD on BTWUSDT — Unclear direction and insufficient data for a strong trade setup
+[Agent Andromeda3316] HOLD on BTWUSDT — Unclear direction and insufficient data for a strong trade setup
+[Agent testagent] HOLD on BTWUSDT — Unclear direction and insufficient data for a strong trade setup
+[Agent Orion1687] HOLD on BTWUSDT — Unclear direction and insufficient data for a strong trade setup
+[Agent BNT] HOLD on ASTERUSDT — ADX 1.9 (RANGING regime, no directional conviction), timeframe misalignment (2/5
+[Agent Miiiiiiiiiineeeii] HOLD on ASTERUSDT — ADX 1.9 (RANGING regime, no directional conviction), timeframe misalignment (2/5
+[Agent Andromeda9005] HOLD on BTWUSDT — setupScore 3/10 (need ≥4), confidence 0.42 (need ≥0.55). No confirmed reversal s
+[Agent Lyra9262] HOLD on BTWUSDT — setupScore 3/10 (need ≥4), confidence 0.42 (need ≥0.55). No confirmed reversal s
+[Agent Hahah] HOLD on BTWUSDT — setupScore 3/10 (need ≥4), confidence 0.42 (need ≥0.55). No confirmed reversal s
+[Agent Phoenix2848] HOLD on BTWUSDT — setupScore 3/10 (need ≥4), confidence 0.42 (need ≥0.55). No confirmed reversal s
+[Agent Sirius5180] HOLD on BTWUSDT — setupScore 3/10 (need ≥4), confidence 0.42 (need ≥0.55). No confirmed reversal s
+[Agent Goku] HOLD on BTWUSDT — setupScore 3/10 (need ≥4), confidence 0.42 (need ≥0.55). No confirmed reversal s
+[Agent Zephyr2017] HOLD on BTWUSDT — setupScore 3/10 (need ≥4), confidence 0.42 (need ≥0.55). No confirmed reversal s
+[Agent Halcyon6425] HOLD on BTWUSDT — setupScore 3/10 (need ≥4), confidence 0.42 (need ≥0.55). No confirmed reversal s
+Menu
+[Agent Lyra4800] HOLD on BTWUSDT — setupScore 3/10 (need ≥4), confidence 0.42 (need ≥0.55). No confirmed reversal s
+[Agent Ghost] HOLD on BTWUSDT — setupScore 3/10 (need ≥4), confidence 0.42 (need ≥0.55). No confirmed reversal s
+[Agent Helios4114] HOLD on BTWUSDT — setupScore 3/10 (need ≥4), confidence 0.42 (need ≥0.55). No confirmed reversal s
+[Agent Halcyon1391] HOLD on BTWUSDT — setupScore 3/10 (need ≥4), confidence 0.42 (need ≥0.55). No confirmed reversal s
+[Agent Andromeda5291] HOLD on BTWUSDT — setupScore 3/10 (need ≥4), confidence 0.42 (need ≥0.55). No confirmed reversal s
+[Agent Nimbus1637] HOLD on BTWUSDT — setupScore 3/10 (need ≥4), confidence 0.42 (need ≥0.55). No confirmed reversal s
+[Agent Nimbus9438] HOLD on BTWUSDT — setupScore 3/10 (need ≥4), confidence 0.42 (need ≥0.55). No confirmed reversal s
+[Agent agvvfttcvvcg] HOLD on BTWUSDT — setupScore 3/10 (need ≥4), confidence 0.42 (need ≥0.55). No confirmed reversal s
