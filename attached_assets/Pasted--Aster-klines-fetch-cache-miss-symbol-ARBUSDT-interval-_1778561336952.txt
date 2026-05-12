@@ -1,0 +1,58 @@
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BTWUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'STORJUSDT', interval: '15m', limit: 100 }
+[Agent Nimbus1637] 42.space scan: 25 live markets
+[Agent Sirius5180] 42.space scan: 25 live markets
+[Agent Andromeda9005] 42.space scan: 25 live markets
+[Agent Zephyr2017] 42.space scan: 25 live markets
+[Aster] klines fetch (cache miss): { symbol: 'TROLLUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'TROLLUSDT', interval: '5m', limit: 100 }
+[Agent Andromeda3316] 42.space scan: 25 live markets
+[Agent Phoenix2848] 42.space scan: 25 live markets
+[Agent Orion1687] 42.space scan: 25 live markets
+[Agent BNT] 42.space scan: 25 live markets
+[Agent Goku] 42.space scan: 25 live markets
+[Agent Andromeda5291] 42.space scan: 25 live markets
+[Agent Halcyon6425] 42.space scan: 25 live markets
+[Agent Miiiiiiiiiineeeii] 42.space scan: 25 live markets
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '4h', limit: 200 }
+[Agent Build4] 42.space scan: 25 live markets
+[Agent Lyra4800] 42.space scan: 25 live markets
+[Agent Lyra9262] 42.space scan: 25 live markets
+[Agent Nimbus9438] 42.space scan: 25 live markets
+[Agent agvvfttcvvcg] 42.space scan: 25 live markets
+[Agent Ghost] 42.space scan: 25 live markets
+[Agent SeanBuild4] 42.space scan: 25 live markets
+[Agent TENSHI] 42.space scan: 25 live markets
+[Agent Helios4114] 42.space scan: 25 live markets
+[Aster] klines fetch (cache miss): { symbol: 'BTWUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'BTWUSDT', interval: '5m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'PLUMEUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'PLUMEUSDT', interval: '5m', limit: 100 }
+[GET]
+build4-1.onrender.com/api/agents/0x611314094682e1310FF070518EbCa64d16F3C7E4/metadata.json clientIP="136.109.218.211" requestID="17abe73d-fd00-49fc" responseTimeMS=1396 responseBytes=1354 userAgent="8004scan/0.4.163 (+https://www.8004scan.io; bot)"
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 200 }
+[GET]
+build4-1.onrender.com/api/agents/0x483A518c7a7aD45671ca64b6e68D582e1C83506B/metadata.json clientIP="136.109.218.211" requestID="21a4806c-6828-4b98" responseTimeMS=1023 responseBytes=302 userAgent="8004scan/0.4.163 (+https://www.8004scan.io; bot)"
+[Aster] klines fetch (cache miss): { symbol: 'BTWUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'TROLLUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'STORJUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'STORJUSDT', interval: '5m', limit: 100 }
+[GET]
+build4-1.onrender.com/api/agents/0x89C3092b0D575975B4988bE423D605fdb62c0564/metadata.json clientIP="136.109.218.211" requestID="c26ca327-3786-47fb" responseTimeMS=1318 responseBytes=1353 userAgent="8004scan/0.4.163 (+https://www.8004scan.io; bot)"
+[Aster] klines fetch (cache miss): { symbol: 'PLUMEUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'LAYERUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'LAYERUSDT', interval: '5m', limit: 100 }
+Menu
+[GET]
+build4-1.onrender.com/api/agents/0x9aBF70FFcDda20222e9f810619e42b3722A23B71/metadata.json clientIP="136.109.218.211" requestID="d1e9bad5-290f-4a0b" responseTimeMS=571 responseBytes=1355 userAgent="8004scan/0.4.163 (+https://www.8004scan.io; bot)"
+[Agent TENSHI] HOLD on BTWUSDT — Volume divergence on bounce (declining across 3 green candles), sitting mid-rang
+[Agent SeanBuild4] HOLD on BTWUSDT — Volume divergence on bounce (declining across 3 green candles), sitting mid-rang
+[GET]
+build4-1.onrender.com/api/agents/0x5f316Ad11C857826ee1759b0fEC5Ffb4424b49BC/metadata.json clientIP="136.109.218.211" requestID="b5fc9bb3-1d51-408a" responseTimeMS=559 responseBytes=1366 userAgent="8004scan/0.4.163 (+https://www.8004scan.io; bot)"
+[Agent Miiiiiiiiiineeeii] HOLD on ASTERUSDT — Setup score 3/10 fails minimum threshold. Ranging regime (ADX 4.1) + volume dive
+[Agent BNT] HOLD on ASTERUSDT — Setup score 3/10 fails minimum threshold. Ranging regime (ADX 4.1) + volume dive
+[polymarketAgent] previous tick still running, skipping
+[fourMemeLaunchAgent] scanned=0 ticked=0 launched=0 skipped=0 errors=0
+[GET]
+build4-1.onrender.com/api/agents/0x94842F807ce23F8BCF244C1a6b6ED05Ccf4aaF5A/metadata.json clientIP="136.109.218.211" requestID="6219f7c6-be3a-4c60" responseTimeMS=202 responseBytes=302 userAgent="8004scan/0.4.163 (+https://www.8004scan.io; bot)"
