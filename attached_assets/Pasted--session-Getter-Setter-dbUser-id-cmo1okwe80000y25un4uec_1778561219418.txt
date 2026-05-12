@@ -1,0 +1,53 @@
+    },
+    session: [Getter/Setter],
+    dbUser: {
+      id: 'cmo1okwe80000y25un4uec8b0',
+      telegramId: 7383875080n,
+      username: 'mattdawmon',
+      firstName: 'Matt',
+      referredBy: null,
+      referralCode: 'cmo1okwe90001y25uejhbfwv5',
+      subscriptionTier: 'free',
+      subscriptionExpiry: null,
+      totalFeesSpent: 0,
+      b4Balance: 0,
+      asterApiKey: null,
+      asterApiSecret: null,
+      asterAgentAddress: '0xD1F0D2c924Dc7a20966cb971Be41b57d41F93603',
+      asterAgentEncryptedPK: 'U2FsdGVkX18rcoa2KqpefkIhZyJkJ70vZV5dNT9aDSdQFQuVOF6tsgsScLk/TVH4ibXDW5WojVdoH8O+pq3gsyO993nLEj5L3cZu4NIXfUKyvU8L7vqaj/ELAEHUS9at',
+      asterOnboarded: true,
+      hyperliquidAgentAddress: '0x150dB11828Eada7a4b7bbd6CA5a3d69b6120c1e6',
+      hyperliquidAgentEncryptedPK: 'U2FsdGVkX1/d7oTjztDhAuBU9+1pEzzWQY/wbrCu0VG2BYxLvSd2dEBUk7kZIvBM0nuwH3fAxZYu+cUNwunLMnW0lCzX/i8AsDeqawPTxxxiojUB5YMDPTp8W53I3/7a',
+      hyperliquidOnboarded: true,
+      hyperliquidUnified: false,
+      asterAgentTradingEnabled: true,
+      hyperliquidAgentTradingEnabled: true,
+      polymarketAgentTradingEnabled: true,
+      pinHash: null,
+      pinSalt: null,
+      fortyTwoLiveTrade: true,
+      swarmEnabled: true,
+      botBlocked: false,
+      linkedB4WalletAddress: null,
+      linkedB4Balance: null,
+      linkedB4At: null,
+      createdAt: 2026-04-16T16:15:38.240Z,
+      updatedAt: 2026-05-03T08:26:17.169Z
+    },
+    match: ''
+  },
+  name: 'BotError'
+}
+[POST]
+build4-1.onrender.com/api/webhook clientIP="91.108.5.66" requestID="3d8ac2ab-cde1-49ea" responseTimeMS=1295 responseBytes=290 userAgent=""
+[Agent SeanBuild4] HOLD on BTWUSDT — Conflicting signals in discovery phase: weak bounce on declining volume, overlev
+[Agent BNT] HOLD on ASTERUSDT — Setup score 3/10 fails minimum threshold. Ranging regime (ADX 4.1) with conflict
+[Agent TENSHI] HOLD on BTWUSDT — Conflicting signals in discovery phase: weak bounce on declining volume, overlev
+[Agent Miiiiiiiiiineeeii] HOLD on ASTERUSDT — Setup score 3/10 fails minimum threshold. Ranging regime (ADX 4.1) with conflict
+[polymarketAgent] previous tick still running, skipping
+[fourMemeLaunchAgent] scanned=0 ticked=0 launched=0 skipped=0 errors=0
+Menu
+[GET]
+build4-1.onrender.com/api/agents/0xbcC22747431C72bB19Cc39B686C3379e9A76891C/metadata.json clientIP="136.109.218.211" requestID="e77af34d-ea8a-4ceb" responseTimeMS=1188 responseBytes=1335 userAgent="8004scan/0.4.163 (+https://www.8004scan.io; bot)"
+==> Detected service running on port 500
+==> Docs on specifying a port: https://render.com/docs/web-services#port-binding
