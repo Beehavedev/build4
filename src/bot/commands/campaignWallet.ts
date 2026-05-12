@@ -160,6 +160,73 @@ export function registerCampaignWallet(bot: Bot) {
     }
   });
 
+  // /campaigntick <ENTRY|REASSESS_1|REASSESS_2|FINAL>
+  //   Manually fire a single campaign tick (same code path as the
+  //   scheduled cron) plus the post-tick settle+claim sweep. Use this
+  //   to recover from a missed window after a deploy restart — e.g. if
+  //   Round 4's 16:05 UTC ENTRY cron didn't fire, run:
+  //     /campaigntick ENTRY
+  //   while the round is still live (within the 4h window).
+  bot.command('campaigntick', async (ctx) => {
+    if (!isAdmin(ctx)) return;
+    const agentId = process.env.FT_CAMPAIGN_AGENT_ID;
+    if (!agentId) {
+      await ctx.reply('FT_CAMPAIGN_AGENT_ID not set.');
+      return;
+    }
+    const arg = (ctx.message?.text ?? '').split(/\s+/).slice(1).join(' ').trim().toUpperCase();
+    const validKinds = ['ENTRY', 'REASSESS_1', 'REASSESS_2', 'FINAL'] as const;
+    if (!(validKinds as readonly string[]).includes(arg)) {
+      await ctx.reply(
+        'Usage: `/campaigntick <ENTRY|REASSESS_1|REASSESS_2|FINAL>`\n\n' +
+          'Use `ENTRY` to open the current-round position if the cron missed it.',
+        { parse_mode: 'Markdown' },
+      );
+      return;
+    }
+    const kind = arg as typeof validKinds[number];
+    await ctx.reply(`⏳ Firing campaign tick: *${kind}*…`, { parse_mode: 'Markdown' });
+    try {
+      const { runCampaignTick } = await import('../../services/fortyTwoCampaign');
+      const r = await runCampaignTick(kind);
+      // Run sweep after the tick so resolved rows from prior rounds get
+      // flipped at the same time (matches the scheduled-cron behaviour).
+      let sweepLine = '';
+      try {
+        const { claimAllAgentResolved } = await import('../../services/fortyTwoExecutor');
+        const sweep = await claimAllAgentResolved(agentId);
+        if (sweep.settled > 0 || sweep.marketsClaimed > 0) {
+          sweepLine =
+            `\n\nSweep: settled=${sweep.settled} markets_claimed=${sweep.marketsClaimed} ` +
+            `payout=$${sweep.payoutUsdt.toFixed(2)}`;
+        }
+      } catch (sweepErr) {
+        sweepLine = `\n\n⚠️ Sweep failed: ${(sweepErr as Error).message}`;
+      }
+      if (r.ok) {
+        await ctx.reply(
+          `✅ *${kind} OK*\n\n` +
+            `Market: \`${r.marketAddress ?? '-'}\`\n` +
+            `Bucket: ${r.bucketLabel ?? '-'} (idx ${r.bucketIndex ?? '-'})\n` +
+            `Position: \`${r.positionId ?? '-'}\`` +
+            (r.reason ? `\nNote: ${r.reason}` : '') +
+            sweepLine,
+          { parse_mode: 'Markdown' },
+        );
+      } else {
+        await ctx.reply(
+          `⚠️ *${kind} no-trade*\n\n` +
+            `Reason: ${r.reason ?? 'unknown'}` +
+            (r.marketAddress ? `\nMarket: \`${r.marketAddress}\`` : '') +
+            sweepLine,
+          { parse_mode: 'Markdown' },
+        );
+      }
+    } catch (err) {
+      await ctx.reply(`Tick crashed: ${(err as Error).message}`);
+    }
+  });
+
   bot.command('campaignstatus', async (ctx) => {
     if (!isAdmin(ctx)) return;
     const mode = process.env.FT_CAMPAIGN_MODE === 'true';
