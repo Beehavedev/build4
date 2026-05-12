@@ -263,13 +263,41 @@ export default function LaunchToken() {
           />
         </Field>
 
-        <Field label="Logo" hint="Optional — drag & drop or tap. Max 5 MB. We'll generate one if skipped.">
-          <div
+        <Field label="Logo" hint="Optional — tap to choose from camera roll or files. Max 5 MB. We'll generate one if skipped.">
+          {/* iOS Safari + Telegram WebView blocks programmatic .click() on
+              file inputs that use display:none, which is why the previous
+              version (a <div onClick> that called fileInputRef.click())
+              silently did nothing on iPhone. Wrapping the visible
+              dropzone in a <label htmlFor> gives us a native click that
+              the WebView always honours, and the input itself is kept
+              visually-hidden (opacity:0 + position:absolute) instead of
+              display:none so iOS still treats it as interactable. The
+              hidden file input is rendered OUTSIDE the label so the
+              Clear button's stopPropagation can't swallow it. */}
+          <input
+            ref={fileInputRef}
+            id="launch-logo-file"
+            type="file"
+            accept="image/*"
+            onChange={onPick}
+            data-testid="input-logo-file"
+            style={{
+              position: 'absolute',
+              width: 1, height: 1,
+              padding: 0, margin: -1,
+              overflow: 'hidden',
+              clip: 'rect(0,0,0,0)',
+              whiteSpace: 'nowrap',
+              border: 0,
+              opacity: 0,
+            }}
+          />
+          <label
+            htmlFor="launch-logo-file"
             data-testid="dropzone-logo"
             onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
             onDragLeave={() => setDragOver(false)}
             onDrop={onDrop}
-            onClick={() => fileInputRef.current?.click()}
             style={{
               border: `1px dashed ${dragOver ? 'var(--purple)' : 'var(--border)'}`,
               borderRadius: 10,
@@ -289,12 +317,15 @@ export default function LaunchToken() {
               }}>+</div>
             )}
             <div style={{ flex: 1, fontSize: 13, color: 'var(--text-secondary)' }}>
-              {logoFile ? `${logoFile.name} (${(logoFile.size / 1024).toFixed(0)} KB)` : 'Drop image here or tap to browse'}
+              {logoFile ? `${logoFile.name} (${(logoFile.size / 1024).toFixed(0)} KB)` : 'Tap to choose image'}
             </div>
             {logoFile && (
               <button
                 type="button"
-                onClick={(e) => { e.stopPropagation(); handleFile(null) }}
+                // preventDefault stops the label from re-opening the file
+                // picker after we clear; stopPropagation is belt-and-
+                // suspenders for any wrapping click handlers.
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleFile(null) }}
                 data-testid="button-clear-logo"
                 style={{
                   background: 'transparent', border: '1px solid var(--border)',
@@ -303,15 +334,7 @@ export default function LaunchToken() {
                 }}
               >Clear</button>
             )}
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              onChange={onPick}
-              data-testid="input-logo-file"
-              style={{ display: 'none' }}
-            />
-          </div>
+          </label>
           {logoError && (
             <div data-testid="text-logo-error" style={{ color: 'var(--red)', fontSize: 12, marginTop: 6 }}>{logoError}</div>
           )}

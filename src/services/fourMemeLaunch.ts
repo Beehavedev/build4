@@ -169,9 +169,30 @@ async function generateTokenPng(tokenName: string, tokenSymbol: string): Promise
   }
 }
 
+// Per-request timeout for every four.meme private API call. Without
+// these, a hanging upstream (we've seen multi-minute stalls during
+// peak hours) leaves the launch flow stuck — the user sees
+// "Launching… (this can take ~30s)" forever and the on-chain 180s
+// timeout doesn't help because we never reach the on-chain step.
+// 25s is generous: typical happy-path is <2s, but image upload of a
+// 5 MB asset over a slow link can legitimately take ~10s.
+const FOUR_MEME_HTTP_TIMEOUT_MS = 25_000
+function fourMemeFetch(url: string, init: RequestInit = {}): Promise<Response> {
+  const controller = new AbortController()
+  const t = setTimeout(() => controller.abort(), FOUR_MEME_HTTP_TIMEOUT_MS)
+  return fetch(url, { ...init, signal: controller.signal })
+    .catch((err: any) => {
+      if (err?.name === 'AbortError') {
+        throw new Error(`four.meme upstream timed out after ${FOUR_MEME_HTTP_TIMEOUT_MS / 1000}s (${url.split('/').slice(-2).join('/')})`)
+      }
+      throw err
+    })
+    .finally(() => clearTimeout(t))
+}
+
 // ── four.meme private API ────────────────────────────────────────────
 async function fourMemeLogin(wallet: ethers.Wallet): Promise<string> {
-  const nonceRes = await fetch(`${FOUR_MEME_API}/meme-api/v1/private/user/nonce/generate`, {
+  const nonceRes = await fourMemeFetch(`${FOUR_MEME_API}/meme-api/v1/private/user/nonce/generate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -189,7 +210,7 @@ async function fourMemeLogin(wallet: ethers.Wallet): Promise<string> {
   const message = `You are sign in Meme ${nonceJson.data}`
   const signature = await wallet.signMessage(message)
 
-  const loginRes = await fetch(`${FOUR_MEME_API}/meme-api/v1/private/user/login/dex`, {
+  const loginRes = await fourMemeFetch(`${FOUR_MEME_API}/meme-api/v1/private/user/login/dex`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -219,7 +240,7 @@ async function fourMemeUploadImage(pngBuffer: Buffer, accessToken: string): Prom
   const footer = `\r\n--${boundary}--\r\n`
   const body = Buffer.concat([Buffer.from(header), pngBuffer, Buffer.from(footer)])
 
-  const res = await fetch(`${FOUR_MEME_API}/meme-api/v1/private/token/upload`, {
+  const res = await fourMemeFetch(`${FOUR_MEME_API}/meme-api/v1/private/token/upload`, {
     method: 'POST',
     headers: {
       'Content-Type': `multipart/form-data; boundary=${boundary}`,
@@ -305,7 +326,7 @@ const RAISE_CONFIG_DEFAULTS: RaiseConfig = {
 
 async function fourMemeFetchRaiseConfig(accessToken: string): Promise<RaiseConfig> {
   try {
-    const res = await fetch(`${FOUR_MEME_API}/meme-api/v1/private/token/raise`, {
+    const res = await fourMemeFetch(`${FOUR_MEME_API}/meme-api/v1/private/token/raise`, {
       headers: { Accept: 'application/json', 'meme-web-access': accessToken },
     })
     if (!res.ok) return RAISE_CONFIG_DEFAULTS
@@ -377,7 +398,7 @@ async function fourMemeCreateTokenData(
   if (params.twitterUrl) body.twitterUrl = params.twitterUrl
   if (params.telegramUrl) body.telegramUrl = params.telegramUrl
 
-  const res = await fetch(`${FOUR_MEME_API}/meme-api/v1/private/token/create`, {
+  const res = await fourMemeFetch(`${FOUR_MEME_API}/meme-api/v1/private/token/create`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
