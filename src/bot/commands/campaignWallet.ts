@@ -128,6 +128,38 @@ export function registerCampaignWallet(bot: Bot) {
     );
   });
 
+  // /campaignsettle — manually trigger the settle+claim sweep for the
+  // configured campaign agent. Use this to materialise resolved Round N
+  // payouts immediately without waiting for the next ENTRY tick.
+  bot.command('campaignsettle', async (ctx) => {
+    if (!isAdmin(ctx)) return;
+    const agentId = process.env.FT_CAMPAIGN_AGENT_ID;
+    if (!agentId) {
+      await ctx.reply('FT_CAMPAIGN_AGENT_ID not set.');
+      return;
+    }
+    await ctx.reply('⏳ Sweeping settle + claim for campaign agent…');
+    try {
+      const { claimAllAgentResolved } = await import('../../services/fortyTwoExecutor');
+      const r = await claimAllAgentResolved(agentId);
+      const errLines = r.errors.length
+        ? '\n\n⚠️ Errors:\n' +
+          r.errors.map((e) => `• \`${e.marketAddress.slice(0, 10)}…\`: ${e.reason}`).join('\n')
+        : '';
+      await ctx.reply(
+        `✅ *Campaign sweep complete*\n\n` +
+          `Newly settled (open → resolved): ${r.settled}\n` +
+          `Markets claimed on-chain: ${r.marketsClaimed}\n` +
+          `Positions claimed: ${r.claimedPositions}\n` +
+          `Total payout: $${r.payoutUsdt.toFixed(2)}` +
+          errLines,
+        { parse_mode: 'Markdown' },
+      );
+    } catch (err) {
+      await ctx.reply(`Sweep failed: ${(err as Error).message}`);
+    }
+  });
+
   bot.command('campaignstatus', async (ctx) => {
     if (!isAdmin(ctx)) return;
     const mode = process.env.FT_CAMPAIGN_MODE === 'true';

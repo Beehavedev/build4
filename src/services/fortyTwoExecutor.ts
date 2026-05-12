@@ -1767,6 +1767,195 @@ export async function backfillReceiptPayoutsForUser(
  * Claim every winning outcome the user holds across every resolved market.
  * One on-chain tx per market with at least one win.
  */
+/**
+ * Agent-scoped claim sweep — the campaign analogue of
+ * `claimAllUserResolved`. Required because the campaign agent has its own
+ * dedicated wallet (Agent.walletId) and the user-scoped claim path would
+ * route the on-chain claim through the user's *primary* wallet, which
+ * holds none of the agent's outcome tokens.
+ *
+ * Three things happen in order:
+ *   1. settleResolvedPositions({ agentId }) — flip any newly-finalised
+ *      open rows from 'open' → 'resolved_win' / 'resolved_loss' (this is
+ *      what makes the public brain feed counter "Resolved 1/1" instead
+ *      of stuck at 0/0).
+ *   2. For each distinct market with resolved_win rows, call the agent's
+ *      trader to redeem on-chain. Builder is constructed via
+ *      `buildTrader(userId, false, agentId)` so loadUserWalletPK routes
+ *      through Agent.walletId.
+ *   3. Parse the actual on-chain USDT payout from the receipt and write
+ *      `payoutUsdt` + `pnl` per row, then status → 'claimed'. This is
+ *      what makes the brain feed's Realised PnL display the real number
+ *      (the settle step alone leaves pnl=NULL for wins by design — only
+ *      the claim knows the curve-implied payout).
+ *
+ * Cheap when there's nothing to do: one DB read + one RPC read in the
+ * common case. Safe to call from every campaign tick.
+ */
+export async function claimAllAgentResolved(
+  agentId: string,
+): Promise<{
+  ok: true;
+  marketsClaimed: number;
+  claimedPositions: number;
+  payoutUsdt: number;
+  settled: number;
+  errors: Array<{ marketAddress: string; reason: string }>;
+}> {
+  const agentRows = await db.$queryRawUnsafe<Array<{ userId: string }>>(
+    `SELECT "userId" FROM "Agent" WHERE id = $1 LIMIT 1`,
+    agentId,
+  );
+  const userId = agentRows[0]?.userId;
+  if (!userId) {
+    return { ok: true, marketsClaimed: 0, claimedPositions: 0, payoutUsdt: 0, settled: 0, errors: [] };
+  }
+
+  let settled = 0;
+  try {
+    settled = await settleResolvedPositions({ agentId });
+  } catch (err) {
+    console.warn('[fortyTwo/agent] settle sweep failed:', (err as Error).message);
+  }
+
+  const winRows = await db.$queryRawUnsafe<Array<{ marketAddress: string }>>(
+    `SELECT DISTINCT "marketAddress" FROM "OutcomePosition"
+     WHERE "agentId" = $1 AND status = 'resolved_win'`,
+    agentId,
+  );
+
+  let marketsClaimed = 0;
+  let claimedPositions = 0;
+  let payoutUsdt = 0;
+  const errors: Array<{ marketAddress: string; reason: string }> = [];
+  for (const { marketAddress } of winRows) {
+    const r = await claimAgentResolvedForMarket(agentId, userId, marketAddress);
+    if (r.ok) {
+      marketsClaimed++;
+      claimedPositions += r.claimedPositions;
+      payoutUsdt += r.payoutUsdt;
+    } else {
+      errors.push({ marketAddress, reason: r.reason });
+    }
+  }
+  return { ok: true, marketsClaimed, claimedPositions, payoutUsdt, settled, errors };
+}
+
+/**
+ * Agent-scoped per-market claim. Mirror of claimUserResolvedForMarket
+ * with two differences:
+ *   - WHERE clauses filter by agentId (not userId), so we never touch
+ *     a user's manual positions on the same market.
+ *   - buildTrader is called with agentId so loadUserWalletPK picks the
+ *     agent's pinned wallet (Agent.walletId) instead of the user's
+ *     primary BSC wallet.
+ */
+async function claimAgentResolvedForMarket(
+  agentId: string,
+  userId: string,
+  marketAddress: string,
+): Promise<
+  | { ok: true; claimedPositions: number; payoutUsdt: number; txHash: string | null }
+  | { ok: false; reason: string }
+> {
+  if (!/^0x[0-9a-fA-F]{40}$/.test(marketAddress)) {
+    return { ok: false, reason: 'invalid market address' };
+  }
+  const wins = await db.$queryRawUnsafe<OutcomePositionRow[]>(
+    `SELECT * FROM "OutcomePosition"
+     WHERE "agentId" = $1 AND "marketAddress" = $2 AND status = 'resolved_win'`,
+    agentId,
+    marketAddress,
+  );
+  if (wins.length === 0) return { ok: false, reason: 'no claimable wins on this market' };
+
+  const anyLive = wins.some((p) => !p.paperTrade);
+  const built = await buildTrader(userId, !anyLive, agentId);
+  if (!built) return { ok: false, reason: 'no wallet for agent' };
+  const { trader } = built;
+
+  if (typeof trader.claimAllResolved !== 'function') {
+    return { ok: false, reason: 'trader does not implement claimAllResolved' };
+  }
+  let receipt: TxReceiptLike = null;
+  try {
+    receipt = await trader.claimAllResolved(marketAddress);
+  } catch (err) {
+    return { ok: false, reason: friendlyTraderError(err, 'claimAllResolved') };
+  }
+  const txHash = receiptHash(receipt);
+
+  const r = receipt as any;
+  const isDryRun = r && r.dryRun === true;
+  const isLiveSuccess = r && typeof r.status === 'number' && r.status === 1;
+  if (!isDryRun && !isLiveSuccess) {
+    console.warn(
+      `[fortyTwo/agent] claimAllResolved tx not confirmed for market=${marketAddress} ` +
+      `agentId=${agentId} hash=${txHash ?? '<none>'} status=${r?.status ?? '<null>'}`,
+    );
+    return {
+      ok: false,
+      reason: txHash
+        ? `claim transaction did not confirm on-chain (hash ${txHash}). Try again in a moment.`
+        : 'claim transaction was dropped before confirmation. Try again in a moment.',
+    };
+  }
+
+  let payoutUsdt = wins.reduce((s, p) => s + (p.payoutUsdt ?? 0), 0);
+  let onchainPayout: number | null = null;
+  if (!isDryRun) {
+    try {
+      onchainPayout = parseClaimPayoutFromReceipt(r, marketAddress);
+      if (onchainPayout !== null) {
+        const drift = Math.abs(onchainPayout - payoutUsdt);
+        const log = drift > Math.max(0.01, payoutUsdt * 0.02) ? console.warn : console.log;
+        log(
+          `[fortyTwo/agent] claim payout market=${marketAddress} agentId=${agentId} ` +
+          `dbEstimate=${payoutUsdt.toFixed(4)} onchain=${onchainPayout.toFixed(4)} ` +
+          `drift=${drift.toFixed(4)} hash=${txHash}`,
+        );
+      }
+    } catch (e) {
+      console.warn('[fortyTwo/agent] claim payout parse failed:', (e as Error)?.message);
+    }
+  }
+
+  if (onchainPayout !== null) {
+    const weights = wins.map((p) => {
+      if (p.outcomeTokenAmount && p.outcomeTokenAmount > 0) return p.outcomeTokenAmount;
+      if (p.usdtIn && p.usdtIn > 0) return p.usdtIn;
+      return 1;
+    });
+    const totalWeight = weights.reduce((a, b) => a + b, 0);
+    for (let i = 0; i < wins.length; i++) {
+      const pos = wins[i];
+      const share = (weights[i] / totalWeight) * onchainPayout;
+      const pnl = share - pos.usdtIn;
+      await db.$executeRawUnsafe(
+        `UPDATE "OutcomePosition"
+         SET status='claimed', "txHashClose"=COALESCE("txHashClose", $1),
+             "payoutUsdt"=$2, pnl=$3, "closedAt"=NOW()
+         WHERE id=$4`,
+        txHash,
+        share,
+        pnl,
+        pos.id,
+      );
+    }
+    payoutUsdt = onchainPayout;
+  } else {
+    await db.$executeRawUnsafe(
+      `UPDATE "OutcomePosition"
+       SET status='claimed', "txHashClose"=COALESCE("txHashClose", $1), "closedAt"=NOW()
+       WHERE "agentId" = $2 AND "marketAddress" = $3 AND status = 'resolved_win'`,
+      txHash,
+      agentId,
+      marketAddress,
+    );
+  }
+  return { ok: true, claimedPositions: wins.length, payoutUsdt, txHash };
+}
+
 export async function claimAllUserResolved(
   userId: string,
 ): Promise<{

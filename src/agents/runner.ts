@@ -284,6 +284,34 @@ export function initRunner(bot: Bot) {
         } else {
           console.warn(`[fortyTwoCampaign] ${tick} no-trade: ${r.reason ?? 'unknown'}`)
         }
+        // After every tick, sweep settle+claim for the campaign agent's
+        // resolved positions. The runner previously never ran this for the
+        // campaign agent, so finished rounds stayed at status='open'
+        // forever and the public brain feed showed Resolved 0/0 with $0
+        // PnL even though 42.space had paid out. Cheap when there's
+        // nothing to do (~1 DB read + 1 RPC read); only opens claim txs
+        // when a market has actually finalised AND we have a winning row.
+        const campaignAgentId = process.env.FT_CAMPAIGN_AGENT_ID
+        if (campaignAgentId) {
+          try {
+            const { claimAllAgentResolved } = await import('../services/fortyTwoExecutor')
+            const sweep = await claimAllAgentResolved(campaignAgentId)
+            if (sweep.settled > 0 || sweep.marketsClaimed > 0) {
+              console.log(
+                `[fortyTwoCampaign] sweep after ${tick}: settled=${sweep.settled} ` +
+                  `markets_claimed=${sweep.marketsClaimed} positions_claimed=${sweep.claimedPositions} ` +
+                  `payout=$${sweep.payoutUsdt.toFixed(2)}`,
+              )
+            }
+            for (const e of sweep.errors) {
+              console.warn(
+                `[fortyTwoCampaign] sweep claim error market=${e.marketAddress}: ${e.reason}`,
+              )
+            }
+          } catch (sweepErr) {
+            console.warn(`[fortyTwoCampaign] sweep crashed:`, (sweepErr as Error).message)
+          }
+        }
       } catch (err) {
         console.error(`[fortyTwoCampaign] ${tick} crashed:`, (err as Error).message)
       } finally {
