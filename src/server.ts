@@ -8549,13 +8549,15 @@ async function main() {
 
   if (webhookUrl) {
     app.post('/api/webhook', async (req, res) => {
+      // Always 200: returning 500 causes Telegram to retry the same update,
+      // creating a death loop when a handler throws (e.g. Markdown parse
+      // errors on a single broken reply). bot.catch logs the actual error.
       try {
         await bot.handleUpdate(req.body)
-        res.sendStatus(200)
       } catch (err) {
         console.error('[Webhook] Error:', err)
-        res.sendStatus(500)
       }
+      res.sendStatus(200)
     })
 
     app.listen(PORT, async () => {
