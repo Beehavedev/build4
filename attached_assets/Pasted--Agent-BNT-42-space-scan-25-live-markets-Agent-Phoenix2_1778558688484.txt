@@ -1,0 +1,169 @@
+[Agent BNT] 42.space scan: 25 live markets
+[Agent Phoenix2848] 42.space scan: 25 live markets
+[Agent Sirius5180] 42.space scan: 25 live markets
+[Agent Hahah] 42.space scan: 25 live markets
+[Agent Halcyon1391] 42.space scan: 25 live markets
+[Agent Nimbus1637] 42.space scan: 25 live markets
+[Agent Andromeda5291] 42.space scan: 25 live markets
+[Agent Lyra9262] 42.space scan: 25 live markets
+[Agent Helios4114] 42.space scan: 25 live markets
+[Agent TENSHI] 42.space scan: 25 live markets
+[Agent Nimbus9438] 42.space scan: 25 live markets
+[Agent Lyra4800] 42.space scan: 25 live markets
+[Agent SeanBuild4] 42.space scan: 25 live markets
+[Agent agvvfttcvvcg] 42.space scan: 25 live markets
+[Agent Ghost] 42.space scan: 25 live markets
+[Aster] klines fetch (cache miss): { symbol: 'BTWUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'BTWUSDT', interval: '5m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'PLUMEUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'PLUMEUSDT', interval: '5m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'STORJUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'STORJUSDT', interval: '5m', limit: 100 }
+[Agent Miiiiiiiiiineeeii] HOLD on ASTERUSDT — Setup score 3/10 fails quality threshold. ADX 1.0 indicates no tradeable trend. 
+[Agent BNT] HOLD on ASTERUSDT — Setup score 3/10 fails quality threshold. ADX 1.0 indicates no tradeable trend. 
+[Agent SeanBuild4] HOLD on BTWUSDT — Post-listing exhaustion pattern: volume spike rejection, 6 consecutive red candl
+[Agent TENSHI] HOLD on BTWUSDT — Post-listing exhaustion pattern: volume spike rejection, 6 consecutive red candl
+[Aster] klines fetch (cache miss): { symbol: 'TROLLUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'BTWUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'LAYERUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'LAYERUSDT', interval: '5m', limit: 100 }
+[Agent Dominic] HOLD on ARBUSDT — Critical data quality failure: 0.00x volume ratio and 0k volume candles make pri
+[Aster] klines fetch (cache miss): { symbol: 'PLUMEUSDT', interval: '1m', limit: 120 }
+[polymarketAgent] previous tick still running, skipping
+[Aster] klines fetch (cache miss): { symbol: 'STORJUSDT', interval: '1m', limit: 120 }
+[POST]
+build4-1.onrender.com/api/webhook clientIP="91.108.5.66" requestID="6bce2819-6524-4166" responseTimeMS=1194 responseBytes=270 userAgent=""
+[fourMemeLaunchAgent] scanned=0 — DB probe: enabled=0 active=62 both=0 total=65
+[fourMemeLaunchAgent] scanned=0 ticked=0 launched=0 skipped=0 errors=0
+[GET]
+build4-1.onrender.com/app clientIP="88.226.107.229" requestID="953de4b1-6995-41fd" responseTimeMS=6 responseBytes=414 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/app/ clientIP="88.226.107.229" requestID="1f7250c0-b08f-4136" responseTimeMS=9 responseBytes=1006 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/fourmeme/launch clientIP="88.226.107.229" requestID="e7b3eca6-4818-4ff9" responseTimeMS=4 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/me/admin clientIP="88.226.107.229" requestID="f65a5711-d9cc-4b0b" responseTimeMS=186 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/agents/7383875080 clientIP="88.226.107.229" requestID="5315f8fb-6025-4550" responseTimeMS=589 responseBytes=1605 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/agents/7383875080 clientIP="88.226.107.229" requestID="3adfafa1-1ee3-417b" responseTimeMS=618 responseBytes=1605 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/fourmeme/pending-approvals clientIP="88.226.107.229" requestID="1b3514bd-9ab8-48c7" responseTimeMS=665 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/buybacks clientIP="88.226.107.229" requestID="fc6e5e2d-65b7-4631" responseTimeMS=854 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/user/7383875080 clientIP="88.226.107.229" requestID="b6f49f8b-16b5-43eb" responseTimeMS=1021 responseBytes=180 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/fourmeme/launches clientIP="88.226.107.229" requestID="d4424194-4267-40b7" responseTimeMS=1115 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/polymarket/wallet clientIP="88.226.107.229" requestID="30396656-3f66-4b99" responseTimeMS=1305 responseBytes=180 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/me/agents clientIP="88.226.107.229" requestID="c95b597c-435b-4b9d" responseTimeMS=930 responseBytes=1677 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/me/venue-permissions clientIP="88.226.107.229" requestID="f4f2d66e-210a-4b81" responseTimeMS=935 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/me/feed?limit=20 clientIP="88.226.107.229" requestID="ca11e645-7ecc-447b" responseTimeMS=1303 responseBytes=2559 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/me/feed?limit=20 clientIP="88.226.107.229" requestID="e07f36df-5366-4d0c" responseTimeMS=1205 responseBytes=2559 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/agents/cmp22upsy89pmnbcosqcfcitq/positions clientIP="88.226.107.229" requestID="f2ee1a11-b25d-4312" responseTimeMS=1682 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/agents/cmoptn82q0jfzkmg4wqkuw8um/positions clientIP="88.226.107.229" requestID="b382c684-0815-4b0b" responseTimeMS=1717 responseBytes=837 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/agents/cmp22upsy89pmnbcosqcfcitq/positions clientIP="88.226.107.229" requestID="23ee7d5f-3419-4065" responseTimeMS=1676 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/agents/cmoptn82q0jfzkmg4wqkuw8um/positions clientIP="88.226.107.229" requestID="5bebd6f6-710e-4bd6" responseTimeMS=1729 responseBytes=837 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/me/feed?limit=20 clientIP="88.226.107.229" requestID="001c0be0-d057-4c28" responseTimeMS=1111 responseBytes=181 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/me/feed?limit=20 clientIP="88.226.107.229" requestID="7d0c6022-ad7c-4638" responseTimeMS=1108 responseBytes=181 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/me/feed?limit=20 clientIP="88.226.107.229" requestID="faaa03c7-5451-4963" responseTimeMS=1105 responseBytes=2498 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/agents/cmoptn82q0jfzkmg4wqkuw8um/positions clientIP="88.226.107.229" requestID="e6036c00-bd75-401b" responseTimeMS=1744 responseBytes=180 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[HL] getAccountState failed, serving stale snapshot: 0x7D3734d0dBFC37C6E999a598b1496dD5eb545677 age= 633 ms err= 429 Too Many Requests - null
+[GET]
+build4-1.onrender.com/api/agents/cmp22upsy89pmnbcosqcfcitq/positions clientIP="88.226.107.229" requestID="3cc2dac3-52aa-4356" responseTimeMS=1903 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/agents/cmoptn82q0jfzkmg4wqkuw8um/positions clientIP="88.226.107.229" requestID="775ebaca-9770-41b3" responseTimeMS=1929 responseBytes=180 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/agents/cmp22upsy89pmnbcosqcfcitq/positions clientIP="88.226.107.229" requestID="9d1126f3-aa5a-482c" responseTimeMS=1713 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/me/feed?limit=20 clientIP="88.226.107.229" requestID="eb1532f9-5d28-4413" responseTimeMS=965 responseBytes=2498 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/me/feed?limit=20 clientIP="88.226.107.229" requestID="ae8f206c-580b-4d68" responseTimeMS=1099 responseBytes=2354 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/agents/cmoptn82q0jfzkmg4wqkuw8um/positions clientIP="88.226.107.229" requestID="dff0717d-d9bc-40e9" responseTimeMS=1643 responseBytes=180 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/agents/cmp22upsy89pmnbcosqcfcitq/positions clientIP="88.226.107.229" requestID="af4fb821-b470-426e" responseTimeMS=1842 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/agents/cmp22upsy89pmnbcosqcfcitq/positions clientIP="88.226.107.229" requestID="3ecb055e-f45b-470d" responseTimeMS=1667 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[HL] getAccountState failed, serving stale snapshot: 0x7D3734d0dBFC37C6E999a598b1496dD5eb545677 age= 915 ms err= 429 Too Many Requests - null
+[HL] getAccountState failed, serving stale snapshot: 0x7D3734d0dBFC37C6E999a598b1496dD5eb545677 age= 915 ms err= 429 Too Many Requests - null
+[GET]
+build4-1.onrender.com/api/me/feed?limit=20 clientIP="88.226.107.229" requestID="cbd5b906-0994-487f" responseTimeMS=1109 responseBytes=2354 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/agents/cmp22upsy89pmnbcosqcfcitq/positions clientIP="88.226.107.229" requestID="4dbbd3f2-97ea-488e" responseTimeMS=2011 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/agents/cmoptn82q0jfzkmg4wqkuw8um/positions clientIP="88.226.107.229" requestID="a9bcfdc2-1b63-4ea5" responseTimeMS=1802 responseBytes=180 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/agents/cmoptn82q0jfzkmg4wqkuw8um/positions clientIP="88.226.107.229" requestID="2c98d4d8-63b1-4976" responseTimeMS=2001 responseBytes=180 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[POST]
+build4-1.onrender.com/api/agents/cmoptn82q0jfzkmg4wqkuw8um/venues/fortytwo/toggle clientIP="88.226.107.229" requestID="fd161495-a644-40bd" responseTimeMS=1135 responseBytes=1282 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/agents/cmp22upsy89pmnbcosqcfcitq/positions clientIP="88.226.107.229" requestID="9bc42b95-3be0-4e85" responseTimeMS=2212 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[POST]
+build4-1.onrender.com/api/agents/cmoptn82q0jfzkmg4wqkuw8um/venues/aster/toggle clientIP="88.226.107.229" requestID="5eb76393-abc7-4faf" responseTimeMS=1226 responseBytes=1279 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/agents/cmoptn82q0jfzkmg4wqkuw8um/positions clientIP="88.226.107.229" requestID="13e15292-9b41-495f" responseTimeMS=2313 responseBytes=180 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/me/feed?limit=20 clientIP="88.226.107.229" requestID="e39cf5a8-595e-43b7" responseTimeMS=1478 responseBytes=2388 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[POST]
+build4-1.onrender.com/api/agents/cmoptn82q0jfzkmg4wqkuw8um/venues/hyperliquid/toggle clientIP="88.226.107.229" requestID="68b21421-816f-4b50" responseTimeMS=1317 responseBytes=1271 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/me/agents clientIP="88.226.107.229" requestID="65924d3c-5721-435e" responseTimeMS=1274 responseBytes=1665 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/me/feed?limit=20 clientIP="88.226.107.229" requestID="125056d6-4a0a-476e" responseTimeMS=1219 responseBytes=181 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/me/agents clientIP="88.226.107.229" requestID="d8f30880-7d20-481c" responseTimeMS=1111 responseBytes=1671 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[HL] getAccountState failed, serving stale snapshot: 0x7D3734d0dBFC37C6E999a598b1496dD5eb545677 age= 915 ms err= 429 Too Many Requests - null
+[HL] getAccountState failed, serving stale snapshot: 0x7D3734d0dBFC37C6E999a598b1496dD5eb545677 age= 915 ms err= 429 Too Many Requests - null
+[GET]
+build4-1.onrender.com/api/agents/cmoptn82q0jfzkmg4wqkuw8um/positions clientIP="88.226.107.229" requestID="6ec210a4-705e-4173" responseTimeMS=2249 responseBytes=180 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/me/feed?limit=20 clientIP="88.226.107.229" requestID="87af018a-c21a-447c" responseTimeMS=1381 responseBytes=2388 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+Menu
+[GET]
+build4-1.onrender.com/api/me/agents clientIP="88.226.107.229" requestID="11ef4d59-ed53-4062" responseTimeMS=759 responseBytes=1666 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/agents/cmp22upsy89pmnbcosqcfcitq/positions clientIP="88.226.107.229" requestID="8a5770b0-6fab-4acc" responseTimeMS=2323 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/agents/cmp22upsy89pmnbcosqcfcitq/positions clientIP="88.226.107.229" requestID="5cfffbb3-7b8e-41a8" responseTimeMS=2027 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[HL] getAccountState failed, serving stale snapshot: 0x7D3734d0dBFC37C6E999a598b1496dD5eb545677 age= 1581 ms err= 429 Too Many Requests - null
+[HL] getAccountState failed, serving stale snapshot: 0x7D3734d0dBFC37C6E999a598b1496dD5eb545677 age= 1739 ms err= 429 Too Many Requests - null
+[POST]
+build4-1.onrender.com/api/agents/cmoptn82q0jfzkmg4wqkuw8um/venues/polymarket/toggle clientIP="88.226.107.229" requestID="8b7241ba-b924-4731" responseTimeMS=1347 responseBytes=1278 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/me/agents clientIP="88.226.107.229" requestID="7c5e61b3-27ce-4322" responseTimeMS=1067 responseBytes=1671 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/agents/cmoptn82q0jfzkmg4wqkuw8um/positions clientIP="88.226.107.229" requestID="938e169a-7132-4a24" responseTimeMS=2040 responseBytes=180 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/me/feed?limit=20 clientIP="88.226.107.229" requestID="e72b06a7-359a-4487" responseTimeMS=1316 responseBytes=2382 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/agents/cmoptn82q0jfzkmg4wqkuw8um/positions clientIP="88.226.107.229" requestID="3c08e7cb-d700-4e18" responseTimeMS=1749 responseBytes=180 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[HL] getAccountState failed, serving stale snapshot: 0x7D3734d0dBFC37C6E999a598b1496dD5eb545677 age= 2556 ms err= 429 Too Many Requests - null
+[HL] getAccountState failed, serving stale snapshot: 0x7D3734d0dBFC37C6E999a598b1496dD5eb545677 age= 2730 ms err= 429 Too Many Requests - null
+[GET]
+build4-1.onrender.com/api/me/feed?limit=20 clientIP="88.226.107.229" requestID="de5000f5-fa78-41cf" responseTimeMS=928 responseBytes=181 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/agents/cmp22upsy89pmnbcosqcfcitq/positions clientIP="88.226.107.229" requestID="7233c853-7fe2-43a7" responseTimeMS=1928 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/agents/cmoptn82q0jfzkmg4wqkuw8um/positions clientIP="88.226.107.229" requestID="9e84d215-e0dc-4b69" responseTimeMS=1849 responseBytes=180 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/agents/cmp22upsy89pmnbcosqcfcitq/positions clientIP="88.226.107.229" requestID="a6a54078-c0ce-4ed3" responseTimeMS=1666 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[HL] getAccountState failed, serving stale snapshot: 0x7D3734d0dBFC37C6E999a598b1496dD5eb545677 age= 3548 ms err= 429 Too Many Requests - null
+[HL] getAccountState failed, serving stale snapshot: 0x7D3734d0dBFC37C6E999a598b1496dD5eb545677 age= 3548 ms err= 429 Too Many Requests - null
+[GET]
+build4-1.onrender.com/api/agents/cmp22upsy89pmnbcosqcfcitq/positions clientIP="88.226.107.229" requestID="796515dc-bcdd-461c" responseTimeMS=1663 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/agents/cmoptn82q0jfzkmg4wqkuw8um/positions clientIP="88.226.107.229" requestID="14eefe81-3069-4756" responseTimeMS=1666 responseBytes=180 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
