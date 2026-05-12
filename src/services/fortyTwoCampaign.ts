@@ -670,13 +670,40 @@ async function broadcastCampaignTrade(input: BroadcastInput): Promise<void> {
     console.warn('[fortyTwoCampaign] brain-feed insert failed:', (err as Error).message);
   }
 
-  // 2. TG channel.
+  // 2. TG channel — public broadcast with one-tap CTA into the mini-app.
+  // The whole point of the channel is to funnel viewers into BUILD4, so
+  // every post carries two URL buttons: (a) launch the mini-app directly
+  // via Telegram's t.me/<bot>/app deep link, and (b) DM the bot via
+  // t.me/<bot>?start=campaign for users who'd rather chat first.
+  // Channels can only carry url buttons — web_app and callback buttons
+  // are silently dropped by Telegram outside private chats.
   const channel = process.env.FT_CAMPAIGN_TG_CHANNEL;
   if (channel) {
     try {
       const bot = getBot();
       if (bot) {
-        await bot.api.sendMessage(channel, `🤖 *${headline}*\n\n${input.thesis}`, { parse_mode: 'Markdown' });
+        const username = bot.botInfo?.username;
+        const swarmLine = input.swarm.length
+          ? `\n\n🧠 *Swarm verdict (${input.swarm.length} models):* ` +
+            input.swarm
+              .map((v) => `${v.provider}=${v.bucketIndex >= 0 ? 'bucket' + v.bucketIndex : 'err'}`)
+              .join(' · ')
+          : '';
+        const text = `🤖 *${headline}*\n\n${input.thesis}${swarmLine}`;
+        const reply_markup = username
+          ? {
+              inline_keyboard: [
+                [
+                  { text: '⚡ Open BUILD4 mini-app', url: `https://t.me/${username}/app?startapp=campaign` },
+                ],
+                [
+                  { text: '💬 Start bot', url: `https://t.me/${username}?start=campaign` },
+                  { text: '📊 42.space', url: 'https://42.space' },
+                ],
+              ],
+            }
+          : undefined;
+        await bot.api.sendMessage(channel, text, { parse_mode: 'Markdown', reply_markup });
       }
     } catch (err) {
       console.warn('[fortyTwoCampaign] TG channel post failed:', (err as Error).message);
