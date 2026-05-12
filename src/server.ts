@@ -568,7 +568,18 @@ app.get('/api/public/campaign/brain', async (req, res) => {
         select: { status: true, usdtIn: true, pnl: true },
       })
       const open = positions.filter((p) => p.status === 'open')
-      const wins = positions.filter((p) => p.status === 'resolved_win')
+      // Status flow for a campaign prediction position:
+      //   open → resolved_win → claimed   (winning round, redeemed)
+      //   open → resolved_loss            (losing round, no redemption)
+      //   open → closed                   (manual sell before resolution)
+      // A 'claimed' row IS a settled win that's been paid out — it must
+      // count toward both `resolved` and `wins`, otherwise the brain feed
+      // shows Resolved 0/0 + $0 PnL the moment the user clicks "claim"
+      // from the wallet UI (which is what bit us in production: Round 1
+      // paid out, the user claimed manually, and the page zeroed itself).
+      const wins = positions.filter(
+        (p) => p.status === 'resolved_win' || p.status === 'claimed',
+      )
       const losses = positions.filter((p) => p.status === 'resolved_loss')
       const closedManual = positions.filter((p) => p.status === 'closed')
       const resolved = wins.length + losses.length + closedManual.length
