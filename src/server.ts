@@ -4775,6 +4775,61 @@ app.get('/api/admin/campaign/state', requireAdmin, async (_req, res) => {
   }
 })
 
+// POST /api/admin/campaign/resettle
+//   Manually trigger the campaign agent's settle+claim sweep. Used to fix
+//   the brain page when a round has finalised on-chain but the regular
+//   per-tick sweep hasn't caught up (or failed transiently). Same code
+//   path the runner calls after every campaign tick.
+app.post('/api/admin/campaign/resettle', requireAdmin, async (_req, res) => {
+  try {
+    const agentId = process.env.FT_CAMPAIGN_AGENT_ID
+    if (!agentId) {
+      return res.status(400).json({ ok: false, error: 'FT_CAMPAIGN_AGENT_ID not set' })
+    }
+    const { claimAllAgentResolved } = await import('./services/fortyTwoExecutor')
+    const sweep = await claimAllAgentResolved(agentId)
+    return res.json(sweep)
+  } catch (err) {
+    console.error('[API] /admin/campaign/resettle failed:', err)
+    res.status(500).json({ error: (err as Error).message })
+  }
+})
+
+// POST /api/admin/campaign/tick?kind=ENTRY|REASSESS_1|REASSESS_2|FINAL
+//   Manually fire a single campaign tick out-of-band (e.g. when the cron
+//   missed a window due to a deploy restart). Runs the same runCampaignTick
+//   code path as the scheduled cron and triggers the post-tick sweep.
+app.post('/api/admin/campaign/tick', requireAdmin, async (req, res) => {
+  try {
+    const kindRaw = String(req.query.kind ?? req.body?.kind ?? '').toUpperCase()
+    const validKinds = ['ENTRY', 'REASSESS_1', 'REASSESS_2', 'FINAL'] as const
+    if (!(validKinds as readonly string[]).includes(kindRaw)) {
+      return res.status(400).json({
+        ok: false,
+        error: `kind must be one of ${validKinds.join('|')}`,
+      })
+    }
+    const kind = kindRaw as typeof validKinds[number]
+    const { runCampaignTick } = await import('./services/fortyTwoCampaign')
+    const tickResult = await runCampaignTick(kind)
+
+    let sweep: unknown = null
+    const agentId = process.env.FT_CAMPAIGN_AGENT_ID
+    if (agentId) {
+      try {
+        const { claimAllAgentResolved } = await import('./services/fortyTwoExecutor')
+        sweep = await claimAllAgentResolved(agentId)
+      } catch (sweepErr) {
+        sweep = { error: (sweepErr as Error).message }
+      }
+    }
+    return res.json({ ok: true, kind, tickResult, sweep })
+  } catch (err) {
+    console.error('[API] /admin/campaign/tick failed:', err)
+    res.status(500).json({ error: (err as Error).message })
+  }
+})
+
 // Force a real, on-chain prediction-market trade RIGHT NOW for partnership
 // demos. Picks the highest-volume live 42.space market, reads its outcomes
 // on-chain, picks the highest-implied-probability outcome (most liquid side),

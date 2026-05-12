@@ -427,8 +427,18 @@ async function checkAndSize(
   // Position size scales with edge, capped by both per-position and per-agent
   // rules. agentCap is a HARD ceiling: if it can't even fund the minimum
   // order, the trade is rejected (we never silently exceed the budget cap).
+  //
+  // Campaign agent gets agentCap=Infinity (per-position cap is the only ceiling).
+  // Why: the campaign Agent row was created with the broker default
+  // maxPositionSize=$50, and capsFor(campaign).agentBudgetPct=0.50 cuts that
+  // to a $25 effective cap — defeating the lifted $50/position campaign rule.
+  // Bumping the DB column would risk breaking other code paths that read
+  // maxPositionSize for perp risk; bypassing the agentCap here is the
+  // narrowest possible fix and only affects the campaign agent.
   const edgeScaled = Math.min(1, edge / 0.30) * caps.perPositionUsdtCap; // 30% edge = full cap
-  const agentCap = ctx.agentMaxPositionSize * caps.agentBudgetPct;
+  const agentCap = caps.isCampaign
+    ? Infinity
+    : ctx.agentMaxPositionSize * caps.agentBudgetPct;
   const sized = Math.min(edgeScaled, caps.perPositionUsdtCap, agentCap);
   if (sized < PRED_MIN_USDT_IN) {
     return {
