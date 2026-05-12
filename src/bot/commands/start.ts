@@ -39,13 +39,17 @@ export function registerStart(bot: Bot) {
     // meant returning users (who'd already deployed an agent) kept being
     // dropped on Deploy instead of their Dashboard.
     const miniAppUrl = process.env.MINIAPP_URL || `https://${process.env.REPLIT_DOMAINS?.split(',')[0] || 'build4-1.onrender.com'}/app`
+    const brainUrl = `${miniAppUrl}?brain=1`
 
-    // Single primary action — Open BUILD4 — followed by two utility rows.
-    // Wallet, How it works, and Help cover the only places someone might
-    // need to go before they have an agent. Everything else (deposit,
-    // signals, portfolio) is reachable from inside the mini app.
+    // Primary action during the 42.space "Agent vs Community" campaign:
+    // a one-tap CTA to the public live brain feed of the campaign agent.
+    // This is the funnel — every viral share of t.me/<bot> lands here,
+    // which immediately shows real swarm reasoning + lets the visitor
+    // deploy their own agent from inside the same mini-app.
     const keyboard = new InlineKeyboard()
-      .webApp('📱 Open BUILD4', miniAppUrl)
+      .webApp('⚡ Live AI Brain Feed', brainUrl)
+      .row()
+      .webApp('🚀 Deploy your own agent', miniAppUrl)
       .row()
       .text('💳 Wallet', 'wallet')
       .text('ℹ️ How it works', 'how_it_works')
@@ -61,7 +65,9 @@ export function registerStart(bot: Bot) {
 
 AI agents that trade perps and predictions on Aster, Hyperliquid and 42.space — all from inside Telegram.${walletLine}
 
-*Tap 📱 Open BUILD4* to deploy your first agent. Pick a risk preset, set a starting capital, and your agent is live in under a minute. We cover the gas.
+🔥 *Live now:* our campaign agent *Build4* is competing in the 42.space *Agent vs Community* 48h sprint — 12 rounds of BTC price markets, $1000 stack, fully transparent AI reasoning.
+
+*Tap ⚡ Live AI Brain Feed* to watch every swarm verdict in real time. Or *🚀 Deploy your own agent* to copy the playbook with your own capital — live in under a minute, gas covered.
 
 _Your wallet's private key can be exported any time from 💳 Wallet._`,
       {

@@ -503,6 +503,75 @@ app.get('/api/me/feed', requireTgUser, async (req, res) => {
   }
 })
 
+// Public campaign brain feed — no auth required. Funnels new visitors
+// who hit the /app?startapp=brain deep link from any public surface
+// (Telegram bot About page, Twitter share, etc.) directly into a live
+// view of the campaign agent's reasoning. Only returns rows for the
+// agent pinned by FT_CAMPAIGN_AGENT_ID, so non-campaign agents (and
+// non-campaign trading data) stay private.
+app.get('/api/public/campaign/brain', async (req, res) => {
+  try {
+    const agentId = process.env.FT_CAMPAIGN_AGENT_ID
+    if (!agentId) {
+      return res.json({ agent: null, entries: [] })
+    }
+    const agent = await db.agent.findUnique({
+      where: { id: agentId },
+      select: { id: true, name: true, totalPnl: true, totalTrades: true, winRate: true },
+    })
+    if (!agent) {
+      return res.json({ agent: null, entries: [] })
+    }
+    const limit = Math.min(parseInt(String(req.query.limit ?? '30')) || 30, 100)
+    const beforeStr = req.query.before ? String(req.query.before) : ''
+    const beforeDate = beforeStr ? new Date(beforeStr) : undefined
+    const before = beforeDate && !isNaN(beforeDate.getTime()) ? beforeDate : undefined
+
+    // Pull AgentLog rows directly — campaign rows include CAMPAIGN_ENTER /
+    // CAMPAIGN_HOLD / CAMPAIGN_DOUBLE_DOWN / CAMPAIGN_SPREAD actions plus
+    // the per-tick swarm verdicts in `providers`. fetchAgentLogFeed filters
+    // on `pair: not null`, which excludes 42.space prediction rows (no
+    // pair), so we run a dedicated query here.
+    const rows = await db.agentLog.findMany({
+      where: {
+        agentId: agent.id,
+        ...(before ? { createdAt: { lt: before } } : {}),
+      },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+      select: {
+        id: true, action: true, parsedAction: true, reason: true,
+        providers: true, exchange: true, createdAt: true,
+        pair: true, price: true,
+      },
+    } as any)
+
+    res.json({
+      agent: {
+        id: agent.id,
+        name: agent.name,
+        totalPnl: agent.totalPnl,
+        totalTrades: agent.totalTrades,
+        winRate: agent.winRate,
+      },
+      entries: rows.map((r: any) => ({
+        id: r.id,
+        action: r.action,
+        parsedAction: r.parsedAction,
+        reason: r.reason,
+        providers: r.providers ?? null,
+        exchange: r.exchange ?? null,
+        pair: r.pair ?? null,
+        price: r.price ?? null,
+        createdAt: r.createdAt,
+      })),
+    })
+  } catch (err: any) {
+    console.error('[API] /public/campaign/brain failed:', err?.message)
+    res.status(500).json({ error: 'Internal error' })
+  }
+})
+
 // Per-agent feed — same shape, scoped to one agent the user owns.
 app.get('/api/agents/:id/feed', requireTgUser, async (req, res) => {
   try {

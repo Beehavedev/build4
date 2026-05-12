@@ -11,6 +11,7 @@ import Admin from './pages/Admin'
 import Onboard from './pages/Onboard'
 import LaunchToken from './pages/LaunchToken'
 import TokenTrade from './pages/TokenTrade'
+import CampaignBrain from './pages/CampaignBrain'
 import { apiFetch, type AgentData } from './api'
 
 declare global {
@@ -19,7 +20,7 @@ declare global {
   }
 }
 
-type Page = 'dashboard' | 'agents' | 'wallet' | 'trade' | 'copy' | 'portfolio' | 'predictions' | 'hyperliquid' | 'admin' | 'onboard' | 'launchToken' | 'tokenTrade'
+type Page = 'dashboard' | 'agents' | 'wallet' | 'trade' | 'copy' | 'portfolio' | 'predictions' | 'hyperliquid' | 'admin' | 'onboard' | 'launchToken' | 'tokenTrade' | 'brain'
 
 export default function App() {
   const [page, setPage] = useState<Page>('dashboard')
@@ -62,6 +63,15 @@ export default function App() {
     const params = new URLSearchParams(window.location.search)
     const wantOnboard = params.get('onboard') === '1'
       || tg?.initDataUnsafe?.start_param === 'onboard'
+    // Public brain feed — deep link from t.me/<bot>/app?startapp=brain or
+    // raw URL ?brain=1. Unauthenticated visitors land here without
+    // triggering any of the user-scoped probes below (which would 401).
+    const wantBrain = params.get('brain') === '1'
+      || tg?.initDataUnsafe?.start_param === 'brain'
+    if (wantBrain) {
+      setPage('brain')
+      return // skip auth probes for public visitors
+    }
     if (wantOnboard) setPage('onboard')
 
     // Probe admin status — only show the Admin tab to allow-listed telegram IDs.
@@ -206,6 +216,7 @@ export default function App() {
         {page === 'admin' && <Admin />}
         {page === 'launchToken' && <LaunchToken />}
         {page === 'tokenTrade' && <TokenTrade />}
+        {page === 'brain' && <CampaignBrain />}
         {page === 'onboard' && (
           <Onboard
             asterOnboarded={asterOnboarded}
