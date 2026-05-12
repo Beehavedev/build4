@@ -287,13 +287,22 @@ export default function Dashboard({ userId, onNavigate, launchEnabled }: Dashboa
       onClick: () => onNavigate?.('tokenTrade'),
       featured: true,
     },
-    ...(launchEnabled ? [{
+    // Launch Token is always rendered (no probe gate). The probe at
+    // /api/fourmeme/launch was previously used to hide this button when
+    // FOUR_MEME_LAUNCH_ENABLED was off, but on prod that flag is on and
+    // the brief window before the probe resolves was leaving the button
+    // hidden — users were reporting it "missing" even though the
+    // feature is live. The destination page (launchToken) still handles
+    // a 503 from the disabled env gracefully, so we no longer need a
+    // client-side gate here. `launchEnabled` is intentionally unused
+    // now; kept in the props for the overflow menu in App.tsx.
+    {
       label: '🚀 Launch Token',
       sub: 'four.meme',
       testId: 'button-venue-fourmeme-launch',
       onClick: () => onNavigate?.('launchToken'),
       featured: true,
-    }] : []),
+    },
     {
       label: 'Aster',
       sub: 'Perps',
