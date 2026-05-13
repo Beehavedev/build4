@@ -1,47 +1,23 @@
-import { useState, useEffect, lazy, Suspense } from 'react'
-// Dashboard + Predictions stay eagerly imported because:
-//   - Dashboard is the default landing page → shipping it in the initial
-//     chunk avoids a Suspense flash on first paint.
-//   - Predictions exports CrosshairIcon (used in the bottom nav), and
-//     React.lazy can only carry the default export. Pulling the icon
-//     out into a separate file would work but adds churn; importing
-//     this page eagerly is the simpler, lower-risk move.
+import { useState, useEffect } from 'react'
+// REVERTED 2026-05-13: lazy-loading was suspected of breaking the
+// Wallet menu + ASTER/HL balance display in production right before a
+// demo. Rolled back to eager imports for safety; compression + poll-
+// throttle changes remain in place. Re-attempt lazy splitting later
+// with proper QA in a Telegram WebView (not just desktop browser).
 import Dashboard from './pages/Dashboard'
 import Predictions, { CrosshairIcon } from './pages/Predictions'
-// Every other page is lazy — Vite splits each into its own chunk so the
-// initial bundle drops from ~976 KB to whatever Dashboard + Predictions
-// actually need (~250-350 KB). Each tab fetches its chunk on demand the
-// first time the user opens it; subsequent visits are instant (HTTP
-// cache + module cache).
-const AgentStudio  = lazy(() => import('./pages/AgentStudio'))
-const CopyTrade    = lazy(() => import('./pages/CopyTrade'))
-const Portfolio    = lazy(() => import('./pages/Portfolio'))
-const Wallet       = lazy(() => import('./pages/Wallet'))
-const Trade        = lazy(() => import('./pages/Trade').then(m => ({ default: m.Trade })))
-const Hyperliquid  = lazy(() => import('./pages/Hyperliquid'))
-const Admin        = lazy(() => import('./pages/Admin'))
-const Onboard      = lazy(() => import('./pages/Onboard'))
-const LaunchToken  = lazy(() => import('./pages/LaunchToken'))
-const TokenTrade   = lazy(() => import('./pages/TokenTrade'))
-const CampaignBrain = lazy(() => import('./pages/CampaignBrain'))
+import AgentStudio from './pages/AgentStudio'
+import CopyTrade from './pages/CopyTrade'
+import Portfolio from './pages/Portfolio'
+import Wallet from './pages/Wallet'
+import { Trade } from './pages/Trade'
+import Hyperliquid from './pages/Hyperliquid'
+import Admin from './pages/Admin'
+import Onboard from './pages/Onboard'
+import LaunchToken from './pages/LaunchToken'
+import TokenTrade from './pages/TokenTrade'
+import CampaignBrain from './pages/CampaignBrain'
 import { apiFetch, type AgentData } from './api'
-
-// Lightweight fallback shown while a lazy chunk is loading. Matches the
-// app's dark theme so it doesn't flash white. Kept tiny on purpose — most
-// chunk loads finish in <300 ms on a decent connection.
-function PageLoading() {
-  return (
-    <div
-      data-testid="page-loading"
-      style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        minHeight: '60vh', color: 'var(--text-secondary)', fontSize: 13,
-      }}
-    >
-      Loading…
-    </div>
-  )
-}
 
 declare global {
   interface Window {
@@ -232,36 +208,31 @@ export default function App() {
         </div>
       )}
 
-      {/* Page content. Suspense boundary catches every lazy chunk above —
-          one shared boundary is fine because we only ever render one page
-          at a time, so chunks never overlap. */}
       <div style={{ padding: '0 16px' }}>
-        <Suspense fallback={<PageLoading />}>
-          {page === 'dashboard' && <Dashboard userId={userId} onNavigate={setPage} launchEnabled={launchEnabled} />}
-          {page === 'agents' && <AgentStudio userId={userId} />}
-          {page === 'trade' && <Trade />}
-          {page === 'wallet' && <Wallet />}
-          {page === 'copy' && <CopyTrade />}
-          {page === 'portfolio' && <Portfolio userId={userId} />}
-          {page === 'predictions' && <Predictions />}
-          {page === 'hyperliquid' && <Hyperliquid />}
-          {page === 'admin' && <Admin />}
-          {page === 'launchToken' && <LaunchToken />}
-          {page === 'tokenTrade' && <TokenTrade />}
-          {page === 'brain' && <CampaignBrain />}
-          {page === 'onboard' && (
-            <Onboard
-              asterOnboarded={asterOnboarded}
-              onDone={() => {
-                // After deploy, drop the user on the dashboard so they see
-                // their fresh agent + balances. Refresh aster onboarding
-                // since the deploy flow may have flipped it.
-                setAsterOnboarded(true)
-                setPage('dashboard')
-              }}
-            />
-          )}
-        </Suspense>
+        {page === 'dashboard' && <Dashboard userId={userId} onNavigate={setPage} launchEnabled={launchEnabled} />}
+        {page === 'agents' && <AgentStudio userId={userId} />}
+        {page === 'trade' && <Trade />}
+        {page === 'wallet' && <Wallet />}
+        {page === 'copy' && <CopyTrade />}
+        {page === 'portfolio' && <Portfolio userId={userId} />}
+        {page === 'predictions' && <Predictions />}
+        {page === 'hyperliquid' && <Hyperliquid />}
+        {page === 'admin' && <Admin />}
+        {page === 'launchToken' && <LaunchToken />}
+        {page === 'tokenTrade' && <TokenTrade />}
+        {page === 'brain' && <CampaignBrain />}
+        {page === 'onboard' && (
+          <Onboard
+            asterOnboarded={asterOnboarded}
+            onDone={() => {
+              // After deploy, drop the user on the dashboard so they see
+              // their fresh agent + balances. Refresh aster onboarding
+              // since the deploy flow may have flipped it.
+              setAsterOnboarded(true)
+              setPage('dashboard')
+            }}
+          />
+        )}
       </div>
 
       {/* Bottom nav */}
