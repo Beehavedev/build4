@@ -950,7 +950,7 @@ async function runSwarm(prompt: { system: string; user: string }): Promise<Swarm
         model: '<error>',
         bucketIndex: null,
         conviction: 0,
-        thesis: `[${provider} error: ${(err as Error).message.slice(0, 200)}]`,
+        thesis: `[${provider} unavailable]`,
         parsed: false,
         raw: '',
         latencyMs: 0,
