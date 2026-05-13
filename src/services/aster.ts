@@ -275,8 +275,18 @@ export async function getMarkPrice(pair: string): Promise<{
       lastFundingRate: parseFloat(res.data.lastFundingRate ?? '0')
     }
   } catch {
+    // premiumIndex failed — fall back to CoinGecko via getPrice. Need to
+    // extract the BASE coin from venue-native symbols. The pair arrives as
+    // "BTCUSDT" / "ETHUSDT" (no slash), so the previous `pair.split('/')[0]`
+    // returned the whole string and CoinGecko 404'd → mock fallback returned
+    // the default $1.00 jitter for every coin (visible as $0.999… on the
+    // Trade page MARK ticker for BTC/ETH/BNB/etc).
+    const base = pair
+      .replace('/', '')
+      .toUpperCase()
+      .replace(/(USDT|USDC|BUSD|FDUSD|USD)$/, '')
     const { getPrice } = await import('./price')
-    const data = await getPrice(pair.split('/')[0])
+    const data = await getPrice(base || pair)
     return { markPrice: data.price, indexPrice: data.price, lastFundingRate: 0 }
   }
 }
