@@ -16,6 +16,19 @@ const __dirname = path.dirname(__filename)
 const app = express()
 const PORT = parseInt(process.env.PORT ?? '3000')
 
+// gzip/brotli compression for all responses. The mini-app bundle is ~976KB
+// uncompressed; with default level-6 gzip this drops to ~280KB on the wire.
+// Skips already-compressed responses (images, fonts) automatically. Filter
+// honours the standard `x-no-compression` opt-out header for callers that
+// stream raw bytes (none today, but cheap insurance).
+const compression = (await import('compression')).default
+app.use(compression({
+  filter: (req, res) => {
+    if (req.headers['x-no-compression']) return false
+    return compression.filter(req, res)
+  },
+}))
+
 app.use(express.json())
 
 // Serve mini-app static files

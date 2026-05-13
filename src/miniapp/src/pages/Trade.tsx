@@ -205,12 +205,14 @@ export function Trade() {
       })
     }
     tick()
-    const id = setInterval(tick, 1000)
-    // 1s position + order refresh — user wants every live perp surface
-    // to feel realtime. positionRisk + openOrders are cheap endpoints
-    // and one user = one client, so polling load is bounded.
-    const refreshId = setInterval(loadPositions, 1000)
-    const ordersId  = setInterval(loadOrders,    1000)
+    // 2s polling for the position-list live prices + position/order
+    // refreshes. Halved from 1s to cut backend load and battery drain;
+    // user-perceived freshness is unchanged (PnL still ticks visibly).
+    // Mark price for the LIMIT input stays at 1s above so the price
+    // anchor still feels live while typing.
+    const id = setInterval(tick, 2000)
+    const refreshId = setInterval(loadPositions, 2000)
+    const ordersId  = setInterval(loadOrders,    2000)
     return () => { cancelled = true; clearInterval(id); clearInterval(refreshId); clearInterval(ordersId) }
   }, [positions.map(p => p.symbol).join(',')])
 

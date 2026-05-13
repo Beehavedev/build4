@@ -792,7 +792,10 @@ export default function Hyperliquid() {
       })
     }
     tick()
-    const t = setInterval(tick, 1000)
+    // 2s position fan-out (was 1s). Halved to cut backend load + battery
+    // drain; PnL still ticks visibly. The order-coin mark price above
+    // stays at 1s because it backs the live LIMIT-input anchor.
+    const t = setInterval(tick, 2000)
     return () => { cancelled = true; clearInterval(t) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [positionCoins.join(',')])
