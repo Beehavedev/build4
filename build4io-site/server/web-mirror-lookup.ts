@@ -137,6 +137,27 @@ export async function getRecentAgentLogsForUser(
   }));
 }
 
+export async function getBscWalletForUser(userId: string): Promise<string | null> {
+  if (!userId) return null;
+  const r = await pool.query(
+    `SELECT address FROM "Wallet"
+      WHERE "userId" = $1 AND chain = 'BSC'
+      ORDER BY "isActive" DESC, "createdAt" ASC
+      LIMIT 1`,
+    [userId],
+  );
+  return r.rows[0]?.address ?? null;
+}
+
+export async function getPolymarketSafeForUser(userId: string): Promise<string | null> {
+  if (!userId) return null;
+  const r = await pool.query(
+    `SELECT "safeAddress" FROM "PolymarketCreds" WHERE "userId" = $1 LIMIT 1`,
+    [userId],
+  );
+  return r.rows[0]?.safeAddress ?? null;
+}
+
 export async function findBotUserByWalletAddress(address: string): Promise<BotUserSummary | null> {
   if (!address) return null;
   const lower = address.toLowerCase();

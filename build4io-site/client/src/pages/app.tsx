@@ -19,6 +19,8 @@ import {
   Pause,
   Play,
   Circle,
+  RefreshCw,
+  Coins,
 } from "lucide-react";
 import { Link } from "wouter";
 
@@ -145,6 +147,171 @@ function fmtRelative(iso: string): string {
   const dd = Math.floor(h / 24);
   if (dd < 30) return `${dd}d ago`;
   return d.toISOString().slice(0, 10);
+}
+
+type BalancesPayload = {
+  bsc: { address: string | null; usdt: { ok: boolean; amount: number; error?: string } };
+  polymarket: { safeAddress: string | null; usdce: { ok: boolean; amount: number; error?: string } };
+  fetchedAt: string;
+};
+
+function BalancesCard() {
+  const [data, setData] = useState<BalancesPayload | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const refresh = useCallback(async () => {
+    const token = localStorage.getItem(SESSION_KEY);
+    if (!token) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const r = await fetch("/api/web/balances", { headers: { "x-session-token": token } });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const j = (await r.json()) as BalancesPayload;
+      setData(j);
+    } catch (e: any) {
+      setError(e?.message || "Failed to load balances");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  const total = data
+    ? (data.bsc.usdt.ok ? data.bsc.usdt.amount : 0) +
+      (data.polymarket.usdce.ok ? data.polymarket.usdce.amount : 0)
+    : 0;
+
+  return (
+    <Card className="p-6 space-y-4" data-testid="card-balances">
+      <div className="flex items-center justify-between gap-2">
+        <h2 className="font-mono text-sm font-bold flex items-center gap-2">
+          <Coins className="w-4 h-4" /> Live on-chain balances
+        </h2>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={refresh}
+          disabled={loading}
+          className="h-7 gap-1 font-mono text-xs"
+          data-testid="button-refresh-balances"
+        >
+          <RefreshCw className={`w-3 h-3 ${loading ? "animate-spin" : ""}`} />
+          Refresh
+        </Button>
+      </div>
+
+      {!data && !error && (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="w-4 h-4 animate-spin" /> Reading from BSC + Polygon…
+        </div>
+      )}
+      {error && (
+        <p className="text-xs text-destructive font-mono" data-testid="text-balances-error">
+          {error}
+        </p>
+      )}
+
+      {data && (
+        <>
+          <div
+            className="text-center py-3 border rounded-md bg-muted/30"
+            data-testid="stat-balance-total"
+          >
+            <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-mono">
+              Total deposited (live)
+            </p>
+            <p className="font-mono text-2xl font-bold mt-1">${total.toFixed(2)}</p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="border rounded-md p-3 space-y-1.5" data-testid="row-balance-bsc">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-mono">
+                  BSC · USDT
+                </p>
+                <Badge variant="outline" className="font-mono text-[9px]">BNB Chain</Badge>
+              </div>
+              {data.bsc.address ? (
+                <>
+                  <p
+                    className={`font-mono text-lg font-bold ${
+                      data.bsc.usdt.ok ? "" : "text-muted-foreground"
+                    }`}
+                  >
+                    {data.bsc.usdt.ok ? `$${data.bsc.usdt.amount.toFixed(2)}` : "—"}
+                  </p>
+                  <a
+                    href={`https://bscscan.com/address/${data.bsc.address}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[10px] font-mono text-muted-foreground underline break-all inline-flex items-center gap-1"
+                    data-testid="link-bsc-address"
+                  >
+                    {data.bsc.address.slice(0, 8)}…{data.bsc.address.slice(-6)}
+                    <ExternalLink className="w-2.5 h-2.5" />
+                  </a>
+                  {!data.bsc.usdt.ok && data.bsc.usdt.error && (
+                    <p className="text-[10px] text-destructive font-mono">{data.bsc.usdt.error}</p>
+                  )}
+                </>
+              ) : (
+                <p className="text-xs text-muted-foreground">No BSC wallet linked yet.</p>
+              )}
+            </div>
+
+            <div className="border rounded-md p-3 space-y-1.5" data-testid="row-balance-polymarket">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-mono">
+                  Polymarket · USDC.e
+                </p>
+                <Badge variant="outline" className="font-mono text-[9px]">Polygon Safe</Badge>
+              </div>
+              {data.polymarket.safeAddress ? (
+                <>
+                  <p
+                    className={`font-mono text-lg font-bold ${
+                      data.polymarket.usdce.ok ? "" : "text-muted-foreground"
+                    }`}
+                  >
+                    {data.polymarket.usdce.ok ? `$${data.polymarket.usdce.amount.toFixed(2)}` : "—"}
+                  </p>
+                  <a
+                    href={`https://polygonscan.com/address/${data.polymarket.safeAddress}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[10px] font-mono text-muted-foreground underline break-all inline-flex items-center gap-1"
+                    data-testid="link-polymarket-safe"
+                  >
+                    {data.polymarket.safeAddress.slice(0, 8)}…{data.polymarket.safeAddress.slice(-6)}
+                    <ExternalLink className="w-2.5 h-2.5" />
+                  </a>
+                  {!data.polymarket.usdce.ok && data.polymarket.usdce.error && (
+                    <p className="text-[10px] text-destructive font-mono">
+                      {data.polymarket.usdce.error}
+                    </p>
+                  )}
+                </>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Safe not deployed. Run <span className="font-mono">/setup</span> in the bot to enable
+                  Polymarket trading.
+                </p>
+              )}
+            </div>
+          </div>
+
+          <p className="text-[10px] text-muted-foreground font-mono text-right">
+            Cached up to 15s · last fetched {fmtRelative(data.fetchedAt)}
+          </p>
+        </>
+      )}
+    </Card>
+  );
 }
 
 function AgentsCard() {
@@ -780,6 +947,7 @@ export default function AppDashboard() {
               )}
             </Card>
 
+            <BalancesCard />
             <AgentsCard />
             <ActivityCard />
 

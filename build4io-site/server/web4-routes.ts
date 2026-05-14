@@ -3196,6 +3196,37 @@ ${urls}
     }
   });
 
+  app.get("/api/web/balances", async (req: Request, res: Response) => {
+    try {
+      const session = getAuthedSession(req);
+      if (!session) return res.status(401).json({ error: "unauthorized" });
+      const botUserId = await resolveBotUserIdFromSession(session);
+      if (!botUserId) return res.status(404).json({ error: "no_account" });
+      const { getBscWalletForUser, getPolymarketSafeForUser } = await import("./web-mirror-lookup");
+      const { readBscUsdtBalance, readPolygonUsdceBalance } = await import("./web-balance-reader");
+      const [bscAddress, safeAddress] = await Promise.all([
+        getBscWalletForUser(botUserId),
+        getPolymarketSafeForUser(botUserId),
+      ]);
+      const [bscUsdt, polyUsdce] = await Promise.all([
+        bscAddress
+          ? readBscUsdtBalance(bscAddress)
+          : Promise.resolve({ ok: false, amount: 0, raw: "0", error: "No BSC wallet" }),
+        safeAddress
+          ? readPolygonUsdceBalance(safeAddress)
+          : Promise.resolve({ ok: false, amount: 0, raw: "0", error: "Safe not deployed" }),
+      ]);
+      res.json({
+        bsc: { address: bscAddress, usdt: bscUsdt },
+        polymarket: { safeAddress, usdce: polyUsdce },
+        fetchedAt: new Date().toISOString(),
+      });
+    } catch (e: any) {
+      console.error("[/api/web/balances]", e);
+      res.status(500).json({ error: e?.message || "Internal error" });
+    }
+  });
+
   app.get("/api/web/activity", async (req: Request, res: Response) => {
     try {
       const session = getAuthedSession(req);
