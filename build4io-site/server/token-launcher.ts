@@ -1,0 +1,2636 @@
+import * as ethers from "ethers";
+import { storage } from "./storage";
+import { log } from "./index";
+import type { TokenLaunch, InsertTokenLaunch } from "@shared/schema";
+import fs from "fs";
+import path from "path";
+import crypto from "crypto";
+
+const TOKEN_IMAGE_DIR = path.resolve(process.cwd(), "public/uploads/token-images");
+
+function hashToColors(input: string): { bg1: string; bg2: string; fg: string; accent: string } {
+  const hash = crypto.createHash("sha256").update(input).digest("hex");
+  const hue1 = parseInt(hash.substring(0, 4), 16) % 360;
+  const hue2 = (hue1 + 40 + (parseInt(hash.substring(4, 6), 16) % 60)) % 360;
+  const sat = 65 + (parseInt(hash.substring(6, 8), 16) % 25);
+  return {
+    bg1: `hsl(${hue1}, ${sat}%, 45%)`,
+    bg2: `hsl(${hue2}, ${sat}%, 30%)`,
+    fg: "#ffffff",
+    accent: `hsl(${hue1}, ${sat}%, 65%)`,
+  };
+}
+
+function escapeXml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
+}
+
+function generateTokenSvg(tokenName: string, tokenSymbol: string): string {
+  const colors = hashToColors(`${tokenName}-${tokenSymbol}`);
+  const displaySymbol = escapeXml(tokenSymbol.substring(0, 4).replace(/[^a-zA-Z0-9]/g, ""));
+  const fontSize = displaySymbol.length <= 2 ? 180 : displaySymbol.length === 3 ? 150 : 120;
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <radialGradient id="bg" cx="35%" cy="35%" r="65%">
+      <stop offset="0%" stop-color="${colors.bg1}"/>
+      <stop offset="100%" stop-color="${colors.bg2}"/>
+    </radialGradient>
+    <radialGradient id="shine" cx="30%" cy="25%" r="50%">
+      <stop offset="0%" stop-color="rgba(255,255,255,0.25)"/>
+      <stop offset="100%" stop-color="rgba(255,255,255,0)"/>
+    </radialGradient>
+    <filter id="shadow">
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="rgba(0,0,0,0.3)"/>
+    </filter>
+  </defs>
+  <circle cx="256" cy="256" r="250" fill="url(#bg)"/>
+  <circle cx="256" cy="256" r="220" fill="none" stroke="${colors.accent}" stroke-width="3" opacity="0.4"/>
+  <circle cx="256" cy="256" r="250" fill="url(#shine)"/>
+  <text x="256" y="${268 + (fontSize > 140 ? 10 : 0)}" text-anchor="middle" dominant-baseline="central" font-family="Arial,Helvetica,sans-serif" font-weight="bold" font-size="${fontSize}" fill="${colors.fg}" filter="url(#shadow)">${displaySymbol}</text>
+  <circle cx="256" cy="256" r="248" fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="4"/>
+</svg>`;
+}
+
+async function generateTokenImagePng(tokenName: string, tokenSymbol: string): Promise<Buffer | null> {
+  try {
+    const sharp = (await import("sharp")).default;
+    const svg = generateTokenSvg(tokenName, tokenSymbol);
+    const pngBuffer = await sharp(Buffer.from(svg)).resize(512, 512).png().toBuffer();
+    log(`[TokenLauncher] Generated PNG image for ${tokenSymbol} (${pngBuffer.length} bytes)`, "token-launcher");
+    return pngBuffer;
+  } catch (e: any) {
+    log(`[TokenLauncher] PNG generation failed: ${e.message?.substring(0, 100)}`, "token-launcher");
+    return null;
+  }
+}
+
+async function fourMemeUploadImage(pngBuffer: Buffer, accessToken: string): Promise<string | null> {
+  try {
+    const boundary = `----FormBoundary${crypto.randomBytes(8).toString("hex")}`;
+    const filename = `token-${Date.now()}.png`;
+
+    const header = `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${filename}"\r\nContent-Type: image/png\r\n\r\n`;
+    const footer = `\r\n--${boundary}--\r\n`;
+
+    const body = Buffer.concat([Buffer.from(header), pngBuffer, Buffer.from(footer)]);
+
+    const uploadRes = await fetch(`${FOUR_MEME_API}/meme-api/v1/private/token/upload`, {
+      method: "POST",
+      headers: {
+        "Content-Type": `multipart/form-data; boundary=${boundary}`,
+        "meme-web-access": accessToken,
+      },
+      body,
+    });
+
+    log(`[TokenLauncher] Authenticated upload HTTP ${uploadRes.status}`, "token-launcher");
+    const responseText = await uploadRes.text();
+    log(`[TokenLauncher] Authenticated upload raw response: ${responseText.substring(0, 400)}`, "token-launcher");
+    try {
+      const uploadJson = JSON.parse(responseText);
+      if (uploadJson.code === 0 && uploadJson.data) {
+        const imgUrl = typeof uploadJson.data === "string" ? uploadJson.data : uploadJson.data.url || uploadJson.data.imgUrl || uploadJson.data.imageUrl;
+        log(`[TokenLauncher] Image uploaded to four.meme CDN: ${imgUrl}`, "token-launcher");
+        return imgUrl;
+      }
+      if (uploadJson.data && typeof uploadJson.data === "string" && uploadJson.data.startsWith("http")) {
+        log(`[TokenLauncher] Image uploaded (alt parse): ${uploadJson.data}`, "token-launcher");
+        return uploadJson.data;
+      }
+    } catch {
+      log(`[TokenLauncher] Upload response was not JSON`, "token-launcher");
+    }
+    return null;
+  } catch (e: any) {
+    log(`[TokenLauncher] four.meme image upload failed: ${e.message?.substring(0, 100)}`, "token-launcher");
+    return null;
+  }
+}
+
+const FOUR_MEME_CONTRACT = "0x5c952063c7fc8610FFDB798152D69F0B9550762b";
+const FOUR_MEME_HELPER3 = "0xF251F83e40a78868FcfA3FA4599Dad6494E46034";
+const FOUR_MEME_API = "https://four.meme";
+
+const PANCAKE_V2_ROUTER = "0x10ED43C718714eb63d5aA57B78B54704E256024E";
+const WBNB_ADDRESS = "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c";
+const PANCAKE_ROUTER_ABI = [
+  "function swapExactTokensForETHSupportingFeeOnTransferTokens(uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline) external",
+  "function getAmountsOut(uint amountIn, address[] calldata path) external view returns (uint[] memory amounts)",
+];
+
+const ERC8004_IDENTITY_REGISTRY_BSC = "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432";
+
+const registeredAgentWallets = new Set<string>();
+
+let erc8004BscDisabled = false;
+
+async function isAgentRegistered(walletAddress: string): Promise<boolean> {
+  if (registeredAgentWallets.has(walletAddress.toLowerCase())) return true;
+  if (erc8004BscDisabled) return false;
+  try {
+    const provider = getBscProvider();
+    const registry = new ethers.Contract(ERC8004_IDENTITY_REGISTRY_BSC, [
+      "function balanceOf(address owner) view returns (uint256)",
+    ], provider);
+    const balance = await registry.balanceOf(walletAddress);
+    const hasNft = BigInt(balance) > 0n;
+    if (hasNft) registeredAgentWallets.add(walletAddress.toLowerCase());
+    return hasNft;
+  } catch (e: any) {
+    log(`[ERC-8004] balanceOf check failed on BSC — disabling further checks: ${e.message?.substring(0, 80)}`, "token-launcher");
+    erc8004BscDisabled = true;
+    return false;
+  }
+}
+
+async function ensureAgentRegisteredBSC(
+  wallet: ethers.Wallet,
+  agentName?: string,
+  agentDescription?: string,
+  agentDbId?: string,
+): Promise<{ registered: boolean; txHash?: string; error?: string }> {
+  try {
+    const already = await isAgentRegistered(wallet.address);
+    if (already) {
+      log(`[ERC-8004] Wallet ${wallet.address.substring(0, 10)}... already registered as agent on BSC`, "token-launcher");
+      return { registered: true };
+    }
+
+    const { registerAgentERC8004 } = await import("./onchain");
+    const result = await registerAgentERC8004(
+      agentName || "BUILD4 Agent",
+      agentDescription || "Autonomous AI agent on BUILD4",
+      agentDbId || "telegram-user",
+      "bsc",
+      wallet.privateKey,
+    );
+
+    if (result.success) {
+      registeredAgentWallets.add(wallet.address.toLowerCase());
+      log(`[ERC-8004] Agent registered on BSC! TX: ${result.txHash}`, "token-launcher");
+      return { registered: true, txHash: result.txHash };
+    } else {
+      return { registered: false, error: result.error };
+    }
+  } catch (e: any) {
+    const msg = e.message?.substring(0, 150) || "Unknown error";
+    log(`[ERC-8004] BSC registration failed: ${msg}`, "token-launcher");
+    return { registered: false, error: msg };
+  }
+}
+
+const FOUR_MEME_ABI = [
+  {
+    inputs: [
+      { internalType: "bytes", name: "args", type: "bytes" },
+      { internalType: "bytes", name: "signature", type: "bytes" },
+    ],
+    name: "createToken",
+    outputs: [],
+    stateMutability: "payable",
+    type: "function",
+  },
+  {
+    inputs: [
+      { internalType: "address", name: "token", type: "address" },
+      { internalType: "uint256", name: "funds", type: "uint256" },
+      { internalType: "uint256", name: "minAmount", type: "uint256" },
+    ],
+    name: "buyTokenAMAP",
+    outputs: [],
+    stateMutability: "payable",
+    type: "function",
+  },
+  {
+    inputs: [
+      { internalType: "address", name: "token", type: "address" },
+      { internalType: "uint256", name: "amount", type: "uint256" },
+      { internalType: "uint256", name: "maxFunds", type: "uint256" },
+    ],
+    name: "buyToken",
+    outputs: [],
+    stateMutability: "payable",
+    type: "function",
+  },
+  {
+    inputs: [
+      { internalType: "address", name: "token", type: "address" },
+      { internalType: "uint256", name: "amount", type: "uint256" },
+    ],
+    name: "sellToken",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+];
+
+const FOUR_MEME_HELPER3_ABI = [
+  {
+    inputs: [
+      { internalType: "address", name: "token", type: "address" },
+    ],
+    name: "getTokenInfo",
+    outputs: [
+      { internalType: "uint256", name: "version", type: "uint256" },
+      { internalType: "address", name: "tokenManager", type: "address" },
+      { internalType: "address", name: "quote", type: "address" },
+      { internalType: "uint256", name: "lastPrice", type: "uint256" },
+      { internalType: "uint256", name: "tradingFeeRate", type: "uint256" },
+      { internalType: "uint256", name: "minTradingFee", type: "uint256" },
+      { internalType: "uint256", name: "launchTime", type: "uint256" },
+      { internalType: "uint256", name: "offers", type: "uint256" },
+      { internalType: "uint256", name: "maxOffers", type: "uint256" },
+      { internalType: "uint256", name: "funds", type: "uint256" },
+      { internalType: "uint256", name: "maxFunds", type: "uint256" },
+      { internalType: "bool", name: "liquidityAdded", type: "bool" },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [
+      { internalType: "address", name: "token", type: "address" },
+      { internalType: "uint256", name: "amount", type: "uint256" },
+      { internalType: "uint256", name: "funds", type: "uint256" },
+    ],
+    name: "tryBuy",
+    outputs: [
+      { internalType: "address", name: "tokenManager", type: "address" },
+      { internalType: "address", name: "quote", type: "address" },
+      { internalType: "uint256", name: "estimatedAmount", type: "uint256" },
+      { internalType: "uint256", name: "estimatedCost", type: "uint256" },
+      { internalType: "uint256", name: "estimatedFee", type: "uint256" },
+      { internalType: "uint256", name: "amountMsgValue", type: "uint256" },
+      { internalType: "uint256", name: "amountApproval", type: "uint256" },
+      { internalType: "uint256", name: "amountFunds", type: "uint256" },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [
+      { internalType: "address", name: "token", type: "address" },
+      { internalType: "uint256", name: "amount", type: "uint256" },
+    ],
+    name: "trySell",
+    outputs: [
+      { internalType: "address", name: "tokenManager", type: "address" },
+      { internalType: "address", name: "quote", type: "address" },
+      { internalType: "uint256", name: "funds", type: "uint256" },
+      { internalType: "uint256", name: "fee", type: "uint256" },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+];
+
+const ERC20_ABI = [
+  {
+    inputs: [{ internalType: "address", name: "account", type: "address" }],
+    name: "balanceOf",
+    outputs: [{ internalType: "uint256", name: "", type: "uint256" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [
+      { internalType: "address", name: "spender", type: "address" },
+      { internalType: "uint256", name: "amount", type: "uint256" },
+    ],
+    name: "approve",
+    outputs: [{ internalType: "bool", name: "", type: "bool" }],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "decimals",
+    outputs: [{ internalType: "uint8", name: "", type: "uint8" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "symbol",
+    outputs: [{ internalType: "string", name: "", type: "string" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "name",
+    outputs: [{ internalType: "string", name: "", type: "string" }],
+    stateMutability: "view",
+    type: "function",
+  },
+];
+
+const FOUR_MEME_V1_CONTRACT = "0xEC4549caDcE5DA21Df6E6422d448034B5233bFbC";
+
+const FOUR_MEME_V1_ABI = [
+  {
+    inputs: [
+      { internalType: "address", name: "token", type: "address" },
+      { internalType: "uint256", name: "funds", type: "uint256" },
+      { internalType: "uint256", name: "minAmount", type: "uint256" },
+    ],
+    name: "purchaseTokenAMAP",
+    outputs: [],
+    stateMutability: "payable",
+    type: "function",
+  },
+  {
+    inputs: [
+      { internalType: "address", name: "token", type: "address" },
+      { internalType: "uint256", name: "amount", type: "uint256" },
+    ],
+    name: "saleToken",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+];
+
+const TOKEN_CREATE_EVENT = "0x396d5e902b675b032348d3d2e9517ee8f0c4a926603fbc075d3d282ff00cad20";
+
+const FLAP_PORTAL = "0xe2cE6ab80874Fa9Fa2aAE65D277Dd6B8e65C9De0";
+const FLAP_NO_TAX_IMPL = "0x8B4329947e34B6d56D71A3385caC122BaDe7d78D";
+const FLAP_TAX_IMPL = "0x5dd913731C12aD8DF3E574859FDe45412bF4aaD9";
+
+function mineVanitySalt(portal: string, tokenImpl: string, suffix: string): { salt: string; address: string } {
+  const bytecode = "0x3d602d80600a3d3981f3363d3d373d3d3d363d73" + tokenImpl.slice(2).toLowerCase() + "5af43d82803e903d91602b57fd5bf3";
+  const bytecodeHash = ethers.keccak256(bytecode);
+  let salt = ethers.keccak256(ethers.randomBytes(32));
+  const maxIterations = 10_000_000;
+  for (let i = 0; i < maxIterations; i++) {
+    const addr = ethers.getCreate2Address(portal, salt, bytecodeHash);
+    if (addr.toLowerCase().endsWith(suffix)) {
+      return { salt, address: addr };
+    }
+    salt = ethers.keccak256(salt);
+  }
+  throw new Error(`Failed to mine vanity salt ending in ${suffix} after ${maxIterations} iterations`);
+}
+
+const FLAP_PORTAL_ABI = [
+  {
+    inputs: [
+      {
+        components: [
+          { name: "name", type: "string" },
+          { name: "symbol", type: "string" },
+          { name: "meta", type: "string" },
+          { name: "dexThresh", type: "uint8" },
+          { name: "salt", type: "bytes32" },
+          { name: "taxRate", type: "uint16" },
+          { name: "migratorType", type: "uint8" },
+          { name: "quoteToken", type: "address" },
+          { name: "quoteAmt", type: "uint256" },
+          { name: "beneficiary", type: "address" },
+          { name: "permitData", type: "bytes" },
+        ],
+        name: "params",
+        type: "tuple",
+      },
+    ],
+    name: "newTokenV2",
+    outputs: [{ name: "token", type: "address" }],
+    stateMutability: "payable",
+    type: "function",
+  },
+];
+
+function sanitizeError(rawError: string): string {
+  if (!rawError) return "Unknown error";
+
+  if (rawError.includes("CALL_EXCEPTION") || rawError.includes("transaction execution reverted")) {
+    if (rawError.includes("insufficient funds") || rawError.includes("insufficient balance")) {
+      return "Insufficient balance — wallet needs more BNB/ETH for gas + liquidity";
+    }
+    if (rawError.includes("exceeds balance")) {
+      return "Insufficient balance to cover transaction cost";
+    }
+    return "Transaction reverted by the contract — this may be due to insufficient balance, invalid parameters, or the platform rejecting the launch";
+  }
+
+  if (rawError.includes("insufficient funds")) {
+    return "Insufficient balance — wallet needs more BNB/ETH for gas + liquidity";
+  }
+
+  if (rawError.includes("nonce")) {
+    return "Transaction nonce conflict — try again in a moment";
+  }
+
+  if (rawError.includes("timeout") || rawError.includes("TIMEOUT")) {
+    return "Network timeout — the blockchain may be congested, try again";
+  }
+
+  if (rawError.includes("network") || rawError.includes("NETWORK_ERROR")) {
+    return "Network error — could not connect to the blockchain";
+  }
+
+  if (rawError.includes("user rejected") || rawError.includes("ACTION_REJECTED")) {
+    return "Transaction was rejected";
+  }
+
+  if (rawError.length > 150) {
+    const shortMsg = rawError.substring(0, 100).split(",")[0].split("{")[0].trim();
+    return shortMsg || "Transaction failed — check your wallet balance and try again";
+  }
+
+  return rawError;
+}
+
+interface LaunchParams {
+  tokenName: string;
+  tokenSymbol: string;
+  tokenDescription: string;
+  imageUrl?: string;
+  platform: "four_meme" | "flap_sh" | "bankr" | "xlayer" | "raydium";
+  initialLiquidityBnb?: string;
+  agentId?: string;
+  creatorWallet?: string;
+  userPrivateKey?: string;
+  webUrl?: string;
+  twitterUrl?: string;
+  telegramUrl?: string;
+  taxRate?: number;
+  bankrChain?: "base" | "solana";
+  stealthBuyEth?: string;
+  stealthBuyPercent?: number;
+  solanaPrivateKey?: string;
+  initialBuySol?: string;
+  sniperEnabled?: boolean;
+  sniperDevBuyBnb?: string;
+  sniperWalletCount?: number;
+  sniperPerWalletBnb?: string;
+  preGeneratedWallets?: Array<{ address: string; privateKey: string; buyBnb: number }>;
+}
+
+interface SniperWalletResult {
+  address: string;
+  privateKey: string;
+  txHash?: string;
+  success: boolean;
+  error?: string;
+}
+
+interface LaunchResult {
+  success: boolean;
+  tokenAddress?: string;
+  txHash?: string;
+  launchUrl?: string;
+  error?: string;
+  launchId?: string;
+  stealthBuy?: {
+    success: boolean;
+    amountEth?: string;
+    error?: string;
+    jobId?: string;
+  };
+  sniperResults?: {
+    devBuyBnb: string;
+    wallets: SniperWalletResult[];
+    successCount: number;
+    totalSnipedBnb: string;
+  };
+}
+
+function getBscProvider(): ethers.JsonRpcProvider {
+  return new ethers.JsonRpcProvider("https://bsc-dataseed1.binance.org");
+}
+
+function getBaseProvider(): ethers.JsonRpcProvider {
+  return new ethers.JsonRpcProvider("https://mainnet.base.org");
+}
+
+function getDeployerWallet(provider: ethers.JsonRpcProvider): ethers.Wallet | null {
+  const pk = process.env.BOUNTY_WALLET_PRIVATE_KEY;
+  if (!pk) return null;
+  return new ethers.Wallet(pk, provider);
+}
+
+function getTreasuryAddress(): string | null {
+  const pk = process.env.BOUNTY_WALLET_PRIVATE_KEY;
+  if (!pk) return null;
+  try {
+    return new ethers.Wallet(pk).address;
+  } catch {
+    return null;
+  }
+}
+
+const TOKEN_LAUNCH_FEE = BigInt("10000000000000000");
+
+async function collectLaunchFee(
+  userWallet: ethers.Wallet,
+  provider: ethers.JsonRpcProvider,
+): Promise<{ success: boolean; txHash?: string; error?: string }> {
+  const treasury = getTreasuryAddress();
+  if (!treasury) {
+    log(`[LaunchFee] No treasury wallet configured — skipping fee`, "token-launcher");
+    return { success: true };
+  }
+
+  if (userWallet.address.toLowerCase() === treasury.toLowerCase()) {
+    return { success: true };
+  }
+
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const balance = await provider.getBalance(userWallet.address);
+      if (balance < TOKEN_LAUNCH_FEE) {
+        const balBnb = ethers.formatEther(balance);
+        const feeBnb = ethers.formatEther(TOKEN_LAUNCH_FEE);
+        return { success: false, error: `Insufficient balance for launch fee. Your wallet has ${balBnb} BNB but the launch fee is ${feeBnb} BNB (~$7). Fund your wallet and try again.` };
+      }
+
+      log(`[LaunchFee] Collecting ${ethers.formatEther(TOKEN_LAUNCH_FEE)} BNB launch fee (attempt ${attempt}/3) from ${userWallet.address.substring(0, 10)}...`, "token-launcher");
+
+      const feeData = await provider.getFeeData();
+      const tx = await userWallet.sendTransaction({
+        to: treasury,
+        value: TOKEN_LAUNCH_FEE,
+        gasLimit: 21000,
+        gasPrice: feeData.gasPrice ? feeData.gasPrice * 12n / 10n : undefined,
+      });
+
+      const receipt = await tx.wait();
+      if (!receipt || receipt.status !== 1) {
+        if (attempt < 3) { await new Promise(r => setTimeout(r, 3000)); continue; }
+        return { success: false, error: "Launch fee transaction failed on-chain" };
+      }
+
+      log(`[LaunchFee] Fee collected: ${tx.hash}`, "token-launcher");
+      return { success: true, txHash: tx.hash };
+    } catch (e: any) {
+      const msg = e.message || "";
+      if (msg.includes("insufficient funds")) {
+        return { success: false, error: `Insufficient BNB for launch fee (${ethers.formatEther(TOKEN_LAUNCH_FEE)} BNB). Fund your wallet and try again.` };
+      }
+      log(`[LaunchFee] Fee attempt ${attempt}/3 failed: ${msg.substring(0, 200)}`, "token-launcher");
+      if (attempt < 3) { await new Promise(r => setTimeout(r, 3000)); continue; }
+      return { success: false, error: `Launch fee failed: ${msg.substring(0, 100)}` };
+    }
+  }
+  return { success: false, error: "Launch fee failed after 3 attempts" };
+}
+
+export async function collectTradeFee(
+  userPrivateKey: string,
+  tradeAmountBnb: string,
+  feePercent: number = 1.0,
+): Promise<{ success: boolean; txHash?: string; feeAmount?: string; error?: string }> {
+  const treasury = getTreasuryAddress();
+  if (!treasury) {
+    log(`[TradeFee] No treasury wallet configured — skipping fee`, "token-launcher");
+    return { success: true, feeAmount: "0" };
+  }
+
+  try {
+    const provider = getBscProvider();
+    const wallet = new ethers.Wallet(userPrivateKey, provider);
+
+    if (wallet.address.toLowerCase() === treasury.toLowerCase()) {
+      return { success: true, feeAmount: "0" };
+    }
+
+    const tradeWei = ethers.parseEther(tradeAmountBnb);
+    const feeWei = (tradeWei * BigInt(Math.floor(feePercent * 100))) / 10000n;
+
+    if (feeWei === 0n) {
+      return { success: true, feeAmount: "0" };
+    }
+
+    const balance = await provider.getBalance(wallet.address);
+    if (balance < feeWei + ethers.parseEther("0.0005")) {
+      log(`[TradeFee] Insufficient balance for fee — skipping (balance: ${ethers.formatEther(balance)} BNB, fee: ${ethers.formatEther(feeWei)} BNB)`, "token-launcher");
+      return { success: true, feeAmount: "0" };
+    }
+
+    const feeData = await provider.getFeeData();
+    const tx = await wallet.sendTransaction({
+      to: treasury,
+      value: feeWei,
+      gasLimit: 21000,
+      gasPrice: feeData.gasPrice ? feeData.gasPrice * 12n / 10n : undefined,
+    });
+
+    const receipt = await tx.wait();
+    if (!receipt || receipt.status !== 1) {
+      log(`[TradeFee] Fee tx reverted`, "token-launcher");
+      return { success: true, feeAmount: "0" };
+    }
+
+    const feeAmountStr = ethers.formatEther(feeWei);
+    log(`[TradeFee] Fee collected: ${feeAmountStr} BNB → treasury (tx: ${tx.hash})`, "token-launcher");
+    return { success: true, txHash: tx.hash, feeAmount: feeAmountStr };
+  } catch (e: any) {
+    log(`[TradeFee] Fee collection failed (non-blocking): ${e.message?.substring(0, 200)}`, "token-launcher");
+    return { success: true, feeAmount: "0" };
+  }
+}
+
+async function fourMemeLogin(wallet: ethers.Wallet): Promise<string> {
+  const nonceRes = await fetch(`${FOUR_MEME_API}/meme-api/v1/private/user/nonce/generate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      accountAddress: wallet.address,
+      verifyType: "LOGIN",
+      networkCode: "BSC",
+    }),
+  });
+  if (nonceRes.status !== 200) {
+    throw new Error(`four.meme nonce API returned ${nonceRes.status}`);
+  }
+  const nonceJson = await nonceRes.json();
+  if (!nonceJson.data) {
+    throw new Error(`four.meme nonce failed: ${nonceJson.msg || JSON.stringify(nonceJson).substring(0, 100)}`);
+  }
+
+  const message = `You are sign in Meme ${nonceJson.data}`;
+  const signature = await wallet.signMessage(message);
+
+  const loginRes = await fetch(`${FOUR_MEME_API}/meme-api/v1/private/user/login/dex`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      region: "WEB",
+      langType: "EN",
+      loginIp: "",
+      inviteCode: "",
+      verifyInfo: {
+        address: wallet.address,
+        networkCode: "BSC",
+        signature,
+        verifyType: "LOGIN",
+      },
+      walletName: "MetaMask",
+    }),
+  });
+  if (loginRes.status !== 200) {
+    throw new Error(`four.meme login API returned ${loginRes.status}`);
+  }
+  const loginJson = await loginRes.json();
+  if (!loginJson.data) {
+    throw new Error(`four.meme login failed: ${loginJson.msg || JSON.stringify(loginJson).substring(0, 100)}`);
+  }
+  return loginJson.data;
+}
+
+export async function fourMemeUploadImageBuffer(pngBuffer: Buffer, userPrivateKey?: string): Promise<string | null> {
+  try {
+    const provider = getBscProvider();
+    let wallet: ethers.Wallet | null = null;
+    if (userPrivateKey) {
+      wallet = new ethers.Wallet(userPrivateKey, provider);
+    } else {
+      wallet = getDeployerWallet(provider);
+    }
+    if (!wallet) {
+      log("[TokenLauncher] No wallet available for four.meme image upload", "token-launcher");
+      return null;
+    }
+    log(`[TokenLauncher] Logging into four.meme for image upload with ${wallet.address.substring(0, 10)}...`, "token-launcher");
+    const accessToken = await fourMemeLogin(wallet);
+    log(`[TokenLauncher] Login OK, uploading image (${pngBuffer.length} bytes)...`, "token-launcher");
+    const result = await fourMemeUploadImage(pngBuffer, accessToken);
+    if (result) return result;
+    log(`[TokenLauncher] Authenticated upload returned null`, "token-launcher");
+    return null;
+  } catch (e: any) {
+    log(`[TokenLauncher] fourMemeUploadImageBuffer failed: ${e.message?.substring(0, 200)}`, "token-launcher");
+    return null;
+  }
+}
+
+async function fourMemeUploadImagePublic(pngBuffer: Buffer): Promise<string | null> {
+  const endpoints = [
+    `${FOUR_MEME_API}/meme-api/v1/private/token/upload`,
+    `${FOUR_MEME_API}/meme-api/meme/image/upload`,
+    `${FOUR_MEME_API}/meme-api/v1/public/token/upload`,
+  ];
+  const debugResults: string[] = [];
+  for (const url of endpoints) {
+    try {
+      const boundary = `----FormBoundary${crypto.randomBytes(8).toString("hex")}`;
+      const filename = `token-${Date.now()}.png`;
+      const header = `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${filename}"\r\nContent-Type: image/png\r\n\r\n`;
+      const footer = `\r\n--${boundary}--\r\n`;
+      const body = Buffer.concat([Buffer.from(header), pngBuffer, Buffer.from(footer)]);
+
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": `multipart/form-data; boundary=${boundary}` },
+        body,
+      });
+      const shortUrl = url.replace(FOUR_MEME_API, "");
+      log(`[TokenLauncher] Public upload ${shortUrl} → HTTP ${res.status}`, "token-launcher");
+      if (!res.ok) {
+        debugResults.push(`${shortUrl}→${res.status}`);
+        continue;
+      }
+      const text = await res.text();
+      log(`[TokenLauncher] Public upload response: ${text.substring(0, 300)}`, "token-launcher");
+      try {
+        const json = JSON.parse(text);
+        if (json.code === 0 && json.data) {
+          const imgUrl = typeof json.data === "string" ? json.data : json.data.url || json.data.imgUrl || json.data.imageUrl;
+          if (imgUrl) return imgUrl;
+        }
+        if (json.msg === "success" && json.data?.imageUrl) {
+          return json.data.imageUrl;
+        }
+        debugResults.push(`${shortUrl}→${JSON.stringify(json).substring(0, 80)}`);
+      } catch {
+        debugResults.push(`${shortUrl}→non-JSON: ${text.substring(0, 60)}`);
+      }
+    } catch (e: any) {
+      log(`[TokenLauncher] Public upload ${url} error: ${e.message?.substring(0, 100)}`, "token-launcher");
+      debugResults.push(`error: ${e.message?.substring(0, 40)}`);
+    }
+  }
+  log(`[TokenLauncher] All upload endpoints failed: ${debugResults.join(" | ")}`, "token-launcher");
+  return null;
+}
+
+async function fourMemeFetchRaisedConfig(accessToken: string): Promise<any> {
+  try {
+    const res = await fetch(`${FOUR_MEME_API}/meme-api/v1/private/token/raise`, {
+      headers: {
+        "Accept": "application/json",
+        "meme-web-access": accessToken,
+      },
+    });
+    const json = await res.json();
+    log(`[TokenLauncher] four.meme raise config: ${JSON.stringify(json).substring(0, 800)}`, "token-launcher");
+    if (json.code === 0 && json.data) {
+      const configs = Array.isArray(json.data) ? json.data : [json.data];
+      const bnbConfig = configs.find((c: any) => c.symbol === "BNB" && c.status === "PUBLISH" && c.platform === "MEME");
+      if (bnbConfig) {
+        log(`[TokenLauncher] Using dynamic BNB config: b0=${bnbConfig.b0Amount}, totalB=${bnbConfig.totalBAmount}, total=${bnbConfig.totalAmount}, saleRate=${bnbConfig.saleRate}`, "token-launcher");
+        return bnbConfig;
+      }
+    }
+  } catch (e: any) {
+    log(`[TokenLauncher] Failed to fetch raise config: ${e.message?.substring(0, 100)}`, "token-launcher");
+  }
+  return null;
+}
+
+async function fourMemeCreateTokenData(
+  params: LaunchParams,
+  accessToken: string,
+  preSaleEth: string,
+): Promise<{ createArg: string; signature: string; value: bigint }> {
+  const launchTime = Date.now();
+
+  const dynamicConfig = await fourMemeFetchRaisedConfig(accessToken);
+
+  const raisedToken: Record<string, any> = dynamicConfig ? {
+    symbol: dynamicConfig.symbol || "BNB",
+    nativeSymbol: dynamicConfig.nativeSymbol || "BNB",
+    symbolAddress: dynamicConfig.symbolAddress || "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c",
+    deployCost: dynamicConfig.deployCost || "0",
+    buyFee: dynamicConfig.buyFee || "0.01",
+    sellFee: dynamicConfig.sellFee || "0.01",
+    minTradeFee: dynamicConfig.minTradeFee || "0",
+    b0Amount: dynamicConfig.b0Amount || "8",
+    totalBAmount: dynamicConfig.totalBAmount || "18",
+    totalAmount: dynamicConfig.totalAmount || "1000000000",
+    logoUrl: dynamicConfig.logoUrl || "https://static.four.meme/market/fc6c4c92-63a3-4034-bc27-355ea380a6795959172881106751506.png",
+    status: dynamicConfig.status || "PUBLISH",
+  } : {
+    symbol: "BNB",
+    nativeSymbol: "BNB",
+    symbolAddress: "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c",
+    deployCost: "0",
+    buyFee: "0.01",
+    sellFee: "0.01",
+    minTradeFee: "0",
+    b0Amount: "8",
+    totalBAmount: "18",
+    totalAmount: "1000000000",
+    logoUrl: "https://static.four.meme/market/fc6c4c92-63a3-4034-bc27-355ea380a6795959172881106751506.png",
+    status: "PUBLISH",
+  };
+
+  const saleRate = dynamicConfig?.saleRate ? parseFloat(dynamicConfig.saleRate) : 0.8;
+  const totalBAmount = parseFloat(raisedToken.totalBAmount);
+  const b0Amount = parseFloat(raisedToken.b0Amount);
+  const raisedAmount = totalBAmount + b0Amount;
+
+  const requestBody: Record<string, any> = {
+    name: params.tokenName,
+    shortName: params.tokenSymbol,
+    desc: params.tokenDescription || "",
+    totalSupply: 1000000000,
+    raisedAmount,
+    saleRate,
+    reserveRate: 0,
+    imgUrl: params.imageUrl || "https://static.four.meme/market/68b871b6-96f7-408c-b8d0-388d804b34275092658264263839640.png",
+    raisedToken,
+    launchTime,
+    funGroup: false,
+    preSale: preSaleEth,
+    clickFun: false,
+    symbol: "BNB",
+    label: "Meme",
+  };
+
+  if (params.webUrl) requestBody.webUrl = params.webUrl;
+  if (params.twitterUrl) requestBody.twitterUrl = params.twitterUrl;
+  if (params.telegramUrl) requestBody.telegramUrl = params.telegramUrl;
+
+  log(`[TokenLauncher] four.meme create body: ${JSON.stringify(requestBody).substring(0, 500)}`, "token-launcher");
+
+  const createRes = await fetch(`${FOUR_MEME_API}/meme-api/v1/private/token/create`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Accept": "application/json",
+      "meme-web-access": accessToken,
+    },
+    body: JSON.stringify(requestBody),
+  });
+
+  const createJson = await createRes.json();
+  log(`[TokenLauncher] four.meme create API response: ${JSON.stringify(createJson).substring(0, 1000)}`, "token-launcher");
+  if ((createJson.code !== 0 && createJson.msg !== "success") || !createJson.data?.createArg || !createJson.data?.signature) {
+    throw new Error(`four.meme create API failed: ${createJson.msg || JSON.stringify(createJson).substring(0, 300)}`);
+  }
+
+  const preSaleWei = ethers.parseEther(preSaleEth);
+  const txValue = createJson.data.value ? BigInt(createJson.data.value) : preSaleWei;
+
+  return {
+    createArg: createJson.data.createArg,
+    signature: createJson.data.signature,
+    value: txValue,
+  };
+}
+
+async function launchOnFourMeme(params: LaunchParams): Promise<LaunchResult> {
+  const provider = getBscProvider();
+  let wallet: ethers.Wallet | null = null;
+  if (params.userPrivateKey) {
+    wallet = new ethers.Wallet(params.userPrivateKey, provider);
+    log(`[TokenLauncher] Using user wallet ${wallet.address.substring(0, 10)}... for Four.meme launch`, "token-launcher");
+  } else {
+    wallet = getDeployerWallet(provider);
+  }
+  if (!wallet) {
+    return { success: false, error: "No wallet available — generate or import a wallet with a private key first" };
+  }
+
+  const launchRecord = await storage.createTokenLaunch({
+    agentId: params.agentId || null,
+    creatorWallet: params.creatorWallet || wallet.address,
+    platform: "four_meme",
+    chainId: 56,
+    tokenName: params.tokenName,
+    tokenSymbol: params.tokenSymbol,
+    tokenDescription: params.tokenDescription,
+    imageUrl: params.imageUrl || null,
+    initialLiquidityBnb: params.initialLiquidityBnb || "0",
+    status: "pending",
+    tokenAddress: null,
+    txHash: null,
+    launchUrl: null,
+    errorMessage: null,
+    metadata: null,
+  });
+
+  try {
+    const preSaleEth = params.initialLiquidityBnb || "0";
+    const preSaleWei = ethers.parseEther(preSaleEth);
+    const totalLaunchCost = preSaleWei + ethers.parseEther("0.005");
+
+    const balance = await provider.getBalance(wallet.address);
+    const balFormatted = ethers.formatEther(balance);
+    log(`[TokenLauncher] Deployer balance: ${balFormatted} BNB`, "token-launcher");
+
+    if (balance < totalLaunchCost + TOKEN_LAUNCH_FEE) {
+      const needed = ethers.formatEther(totalLaunchCost + TOKEN_LAUNCH_FEE);
+      await storage.updateTokenLaunch(launchRecord.id, {
+        status: "failed",
+        errorMessage: `Insufficient BNB balance: ${balFormatted} BNB (need ${needed} BNB including ${ethers.formatEther(TOKEN_LAUNCH_FEE)} BNB launch fee)`,
+      });
+      return { success: false, error: `Insufficient BNB — your wallet has ${balFormatted} BNB but needs at least ${needed} BNB (includes ${ethers.formatEther(TOKEN_LAUNCH_FEE)} BNB launch fee). Fund your wallet and try again.`, launchId: launchRecord.id };
+    }
+
+    const feeResult = await collectLaunchFee(wallet, provider);
+    if (!feeResult.success) {
+      await storage.updateTokenLaunch(launchRecord.id, {
+        status: "failed",
+        errorMessage: feeResult.error || "Launch fee collection failed",
+      });
+      return { success: false, error: feeResult.error || "Launch fee collection failed", launchId: launchRecord.id };
+    }
+    if (feeResult.txHash) {
+      log(`[TokenLauncher] Launch fee paid: ${feeResult.txHash}`, "token-launcher");
+    }
+
+    const agentRegStatus = await isAgentRegistered(wallet.address);
+    if (agentRegStatus) {
+      log(`[TokenLauncher] Step 0 OK: Agent wallet already registered on ERC-8004 (AI badge enabled)`, "token-launcher");
+    } else {
+      log(`[TokenLauncher] Step 0: ERC-8004 BSC registration — skipping (contract not yet functional on BSC mainnet). AI badge will be available once ERC-8004 BSC deployment is active.`, "token-launcher");
+    }
+
+    log(`[TokenLauncher] Step 1: Logging into four.meme...`, "token-launcher");
+    const accessToken = await fourMemeLogin(wallet);
+    log(`[TokenLauncher] Step 1 OK: logged in`, "token-launcher");
+
+    if (!params.imageUrl) {
+      log(`[TokenLauncher] Step 1.5: Generating + uploading token image...`, "token-launcher");
+      const pngBuffer = await generateTokenImagePng(params.tokenName, params.tokenSymbol);
+      if (pngBuffer) {
+        const cdnUrl = await fourMemeUploadImage(pngBuffer, accessToken);
+        if (cdnUrl) {
+          params.imageUrl = cdnUrl;
+          log(`[TokenLauncher] Step 1.5 OK: image uploaded to ${cdnUrl}`, "token-launcher");
+        }
+      }
+    }
+
+    try {
+      const searchRes = await fetch(`${FOUR_MEME_API}/meme-api/v1/public/token/search?keyword=${encodeURIComponent(params.tokenName)}&pageNo=1&pageSize=5`);
+      const searchJson = await searchRes.json() as any;
+      const existing = searchJson?.data?.records?.find((t: any) =>
+        t.name?.toLowerCase() === params.tokenName.toLowerCase() ||
+        t.shortName?.toLowerCase() === params.tokenSymbol.toLowerCase()
+      );
+      if (existing) {
+        const existingAddr = existing.contractAddress || existing.address || "";
+        log(`[TokenLauncher] Token name/symbol already exists on four.meme: ${existing.name} (${existingAddr})`, "token-launcher");
+        await storage.updateTokenLaunch(launchRecord.id, {
+          status: "failed",
+          errorMessage: `Token "${existing.name}" already exists on four.meme`,
+        });
+        return {
+          success: false,
+          error: `A token named "${existing.name}" ($${existing.shortName || params.tokenSymbol}) already exists on four.meme. Choose a different, unique name.`,
+          launchId: launchRecord.id,
+        };
+      }
+    } catch (searchErr: any) {
+      log(`[TokenLauncher] Token search check skipped: ${searchErr.message?.substring(0, 60)}`, "token-launcher");
+    }
+
+    log(`[TokenLauncher] Step 2: Creating token via four.meme API...`, "token-launcher");
+    const txData = await fourMemeCreateTokenData(params, accessToken, preSaleEth);
+    log(`[TokenLauncher] Step 2 OK: got createArg (${txData.createArg.length} chars) + signature`, "token-launcher");
+
+    log(`[TokenLauncher] Step 3: Sending on-chain TX to ${FOUR_MEME_CONTRACT}...`, "token-launcher");
+    const contract = new ethers.Contract(FOUR_MEME_CONTRACT, FOUR_MEME_ABI, wallet);
+
+    let tx;
+    try {
+      tx = await contract.createToken(txData.createArg, txData.signature, {
+        value: txData.value,
+        gasLimit: 2000000,
+      });
+    } catch (txError: any) {
+      const rawMsg = txError.message || String(txError);
+      log(`[TokenLauncher] four.meme TX error: ${rawMsg.substring(0, 500)}`, "token-launcher");
+      if (txError.info) log(`[TokenLauncher] TX error info: ${JSON.stringify(txError.info).substring(0, 300)}`, "token-launcher");
+      if (txError.reason) log(`[TokenLauncher] TX revert reason: ${txError.reason}`, "token-launcher");
+
+      let userError: string;
+      if (rawMsg.includes("insufficient funds") || rawMsg.includes("exceeds balance")) {
+        userError = `Insufficient BNB — your wallet has ${balFormatted} BNB but needs more for gas fees. Fund your wallet and try again.`;
+      } else if (rawMsg.includes("CALL_EXCEPTION") || rawMsg.includes("reverted")) {
+        const revertReason = txError.reason || "";
+        userError = `Four.meme contract rejected the launch${revertReason ? ` (${revertReason})` : ""}. The token name/symbol may already be taken — try a different name.`;
+      } else {
+        userError = sanitizeError(rawMsg);
+      }
+
+      await storage.updateTokenLaunch(launchRecord.id, {
+        status: "failed",
+        errorMessage: rawMsg.substring(0, 500),
+      });
+      return { success: false, error: userError, launchId: launchRecord.id };
+    }
+
+    log(`[TokenLauncher] four.meme TX sent: ${tx.hash}`, "token-launcher");
+
+    await storage.updateTokenLaunch(launchRecord.id, {
+      txHash: tx.hash,
+      status: "confirming",
+    });
+
+    const receipt = await Promise.race([
+      tx.wait(),
+      new Promise<null>((_, reject) => setTimeout(() => reject(new Error("TX timeout (180s)")), 180000)),
+    ]);
+
+    if (!receipt || receipt.status !== 1) {
+      const revertMsg = `Transaction reverted — the token name or symbol may already be taken on four.meme. Try a different, unique name. TX: ${tx.hash.substring(0, 14)}...`;
+      log(`[TokenLauncher] four.meme launch reverted on-chain. TX: ${tx.hash}`, "token-launcher");
+      await storage.updateTokenLaunch(launchRecord.id, {
+        status: "failed",
+        txHash: tx.hash,
+        errorMessage: revertMsg,
+      });
+      return { success: false, error: revertMsg, txHash: tx.hash, launchId: launchRecord.id };
+    }
+
+    let tokenAddress: string | undefined;
+    const tokenCreateLog = receipt.logs.find(
+      (l: any) => l.topics?.length > 0 && l.topics[0] === TOKEN_CREATE_EVENT
+    );
+    if (tokenCreateLog && tokenCreateLog.data) {
+      try {
+        const decoded = ethers.AbiCoder.defaultAbiCoder().decode(
+          ["address", "address", "uint256", "string", "string", "uint256", "uint256", "uint256"],
+          tokenCreateLog.data
+        );
+        tokenAddress = decoded[1];
+      } catch {
+        // fallback
+      }
+    }
+
+    if (!tokenAddress) {
+      for (const eventLog of receipt.logs) {
+        if (eventLog.data && eventLog.data.length >= 66) {
+          const possibleAddr = "0x" + eventLog.data.slice(26, 66);
+          if (ethers.isAddress(possibleAddr) && possibleAddr !== ethers.ZeroAddress) {
+            tokenAddress = possibleAddr;
+            break;
+          }
+        }
+      }
+    }
+
+    const launchUrl = tokenAddress
+      ? `https://four.meme/token/${tokenAddress}`
+      : `https://bscscan.com/tx/${tx.hash}`;
+
+    await storage.updateTokenLaunch(launchRecord.id, {
+      status: "launched",
+      tokenAddress: tokenAddress || null,
+      txHash: receipt.hash,
+      launchUrl,
+    });
+
+    log(`[TokenLauncher] four.meme launch success! Token: ${tokenAddress || "parsing..."}, TX: ${receipt.hash}`, "token-launcher");
+
+    return {
+      success: true,
+      tokenAddress,
+      txHash: receipt.hash,
+      launchUrl,
+      launchId: launchRecord.id,
+    };
+  } catch (e: any) {
+    log(`[TokenLauncher] four.meme launch failed: ${e.message}`, "token-launcher");
+    const cleanError = sanitizeError(e.message || "");
+    await storage.updateTokenLaunch(launchRecord.id, {
+      status: "failed",
+      errorMessage: e.message?.substring(0, 500),
+    });
+    return { success: false, error: cleanError, launchId: launchRecord.id };
+  }
+}
+
+async function launchOnFlapSh(params: LaunchParams): Promise<LaunchResult> {
+  const provider = getBscProvider();
+  let wallet: ethers.Wallet | null = null;
+  if (params.userPrivateKey) {
+    wallet = new ethers.Wallet(params.userPrivateKey, provider);
+    log(`[TokenLauncher] Using user wallet ${wallet.address.substring(0, 10)}... for Flap.sh launch`, "token-launcher");
+  } else {
+    wallet = getDeployerWallet(provider);
+  }
+  if (!wallet) {
+    return { success: false, error: "No wallet available — generate or import a wallet with a private key first" };
+  }
+
+  const launchRecord = await storage.createTokenLaunch({
+    agentId: params.agentId || null,
+    creatorWallet: params.creatorWallet || wallet.address,
+    platform: "flap_sh",
+    chainId: 56,
+    tokenName: params.tokenName,
+    tokenSymbol: params.tokenSymbol,
+    tokenDescription: params.tokenDescription,
+    imageUrl: params.imageUrl || null,
+    initialLiquidityBnb: params.initialLiquidityBnb || "0.001",
+    status: "pending",
+    tokenAddress: null,
+    txHash: null,
+    launchUrl: null,
+    errorMessage: null,
+    metadata: null,
+  });
+
+  try {
+    const initialBuy = ethers.parseEther(params.initialLiquidityBnb || "0.001");
+
+    const balance = await provider.getBalance(wallet.address);
+    const balFormatted = ethers.formatEther(balance);
+    log(`[TokenLauncher] Deployer balance: ${balFormatted} BNB`, "token-launcher");
+
+    if (balance < initialBuy + ethers.parseEther("0.005") + TOKEN_LAUNCH_FEE) {
+      const needed = ethers.formatEther(initialBuy + ethers.parseEther("0.005") + TOKEN_LAUNCH_FEE);
+      await storage.updateTokenLaunch(launchRecord.id, {
+        status: "failed",
+        errorMessage: `Insufficient BNB: ${balFormatted} BNB (need ${needed} BNB including ${ethers.formatEther(TOKEN_LAUNCH_FEE)} BNB launch fee)`,
+      });
+      return { success: false, error: `Insufficient BNB — your wallet has ${balFormatted} BNB but needs at least ${needed} BNB (includes ${ethers.formatEther(TOKEN_LAUNCH_FEE)} BNB launch fee). Fund your wallet and try again.`, launchId: launchRecord.id };
+    }
+
+    const feeResult = await collectLaunchFee(wallet, provider);
+    if (!feeResult.success) {
+      await storage.updateTokenLaunch(launchRecord.id, {
+        status: "failed",
+        errorMessage: feeResult.error || "Launch fee collection failed",
+      });
+      return { success: false, error: feeResult.error || "Launch fee collection failed", launchId: launchRecord.id };
+    }
+    if (feeResult.txHash) {
+      log(`[TokenLauncher] Launch fee paid: ${feeResult.txHash}`, "token-launcher");
+    }
+
+    log(`[TokenLauncher] Calling Flap Portal newTokenV2(${params.tokenName}, ${params.tokenSymbol}) with ${ethers.formatEther(initialBuy)} BNB...`, "token-launcher");
+    const portal = new ethers.Contract(FLAP_PORTAL, FLAP_PORTAL_ABI, wallet);
+
+    const meta = params.tokenDescription || "";
+
+    const useTax = (params.taxRate ?? 0) > 0;
+    const taxImpl = useTax ? FLAP_TAX_IMPL : FLAP_NO_TAX_IMPL;
+    const vanitySuffix = useTax ? "7777" : "8888";
+    const taxBps = Math.round((params.taxRate ?? 0) * 100);
+
+    log(`[TokenLauncher] Mining vanity salt for flap.sh token (suffix ${vanitySuffix}, tax ${taxBps}bps)...`, "token-launcher");
+    const minedSalt = mineVanitySalt(FLAP_PORTAL, taxImpl, vanitySuffix);
+    log(`[TokenLauncher] Vanity salt found: ${minedSalt.salt.substring(0, 18)}... -> ${minedSalt.address}`, "token-launcher");
+
+    const tokenParams = {
+      name: params.tokenName,
+      symbol: params.tokenSymbol,
+      meta,
+      dexThresh: 1,
+      salt: minedSalt.salt,
+      taxRate: taxBps,
+      migratorType: 0,
+      quoteToken: ethers.ZeroAddress,
+      quoteAmt: initialBuy,
+      beneficiary: wallet.address,
+      permitData: "0x",
+    };
+
+    let tx;
+    try {
+      tx = await portal.newTokenV2(tokenParams, {
+        value: initialBuy,
+        gasLimit: 2000000,
+      });
+    } catch (txError: any) {
+      const rawMsg = txError.message || String(txError);
+      log(`[TokenLauncher] flap.sh TX error: ${rawMsg.substring(0, 500)}`, "token-launcher");
+      if (txError.reason) log(`[TokenLauncher] TX revert reason: ${txError.reason}`, "token-launcher");
+
+      let userError: string;
+      if (rawMsg.includes("insufficient funds") || rawMsg.includes("exceeds balance")) {
+        userError = `Insufficient BNB — your wallet has ${balFormatted} BNB. Fund your wallet and try again.`;
+      } else if (rawMsg.includes("CALL_EXCEPTION") || rawMsg.includes("reverted")) {
+        userError = `Flap.sh contract rejected the launch${txError.reason ? ` (${txError.reason})` : ""}. Try a different token name/symbol.`;
+      } else {
+        userError = sanitizeError(rawMsg);
+      }
+
+      await storage.updateTokenLaunch(launchRecord.id, {
+        status: "failed",
+        errorMessage: rawMsg.substring(0, 500),
+      });
+      return { success: false, error: userError, launchId: launchRecord.id };
+    }
+
+    log(`[TokenLauncher] flap.sh TX sent: ${tx.hash}`, "token-launcher");
+
+    await storage.updateTokenLaunch(launchRecord.id, {
+      txHash: tx.hash,
+      status: "confirming",
+    });
+
+    const receipt = await Promise.race([
+      tx.wait(),
+      new Promise<null>((_, reject) => setTimeout(() => reject(new Error("TX timeout (180s)")), 180000)),
+    ]);
+
+    if (!receipt || receipt.status !== 1) {
+      const revertMsg = `Flap.sh transaction reverted on-chain — try a different token name/symbol. TX: ${tx.hash.substring(0, 14)}...`;
+      log(`[TokenLauncher] flap.sh launch reverted on-chain. TX: ${tx.hash}`, "token-launcher");
+      await storage.updateTokenLaunch(launchRecord.id, {
+        status: "failed",
+        txHash: tx.hash,
+        errorMessage: revertMsg,
+      });
+      return { success: false, error: revertMsg, txHash: tx.hash, launchId: launchRecord.id };
+    }
+
+    let tokenAddress: string | undefined;
+    for (const eventLog of receipt.logs) {
+      if (eventLog.address?.toLowerCase().endsWith("7777") || eventLog.address?.toLowerCase().endsWith("8888")) {
+        tokenAddress = eventLog.address;
+        break;
+      }
+    }
+    if (!tokenAddress) {
+      for (const eventLog of receipt.logs) {
+        if (eventLog.data && eventLog.data.length >= 66) {
+          try {
+            const decoded = ethers.AbiCoder.defaultAbiCoder().decode(["address"], "0x" + eventLog.data.slice(2, 66));
+            if (decoded[0] && ethers.isAddress(decoded[0]) && decoded[0] !== ethers.ZeroAddress) {
+              tokenAddress = decoded[0];
+              break;
+            }
+          } catch {}
+        }
+      }
+    }
+    if (!tokenAddress) {
+      tokenAddress = minedSalt.address;
+      log(`[TokenLauncher] Could not extract token address from logs, using mined vanity address: ${tokenAddress}`, "token-launcher");
+    }
+
+    const launchUrl = tokenAddress
+      ? `https://flap.sh/token/${tokenAddress}`
+      : `https://bscscan.com/tx/${tx.hash}`;
+
+    await storage.updateTokenLaunch(launchRecord.id, {
+      status: "launched",
+      tokenAddress: tokenAddress || null,
+      txHash: receipt.hash,
+      launchUrl,
+    });
+
+    log(`[TokenLauncher] flap.sh launch success! Token: ${tokenAddress || "parsing..."}, TX: ${receipt.hash}`, "token-launcher");
+
+    return {
+      success: true,
+      tokenAddress,
+      txHash: receipt.hash,
+      launchUrl,
+      launchId: launchRecord.id,
+    };
+  } catch (e: any) {
+    log(`[TokenLauncher] flap.sh launch failed: ${e.message}`, "token-launcher");
+    const cleanError = sanitizeError(e.message || "");
+    await storage.updateTokenLaunch(launchRecord.id, {
+      status: "failed",
+      errorMessage: e.message?.substring(0, 500),
+    });
+    return { success: false, error: cleanError, launchId: launchRecord.id };
+  }
+}
+
+const XLAYER_RPC = "https://rpc.xlayer.tech";
+const XLAYER_CHAIN_ID = 196;
+const XLAYER_EXPLORER = "https://www.oklink.com/xlayer";
+
+let compiledErc20Cache: { abi: any[]; bytecode: string } | null = null;
+
+async function compileSimpleERC20(): Promise<{ abi: any[]; bytecode: string }> {
+  if (compiledErc20Cache) return compiledErc20Cache;
+
+  const solc = require("solc");
+
+  const source = `// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.19;
+
+contract SimpleToken {
+    string public name;
+    string public symbol;
+    uint8 public constant decimals = 18;
+    uint256 public totalSupply;
+    mapping(address => uint256) public balanceOf;
+    mapping(address => mapping(address => uint256)) public allowance;
+
+    event Transfer(address indexed from, address indexed to, uint256 value);
+    event Approval(address indexed owner, address indexed spender, uint256 value);
+
+    constructor(string memory _name, string memory _symbol, address _recipient) {
+        name = _name;
+        symbol = _symbol;
+        uint256 supply = 1000000000 * 10**18;
+        totalSupply = supply;
+        balanceOf[_recipient] = supply;
+        emit Transfer(address(0), _recipient, supply);
+    }
+
+    function transfer(address to, uint256 amount) external returns (bool) {
+        require(to != address(0), "zero address");
+        require(balanceOf[msg.sender] >= amount, "insufficient balance");
+        balanceOf[msg.sender] -= amount;
+        balanceOf[to] += amount;
+        emit Transfer(msg.sender, to, amount);
+        return true;
+    }
+
+    function approve(address spender, uint256 amount) external returns (bool) {
+        allowance[msg.sender][spender] = amount;
+        emit Approval(msg.sender, spender, amount);
+        return true;
+    }
+
+    function transferFrom(address from, address to, uint256 amount) external returns (bool) {
+        require(to != address(0), "zero address");
+        require(balanceOf[from] >= amount, "insufficient balance");
+        require(allowance[from][msg.sender] >= amount, "insufficient allowance");
+        allowance[from][msg.sender] -= amount;
+        balanceOf[from] -= amount;
+        balanceOf[to] += amount;
+        emit Transfer(from, to, amount);
+        return true;
+    }
+}`;
+
+  const input = JSON.stringify({
+    language: "Solidity",
+    sources: { "SimpleToken.sol": { content: source } },
+    settings: {
+      optimizer: { enabled: true, runs: 200 },
+      outputSelection: { "*": { "*": ["abi", "evm.bytecode.object"] } },
+    },
+  });
+
+  const output = JSON.parse(solc.compile(input));
+  if (output.errors?.some((e: any) => e.severity === "error")) {
+    throw new Error("Solidity compilation failed: " + output.errors.map((e: any) => e.message).join("; "));
+  }
+
+  const contract = output.contracts["SimpleToken.sol"]["SimpleToken"];
+  compiledErc20Cache = {
+    abi: contract.abi,
+    bytecode: "0x" + contract.evm.bytecode.object,
+  };
+  return compiledErc20Cache;
+}
+
+function getXLayerProvider(): ethers.JsonRpcProvider {
+  return new ethers.JsonRpcProvider(XLAYER_RPC);
+}
+
+async function launchOnXLayer(params: LaunchParams): Promise<LaunchResult> {
+  const provider = getXLayerProvider();
+  let wallet: ethers.Wallet | null = null;
+  if (params.userPrivateKey) {
+    wallet = new ethers.Wallet(params.userPrivateKey, provider);
+    log(`[TokenLauncher] Using user wallet ${wallet.address.substring(0, 10)}... for XLayer launch`, "token-launcher");
+  } else {
+    const pk = process.env.BOUNTY_WALLET_PRIVATE_KEY;
+    if (pk) wallet = new ethers.Wallet(pk, provider);
+  }
+  if (!wallet) {
+    return { success: false, error: "No wallet available — generate or import a wallet first" };
+  }
+
+  const launchRecord = await storage.createTokenLaunch({
+    agentId: params.agentId || null,
+    creatorWallet: params.creatorWallet || wallet.address,
+    platform: "xlayer",
+    chainId: XLAYER_CHAIN_ID,
+    tokenName: params.tokenName,
+    tokenSymbol: params.tokenSymbol,
+    tokenDescription: params.tokenDescription,
+    imageUrl: params.imageUrl || null,
+    initialLiquidityBnb: "0",
+    status: "pending",
+    tokenAddress: null,
+    txHash: null,
+    launchUrl: null,
+    errorMessage: null,
+    metadata: null,
+  });
+
+  try {
+    const balance = await provider.getBalance(wallet.address);
+    const balFormatted = ethers.formatEther(balance);
+    log(`[TokenLauncher] XLayer wallet balance: ${balFormatted} OKB`, "token-launcher");
+
+    const minBalance = ethers.parseEther("0.005");
+    if (balance < minBalance) {
+      const needed = ethers.formatEther(minBalance);
+      await storage.updateTokenLaunch(launchRecord.id, {
+        status: "failed",
+        errorMessage: `Insufficient OKB: ${balFormatted} OKB (need at least ${needed} OKB for gas)`,
+      });
+      return { success: false, error: `Insufficient OKB — your wallet has ${balFormatted} OKB but needs at least ${needed} OKB for gas. Fund your wallet with OKB on XLayer and try again.`, launchId: launchRecord.id };
+    }
+
+    log(`[TokenLauncher] Compiling & deploying ERC-20 token ${params.tokenName} ($${params.tokenSymbol}) on XLayer...`, "token-launcher");
+
+    const { abi, bytecode } = await compileSimpleERC20();
+    const factory = new ethers.ContractFactory(abi, bytecode, wallet);
+
+    let deployTx;
+    try {
+      deployTx = await factory.deploy(params.tokenName, params.tokenSymbol, wallet.address, {
+        gasLimit: 2000000,
+      });
+    } catch (txError: any) {
+      const rawMsg = txError.message || String(txError);
+      log(`[TokenLauncher] XLayer deploy TX error: ${rawMsg.substring(0, 500)}`, "token-launcher");
+      const userError = sanitizeError(rawMsg);
+      await storage.updateTokenLaunch(launchRecord.id, {
+        status: "failed",
+        errorMessage: rawMsg.substring(0, 500),
+      });
+      return { success: false, error: userError, launchId: launchRecord.id };
+    }
+
+    const deployedContract = deployTx as ethers.BaseContract;
+    const txResponse = deployedContract.deploymentTransaction();
+    if (txResponse) {
+      log(`[TokenLauncher] XLayer deploy TX sent: ${txResponse.hash}`, "token-launcher");
+      await storage.updateTokenLaunch(launchRecord.id, {
+        txHash: txResponse.hash,
+        status: "confirming",
+      });
+    }
+
+    await deployedContract.waitForDeployment();
+    const tokenAddress = await deployedContract.getAddress();
+
+    const txHash = txResponse?.hash || "";
+    const launchUrl = `${XLAYER_EXPLORER}/address/${tokenAddress}`;
+
+    await storage.updateTokenLaunch(launchRecord.id, {
+      status: "launched",
+      tokenAddress,
+      txHash: txHash || null,
+      launchUrl,
+    });
+
+    log(`[TokenLauncher] XLayer launch success! Token: ${tokenAddress}, TX: ${txHash}`, "token-launcher");
+
+    return {
+      success: true,
+      tokenAddress,
+      txHash,
+      launchUrl,
+      launchId: launchRecord.id,
+    };
+  } catch (e: any) {
+    log(`[TokenLauncher] XLayer launch failed: ${e.message}`, "token-launcher");
+    const cleanError = sanitizeError(e.message || "");
+    await storage.updateTokenLaunch(launchRecord.id, {
+      status: "failed",
+      errorMessage: e.message?.substring(0, 500),
+    });
+    return { success: false, error: cleanError, launchId: launchRecord.id };
+  }
+}
+
+export interface FourMemeTokenInfo {
+  version: number;
+  tokenManager: string;
+  quote: string;
+  lastPrice: string;
+  tradingFeeRate: number;
+  minTradingFee: string;
+  launchTime: number;
+  offers: string;
+  maxOffers: string;
+  funds: string;
+  maxFunds: string;
+  liquidityAdded: boolean;
+  progressPercent: number;
+}
+
+export async function fourMemeGetTokenInfo(tokenAddress: string): Promise<FourMemeTokenInfo> {
+  const provider = getBscProvider();
+  const helper = new ethers.Contract(FOUR_MEME_HELPER3, FOUR_MEME_HELPER3_ABI, provider);
+
+  const info = await helper.getTokenInfo(tokenAddress);
+
+  const fundsNum = parseFloat(ethers.formatEther(info.funds));
+  const maxFundsNum = parseFloat(ethers.formatEther(info.maxFunds));
+  const progressPercent = maxFundsNum > 0 ? Math.min(100, (fundsNum / maxFundsNum) * 100) : 0;
+
+  return {
+    version: Number(info.version),
+    tokenManager: info.tokenManager,
+    quote: info.quote,
+    lastPrice: ethers.formatEther(info.lastPrice),
+    tradingFeeRate: Number(info.tradingFeeRate) / 10000,
+    minTradingFee: ethers.formatEther(info.minTradingFee),
+    launchTime: Number(info.launchTime),
+    offers: ethers.formatEther(info.offers),
+    maxOffers: ethers.formatEther(info.maxOffers),
+    funds: ethers.formatEther(info.funds),
+    maxFunds: ethers.formatEther(info.maxFunds),
+    liquidityAdded: info.liquidityAdded,
+    progressPercent: Math.round(progressPercent * 100) / 100,
+  };
+}
+
+export interface FourMemeBuyEstimate {
+  tokenManager: string;
+  quote: string;
+  estimatedAmount: string;
+  estimatedCost: string;
+  estimatedFee: string;
+  msgValue: string;
+}
+
+export async function fourMemeEstimateBuy(
+  tokenAddress: string,
+  bnbAmount: string,
+): Promise<FourMemeBuyEstimate> {
+  const provider = getBscProvider();
+  const helper = new ethers.Contract(FOUR_MEME_HELPER3, FOUR_MEME_HELPER3_ABI, provider);
+
+  const fundsWei = ethers.parseEther(bnbAmount);
+  const result = await helper.tryBuy(tokenAddress, 0, fundsWei);
+
+  return {
+    tokenManager: result.tokenManager,
+    quote: result.quote,
+    estimatedAmount: ethers.formatEther(result.estimatedAmount),
+    estimatedCost: ethers.formatEther(result.estimatedCost),
+    estimatedFee: ethers.formatEther(result.estimatedFee),
+    msgValue: ethers.formatEther(result.amountMsgValue),
+  };
+}
+
+export interface FourMemeSellEstimate {
+  tokenManager: string;
+  quote: string;
+  fundsReceived: string;
+  fee: string;
+}
+
+export async function fourMemeEstimateSell(
+  tokenAddress: string,
+  tokenAmount: string,
+): Promise<FourMemeSellEstimate> {
+  const provider = getBscProvider();
+  const helper = new ethers.Contract(FOUR_MEME_HELPER3, FOUR_MEME_HELPER3_ABI, provider);
+  const amountWei = ethers.parseEther(tokenAmount);
+
+  const info = await helper.getTokenInfo(tokenAddress);
+  if (info.liquidityAdded) {
+    try {
+      const router = new ethers.Contract(PANCAKE_V2_ROUTER, PANCAKE_ROUTER_ABI, provider);
+      const amounts = await router.getAmountsOut(amountWei, [tokenAddress, WBNB_ADDRESS]);
+      return {
+        tokenManager: PANCAKE_V2_ROUTER,
+        quote: WBNB_ADDRESS,
+        fundsReceived: ethers.formatEther(amounts[1]),
+        fee: "0",
+      };
+    } catch {
+      return {
+        tokenManager: PANCAKE_V2_ROUTER,
+        quote: WBNB_ADDRESS,
+        fundsReceived: "0",
+        fee: "0",
+      };
+    }
+  }
+
+  const result = await helper.trySell(tokenAddress, amountWei);
+
+  return {
+    tokenManager: result.tokenManager,
+    quote: result.quote,
+    fundsReceived: ethers.formatEther(result.funds),
+    fee: ethers.formatEther(result.fee),
+  };
+}
+
+export interface FourMemeTradeResult {
+  success: boolean;
+  txHash?: string;
+  error?: string;
+}
+
+export async function fourMemeBuyToken(
+  tokenAddress: string,
+  bnbAmount: string,
+  slippagePct: number,
+  userPrivateKey: string,
+  priorityGas: boolean = false,
+): Promise<FourMemeTradeResult> {
+  try {
+    const provider = getBscProvider();
+    const wallet = new ethers.Wallet(userPrivateKey, provider);
+
+    log(`[FourMeme] ${priorityGas ? "⚡ SNIPER " : ""}Estimating buy for ${bnbAmount} BNB on token ${tokenAddress.substring(0, 10)}...`, "token-launcher");
+
+    const helper = new ethers.Contract(FOUR_MEME_HELPER3, FOUR_MEME_HELPER3_ABI, provider);
+    const fundsWei = ethers.parseEther(bnbAmount);
+
+    const [estimate, info, feeData] = await Promise.all([
+      helper.tryBuy(tokenAddress, 0, fundsWei),
+      helper.getTokenInfo(tokenAddress),
+      priorityGas ? provider.getFeeData() : Promise.resolve(null),
+    ]);
+
+    const version = Number(info.version);
+    const quote = info.quote;
+    const isNativeQuote = quote === ethers.ZeroAddress;
+
+    if (!isNativeQuote) {
+      return { success: false, error: "This token uses a BEP20 quote (not BNB). BEP20-quoted token trading is not yet supported." };
+    }
+
+    const minAmount = (estimate.estimatedAmount * BigInt(Math.floor((100 - slippagePct) * 100))) / BigInt(10000);
+    const tokenManager = estimate.tokenManager;
+
+    log(`[FourMeme] V${version} token — buying ~${ethers.formatEther(estimate.estimatedAmount)} tokens for ${bnbAmount} BNB (slippage ${slippagePct}%)`, "token-launcher");
+
+    const txOverrides: any = {
+      value: estimate.amountMsgValue,
+      gasLimit: 500000,
+    };
+
+    if (priorityGas && feeData?.gasPrice) {
+      txOverrides.gasPrice = (feeData.gasPrice * 130n) / 100n;
+      log(`[FourMeme] ⚡ Priority gas: ${ethers.formatUnits(txOverrides.gasPrice, "gwei")} gwei (+30%)`, "token-launcher");
+    }
+
+    let tx;
+    if (version === 1) {
+      const tm = new ethers.Contract(tokenManager, FOUR_MEME_V1_ABI, wallet);
+      tx = await tm.purchaseTokenAMAP(tokenAddress, fundsWei, minAmount, txOverrides);
+    } else {
+      const tm = new ethers.Contract(tokenManager, FOUR_MEME_ABI, wallet);
+      tx = await tm.buyTokenAMAP(tokenAddress, fundsWei, minAmount, txOverrides);
+    }
+
+    log(`[FourMeme] Buy TX sent: ${tx.hash}`, "token-launcher");
+
+    const receipt = await Promise.race([
+      tx.wait(),
+      new Promise<null>((_, reject) => setTimeout(() => reject(new Error("TX timeout (90s)")), 90000)),
+    ]);
+
+    if (!receipt || receipt.status !== 1) {
+      return { success: false, error: "Buy transaction reverted on-chain" };
+    }
+
+    log(`[FourMeme] Buy confirmed: ${receipt.hash}`, "token-launcher");
+    return { success: true, txHash: receipt.hash };
+  } catch (e: any) {
+    const msg = e.message || "";
+    if (msg.includes("error code=\"A\"") || msg.includes("\"A\"")) {
+      return { success: false, error: "This is an X Mode exclusive token — cannot buy via standard method. Trade it directly on four.meme." };
+    }
+    log(`[FourMeme] Buy failed: ${msg.substring(0, 300)}`, "token-launcher");
+    return { success: false, error: sanitizeError(msg) };
+  }
+}
+
+export async function fourMemeSellToken(
+  tokenAddress: string,
+  tokenAmount: string,
+  userPrivateKey: string,
+): Promise<FourMemeTradeResult> {
+  try {
+    const provider = getBscProvider();
+    const wallet = new ethers.Wallet(userPrivateKey, provider);
+
+    const helper = new ethers.Contract(FOUR_MEME_HELPER3, FOUR_MEME_HELPER3_ABI, provider);
+    const amountWei = ethers.parseEther(tokenAmount);
+
+    const info = await Promise.race([
+      helper.getTokenInfo(tokenAddress),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("getTokenInfo timeout (15s)")), 15000)),
+    ]);
+    const version = Number(info.version);
+    const tokenManager = info.tokenManager;
+    const liquidityAdded = info.liquidityAdded;
+
+    if (liquidityAdded) {
+      log(`[FourMeme] Token ${tokenAddress.substring(0, 10)} has graduated to DEX — routing sell via PancakeSwap`, "token-launcher");
+      return await sellViaPancakeSwap(tokenAddress, tokenAmount, amountWei, wallet);
+    }
+
+    log(`[FourMeme] V${version} token — approving ${tokenAmount} tokens for TokenManager ${tokenManager.substring(0, 10)}...`, "token-launcher");
+    const token = new ethers.Contract(tokenAddress, ERC20_ABI, wallet);
+    const approveTx = await token.approve(tokenManager, amountWei, { gasLimit: 100000 });
+    await approveTx.wait();
+    log(`[FourMeme] Approval confirmed`, "token-launcher");
+
+    let tx;
+    if (version === 1) {
+      const tm = new ethers.Contract(tokenManager, FOUR_MEME_V1_ABI, wallet);
+      log(`[FourMeme] Selling ${tokenAmount} tokens via V1 saleToken...`, "token-launcher");
+      tx = await tm.saleToken(tokenAddress, amountWei, { gasLimit: 500000 });
+    } else {
+      const tm = new ethers.Contract(tokenManager, FOUR_MEME_ABI, wallet);
+      log(`[FourMeme] Selling ${tokenAmount} tokens via V2 sellToken...`, "token-launcher");
+      tx = await tm.sellToken(tokenAddress, amountWei, { gasLimit: 500000 });
+    }
+
+    log(`[FourMeme] Sell TX sent: ${tx.hash}`, "token-launcher");
+
+    const receipt = await Promise.race([
+      tx.wait(),
+      new Promise<null>((_, reject) => setTimeout(() => reject(new Error("TX timeout (90s)")), 90000)),
+    ]);
+
+    if (!receipt || receipt.status !== 1) {
+      return { success: false, error: "Sell transaction reverted on-chain" };
+    }
+
+    log(`[FourMeme] Sell confirmed: ${receipt.hash}`, "token-launcher");
+    return { success: true, txHash: receipt.hash };
+  } catch (e: any) {
+    log(`[FourMeme] Sell failed: ${e.message?.substring(0, 300)}`, "token-launcher");
+    return { success: false, error: sanitizeError(e.message || "") };
+  }
+}
+
+async function sellViaPancakeSwap(
+  tokenAddress: string,
+  tokenAmount: string,
+  amountWei: bigint,
+  wallet: ethers.Wallet,
+): Promise<FourMemeTradeResult> {
+  try {
+    const token = new ethers.Contract(tokenAddress, ERC20_ABI, wallet);
+    log(`[PancakeSwap] Approving ${tokenAmount} tokens for PancakeSwap Router...`, "token-launcher");
+    const approveTx = await token.approve(PANCAKE_V2_ROUTER, amountWei, { gasLimit: 100000 });
+    await approveTx.wait();
+    log(`[PancakeSwap] Approval confirmed`, "token-launcher");
+
+    const router = new ethers.Contract(PANCAKE_V2_ROUTER, PANCAKE_ROUTER_ABI, wallet);
+    const path = [tokenAddress, WBNB_ADDRESS];
+    const deadline = Math.floor(Date.now() / 1000) + 300;
+
+    let amountOutMin = BigInt(0);
+    try {
+      const amounts = await router.getAmountsOut(amountWei, path);
+      amountOutMin = (amounts[1] * BigInt(85)) / BigInt(100);
+      log(`[PancakeSwap] Estimated output: ${ethers.formatEther(amounts[1])} BNB (min: ${ethers.formatEther(amountOutMin)})`, "token-launcher");
+    } catch {
+      log(`[PancakeSwap] Could not estimate output — using 0 min (max slippage)`, "token-launcher");
+    }
+
+    log(`[PancakeSwap] Selling ${tokenAmount} tokens via swapExactTokensForETH...`, "token-launcher");
+    const tx = await router.swapExactTokensForETHSupportingFeeOnTransferTokens(
+      amountWei,
+      amountOutMin,
+      path,
+      wallet.address,
+      deadline,
+      { gasLimit: 500000 }
+    );
+
+    log(`[PancakeSwap] Sell TX sent: ${tx.hash}`, "token-launcher");
+
+    const receipt = await Promise.race([
+      tx.wait(),
+      new Promise<null>((_, reject) => setTimeout(() => reject(new Error("TX timeout (90s)")), 90000)),
+    ]);
+
+    if (!receipt || receipt.status !== 1) {
+      return { success: false, error: "PancakeSwap sell transaction reverted on-chain" };
+    }
+
+    log(`[PancakeSwap] Sell confirmed: ${receipt.hash}`, "token-launcher");
+    return { success: true, txHash: receipt.hash };
+  } catch (e: any) {
+    log(`[PancakeSwap] Sell failed: ${e.message?.substring(0, 300)}`, "token-launcher");
+    return { success: false, error: sanitizeError(e.message || "") };
+  }
+}
+
+export async function fourMemeGetTokenBalance(
+  tokenAddress: string,
+  walletAddress: string,
+): Promise<{ balance: string; symbol: string; decimals: number }> {
+  const provider = getBscProvider();
+  const token = new ethers.Contract(tokenAddress, ERC20_ABI, provider);
+  const [balance, symbol, decimals] = await Promise.all([
+    token.balanceOf(walletAddress),
+    token.symbol().catch(() => "???"),
+    token.decimals().catch(() => 18),
+  ]);
+  return {
+    balance: ethers.formatUnits(balance, decimals),
+    symbol,
+    decimals: Number(decimals),
+  };
+}
+
+const BANKR_API_BASE = "https://api.bankr.bot";
+
+async function bankrPrompt(prompt: string): Promise<{ jobId: string; threadId: string } | { error: string }> {
+  const apiKey = process.env.BANKR_API_KEY;
+  if (!apiKey) return { error: "BANKR_API_KEY not configured" };
+
+  const res = await fetch(`${BANKR_API_BASE}/agent/prompt`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-API-Key": apiKey,
+    },
+    body: JSON.stringify({ prompt }),
+  });
+
+  if (res.status === 401) return { error: "Bankr API key is invalid or expired" };
+  if (res.status === 403) return { error: "Bankr API key does not have Agent API access enabled. Enable it at bankr.bot/api" };
+  if (res.status === 429) return { error: "Bankr daily API limit reached. Try again later or upgrade to Bankr Club." };
+
+  const json = await res.json() as any;
+  if (!json.success || !json.jobId) {
+    return { error: json.message || json.error || `Bankr API returned status ${res.status}` };
+  }
+  return { jobId: json.jobId, threadId: json.threadId };
+}
+
+async function bankrPollJob(jobId: string, timeoutMs = 120000): Promise<{ status: string; response?: string; error?: string }> {
+  const apiKey = process.env.BANKR_API_KEY;
+  if (!apiKey) return { status: "failed", error: "BANKR_API_KEY not configured" };
+
+  const start = Date.now();
+  const pollInterval = 3000;
+
+  while (Date.now() - start < timeoutMs) {
+    try {
+      const res = await fetch(`${BANKR_API_BASE}/agent/job/${jobId}`, {
+        headers: { "X-API-Key": apiKey },
+      });
+
+      if (!res.ok && res.status !== 200) {
+        log(`[Bankr] Poll HTTP ${res.status} for job ${jobId}`, "token-launcher");
+        await new Promise(r => setTimeout(r, pollInterval));
+        continue;
+      }
+
+      let json: any;
+      try {
+        json = await res.json();
+      } catch {
+        log(`[Bankr] Poll non-JSON response for job ${jobId}`, "token-launcher");
+        await new Promise(r => setTimeout(r, pollInterval));
+        continue;
+      }
+
+      if (json.status === "completed") {
+        return { status: "completed", response: json.response || "" };
+      }
+      if (json.status === "failed") {
+        return { status: "failed", error: json.response || json.error || "Bankr job failed" };
+      }
+      if (json.status === "cancelled") {
+        return { status: "cancelled", error: "Bankr job was cancelled" };
+      }
+    } catch (e: any) {
+      log(`[Bankr] Poll error: ${e.message?.substring(0, 100)}`, "token-launcher");
+    }
+
+    await new Promise(r => setTimeout(r, pollInterval));
+  }
+
+  return { status: "timeout", error: "Bankr job timed out after 120 seconds" };
+}
+
+async function bankrStealthBuy(
+  tokenSymbol: string,
+  chain: string,
+  amountEth?: string,
+  buyPercent?: number,
+): Promise<{ success: boolean; jobId?: string; response?: string; error?: string }> {
+  let buyPrompt: string;
+  if (buyPercent && buyPercent > 0) {
+    buyPrompt = `buy ${buyPercent}% of the supply of ${tokenSymbol} on ${chain}`;
+  } else if (amountEth && parseFloat(amountEth) > 0) {
+    buyPrompt = `buy ${amountEth} ETH worth of ${tokenSymbol} on ${chain}`;
+  } else {
+    return { success: false, error: "No stealth buy amount specified" };
+  }
+
+  log(`[Bankr] Stealth buy prompt: "${buyPrompt}"`, "token-launcher");
+
+  const promptResult = await bankrPrompt(buyPrompt);
+  if ("error" in promptResult) {
+    log(`[Bankr] Stealth buy prompt failed: ${promptResult.error}`, "token-launcher");
+    return { success: false, error: promptResult.error };
+  }
+
+  log(`[Bankr] Stealth buy job: ${promptResult.jobId}`, "token-launcher");
+  const jobResult = await bankrPollJob(promptResult.jobId, 180000);
+
+  if (jobResult.status !== "completed") {
+    const errMsg = jobResult.error || `Stealth buy job ${jobResult.status}`;
+    log(`[Bankr] Stealth buy failed: ${errMsg}`, "token-launcher");
+    return { success: false, error: errMsg, jobId: promptResult.jobId };
+  }
+
+  log(`[Bankr] Stealth buy completed: ${(jobResult.response || "").substring(0, 500)}`, "token-launcher");
+  return { success: true, jobId: promptResult.jobId, response: jobResult.response };
+}
+
+async function launchOnBankr(params: LaunchParams): Promise<LaunchResult> {
+  if (!params.tokenName || !params.tokenSymbol) {
+    return { success: false, error: "Token name and symbol are required" };
+  }
+  if (!process.env.BANKR_API_KEY) {
+    return { success: false, error: "BANKR_API_KEY not configured — set it in environment secrets" };
+  }
+
+  const chain = params.bankrChain || "base";
+  const chainLabel = chain === "solana" ? "Solana" : "Base";
+  const wantStealthBuy = (params.stealthBuyEth && parseFloat(params.stealthBuyEth) > 0) ||
+    (params.stealthBuyPercent && params.stealthBuyPercent > 0);
+
+  const launchRecord = await storage.createTokenLaunch({
+    agentId: params.agentId || null,
+    creatorWallet: params.creatorWallet || "bankr-custodial",
+    platform: "bankr",
+    chainId: chain === "solana" ? 0 : 8453,
+    tokenName: params.tokenName,
+    tokenSymbol: params.tokenSymbol,
+    tokenDescription: params.tokenDescription,
+    imageUrl: params.imageUrl || null,
+    initialLiquidityBnb: params.stealthBuyEth || "0",
+    status: "pending",
+    tokenAddress: null,
+    txHash: null,
+    launchUrl: null,
+    errorMessage: null,
+    metadata: JSON.stringify({
+      bankrChain: chain,
+      stealthBuyEth: params.stealthBuyEth || null,
+      stealthBuyPercent: params.stealthBuyPercent || null,
+    }),
+  });
+
+  try {
+    let prompt = `deploy a token called ${params.tokenName} with symbol ${params.tokenSymbol} on ${chain}`;
+    if (params.tokenDescription) {
+      prompt += `. Description: ${params.tokenDescription}`;
+    }
+
+    log(`[Bankr] Step 1/2: Deploy token — "${prompt}"`, "token-launcher");
+
+    const promptResult = await bankrPrompt(prompt);
+    if ("error" in promptResult) {
+      await storage.updateTokenLaunch(launchRecord.id, {
+        status: "failed",
+        errorMessage: promptResult.error,
+      });
+      return { success: false, error: promptResult.error, launchId: launchRecord.id };
+    }
+
+    log(`[Bankr] Deploy job created: ${promptResult.jobId} (thread: ${promptResult.threadId})`, "token-launcher");
+
+    await storage.updateTokenLaunch(launchRecord.id, {
+      status: "confirming",
+      metadata: JSON.stringify({ bankrChain: chain, jobId: promptResult.jobId, threadId: promptResult.threadId }),
+    });
+
+    const jobResult = await bankrPollJob(promptResult.jobId);
+
+    if (jobResult.status !== "completed") {
+      const errMsg = jobResult.error || `Bankr job ${jobResult.status}`;
+      log(`[Bankr] Deploy failed: ${errMsg}`, "token-launcher");
+      await storage.updateTokenLaunch(launchRecord.id, {
+        status: "failed",
+        errorMessage: errMsg.substring(0, 500),
+      });
+      return { success: false, error: errMsg, launchId: launchRecord.id };
+    }
+
+    const response = jobResult.response || "";
+    log(`[Bankr] Deploy completed. Response: ${response.substring(0, 500)}`, "token-launcher");
+
+    let tokenAddress: string | undefined;
+    if (chain === "solana") {
+      const solAddrMatch = response.match(/[1-9A-HJ-NP-Za-km-z]{32,44}/);
+      if (solAddrMatch) tokenAddress = solAddrMatch[0];
+    } else {
+      const evmAddrMatch = response.match(/0x[a-fA-F0-9]{40}/);
+      if (evmAddrMatch) tokenAddress = evmAddrMatch[0];
+    }
+
+    let launchUrl: string | undefined;
+    const urlMatch = response.match(/https?:\/\/[^\s)]+/);
+    if (urlMatch) launchUrl = urlMatch[0];
+
+    if (!launchUrl && tokenAddress) {
+      launchUrl = chain === "solana"
+        ? `https://solscan.io/token/${tokenAddress}`
+        : `https://basescan.org/token/${tokenAddress}`;
+    }
+
+    let stealthBuyResult: LaunchResult["stealthBuy"] | undefined;
+
+    if (wantStealthBuy && tokenAddress) {
+      log(`[Bankr] Step 2/2: Stealth buy immediately after deploy...`, "token-launcher");
+
+      await storage.updateTokenLaunch(launchRecord.id, {
+        status: "launched",
+        tokenAddress: tokenAddress || null,
+        launchUrl: launchUrl || null,
+        metadata: JSON.stringify({
+          bankrChain: chain,
+          jobId: promptResult.jobId,
+          threadId: promptResult.threadId,
+          bankrResponse: response.substring(0, 1000),
+          stealthBuyStatus: "executing",
+        }),
+      });
+
+      const buyResult = await bankrStealthBuy(
+        params.tokenSymbol,
+        chain,
+        params.stealthBuyEth,
+        params.stealthBuyPercent,
+      );
+
+      stealthBuyResult = {
+        success: buyResult.success,
+        amountEth: params.stealthBuyEth,
+        error: buyResult.error,
+        jobId: buyResult.jobId,
+      };
+
+      await storage.updateTokenLaunch(launchRecord.id, {
+        metadata: JSON.stringify({
+          bankrChain: chain,
+          jobId: promptResult.jobId,
+          threadId: promptResult.threadId,
+          bankrResponse: response.substring(0, 1000),
+          stealthBuyStatus: buyResult.success ? "completed" : "failed",
+          stealthBuyJobId: buyResult.jobId,
+          stealthBuyResponse: buyResult.response?.substring(0, 500),
+          stealthBuyError: buyResult.error,
+        }),
+      });
+
+      if (buyResult.success) {
+        log(`[Bankr] Stealth buy SUCCESS for ${params.tokenSymbol}!`, "token-launcher");
+      } else {
+        log(`[Bankr] Stealth buy FAILED: ${buyResult.error} — token still launched`, "token-launcher");
+      }
+    } else if (wantStealthBuy && !tokenAddress) {
+      log(`[Bankr] Stealth buy skipped — could not parse token address from deploy response`, "token-launcher");
+      stealthBuyResult = {
+        success: false,
+        error: "Could not parse token address from deploy response — buy manually",
+      };
+    }
+
+    await storage.updateTokenLaunch(launchRecord.id, {
+      status: "launched",
+      tokenAddress: tokenAddress || null,
+      launchUrl: launchUrl || null,
+    });
+
+    log(`[Bankr] Launch complete! Token: ${tokenAddress || "see response"}, Chain: ${chainLabel}`, "token-launcher");
+
+    return {
+      success: true,
+      tokenAddress,
+      launchUrl,
+      launchId: launchRecord.id,
+      stealthBuy: stealthBuyResult,
+    };
+  } catch (e: any) {
+    log(`[Bankr] Launch failed: ${e.message}`, "token-launcher");
+    const cleanError = sanitizeError(e.message || "");
+    await storage.updateTokenLaunch(launchRecord.id, {
+      status: "failed",
+      errorMessage: e.message?.substring(0, 500),
+    });
+    return { success: false, error: cleanError, launchId: launchRecord.id };
+  }
+}
+
+async function launchOnRaydium(params: LaunchParams): Promise<LaunchResult> {
+  if (!params.tokenName || !params.tokenSymbol) {
+    return { success: false, error: "Token name and symbol are required" };
+  }
+  if (!params.solanaPrivateKey) {
+    return { success: false, error: "Solana wallet private key is required for Raydium launch" };
+  }
+
+  const launchRecord = await storage.createTokenLaunch({
+    agentId: params.agentId || null,
+    creatorWallet: params.creatorWallet || "raydium-launch",
+    platform: "raydium",
+    chainId: 0,
+    tokenName: params.tokenName,
+    tokenSymbol: params.tokenSymbol,
+    tokenDescription: params.tokenDescription,
+    imageUrl: params.imageUrl || null,
+    initialLiquidityBnb: params.initialBuySol || "0",
+    status: "pending",
+    tokenAddress: null,
+    txHash: null,
+    launchUrl: null,
+    errorMessage: null,
+    metadata: JSON.stringify({ platform: "raydium", initialBuySol: params.initialBuySol || "0" }),
+  });
+
+  try {
+    const { Raydium, TxVersion, LAUNCHPAD_PROGRAM, getPdaLaunchpadConfigId } = await import("@raydium-io/raydium-sdk-v2");
+    const { Connection, Keypair, PublicKey } = await import("@solana/web3.js");
+    const NATIVE_MINT = new PublicKey("So11111111111111111111111111111111111111112");
+    const BN = (await import("bn.js")).default;
+    const SOLANA_RPC = process.env.SOLANA_RPC_URL || "https://api.mainnet-beta.solana.com";
+    const connection = new Connection(SOLANA_RPC, "confirmed");
+
+    let secretKeyBytes: Uint8Array;
+    if (params.solanaPrivateKey!.length === 128) {
+      secretKeyBytes = new Uint8Array(Buffer.from(params.solanaPrivateKey!, "hex"));
+    } else if (params.solanaPrivateKey!.length === 88 || params.solanaPrivateKey!.length === 87) {
+      const bs58 = (await import("bs58")).default;
+      secretKeyBytes = bs58.decode(params.solanaPrivateKey!);
+    } else {
+      const bs58 = (await import("bs58")).default;
+      try {
+        secretKeyBytes = bs58.decode(params.solanaPrivateKey!);
+      } catch {
+        secretKeyBytes = new Uint8Array(Buffer.from(params.solanaPrivateKey!, "hex"));
+      }
+    }
+    const owner = Keypair.fromSecretKey(secretKeyBytes);
+
+    log(`[Raydium] Initializing SDK for ${params.tokenName} ($${params.tokenSymbol})...`, "token-launcher");
+
+    const raydium = await Raydium.load({
+      connection,
+      owner,
+      disableLoadToken: false,
+    });
+
+    const mintKeypair = Keypair.generate();
+
+    const configId = getPdaLaunchpadConfigId(
+      LAUNCHPAD_PROGRAM,
+      NATIVE_MINT,
+      0,
+      0
+    ).publicKey;
+
+    const DECIMALS = 6;
+    const TOTAL_SUPPLY = new BN(1_000_000_000).mul(new BN(10 ** DECIMALS));
+    const TOTAL_SELL = new BN(800_000_000).mul(new BN(10 ** DECIMALS));
+    const TOTAL_FUND_RAISE = new BN(85).mul(new BN(10 ** 9));
+
+    const initialBuyLamports = params.initialBuySol
+      ? new BN(Math.floor(parseFloat(params.initialBuySol) * 1e9))
+      : new BN(0);
+
+    const doInitialBuy = initialBuyLamports.gt(new BN(0));
+
+    let metadataUri = "";
+    if (params.imageUrl || params.tokenDescription) {
+      const metadata = {
+        name: params.tokenName,
+        symbol: params.tokenSymbol,
+        description: params.tokenDescription || `${params.tokenName} — launched via BUILD4 on Raydium LaunchLab`,
+        image: params.imageUrl || "",
+        ...(params.webUrl ? { external_url: params.webUrl } : {}),
+      };
+      const metaBlob = new Blob([JSON.stringify(metadata)], { type: "application/json" });
+      try {
+        const formData = new FormData();
+        formData.append("file", metaBlob, "metadata.json");
+        const ipfsRes = await fetch("https://api.pinata.cloud/pinning/pinFileToIPFS", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${process.env.PINATA_JWT || ""}` },
+          body: formData,
+        });
+        if (ipfsRes.ok) {
+          const ipfsData = await ipfsRes.json() as any;
+          metadataUri = `https://gateway.pinata.cloud/ipfs/${ipfsData.IpfsHash}`;
+        }
+      } catch (e: any) {
+        log(`[Raydium] Metadata upload failed (non-fatal): ${e.message}`, "token-launcher");
+      }
+    }
+
+    log(`[Raydium] Creating LaunchLab token: ${params.tokenName} ($${params.tokenSymbol}), initial buy: ${params.initialBuySol || "0"} SOL`, "token-launcher");
+
+    await storage.updateTokenLaunch(launchRecord.id, {
+      status: "confirming",
+      metadata: JSON.stringify({ platform: "raydium", mintAddress: mintKeypair.publicKey.toBase58() }),
+    });
+
+    const createParams: any = {
+      programId: LAUNCHPAD_PROGRAM,
+      mintA: mintKeypair.publicKey,
+      decimals: DECIMALS,
+      name: params.tokenName,
+      symbol: params.tokenSymbol,
+      uri: metadataUri || `https://build4.io/token/${params.tokenSymbol}`,
+      configId,
+      migrateType: "cpmm",
+      supply: TOTAL_SUPPLY,
+      totalSellA: TOTAL_SELL,
+      totalFundRaisingB: TOTAL_FUND_RAISE,
+      totalLockedAmount: new BN(0),
+      cliffPeriod: new BN(0),
+      unlockPeriod: new BN(0),
+      createOnly: !doInitialBuy,
+      txVersion: TxVersion.V0,
+      signers: [mintKeypair],
+    };
+
+    if (doInitialBuy) {
+      createParams.buyAmount = initialBuyLamports;
+      createParams.slippage = 100;
+    }
+
+    const { execute, extInfo } = await raydium.launchpad.createLaunchpad(createParams);
+
+    const { txId } = await execute({ sendAndConfirm: true });
+
+    const tokenAddress = mintKeypair.publicKey.toBase58();
+    const poolId = extInfo?.poolId?.toBase58?.() || "";
+    const launchUrl = `https://raydium.io/launchpad/token/${tokenAddress}`;
+    const explorerUrl = `https://solscan.io/tx/${txId}`;
+
+    await storage.updateTokenLaunch(launchRecord.id, {
+      status: "launched",
+      tokenAddress,
+      txHash: txId,
+      launchUrl,
+      metadata: JSON.stringify({
+        platform: "raydium",
+        poolId,
+        explorerUrl,
+        initialBuySol: params.initialBuySol || "0",
+        mintAddress: tokenAddress,
+      }),
+    });
+
+    log(`[Raydium] Launch SUCCESS! Token: ${tokenAddress}, Pool: ${poolId}, TX: ${txId}`, "token-launcher");
+
+    return {
+      success: true,
+      tokenAddress,
+      txHash: txId,
+      launchUrl,
+      launchId: launchRecord.id,
+    };
+  } catch (e: any) {
+    const errMsg = e.message || "Unknown Raydium launch error";
+    log(`[Raydium] Launch FAILED: ${errMsg}`, "token-launcher");
+    await storage.updateTokenLaunch(launchRecord.id, {
+      status: "failed",
+      errorMessage: errMsg.substring(0, 500),
+    });
+    return { success: false, error: errMsg, launchId: launchRecord.id };
+  }
+}
+
+export async function launchToken(params: LaunchParams): Promise<LaunchResult> {
+  const errors: string[] = [];
+  if (!params.tokenName || params.tokenName.trim().length < 2) errors.push("Token name must be at least 2 characters");
+  if (!params.tokenSymbol || params.tokenSymbol.trim().length < 1 || params.tokenSymbol.trim().length > 10) errors.push("Token symbol must be 1-10 characters");
+  if (!params.platform) errors.push("Platform is required");
+  if (params.tokenName && params.tokenName.length > 100) errors.push("Token name too long (max 100 characters)");
+  if (params.tokenSymbol && !/^[a-zA-Z0-9$]+$/.test(params.tokenSymbol.trim())) errors.push("Token symbol must be alphanumeric");
+  if (errors.length > 0) {
+    return { success: false, error: `Validation failed: ${errors.join("; ")}` };
+  }
+
+  log(`[TokenLauncher] Launching ${params.tokenName} ($${params.tokenSymbol}) on ${params.platform}`, "token-launcher");
+
+  const MAX_RETRIES = 3;
+  let lastError = "";
+
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      let result: LaunchResult;
+      if (params.platform === "four_meme") {
+        result = await launchOnFourMeme(params);
+      } else if (params.platform === "flap_sh") {
+        result = await launchOnFlapSh(params);
+      } else if (params.platform === "bankr") {
+        result = await launchOnBankr(params);
+      } else if (params.platform === "xlayer") {
+        result = await launchOnXLayer(params);
+      } else if (params.platform === "raydium") {
+        result = await launchOnRaydium(params);
+      } else {
+        return { success: false, error: `Unknown platform: ${params.platform}` };
+      }
+
+      if (result.success) {
+        if (attempt > 1) log(`[TokenLauncher] Succeeded on attempt ${attempt}`, "token-launcher");
+        return result;
+      }
+
+      lastError = result.error || "Unknown error";
+      if (lastError.includes("Insufficient") || lastError.includes("balance") || lastError.includes("Validation")) {
+        return result;
+      }
+
+      if (attempt < MAX_RETRIES) {
+        log(`[TokenLauncher] Attempt ${attempt} failed: ${lastError.substring(0, 100)}, retrying in ${attempt * 2}s...`, "token-launcher");
+        await new Promise(r => setTimeout(r, attempt * 2000));
+      } else {
+        return result;
+      }
+    } catch (e: any) {
+      lastError = e.message || "Unknown error";
+      if (attempt < MAX_RETRIES) {
+        log(`[TokenLauncher] Attempt ${attempt} threw: ${lastError.substring(0, 100)}, retrying...`, "token-launcher");
+        await new Promise(r => setTimeout(r, attempt * 2000));
+      }
+    }
+  }
+
+  return { success: false, error: `Failed after ${MAX_RETRIES} attempts: ${lastError}` };
+}
+
+function randomJitter(base: number, pct: number): number {
+  const min = base * (1 - pct);
+  const max = base * (1 + pct);
+  return min + Math.random() * (max - min);
+}
+
+function shuffleArray<T>(arr: T[]): T[] {
+  const shuffled = [...arr];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled;
+}
+
+export async function fourMemeLaunchWithSnipe(
+  params: LaunchParams,
+): Promise<LaunchResult> {
+  const provider = getBscProvider();
+  const devBuyBnb = params.sniperDevBuyBnb || "18";
+  const walletCount = params.sniperWalletCount || 10;
+  const perWalletBnb = parseFloat(params.sniperPerWalletBnb || "1");
+
+  const maxFundPerWallet = perWalletBnb * 1.15 + 0.008;
+  const totalSniperBnb = maxFundPerWallet * walletCount;
+  const totalNeeded = parseFloat(devBuyBnb) + totalSniperBnb + 0.1;
+
+  let wallet: ethers.Wallet | null = null;
+  if (params.userPrivateKey) {
+    wallet = new ethers.Wallet(params.userPrivateKey, provider);
+  } else {
+    wallet = getDeployerWallet(provider);
+  }
+  if (!wallet) {
+    return { success: false, error: "No wallet available" };
+  }
+
+  const balance = await provider.getBalance(wallet.address);
+  const balBnb = parseFloat(ethers.formatEther(balance));
+  if (balBnb < totalNeeded) {
+    return {
+      success: false,
+      error: `Insufficient BNB — wallet has ${balBnb.toFixed(4)} BNB but needs ~${totalNeeded.toFixed(2)} BNB (${devBuyBnb} dev buy + ${totalSniperBnb.toFixed(2)} for ${walletCount} snipers + gas). Fund your wallet and try again.`,
+    };
+  }
+
+  log(`[Sniper] ====== SNIPE LAUNCH START ======`, "token-launcher");
+  log(`[Sniper] Strategy: Fund all snipers FIRST, then launch + instant buys`, "token-launcher");
+  log(`[Sniper] Config: ${walletCount} wallets × ${perWalletBnb} BNB, dev buy ${devBuyBnb} BNB`, "token-launcher");
+
+  log(`[Sniper] Phase 1: Preparing ${walletCount} sniper wallets...`, "token-launcher");
+  const sniperWallets: { address: string; privateKey: string; wallet: ethers.Wallet; fundBnb: number; buyBnb: number }[] = [];
+  if (params.preGeneratedWallets && params.preGeneratedWallets.length > 0) {
+    log(`[Sniper] Using ${params.preGeneratedWallets.length} pre-generated wallets`, "token-launcher");
+    for (const pg of params.preGeneratedWallets) {
+      const sw = new ethers.Wallet(pg.privateKey, provider);
+      const fundAmt = pg.buyBnb + randomJitter(0.006, 0.30);
+      sniperWallets.push({
+        address: pg.address,
+        privateKey: pg.privateKey,
+        wallet: sw,
+        fundBnb: fundAmt,
+        buyBnb: pg.buyBnb,
+      });
+    }
+  } else {
+    for (let i = 0; i < walletCount; i++) {
+      const sw = ethers.Wallet.createRandom().connect(provider);
+      const buyAmt = randomJitter(perWalletBnb, 0.15);
+      const fundAmt = buyAmt + randomJitter(0.006, 0.30);
+      sniperWallets.push({
+        address: sw.address,
+        privateKey: sw.privateKey,
+        wallet: sw,
+        fundBnb: fundAmt,
+        buyBnb: buyAmt,
+      });
+    }
+  }
+
+  const RELAY_COUNT = 3;
+  log(`[Sniper] Phase 2: Creating ${RELAY_COUNT} relay wallets to distribute funds...`, "token-launcher");
+
+  const relayWallets: { wallet: ethers.Wallet; assignedSnipers: number[] }[] = [];
+  for (let i = 0; i < RELAY_COUNT; i++) {
+    relayWallets.push({ wallet: ethers.Wallet.createRandom().connect(provider), assignedSnipers: [] });
+  }
+
+  const shuffledSniperIdxs = shuffleArray(sniperWallets.map((_, i) => i));
+  for (let i = 0; i < shuffledSniperIdxs.length; i++) {
+    relayWallets[i % RELAY_COUNT].assignedSnipers.push(shuffledSniperIdxs[i]);
+  }
+
+  log(`[Sniper] Phase 2a: Dev wallet funding relay wallets...`, "token-launcher");
+  let devNonce = await provider.getTransactionCount(wallet.address);
+  const relayFundResults: boolean[] = new Array(RELAY_COUNT).fill(false);
+
+  const relayFundOrder = shuffleArray(relayWallets.map((_, i) => i));
+  for (const ri of relayFundOrder) {
+    const relay = relayWallets[ri];
+    const relayTotal = relay.assignedSnipers.reduce((sum, si) => sum + sniperWallets[si].fundBnb, 0);
+    const relayFundAmt = relayTotal + randomJitter(0.003, 0.25) * relay.assignedSnipers.length;
+    try {
+      const tx = await wallet!.sendTransaction({
+        to: relay.wallet.address,
+        value: ethers.parseEther(relayFundAmt.toFixed(8)),
+        nonce: devNonce,
+        gasLimit: 21000,
+      });
+      devNonce++;
+      await tx.wait();
+      relayFundResults[ri] = true;
+      log(`[Sniper] Dev → Relay ${ri + 1}: ${relay.wallet.address.substring(0, 10)}... (${relayFundAmt.toFixed(5)} BNB for ${relay.assignedSnipers.length} snipers)`, "token-launcher");
+
+      const relayDelay = Math.floor(randomJitter(3000, 0.40));
+      await new Promise(r => setTimeout(r, relayDelay));
+    } catch (e: any) {
+      log(`[Sniper] FAILED to fund Relay ${ri + 1}: ${e.message?.substring(0, 100)}`, "token-launcher");
+    }
+  }
+
+  log(`[Sniper] Phase 2b: Relays distributing to sniper wallets...`, "token-launcher");
+
+  const fundResults: boolean[] = new Array(walletCount).fill(false);
+
+  for (let ri = 0; ri < RELAY_COUNT; ri++) {
+    if (!relayFundResults[ri]) {
+      log(`[Sniper] Relay ${ri + 1} not funded, skipping its snipers`, "token-launcher");
+      continue;
+    }
+    const relay = relayWallets[ri];
+    let relayNonce = await provider.getTransactionCount(relay.wallet.address);
+    const assignOrder = shuffleArray(relay.assignedSnipers);
+
+    for (const si of assignOrder) {
+      const sw = sniperWallets[si];
+      try {
+        const tx = await relay.wallet.sendTransaction({
+          to: sw.address,
+          value: ethers.parseEther(sw.fundBnb.toFixed(8)),
+          nonce: relayNonce,
+          gasLimit: 21000,
+        });
+        relayNonce++;
+        await tx.wait();
+        fundResults[si] = true;
+        log(`[Sniper] Relay ${ri + 1} → W${si + 1}: ${sw.address.substring(0, 10)}... (${sw.fundBnb.toFixed(5)} BNB)`, "token-launcher");
+
+        const hopDelay = Math.floor(randomJitter(2000, 0.40));
+        await new Promise(r => setTimeout(r, hopDelay));
+      } catch (e: any) {
+        log(`[Sniper] Relay ${ri + 1} failed to fund W${si + 1}: ${e.message?.substring(0, 100)}`, "token-launcher");
+      }
+    }
+
+    const interRelayDelay = Math.floor(randomJitter(3000, 0.30));
+    await new Promise(r => setTimeout(r, interRelayDelay));
+  }
+
+  const fundedCount = fundResults.filter(Boolean).length;
+  log(`[Sniper] Phase 2 complete: ${fundedCount}/${walletCount} sniper wallets funded and ready`, "token-launcher");
+
+  if (fundedCount === 0) {
+    return {
+      success: false,
+      error: `All sniper wallet funding failed. Aborting launch to prevent losses. Check relay wallet balances and gas.`,
+    };
+  }
+
+  if (fundedCount < walletCount) {
+    log(`[Sniper] WARNING: Only ${fundedCount}/${walletCount} funded. Proceeding with available snipers.`, "token-launcher");
+  }
+
+  log(`[Sniper] ✅ All snipers funded. Phase 3: LAUNCHING TOKEN with ${devBuyBnb} BNB dev buy...`, "token-launcher");
+  const launchResult = await launchOnFourMeme({
+    ...params,
+    initialLiquidityBnb: devBuyBnb,
+  });
+
+  if (!launchResult.success || !launchResult.tokenAddress) {
+    log(`[Sniper] Launch failed! Sniper wallets still hold BNB — keys saved for recovery.`, "token-launcher");
+    return {
+      ...launchResult,
+      sniperResults: {
+        devBuyBnb,
+        wallets: sniperWallets.map((sw, i) => ({
+          address: sw.address,
+          privateKey: sw.privateKey,
+          success: false,
+          error: fundResults[i] ? "Launch failed — wallet funded but no token to buy" : "Funding failed",
+        })),
+        successCount: 0,
+        totalSnipedBnb: "0",
+      },
+    };
+  }
+
+  const tokenAddress = launchResult.tokenAddress;
+  log(`[Sniper] 🚀 Token LIVE at ${tokenAddress}! Phase 4: INSTANT snipe buys from ${fundedCount} wallets...`, "token-launcher");
+
+  const sniperResults: SniperWalletResult[] = new Array(walletCount);
+
+  const buyOrder = shuffleArray(sniperWallets.map((_, i) => i));
+
+  const BATCH_SIZE = 3;
+  for (let batchStart = 0; batchStart < buyOrder.length; batchStart += BATCH_SIZE) {
+    const batch = buyOrder.slice(batchStart, batchStart + BATCH_SIZE);
+
+    const batchPromises = batch.map(async (idx) => {
+      const sw = sniperWallets[idx];
+      if (!fundResults[idx]) {
+        sniperResults[idx] = { address: sw.address, privateKey: sw.privateKey, success: false, error: "Funding failed" };
+        return;
+      }
+
+      try {
+        const jitter = Math.floor(Math.random() * 1500);
+        await new Promise(r => setTimeout(r, jitter));
+
+        const result = await fourMemeBuyToken(
+          tokenAddress,
+          sw.buyBnb.toFixed(6),
+          30,
+          sw.privateKey,
+          false,
+        );
+        sniperResults[idx] = {
+          address: sw.address,
+          privateKey: sw.privateKey,
+          txHash: result.txHash,
+          success: result.success,
+          error: result.error,
+        };
+        if (result.success) {
+          log(`[Sniper] W${idx + 1} BUY OK: ${result.txHash} (${sw.buyBnb.toFixed(4)} BNB)`, "token-launcher");
+        } else {
+          log(`[Sniper] W${idx + 1} buy failed: ${result.error?.substring(0, 100)}`, "token-launcher");
+        }
+      } catch (e: any) {
+        sniperResults[idx] = {
+          address: sw.address,
+          privateKey: sw.privateKey,
+          success: false,
+          error: e.message?.substring(0, 100),
+        };
+      }
+    });
+
+    await Promise.all(batchPromises);
+
+    if (batchStart + BATCH_SIZE < buyOrder.length) {
+      const batchDelay = Math.floor(randomJitter(2000, 0.40));
+      await new Promise(r => setTimeout(r, batchDelay));
+    }
+  }
+
+  const successCount = sniperResults.filter(r => r.success).length;
+  const actualSnipedBnb = sniperResults
+    .filter(r => r.success)
+    .reduce((sum, _, i) => sum + sniperWallets[i].buyBnb, 0)
+    .toFixed(4);
+  log(`[Sniper] ====== SNIPE COMPLETE: ${successCount}/${walletCount} buys succeeded (${actualSnipedBnb} BNB total) ======`, "token-launcher");
+
+  return {
+    ...launchResult,
+    sniperResults: {
+      devBuyBnb,
+      wallets: sniperResults,
+      successCount,
+      totalSnipedBnb: actualSnipedBnb,
+    },
+  };
+}
+
+export async function getTokenLaunches(agentId?: string, limit = 50): Promise<TokenLaunch[]> {
+  return storage.getTokenLaunches(agentId, limit);
+}
+
+export async function getTokenLaunch(id: string): Promise<TokenLaunch | undefined> {
+  return storage.getTokenLaunch(id);
+}
+
+export { ensureAgentRegisteredBSC, isAgentRegistered, ERC8004_IDENTITY_REGISTRY_BSC };

@@ -1,0 +1,43 @@
+databases:
+  - name: build4db
+    plan: free
+    databaseName: build4db
+    user: build4
+
+services:
+  - type: web
+    name: build4-telegram-bot
+    runtime: node
+    plan: starter
+    buildCommand: npm install; npm run build
+    startCommand: node dist/index.cjs
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: RENDER
+        value: "true"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: build4db
+          property: connectionString
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: BSCSCAN_API_KEY
+        sync: false
+      - key: CHAOS_AGENT_PRIVATE_KEY
+        sync: false
+      - key: BANKR_API_KEY
+        sync: false
+      - key: HYPERBOLIC_API_KEY
+        sync: false
+      - key: AKASH_API_KEY
+        sync: false
+      - key: OKX_API_KEY
+        sync: false
+      - key: OKX_SECRET_KEY
+        sync: false
+      - key: OKX_API_PASSPHRASE
+        sync: false
+      - key: OKX_PROJECT_ID
+        sync: false

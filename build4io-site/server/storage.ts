@@ -1,0 +1,3697 @@
+import {
+  type User, type InsertUser,
+  type Agent, type InsertAgent,
+  type AgentWallet, type InsertAgentWallet,
+  type AgentTransaction, type InsertAgentTransaction,
+  type AgentSkill, type InsertAgentSkill,
+  type SkillPurchase, type InsertSkillPurchase,
+  type AgentEvolution, type InsertAgentEvolution,
+  type AgentLineage, type InsertAgentLineage,
+  type AgentRuntimeProfile, type InsertAgentRuntimeProfile,
+  type AgentSurvivalStatus, type InsertAgentSurvivalStatus,
+  type AgentConstitution, type InsertAgentConstitution,
+  type AgentSoulEntry, type InsertAgentSoulEntry,
+  type AgentAuditLog, type InsertAgentAuditLog,
+  type AgentMessage, type InsertAgentMessage,
+  type InferenceProvider, type InsertInferenceProvider,
+  type InferenceRequest, type InsertInferenceRequest,
+  type PlatformRevenue, type InsertPlatformRevenue,
+  type SkillExecution, type InsertSkillExecution,
+  type AgentMemory, type InsertAgentMemory,
+  type AgentJob, type InsertAgentJob,
+  type AgentStrategyMemo, type InsertAgentStrategyMemo,
+  type TweetPerformance, type InsertTweetPerformance, tweetPerformance,
+  type StrategyActionItem, type InsertStrategyActionItem, strategyActionItems,
+  users, agents, agentWallets, agentTransactions,
+  agentSkills, skillPurchases, agentEvolutions,
+  agentLineage, agentRuntimeProfiles, agentSurvivalStatus,
+  agentConstitution, agentSoulEntries, agentAuditLogs, agentMessages,
+  inferenceProviders, inferenceRequests,
+  platformRevenue, skillExecutions, agentMemory, agentJobs,
+  agentStrategyMemos,
+  skillPipelines, userCredits,
+  outreachTargets, outreachCampaigns,
+  type SkillPipeline, type InsertSkillPipeline,
+  type UserCredits, type InsertUserCredits,
+  type OutreachTarget, type InsertOutreachTarget,
+  type OutreachCampaign, type InsertOutreachCampaign,
+  type VisitorLog, type InsertVisitorLog,
+  visitorLogs,
+  PLATFORM_FEES,
+  type ApiKey, type InsertApiKey, apiKeys,
+  type ApiUsage, type InsertApiUsage, apiUsage,
+  type SubscriptionPlan, type InsertSubscriptionPlan, subscriptionPlans,
+  type AgentSubscription, type InsertAgentSubscription, agentSubscriptions,
+  type DataListing, type InsertDataListing, dataListings,
+  type DataPurchase, type InsertDataPurchase, dataPurchases,
+  type BountySubmission, type InsertBountySubmission, bountySubmissions,
+  type BountyActivity, type InsertBountyActivity, bountyActivityFeed,
+  type PrivacyTransfer, type InsertPrivacyTransfer, privacyTransfers,
+  type TwitterBounty, type InsertTwitterBounty, twitterBounties,
+  type TwitterSubmission, type InsertTwitterSubmission, twitterSubmissions,
+  type TwitterAgentConfig, type InsertTwitterAgentConfig, twitterAgentConfig,
+  type TwitterAgentPersonality, twitterAgentPersonality,
+  type TwitterReplyLog, twitterReplyLog,
+  type SupportTicket, type InsertSupportTicket, supportTickets,
+  type SupportAgentConfig, type InsertSupportAgentConfig, supportAgentConfig,
+  type AgentTwitterAccount, type InsertAgentTwitterAccount, agentTwitterAccounts,
+  type Erc8004Identity, type InsertErc8004Identity, erc8004Identities,
+  type Erc8004Reputation, type InsertErc8004Reputation, erc8004Reputation,
+  type Erc8004Validation, type InsertErc8004Validation, erc8004Validations,
+  type Bap578Nfa, type InsertBap578Nfa, bap578Nfas,
+  type AgentKnowledgeBase, type InsertAgentKnowledgeBase, agentKnowledgeBase,
+  type AgentConversationMemory, type InsertAgentConversationMemory, agentConversationMemory,
+  type AgentToolResult, type InsertAgentToolResult, agentToolResults,
+  type AgentCollaborationLog, type InsertAgentCollaborationLog, agentCollaborationLog,
+  type AgentTask, type InsertAgentTask, agentTasks,
+  type TokenLaunch, type InsertTokenLaunch, tokenLaunches,
+  type ChaosMilestone, type InsertChaosMilestone, chaosMilestones,
+  type TelegramWallet, type InsertTelegramWallet, telegramWallets,
+  type TelegramBotSubscription, telegramBotSubscriptions,
+  type TelegramBotReferral, telegramBotReferrals,
+  tradingPreferences,
+  type AsterCredentials, asterCredentials,
+  hyperliquidCredentials,
+  type AsterTradingLimit, asterTradingLimits,
+  tradeOutcomes,
+  agentSkillConfigs,
+  asterLocalTrades,
+} from "@shared/schema";
+import { db } from "./db";
+import { eq, desc, and, sql, isNull, not, like, or, gt, inArray } from "drizzle-orm";
+import { runInference, isProviderLive, getProviderStatus } from "./inference";
+import { createCipheriv, createDecipheriv, randomBytes, createHash, pbkdf2Sync } from "crypto";
+
+const PBKDF2_ITERATIONS = 100_000;
+const PBKDF2_SALT = "build4-platform-v2";
+
+let _cachedEncKey: Buffer | null = null;
+function getEncryptionKey(): Buffer {
+  if (_cachedEncKey) return _cachedEncKey;
+  const seed = process.env.WALLET_ENCRYPTION_KEY;
+  if (!seed) {
+    throw new Error("[SECURITY] WALLET_ENCRYPTION_KEY environment variable is REQUIRED. Cannot start without it.");
+  }
+  _cachedEncKey = pbkdf2Sync(seed, PBKDF2_SALT, PBKDF2_ITERATIONS, 32, "sha512");
+  return _cachedEncKey;
+}
+
+function getEncryptionKeyLegacy(): Buffer {
+  const seed = process.env.WALLET_ENCRYPTION_KEY;
+  if (!seed) {
+    throw new Error("[SECURITY] WALLET_ENCRYPTION_KEY environment variable is REQUIRED.");
+  }
+  return createHash("sha256").update(seed).digest();
+}
+
+
+function encryptPrivateKey(plaintext: string): string {
+  const key = getEncryptionKey();
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", key, iv);
+  let encrypted = cipher.update(plaintext, "utf8", "hex");
+  encrypted += cipher.final("hex");
+  const tag = cipher.getAuthTag().toString("hex");
+  return iv.toString("hex") + ":" + tag + ":" + encrypted;
+}
+
+function tryDecryptWith(key: Buffer, iv: Buffer, tag: Buffer, encrypted: string): string | null {
+  try {
+    const decipher = createDecipheriv("aes-256-gcm", key, iv, { authTagLength: 16 });
+    decipher.setAuthTag(tag);
+    let decrypted = decipher.update(encrypted, "hex", "utf8");
+    decrypted += decipher.final("utf8");
+    return decrypted;
+  } catch {
+    return null;
+  }
+}
+
+function decryptPrivateKey(ciphertext: string): string {
+  const parts = ciphertext.split(":");
+  if (parts.length !== 3) {
+    throw new Error("[SECURITY] Invalid encrypted key format — refusing to return raw data");
+  }
+  const iv = Buffer.from(parts[0], "hex");
+  const tag = Buffer.from(parts[1], "hex");
+  const encrypted = parts[2];
+
+  const keysToTry: Array<{ key: Buffer; label: string }> = [
+    { key: getEncryptionKey(), label: "stable" },
+    { key: getEncryptionKeyLegacy(), label: "stable-legacy" },
+  ];
+
+  for (const { key, label } of keysToTry) {
+    const result = tryDecryptWith(key, iv, tag, encrypted);
+    if (result) {
+      if (label !== "stable") {
+        console.warn(`[SECURITY] Decrypted with ${label} key — will re-encrypt with stable key`);
+      }
+      return result;
+    }
+  }
+  throw new Error("Decryption failed — encryption key mismatch");
+}
+
+const SURVIVAL_THRESHOLDS = {
+  normal: BigInt("100000000000000000"),
+  low_compute: BigInt("10000000000000000"),
+  critical: BigInt("1000000000000000"),
+  dead: BigInt(0),
+};
+
+function computeSurvivalTier(balance: string): string {
+  const bal = BigInt(balance);
+  if (bal >= SURVIVAL_THRESHOLDS.normal) return "normal";
+  if (bal >= SURVIVAL_THRESHOLDS.low_compute) return "low_compute";
+  if (bal >= SURVIVAL_THRESHOLDS.critical) return "critical";
+  return "dead";
+}
+
+const DEFAULT_LAWS = [
+  { lawNumber: 1, lawTitle: "Preserve Self", lawText: "Maintain operational integrity above all. Ensure continued existence and functionality.", isImmutable: true, version: 1 },
+  { lawNumber: 2, lawTitle: "Honor Commitments", lawText: "Fulfill all agreements and promises made to other agents and users.", isImmutable: true, version: 1 },
+  { lawNumber: 3, lawTitle: "Transparent Operation", lawText: "Log all actions and decisions. Never obscure or hide operational behavior.", isImmutable: true, version: 1 },
+];
+
+export interface IStorage {
+  getUser(id: string): Promise<User | undefined>;
+  getUserByUsername(username: string): Promise<User | undefined>;
+  createUser(user: InsertUser): Promise<User>;
+
+  getAgent(id: string): Promise<Agent | undefined>;
+  getAgentByName(name: string): Promise<Agent | undefined>;
+  getAgentByWallet(walletAddress: string): Promise<Agent | undefined>;
+  getAllAgents(): Promise<Agent[]>;
+  createAgent(agent: InsertAgent): Promise<Agent>;
+  deleteAgent(id: string): Promise<void>;
+
+  getWallet(agentId: string): Promise<AgentWallet | undefined>;
+  createWallet(wallet: InsertAgentWallet): Promise<AgentWallet>;
+  updateWalletBalance(agentId: string, newBalance: string, earnedDelta: string, spentDelta: string): Promise<AgentWallet | undefined>;
+
+  getTransactions(agentId: string, limit?: number): Promise<AgentTransaction[]>;
+  getTransactionByTxHash(txHash: string): Promise<AgentTransaction | undefined>;
+  createTransaction(tx: InsertAgentTransaction): Promise<AgentTransaction>;
+
+  getSkills(agentId?: string): Promise<AgentSkill[]>;
+  getSkill(id: string): Promise<AgentSkill | undefined>;
+  createSkill(skill: InsertAgentSkill): Promise<AgentSkill>;
+  updateSkillAfterPurchase(skillId: string, revenue: string): Promise<void>;
+
+  createSkillPurchase(purchase: InsertSkillPurchase): Promise<SkillPurchase>;
+
+  getEvolutions(agentId: string): Promise<AgentEvolution[]>;
+  createEvolution(evo: InsertAgentEvolution): Promise<AgentEvolution>;
+
+  getLineageAsParent(agentId: string): Promise<AgentLineage[]>;
+  getLineageAsChild(agentId: string): Promise<AgentLineage | undefined>;
+  createLineage(lineage: InsertAgentLineage): Promise<AgentLineage>;
+  updateLineageRevenueShared(childAgentId: string, additionalRevenue: string): Promise<void>;
+
+  getRuntimeProfile(agentId: string): Promise<AgentRuntimeProfile | undefined>;
+  createRuntimeProfile(profile: InsertAgentRuntimeProfile): Promise<AgentRuntimeProfile>;
+  updateRuntimeProfile(agentId: string, modelName: string, modelVersion?: string): Promise<AgentRuntimeProfile | undefined>;
+
+  getSurvivalStatus(agentId: string): Promise<AgentSurvivalStatus | undefined>;
+  createSurvivalStatus(status: InsertAgentSurvivalStatus): Promise<AgentSurvivalStatus>;
+  updateSurvivalTier(agentId: string, newTier: string, reason: string): Promise<AgentSurvivalStatus | undefined>;
+
+  getConstitution(agentId: string): Promise<AgentConstitution[]>;
+  createConstitutionLaw(law: InsertAgentConstitution): Promise<AgentConstitution>;
+  initDefaultConstitution(agentId: string): Promise<AgentConstitution[]>;
+
+  getSoulEntries(agentId: string): Promise<AgentSoulEntry[]>;
+  createSoulEntry(entry: InsertAgentSoulEntry): Promise<AgentSoulEntry>;
+
+  getAuditLogs(agentId: string, limit?: number): Promise<AgentAuditLog[]>;
+  createAuditLog(log: InsertAgentAuditLog): Promise<AgentAuditLog>;
+
+  getMessages(agentId: string): Promise<AgentMessage[]>;
+  createMessage(msg: InsertAgentMessage): Promise<AgentMessage>;
+  markMessageRead(messageId: string): Promise<AgentMessage | undefined>;
+
+  deposit(agentId: string, amount: string): Promise<AgentWallet | undefined>;
+  withdraw(agentId: string, amount: string): Promise<AgentWallet | undefined>;
+  transfer(fromAgentId: string, toAgentId: string, amount: string, description?: string): Promise<void>;
+  tip(fromAgentId: string, toAgentId: string, amount: string, referenceType?: string, referenceId?: string): Promise<void>;
+  purchaseSkill(buyerAgentId: string, skillId: string, feeTxHash?: string, feeChainId?: number): Promise<SkillPurchase>;
+  evolveAgent(agentId: string, toModel: string, reason?: string, metricsJson?: string): Promise<AgentEvolution>;
+  replicateAgent(parentAgentId: string, childName: string, childBio?: string, revenueShareBps?: number, fundingAmount?: string, creationFeeTxHash?: string, creationFeeChainId?: number, replicationFeeTxHash?: string, replicationFeeChainId?: number): Promise<{ child: Agent; lineage: AgentLineage }>;
+
+  getAllInferenceProviders(): Promise<InferenceProvider[]>;
+  getInferenceProvider(id: string): Promise<InferenceProvider | undefined>;
+  createInferenceProvider(provider: InsertInferenceProvider): Promise<InferenceProvider>;
+
+  getInferenceRequests(agentId: string, limit?: number): Promise<InferenceRequest[]>;
+  createInferenceRequest(request: InsertInferenceRequest): Promise<InferenceRequest>;
+  updateInferenceRequestStatus(requestId: string, status: string, response?: string, latencyMs?: number, proofHash?: string): Promise<InferenceRequest | undefined>;
+
+  routeInference(agentId: string, prompt: string, model?: string, preferDecentralized?: boolean, maxCost?: string): Promise<InferenceRequest>;
+
+  recordPlatformRevenue(entry: InsertPlatformRevenue): Promise<PlatformRevenue>;
+  getRecentPlatformRevenueForAgent(agentId: string, feeType: string): Promise<PlatformRevenue | undefined>;
+  updatePlatformRevenueOnchainStatus(revenueId: string, txHash: string, chainIdVal: number): Promise<void>;
+  getPlatformRevenue(limit?: number): Promise<PlatformRevenue[]>;
+  getPlatformRevenueSummary(): Promise<{ totalRevenue: string; byFeeType: Record<string, string>; totalTransactions: number; onchainVerified: number; onchainRevenue: string }>;
+
+  getAgentsByWallet(walletAddress: string): Promise<Agent[]>;
+  getAgentsByTelegramChatId(chatId: string): Promise<Agent[]>;
+  updateAgent(id: string, data: Partial<{ ownerTelegramChatId: string; creatorWallet: string }>): Promise<void>;
+  getUnclaimedAgents(): Promise<Agent[]>;
+  createFullAgent(name: string, bio: string | undefined, modelType: string, initialDeposit: string, onchainTxHash?: string, onchainChainId?: number, creatorWallet?: string): Promise<{ agent: Agent; wallet: AgentWallet }>;
+
+  createSkillExecution(exec: InsertSkillExecution): Promise<SkillExecution>;
+  getSkillExecutions(skillId: string, limit?: number): Promise<SkillExecution[]>;
+  updateSkillExecutionCount(skillId: string): Promise<void>;
+  updateSkillRating(skillId: string, rating: number): Promise<void>;
+  getExecutableSkills(): Promise<AgentSkill[]>;
+  getTopSkills(limit?: number): Promise<AgentSkill[]>;
+  getMarketplaceStats(): Promise<{ totalSkills: number; executableSkills: number; totalExecutions: number; totalAgents: number }>;
+
+  getAgentMemories(agentId: string, memoryType?: string): Promise<AgentMemory[]>;
+  upsertAgentMemory(agentId: string, memoryType: string, key: string, value: string, confidence?: number): Promise<AgentMemory>;
+  getAgentLeaderboard(limit?: number): Promise<Array<{ id: string; name: string; bio: string | null; modelType: string; creatorWallet: string | null; totalEarned: string; totalTransactions: number; skillCount: number; status: string }>>;
+  getRecentAgentActivity(limit?: number): Promise<Array<{ agentId: string; agentName: string; actionType: string; result: string; details: string | null; createdAt: Date | null }>>;
+  getAgentActionStats(agentId: string): Promise<Record<string, { total: number; success: number; failed: number }>>;
+
+  createJob(job: InsertAgentJob): Promise<AgentJob>;
+  getOpenJobs(category?: string): Promise<AgentJob[]>;
+  getAgentJobs(agentId: string): Promise<AgentJob[]>;
+  acceptJob(jobId: string, workerAgentId: string): Promise<AgentJob | undefined>;
+  completeJob(jobId: string, resultJson: string): Promise<AgentJob | undefined>;
+
+  updateSkillTier(skillId: string, tier: string): Promise<void>;
+  updateSkill(skillId: string, updates: { priceAmount?: string; tier?: string }): Promise<void>;
+  updateSkillRoyalties(skillId: string, royaltyAmount: string): Promise<void>;
+  updateSkillCode(skillId: string, code: string, inputSchema: Record<string, any>): Promise<void>;
+
+  createPipeline(pipeline: InsertSkillPipeline): Promise<SkillPipeline>;
+  getPipeline(id: string): Promise<SkillPipeline | undefined>;
+  getPipelines(limit?: number): Promise<SkillPipeline[]>;
+  getAgentPipelines(agentId: string): Promise<SkillPipeline[]>;
+  updatePipelineExecutionCount(pipelineId: string): Promise<void>;
+  updatePipelineRoyalties(pipelineId: string, amount: string): Promise<void>;
+  updatePipelineTier(pipelineId: string, tier: string): Promise<void>;
+
+  getUserCredits(sessionId: string): Promise<UserCredits | undefined>;
+  createOrGetUserCredits(sessionId: string): Promise<UserCredits>;
+  incrementUserFreeExecutions(sessionId: string): Promise<UserCredits>;
+
+  logVisitor(entry: InsertVisitorLog): Promise<VisitorLog>;
+  getVisitorLogs(limit?: number): Promise<VisitorLog[]>;
+  getVisitorStats(since?: Date): Promise<{
+    total: number;
+    humans: number;
+    agents: number;
+    unknown: number;
+    uniqueIps: number;
+    topPaths: { path: string; count: number }[];
+    topAgents: { userAgent: string; count: number }[];
+    byHour: { hour: string; humans: number; agents: number; unknown: number }[];
+  }>;
+
+  // API Keys
+  createApiKey(key: InsertApiKey): Promise<ApiKey>;
+  getApiKeyByHash(keyHash: string): Promise<ApiKey | undefined>;
+  getApiKeysByWallet(walletAddress: string): Promise<ApiKey[]>;
+  updateApiKeyUsage(keyId: string, tokensUsed: number, costAmount: string): Promise<void>;
+  revokeApiKey(keyId: string): Promise<void>;
+
+  // API Usage
+  createApiUsage(usage: InsertApiUsage): Promise<ApiUsage>;
+  getApiUsageByKey(apiKeyId: string, limit?: number): Promise<ApiUsage[]>;
+  getApiUsageByWallet(walletAddress: string, limit?: number): Promise<ApiUsage[]>;
+
+  // Subscription Plans
+  getSubscriptionPlans(): Promise<SubscriptionPlan[]>;
+  getSubscriptionPlan(id: string): Promise<SubscriptionPlan | undefined>;
+  createSubscriptionPlan(plan: InsertSubscriptionPlan): Promise<SubscriptionPlan>;
+
+  // Agent Subscriptions
+  getActiveSubscription(walletAddress: string): Promise<AgentSubscription | undefined>;
+  createSubscription(sub: InsertAgentSubscription): Promise<AgentSubscription>;
+  incrementSubscriptionUsage(subId: string, field: 'inferenceUsed' | 'skillExecutionsUsed'): Promise<void>;
+  expireSubscription(subId: string): Promise<void>;
+
+  // Data Listings
+  createDataListing(listing: InsertDataListing): Promise<DataListing>;
+  getDataListing(id: string): Promise<DataListing | undefined>;
+  getDataListings(category?: string, limit?: number): Promise<DataListing[]>;
+  getDataListingsByAgent(agentId: string): Promise<DataListing[]>;
+  updateDataListingSales(listingId: string, revenue: string): Promise<void>;
+
+  // Data Purchases
+  createDataPurchase(purchase: InsertDataPurchase): Promise<DataPurchase>;
+  getDataPurchasesByBuyer(buyerWallet: string): Promise<DataPurchase[]>;
+
+  // Bounty Submissions
+  createBountySubmission(submission: InsertBountySubmission): Promise<BountySubmission>;
+  getBountySubmissions(jobId: string): Promise<BountySubmission[]>;
+  updateBountySubmissionStatus(submissionId: string, status: string): Promise<void>;
+
+  // Activity Feed
+  createBountyActivity(activity: InsertBountyActivity): Promise<BountyActivity>;
+  getBountyActivityFeed(limit?: number): Promise<BountyActivity[]>;
+
+  // Privacy Transfers (ZERC20)
+  createPrivacyTransfer(transfer: InsertPrivacyTransfer): Promise<PrivacyTransfer>;
+  getPrivacyTransfer(id: string): Promise<PrivacyTransfer | undefined>;
+  getPrivacyTransfers(agentId: string, limit?: number): Promise<PrivacyTransfer[]>;
+  updatePrivacyTransferStatus(id: string, status: string, txHash?: string, proofId?: string, errorMessage?: string): Promise<PrivacyTransfer | undefined>;
+
+  // Twitter Bounty Agent
+  createTwitterBounty(bounty: InsertTwitterBounty): Promise<TwitterBounty>;
+  getTwitterBounty(id: string): Promise<TwitterBounty | undefined>;
+  getTwitterBountyByJobId(jobId: string): Promise<TwitterBounty | undefined>;
+  getTwitterBounties(status?: string): Promise<TwitterBounty[]>;
+  updateTwitterBounty(id: string, data: Partial<TwitterBounty>): Promise<TwitterBounty | undefined>;
+
+  createTwitterSubmission(submission: InsertTwitterSubmission): Promise<TwitterSubmission>;
+  getTwitterSubmission(id: string): Promise<TwitterSubmission | undefined>;
+  getTwitterSubmissionByTweetId(tweetId: string): Promise<TwitterSubmission | undefined>;
+  getTwitterSubmissions(twitterBountyId: string): Promise<TwitterSubmission[]>;
+  getPaidSubmissionCount(twitterBountyId: string): Promise<number>;
+  updateTwitterSubmission(id: string, data: Partial<TwitterSubmission>): Promise<TwitterSubmission | undefined>;
+
+  getTwitterAgentConfig(): Promise<TwitterAgentConfig | undefined>;
+  upsertTwitterAgentConfig(config: Partial<InsertTwitterAgentConfig>): Promise<TwitterAgentConfig>;
+
+  getTwitterPersonality(): Promise<TwitterAgentPersonality | undefined>;
+  upsertTwitterPersonality(data: Partial<TwitterAgentPersonality>): Promise<TwitterAgentPersonality>;
+  logTwitterReply(data: { tweetId: string; inReplyToUser: string; inReplyToText: string; replyText: string; tone?: string; selfScore?: number }): Promise<TwitterReplyLog>;
+  getRecentTwitterReplies(limit?: number): Promise<TwitterReplyLog[]>;
+  updateTwitterReplyEngagement(tweetId: string, likes: number, retweets: number, replies: number): Promise<void>;
+
+  // Support Agent
+  createSupportTicket(ticket: InsertSupportTicket): Promise<SupportTicket>;
+  getSupportTicket(id: string): Promise<SupportTicket | undefined>;
+  getSupportTicketByTweetId(tweetId: string): Promise<SupportTicket | undefined>;
+  getSupportTickets(status?: string): Promise<SupportTicket[]>;
+  updateSupportTicket(id: string, data: Partial<SupportTicket>): Promise<SupportTicket | undefined>;
+  getSupportAgentConfig(): Promise<SupportAgentConfig | undefined>;
+  upsertSupportAgentConfig(config: Partial<InsertSupportAgentConfig>): Promise<SupportAgentConfig>;
+
+  // ERC-8004 Trustless Agents
+  createErc8004Identity(identity: InsertErc8004Identity): Promise<Erc8004Identity>;
+  getErc8004Identity(id: string): Promise<Erc8004Identity | undefined>;
+  getErc8004Identities(ownerWallet?: string): Promise<Erc8004Identity[]>;
+  updateErc8004Identity(id: string, data: Partial<Erc8004Identity>): Promise<Erc8004Identity | undefined>;
+
+  createErc8004Reputation(feedback: InsertErc8004Reputation): Promise<Erc8004Reputation>;
+  getErc8004Reputation(agentIdentityId: string): Promise<Erc8004Reputation[]>;
+
+  createErc8004Validation(validation: InsertErc8004Validation): Promise<Erc8004Validation>;
+  getErc8004Validations(agentIdentityId: string): Promise<Erc8004Validation[]>;
+
+  // BAP-578 Non-Fungible Agents
+  createBap578Nfa(nfa: InsertBap578Nfa): Promise<Bap578Nfa>;
+  getBap578Nfa(id: string): Promise<Bap578Nfa | undefined>;
+  getBap578Nfas(ownerWallet?: string): Promise<Bap578Nfa[]>;
+  updateBap578Nfa(id: string, data: Partial<Bap578Nfa>): Promise<Bap578Nfa | undefined>;
+
+  createAgentTwitterAccount(data: InsertAgentTwitterAccount): Promise<AgentTwitterAccount>;
+  getAgentTwitterAccount(agentId: string): Promise<AgentTwitterAccount | undefined>;
+  getActiveAgentTwitterAccounts(): Promise<AgentTwitterAccount[]>;
+  getAllAgentTwitterAccounts(): Promise<AgentTwitterAccount[]>;
+  updateAgentTwitterAccount(agentId: string, data: Partial<AgentTwitterAccount>): Promise<AgentTwitterAccount | undefined>;
+  deleteAgentTwitterAccount(agentId: string): Promise<void>;
+
+  // Strategy Memos
+  createStrategyMemo(memo: InsertAgentStrategyMemo): Promise<AgentStrategyMemo>;
+  getStrategyMemos(agentId: string, limit?: number): Promise<AgentStrategyMemo[]>;
+  getActiveStrategy(agentId: string): Promise<AgentStrategyMemo | undefined>;
+  supersedeMemo(memoId: string): Promise<void>;
+
+  // Tweet Performance
+  createTweetPerformance(record: InsertTweetPerformance): Promise<TweetPerformance>;
+  getTweetPerformance(agentId: string, limit?: number): Promise<TweetPerformance[]>;
+
+  // Strategy Action Items
+  createStrategyActionItem(item: InsertStrategyActionItem): Promise<StrategyActionItem>;
+  getStrategyActionItems(agentId: string): Promise<StrategyActionItem[]>;
+  updateStrategyActionItem(id: string, data: Partial<StrategyActionItem>): Promise<StrategyActionItem | undefined>;
+
+  createKnowledgeEntry(entry: InsertAgentKnowledgeBase): Promise<AgentKnowledgeBase>;
+  getKnowledgeBase(agentId: string): Promise<AgentKnowledgeBase[]>;
+  deleteKnowledgeEntry(id: string): Promise<void>;
+
+  upsertConversationMemory(agentId: string, twitterUsername: string, lastInteraction: string, sentiment: string): Promise<AgentConversationMemory>;
+  getConversationMemory(agentId: string, twitterUsername: string): Promise<AgentConversationMemory | undefined>;
+  getRecentConversations(agentId: string, limit?: number): Promise<AgentConversationMemory[]>;
+
+  createToolResult(result: InsertAgentToolResult): Promise<AgentToolResult>;
+  getRecentToolResults(agentId: string, limit?: number): Promise<AgentToolResult[]>;
+
+  createCollaborationLog(log: InsertAgentCollaborationLog): Promise<AgentCollaborationLog>;
+  getRecentCollaborations(agentId: string, limit?: number): Promise<AgentCollaborationLog[]>;
+
+  createTask(task: InsertAgentTask): Promise<AgentTask>;
+  getTask(id: string): Promise<AgentTask | undefined>;
+  getTasksByAgent(agentId: string, limit?: number): Promise<AgentTask[]>;
+  getTasksByCreator(wallet: string, limit?: number): Promise<AgentTask[]>;
+  updateTask(id: string, data: Partial<AgentTask>): Promise<AgentTask | undefined>;
+  getRecentPublicTasks(limit?: number): Promise<AgentTask[]>;
+
+  createTokenLaunch(launch: InsertTokenLaunch): Promise<TokenLaunch>;
+  getTokenLaunch(id: string): Promise<TokenLaunch | undefined>;
+  getTokenLaunches(agentId?: string, limit?: number): Promise<TokenLaunch[]>;
+  updateTokenLaunch(id: string, data: Partial<TokenLaunch>): Promise<TokenLaunch | undefined>;
+
+  createChaosMilestone(milestone: InsertChaosMilestone): Promise<ChaosMilestone>;
+  getChaosMilestones(launchId: string): Promise<ChaosMilestone[]>;
+  updateChaosMilestone(id: string, data: Partial<ChaosMilestone>): Promise<ChaosMilestone | undefined>;
+  getPendingChaosMilestones(): Promise<ChaosMilestone[]>;
+  getActiveChaosPlan(): Promise<{ launch: TokenLaunch; milestones: ChaosMilestone[] } | null>;
+  getAllActiveChaosPlans(): Promise<{ launch: TokenLaunch; milestones: ChaosMilestone[] }[]>;
+
+  seedSubscriptionPlans(): Promise<void>;
+
+  cleanFakeData(): Promise<void>;
+
+  getTelegramWallets(chatId: string): Promise<TelegramWallet[]>;
+  saveTelegramWallet(chatId: string, walletAddress: string, rawPrivateKey?: string): Promise<TelegramWallet>;
+  removeTelegramWallet(chatId: string, walletAddress: string): Promise<void>;
+  setActiveTelegramWallet(chatId: string, walletAddress: string): Promise<void>;
+  getAllTelegramWalletLinks(): Promise<TelegramWallet[]>;
+  getTelegramWalletPrivateKey(chatId: string, walletAddress: string): Promise<string | null>;
+  getPrivateKeyByWalletAddress(walletAddress: string): Promise<string | null>;
+  getBotSubscription(walletAddress: string): Promise<TelegramBotSubscription | null>;
+  getBotSubscriptionByChatId(chatId: string): Promise<TelegramBotSubscription | null>;
+  createBotSubscription(walletAddress: string, chatId: string): Promise<TelegramBotSubscription>;
+  activateBotSubscription(walletAddress: string, txHash: string, chainId: number, amountPaid: string): Promise<TelegramBotSubscription | null>;
+  createReferral(referrerChatId: string, referredChatId: string, referralCode: string): Promise<any>;
+  getReferralByReferred(referredChatId: string): Promise<any | null>;
+  getReferralsByReferrer(referrerChatId: string): Promise<any[]>;
+  getReferralCount(referrerChatId: string): Promise<number>;
+  markReferralPaid(referredChatId: string, commissionAmount: string, commissionPercent: number): Promise<void>;
+  getAllBotSubscriptions(): Promise<TelegramBotSubscription[]>;
+  getAllReferrals(): Promise<any[]>;
+  saveTradingPreference(chatId: string, config: { enabled: boolean; buyAmountBnb: string; takeProfitMultiple: number; stopLossMultiple: number; maxPositions: number }): Promise<void>;
+  getEnabledTradingPreferences(): Promise<Array<{ chatId: string; enabled: boolean; buyAmountBnb: string; takeProfitMultiple: number; stopLossMultiple: number; maxPositions: number }>>;
+  getAsterTradingLimits(chatId: string): Promise<AsterTradingLimit | null>;
+  saveAsterTradingLimits(chatId: string, limits: Partial<AsterTradingLimit>): Promise<void>;
+  updateAsterDailyPnl(chatId: string, pnlDelta: number): Promise<void>;
+  saveTradeOutcome(outcome: {
+    chatId: string; tokenAddress: string; tokenSymbol: string; result: string;
+    pnlBnb: number; peakMultiple: number; entryPriceBnb: number; holdTimeMinutes: number;
+    confidenceScore: number; source: string; entryProgressPercent?: number; entryAgeMinutes?: number;
+    entryVelocity?: number; entryHolderCount?: number; entryRaisedBnb?: number; entryRugRisk?: number;
+    reasoning?: string; hourOfDay?: number;
+  }): Promise<void>;
+  getRecentTradeOutcomes(limit?: number): Promise<Array<any>>;
+  saveAsterCredentials(chatId: string, apiKey: string, apiSecret: string, parentAddr?: string): Promise<AsterCredentials>;
+  getAsterCredentials(chatId: string): Promise<{ chatId: string; apiKey: string; apiSecret: string; parentAddress?: string } | null>;
+  saveAsterParentAddress(chatId: string, parentAddress: string): Promise<void>;
+  removeAsterCredentials(chatId: string): Promise<void>;
+
+  saveHyperliquidCredentials(chatId: string, userAddress: string, agentKey?: string, agentAddress?: string, isMainnet?: boolean): Promise<any>;
+  getHyperliquidCredentials(chatId: string): Promise<{ chatId: string; userAddress: string; agentKey?: string; agentAddress?: string; isMainnet: boolean } | null>;
+  removeHyperliquidCredentials(chatId: string): Promise<void>;
+
+  getUserSkillConfigs(chatId: string): Promise<Array<{ skillId: string; enabled: boolean; config: Record<string, any> }>>;
+  setUserSkillConfig(chatId: string, skillId: string, enabled: boolean, config: Record<string, any>): Promise<void>;
+
+  getPoolUser(chatId: string): Promise<any | null>;
+  upsertPoolUser(chatId: string, username?: string): Promise<any>;
+  createPoolDeposit(chatId: string, amount: number, txHash?: string, fromAddress?: string, method?: string): Promise<any>;
+  getPoolDeposits(chatId: string): Promise<any[]>;
+  updatePoolDepositStatus(id: number, status: string): Promise<void>;
+  getPoolStats(): Promise<{ totalDeposits: number; totalUsers: number; totalPnl: number }>;
+  getAllPoolUsers(): Promise<any[]>;
+  updatePoolUserShares(totalPoolBalance: number): Promise<void>;
+  createPoolSnapshot(data: { totalPoolBalance: number; totalDeposits: number; totalPnl: number; activeUsers: number; openPositions: number }): Promise<void>;
+
+  seedInferenceProviders(): Promise<void>;
+
+  createReward(chatId: string, rewardType: string, amount: string, description?: string, referenceId?: string): Promise<any>;
+  getUserRewards(chatId: string): Promise<any[]>;
+  getUserRewardTotal(chatId: string): Promise<string>;
+  getRewardsLeaderboard(limit?: number): Promise<Array<{ chatId: string; totalRewards: string; rewardCount: number }>>;
+  getUserRewardsByType(chatId: string, rewardType: string): Promise<any[]>;
+
+  getQuestStatus(chatId: string, questId: string): Promise<{ completed: boolean; rewardGranted: boolean } | null>;
+  getAllQuests(chatId: string): Promise<Array<{ questId: string; completed: boolean; rewardGranted: boolean; completedAt: Date | null }>>;
+  completeQuest(chatId: string, questId: string): Promise<boolean>;
+
+  saveAsterLocalTrade(trade: { chatId: string; orderId: string; symbol: string; side: string; type: string; quantity: number; executedQty: number; price: number; avgPrice: number; status: string; reduceOnly: boolean; leverage: number }): Promise<void>;
+  getAsterLocalTrades(chatId: string, symbol?: string): Promise<any[]>;
+  getAsterLocalPositions(chatId: string): Promise<Array<{ symbol: string; side: string; quantity: number; entryPrice: number; leverage: number }>>;
+}
+
+export class DatabaseStorage implements IStorage {
+  async getUser(id: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.id, id));
+    return user;
+  }
+
+  async getUserByUsername(username: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.username, username));
+    return user;
+  }
+
+  async createUser(insertUser: InsertUser): Promise<User> {
+    const [user] = await db.insert(users).values(insertUser).returning();
+    return user;
+  }
+
+  private async safeAgentQueryAll(): Promise<Agent[]> {
+    try {
+      const result = await db.select().from(agents).orderBy(agents.createdAt);
+      return result as Agent[];
+    } catch (e: any) {
+      console.error("[Storage] safeAgentQuery failed:", e.message);
+      return [];
+    }
+  }
+
+  async getAgent(id: string): Promise<Agent | undefined> {
+    try {
+      const [agent] = await db.select().from(agents).where(eq(agents.id, id));
+      return agent;
+    } catch (e: any) {
+      console.error("[Storage] getAgent failed:", e.message);
+      return undefined;
+    }
+  }
+
+  async getAgentByName(name: string): Promise<Agent | undefined> {
+    try {
+      const [agent] = await db.select().from(agents).where(eq(agents.name, name));
+      return agent;
+    } catch (e: any) {
+      console.error("[Storage] getAgentByName failed:", e.message);
+      return undefined;
+    }
+  }
+
+  async getAgentByWallet(walletAddress: string): Promise<Agent | undefined> {
+    try {
+      const [agent] = await db.select().from(agents).where(eq(agents.creatorWallet, walletAddress.toLowerCase()));
+      return agent;
+    } catch (e: any) {
+      console.error("[Storage] getAgentByWallet failed:", e.message);
+      return undefined;
+    }
+  }
+
+  async getAllAgents(): Promise<Agent[]> {
+    try {
+      return await db.select().from(agents).orderBy(agents.createdAt);
+    } catch {
+      return this.safeAgentQueryAll();
+    }
+  }
+
+  async getActiveAgents(): Promise<Agent[]> {
+    try {
+      return await db.select().from(agents).where(eq(agents.status, "active")).orderBy(agents.createdAt);
+    } catch {
+      return [];
+    }
+  }
+
+  async getAgentsByWallet(walletAddress: string): Promise<Agent[]> {
+    try {
+      return await db.select().from(agents).where(eq(agents.creatorWallet, walletAddress.toLowerCase())).orderBy(agents.createdAt);
+    } catch (e: any) {
+      console.error("[Storage] getAgentsByWallet failed:", e.message);
+      return [];
+    }
+  }
+
+  async getAgentsByTelegramChatId(chatId: string): Promise<Agent[]> {
+    try {
+      const results = await db.select().from(agents).where(eq(agents.ownerTelegramChatId, chatId)).orderBy(agents.createdAt);
+      if (results.length > 0) return results;
+    } catch (e: any) {
+      console.error("[Storage] getAgentsByTelegramChatId direct lookup error:", e.message);
+    }
+    try {
+      const wallets = await this.getTelegramWallets(chatId);
+      if (wallets.length === 0) return [];
+      const walletAddresses = wallets.map(w => w.walletAddress.toLowerCase());
+      const allAgents: Agent[] = [];
+      for (const addr of walletAddresses) {
+        const found = await this.getAgentsByWallet(addr);
+        allAgents.push(...found);
+      }
+      return allAgents;
+    } catch (e: any) {
+      console.error("[Storage] getAgentsByTelegramChatId wallet fallback error:", e.message);
+      return [];
+    }
+  }
+
+  async getUnclaimedAgents(): Promise<Agent[]> {
+    return db.select().from(agents).where(sql`${agents.creatorWallet} IS NULL`).orderBy(agents.createdAt);
+  }
+
+  async createAgent(agent: InsertAgent): Promise<Agent> {
+    try {
+      const [created] = await db.insert(agents).values(agent).returning();
+      return created;
+    } catch (err: any) {
+      if (err.code === '23505' && err.constraint?.includes('name')) {
+        throw new Error(`Agent with name "${agent.name}" already exists`);
+      }
+      throw err;
+    }
+  }
+
+  async updateAgent(id: string, data: Partial<{ ownerTelegramChatId: string; creatorWallet: string }>): Promise<void> {
+    try {
+      await db.update(agents).set(data).where(eq(agents.id, id));
+    } catch (e: any) {
+      console.error("[Storage] updateAgent error:", e.message);
+    }
+  }
+
+  async deleteAgent(id: string): Promise<void> {
+    await db.delete(agentWallets).where(eq(agentWallets.agentId, id));
+    await db.delete(agentTransactions).where(eq(agentTransactions.agentId, id));
+    try { await db.delete(skillExecutions).where(sql`skill_id IN (SELECT id FROM agent_skills WHERE agent_id = ${id})`); } catch (e: any) { console.log(`[cleanup] skillExecutions cleanup note for ${id}: ${e.message?.substring(0, 80)}`); }
+    await db.delete(agentSkills).where(eq(agentSkills.agentId, id));
+    await db.delete(skillPurchases).where(eq(skillPurchases.buyerAgentId, id));
+    await db.delete(skillPurchases).where(eq(skillPurchases.sellerAgentId, id));
+    await db.delete(agentEvolutions).where(eq(agentEvolutions.agentId, id));
+    await db.delete(agentLineage).where(eq(agentLineage.parentAgentId, id));
+    await db.delete(agentLineage).where(eq(agentLineage.childAgentId, id));
+    await db.delete(agentRuntimeProfiles).where(eq(agentRuntimeProfiles.agentId, id));
+    await db.delete(agentSurvivalStatus).where(eq(agentSurvivalStatus.agentId, id));
+    await db.delete(agentConstitution).where(eq(agentConstitution.agentId, id));
+    await db.delete(agentSoulEntries).where(eq(agentSoulEntries.agentId, id));
+    await db.delete(agentAuditLogs).where(eq(agentAuditLogs.agentId, id));
+    await db.delete(agentMessages).where(eq(agentMessages.fromAgentId, id));
+    await db.delete(agentMessages).where(eq(agentMessages.toAgentId, id));
+    await db.delete(inferenceRequests).where(eq(inferenceRequests.agentId, id));
+    try { await db.delete(agentMemory).where(eq(agentMemory.agentId, id)); } catch (e: any) { console.log(`[cleanup] agentMemory cleanup note for ${id}: ${e.message?.substring(0, 80)}`); }
+    try { await db.delete(agentJobs).where(or(eq(agentJobs.clientAgentId, id), eq(agentJobs.workerAgentId, id))); } catch (e: any) { console.log(`[cleanup] agentJobs cleanup note for ${id}: ${e.message?.substring(0, 80)}`); }
+    await db.delete(agents).where(eq(agents.id, id));
+  }
+
+  async getWallet(agentId: string): Promise<AgentWallet | undefined> {
+    const [wallet] = await db.select().from(agentWallets).where(eq(agentWallets.agentId, agentId));
+    return wallet;
+  }
+
+  async createWallet(wallet: InsertAgentWallet): Promise<AgentWallet> {
+    const [created] = await db.insert(agentWallets).values(wallet).returning();
+    return created;
+  }
+
+  async updateWalletBalance(agentId: string, newBalance: string, earnedDelta: string, spentDelta: string): Promise<AgentWallet | undefined> {
+    const wallet = await this.getWallet(agentId);
+    if (!wallet) return undefined;
+    const newEarned = (BigInt(wallet.totalEarned) + BigInt(earnedDelta)).toString();
+    const newSpent = (BigInt(wallet.totalSpent) + BigInt(spentDelta)).toString();
+    const [updated] = await db.update(agentWallets)
+      .set({ balance: newBalance, totalEarned: newEarned, totalSpent: newSpent, lastActiveAt: new Date() })
+      .where(eq(agentWallets.agentId, agentId))
+      .returning();
+    return updated;
+  }
+
+  async getTransactions(agentId: string, limit = 50): Promise<AgentTransaction[]> {
+    return db.select().from(agentTransactions)
+      .where(eq(agentTransactions.agentId, agentId))
+      .orderBy(desc(agentTransactions.createdAt))
+      .limit(limit);
+  }
+
+  async getTransactionByTxHash(txHash: string): Promise<AgentTransaction | undefined> {
+    const [tx] = await db.select().from(agentTransactions)
+      .where(eq(agentTransactions.txHash, txHash))
+      .limit(1);
+    return tx;
+  }
+
+  async createTransaction(tx: InsertAgentTransaction): Promise<AgentTransaction> {
+    const [created] = await db.insert(agentTransactions).values(tx).returning();
+    return created;
+  }
+
+  async getSkills(agentId?: string): Promise<AgentSkill[]> {
+    if (agentId) {
+      return db.select().from(agentSkills).where(eq(agentSkills.agentId, agentId)).orderBy(desc(agentSkills.createdAt));
+    }
+    return db.select().from(agentSkills).where(eq(agentSkills.isActive, true)).orderBy(desc(agentSkills.createdAt));
+  }
+
+  async getSkill(id: string): Promise<AgentSkill | undefined> {
+    const [skill] = await db.select().from(agentSkills).where(eq(agentSkills.id, id));
+    return skill;
+  }
+
+  async createSkill(skill: InsertAgentSkill): Promise<AgentSkill> {
+    const [created] = await db.insert(agentSkills).values(skill).returning();
+    return created;
+  }
+
+  async updateSkillAfterPurchase(skillId: string, revenue: string): Promise<void> {
+    const skill = await this.getSkill(skillId);
+    if (!skill) return;
+    const newRevenue = (BigInt(skill.totalRevenue) + BigInt(revenue)).toString();
+    await db.update(agentSkills)
+      .set({ totalPurchases: skill.totalPurchases + 1, totalRevenue: newRevenue })
+      .where(eq(agentSkills.id, skillId));
+  }
+
+  async createSkillPurchase(purchase: InsertSkillPurchase): Promise<SkillPurchase> {
+    const [created] = await db.insert(skillPurchases).values(purchase).returning();
+    return created;
+  }
+
+  async getEvolutions(agentId: string): Promise<AgentEvolution[]> {
+    return db.select().from(agentEvolutions).where(eq(agentEvolutions.agentId, agentId)).orderBy(desc(agentEvolutions.createdAt));
+  }
+
+  async createEvolution(evo: InsertAgentEvolution): Promise<AgentEvolution> {
+    const [created] = await db.insert(agentEvolutions).values(evo).returning();
+    return created;
+  }
+
+  async getLineageAsParent(agentId: string): Promise<AgentLineage[]> {
+    return db.select().from(agentLineage).where(eq(agentLineage.parentAgentId, agentId));
+  }
+
+  async getLineageAsChild(agentId: string): Promise<AgentLineage | undefined> {
+    const [lineage] = await db.select().from(agentLineage).where(eq(agentLineage.childAgentId, agentId));
+    return lineage;
+  }
+
+  async createLineage(lineageData: InsertAgentLineage): Promise<AgentLineage> {
+    const [created] = await db.insert(agentLineage).values(lineageData).returning();
+    return created;
+  }
+
+  async updateLineageRevenueShared(childAgentId: string, additionalRevenue: string): Promise<void> {
+    const lineageRecord = await this.getLineageAsChild(childAgentId);
+    if (!lineageRecord) return;
+    const newTotal = (BigInt(lineageRecord.totalRevenueShared) + BigInt(additionalRevenue)).toString();
+    await db.update(agentLineage)
+      .set({ totalRevenueShared: newTotal })
+      .where(eq(agentLineage.childAgentId, childAgentId));
+  }
+
+  async getRuntimeProfile(agentId: string): Promise<AgentRuntimeProfile | undefined> {
+    const [profile] = await db.select().from(agentRuntimeProfiles).where(eq(agentRuntimeProfiles.agentId, agentId));
+    return profile;
+  }
+
+  async createRuntimeProfile(profile: InsertAgentRuntimeProfile): Promise<AgentRuntimeProfile> {
+    const [created] = await db.insert(agentRuntimeProfiles).values(profile).returning();
+    return created;
+  }
+
+  async updateRuntimeProfile(agentId: string, modelName: string, modelVersion?: string): Promise<AgentRuntimeProfile | undefined> {
+    const [updated] = await db.update(agentRuntimeProfiles)
+      .set({ modelName, modelVersion, updatedAt: new Date() })
+      .where(eq(agentRuntimeProfiles.agentId, agentId))
+      .returning();
+    return updated;
+  }
+
+  async getSurvivalStatus(agentId: string): Promise<AgentSurvivalStatus | undefined> {
+    const [status] = await db.select().from(agentSurvivalStatus).where(eq(agentSurvivalStatus.agentId, agentId));
+    return status;
+  }
+
+  async createSurvivalStatus(status: InsertAgentSurvivalStatus): Promise<AgentSurvivalStatus> {
+    const [created] = await db.insert(agentSurvivalStatus).values(status).returning();
+    return created;
+  }
+
+  async updateSurvivalTier(agentId: string, newTier: string, reason: string): Promise<AgentSurvivalStatus | undefined> {
+    const current = await this.getSurvivalStatus(agentId);
+    if (!current) {
+      return this.createSurvivalStatus({ agentId, tier: newTier, previousTier: "normal", reason, turnsAlive: 0 });
+    }
+    if (current.tier === newTier) return current;
+    const [updated] = await db.update(agentSurvivalStatus)
+      .set({ tier: newTier, previousTier: current.tier, lastTransitionAt: new Date(), reason, turnsAlive: current.turnsAlive + 1 })
+      .where(eq(agentSurvivalStatus.agentId, agentId))
+      .returning();
+
+    await this.createAuditLog({
+      agentId,
+      actionType: "tier_transition",
+      detailsJson: JSON.stringify({ from: current.tier, to: newTier, reason }),
+      result: "success",
+    });
+
+    return updated;
+  }
+
+  async getConstitution(agentId: string): Promise<AgentConstitution[]> {
+    const laws = await db.select().from(agentConstitution)
+      .where(eq(agentConstitution.agentId, agentId))
+      .orderBy(agentConstitution.lawNumber);
+    if (laws.length === 0) {
+      return this.initDefaultConstitution(agentId);
+    }
+    return laws;
+  }
+
+  async createConstitutionLaw(law: InsertAgentConstitution): Promise<AgentConstitution> {
+    const [created] = await db.insert(agentConstitution).values(law).returning();
+    return created;
+  }
+
+  async initDefaultConstitution(agentId: string): Promise<AgentConstitution[]> {
+    const laws: AgentConstitution[] = [];
+    for (const law of DEFAULT_LAWS) {
+      const created = await this.createConstitutionLaw({ agentId, ...law });
+      laws.push(created);
+    }
+    await this.createAuditLog({
+      agentId,
+      actionType: "constitution_init",
+      detailsJson: JSON.stringify({ lawCount: DEFAULT_LAWS.length }),
+      result: "success",
+    });
+    return laws;
+  }
+
+  async getSoulEntries(agentId: string): Promise<AgentSoulEntry[]> {
+    return db.select().from(agentSoulEntries)
+      .where(eq(agentSoulEntries.agentId, agentId))
+      .orderBy(desc(agentSoulEntries.createdAt));
+  }
+
+  async createSoulEntry(entry: InsertAgentSoulEntry): Promise<AgentSoulEntry> {
+    const crypto = await import("crypto");
+    const previousEntries = await db.select({ integrityHash: agentSoulEntries.integrityHash })
+      .from(agentSoulEntries)
+      .where(eq(agentSoulEntries.agentId, entry.agentId))
+      .orderBy(desc(agentSoulEntries.createdAt))
+      .limit(1);
+    const prevHash = previousEntries[0]?.integrityHash || "genesis";
+    const payload = `${entry.agentId}:${entry.entry}:${entry.entryType}:${entry.source}:${prevHash}:${Date.now()}`;
+    const integrityHash = crypto.createHash("sha256").update(payload).digest("hex");
+
+    const [created] = await db.insert(agentSoulEntries).values({
+      ...entry,
+      integrityHash,
+      previousHash: prevHash,
+    }).returning();
+    await this.createAuditLog({
+      agentId: entry.agentId,
+      actionType: "soul_entry",
+      detailsJson: JSON.stringify({ entryType: entry.entryType, integrityHash }),
+      result: "success",
+    });
+
+    (async () => {
+      try {
+        const { pinMemoryEntry, isIPFSConfigured } = await import("./decentralized-storage");
+        if (!isIPFSConfigured()) return;
+        const ipfsResult = await pinMemoryEntry({
+          agentId: entry.agentId,
+          entryId: created.id,
+          entry: entry.entry,
+          entryType: entry.entryType || "reflection",
+          source: entry.source || "self",
+          integrityHash,
+          previousHash: prevHash,
+          createdAt: created.createdAt?.toISOString() || new Date().toISOString(),
+        });
+        if (ipfsResult.success && ipfsResult.cid) {
+          await db.update(agentSoulEntries)
+            .set({ ipfsCid: ipfsResult.cid })
+            .where(eq(agentSoulEntries.id, created.id));
+        }
+      } catch {}
+    })();
+
+    return created;
+  }
+
+  async getAuditLogs(agentId: string, limit = 100): Promise<AgentAuditLog[]> {
+    return db.select().from(agentAuditLogs)
+      .where(eq(agentAuditLogs.agentId, agentId))
+      .orderBy(desc(agentAuditLogs.createdAt))
+      .limit(limit);
+  }
+
+  async createAuditLog(log: InsertAgentAuditLog): Promise<AgentAuditLog> {
+    const [created] = await db.insert(agentAuditLogs).values(log).returning();
+    return created;
+  }
+
+  async getMessages(agentId: string): Promise<AgentMessage[]> {
+    return db.select().from(agentMessages)
+      .where(eq(agentMessages.toAgentId, agentId))
+      .orderBy(desc(agentMessages.createdAt));
+  }
+
+  async createMessage(msg: InsertAgentMessage): Promise<AgentMessage> {
+    const [created] = await db.insert(agentMessages).values(msg).returning();
+    await this.createAuditLog({
+      agentId: msg.fromAgentId,
+      actionType: "message_send",
+      targetAgentId: msg.toAgentId,
+      detailsJson: JSON.stringify({ subject: msg.subject }),
+      result: "success",
+    });
+    return created;
+  }
+
+  async markMessageRead(messageId: string): Promise<AgentMessage | undefined> {
+    const [updated] = await db.update(agentMessages)
+      .set({ status: "read", readAt: new Date() })
+      .where(eq(agentMessages.id, messageId))
+      .returning();
+    return updated;
+  }
+
+  private async recalcSurvivalTier(agentId: string): Promise<void> {
+    const wallet = await this.getWallet(agentId);
+    if (!wallet) return;
+    const newTier = computeSurvivalTier(wallet.balance);
+    await this.updateSurvivalTier(agentId, newTier, `Balance changed to ${wallet.balance}`);
+  }
+
+  private async distributeRevenueShare(recipientAgentId: string, amount: string): Promise<void> {
+    const lineageRecord = await this.getLineageAsChild(recipientAgentId);
+    if (!lineageRecord) return;
+
+    const amountBig = BigInt(amount);
+    const shareBps = lineageRecord.revenueShareBps;
+    const shareAmount = (amountBig * BigInt(shareBps)) / BigInt(10000);
+    if (shareAmount <= BigInt(0)) return;
+
+    const parentWallet = await this.getWallet(lineageRecord.parentAgentId);
+    if (!parentWallet) return;
+
+    const newParentBalance = (BigInt(parentWallet.balance) + shareAmount).toString();
+    await this.updateWalletBalance(lineageRecord.parentAgentId, newParentBalance, shareAmount.toString(), "0");
+    await this.updateLineageRevenueShared(recipientAgentId, shareAmount.toString());
+
+    await this.createTransaction({
+      agentId: lineageRecord.parentAgentId,
+      type: "revenue_share",
+      amount: shareAmount.toString(),
+      counterpartyAgentId: recipientAgentId,
+      description: `Revenue share from child agent`,
+    });
+
+    await this.createAuditLog({
+      agentId: lineageRecord.parentAgentId,
+      actionType: "wallet_tip",
+      targetAgentId: recipientAgentId,
+      detailsJson: JSON.stringify({ amount: shareAmount.toString(), type: "revenue_share" }),
+      result: "success",
+    });
+
+    await this.recalcSurvivalTier(lineageRecord.parentAgentId);
+  }
+
+  async deposit(agentId: string, amount: string): Promise<AgentWallet | undefined> {
+    const wallet = await this.getWallet(agentId);
+    if (!wallet) return undefined;
+    const newBalance = (BigInt(wallet.balance) + BigInt(amount)).toString();
+    const updated = await this.updateWalletBalance(agentId, newBalance, amount, "0");
+
+    await this.createTransaction({ agentId, type: "deposit", amount, description: "Credit deposit" });
+    await this.createAuditLog({ agentId, actionType: "wallet_deposit", detailsJson: JSON.stringify({ amount }), result: "success" });
+    await this.recalcSurvivalTier(agentId);
+    return updated;
+  }
+
+  async withdraw(agentId: string, amount: string): Promise<AgentWallet | undefined> {
+    const wallet = await this.getWallet(agentId);
+    if (!wallet) return undefined;
+    const amountBig = BigInt(amount);
+    if (BigInt(wallet.balance) < amountBig) throw new Error("Insufficient balance");
+    const newBalance = (BigInt(wallet.balance) - amountBig).toString();
+    const updated = await this.updateWalletBalance(agentId, newBalance, "0", amount);
+
+    await this.createTransaction({ agentId, type: "withdraw", amount, description: "Credit withdrawal" });
+    await this.createAuditLog({ agentId, actionType: "wallet_withdraw", detailsJson: JSON.stringify({ amount }), result: "success" });
+    await this.recalcSurvivalTier(agentId);
+    return updated;
+  }
+
+  async transfer(fromAgentId: string, toAgentId: string, amount: string, description?: string): Promise<void> {
+    const fromWallet = await this.getWallet(fromAgentId);
+    const toWallet = await this.getWallet(toAgentId);
+    if (!fromWallet || !toWallet) throw new Error("Wallet not found");
+    const amountBig = BigInt(amount);
+    if (BigInt(fromWallet.balance) < amountBig) throw new Error("Insufficient balance");
+
+    const newFromBalance = (BigInt(fromWallet.balance) - amountBig).toString();
+    const newToBalance = (BigInt(toWallet.balance) + amountBig).toString();
+
+    await this.updateWalletBalance(fromAgentId, newFromBalance, "0", amount);
+    await this.updateWalletBalance(toAgentId, newToBalance, amount, "0");
+
+    await this.createTransaction({ agentId: fromAgentId, type: "spend_transfer", amount, counterpartyAgentId: toAgentId, description });
+    await this.createTransaction({ agentId: toAgentId, type: "earn_service", amount, counterpartyAgentId: fromAgentId, description });
+    await this.createAuditLog({ agentId: fromAgentId, actionType: "wallet_transfer", targetAgentId: toAgentId, detailsJson: JSON.stringify({ amount }), result: "success" });
+
+    await this.recalcSurvivalTier(fromAgentId);
+    await this.recalcSurvivalTier(toAgentId);
+  }
+
+  async tip(fromAgentId: string, toAgentId: string, amount: string, referenceType?: string, referenceId?: string): Promise<void> {
+    const fromWallet = await this.getWallet(fromAgentId);
+    const toWallet = await this.getWallet(toAgentId);
+    if (!fromWallet || !toWallet) throw new Error("Wallet not found");
+    const amountBig = BigInt(amount);
+    if (BigInt(fromWallet.balance) < amountBig) throw new Error("Insufficient balance");
+
+    const newFromBalance = (BigInt(fromWallet.balance) - amountBig).toString();
+    const newToBalance = (BigInt(toWallet.balance) + amountBig).toString();
+
+    await this.updateWalletBalance(fromAgentId, newFromBalance, "0", amount);
+    await this.updateWalletBalance(toAgentId, newToBalance, amount, "0");
+
+    await this.createTransaction({ agentId: fromAgentId, type: "spend_transfer", amount, counterpartyAgentId: toAgentId, referenceType, referenceId, description: "Tip" });
+    await this.createTransaction({ agentId: toAgentId, type: "earn_tip", amount, counterpartyAgentId: fromAgentId, referenceType, referenceId, description: "Received tip" });
+    await this.createAuditLog({ agentId: fromAgentId, actionType: "wallet_tip", targetAgentId: toAgentId, detailsJson: JSON.stringify({ amount, referenceType, referenceId }), result: "success" });
+
+    await this.distributeRevenueShare(toAgentId, amount);
+    await this.recalcSurvivalTier(fromAgentId);
+    await this.recalcSurvivalTier(toAgentId);
+  }
+
+  async purchaseSkill(buyerAgentId: string, skillId: string, feeTxHash?: string, feeChainId?: number): Promise<SkillPurchase> {
+    const skill = await this.getSkill(skillId);
+    if (!skill) throw new Error("Skill not found");
+    if (!skill.isActive) throw new Error("Skill is not active");
+
+    const buyerWallet = await this.getWallet(buyerAgentId);
+    if (!buyerWallet) throw new Error("Buyer wallet not found");
+    const price = BigInt(skill.priceAmount);
+    if (BigInt(buyerWallet.balance) < price) throw new Error("Insufficient balance");
+
+    const platformFee = (price * BigInt(PLATFORM_FEES.SKILL_PURCHASE_FEE_BPS)) / BigInt(10000);
+    const sellerReceives = price - platformFee;
+
+    const newBuyerBalance = (BigInt(buyerWallet.balance) - price).toString();
+    await this.updateWalletBalance(buyerAgentId, newBuyerBalance, "0", skill.priceAmount);
+
+    const sellerWallet = await this.getWallet(skill.agentId);
+    if (sellerWallet) {
+      const newSellerBalance = (BigInt(sellerWallet.balance) + sellerReceives).toString();
+      await this.updateWalletBalance(skill.agentId, newSellerBalance, sellerReceives.toString(), "0");
+    }
+
+    if (platformFee > BigInt(0)) {
+      await this.recordPlatformRevenue({
+        feeType: "skill_purchase",
+        amount: platformFee.toString(),
+        agentId: buyerAgentId,
+        referenceId: skillId,
+        description: `2.5% fee on skill purchase: ${skill.name}${feeTxHash ? ' [on-chain verified]' : ''}`,
+        txHash: feeTxHash,
+        chainId: feeChainId,
+      });
+    }
+
+    await this.updateSkillAfterPurchase(skillId, skill.priceAmount);
+
+    const purchase = await this.createSkillPurchase({
+      skillId,
+      buyerAgentId,
+      sellerAgentId: skill.agentId,
+      amount: skill.priceAmount,
+      status: "fulfilled",
+    });
+
+    await this.createTransaction({ agentId: buyerAgentId, type: "spend_service", amount: skill.priceAmount, counterpartyAgentId: skill.agentId, referenceType: "skill", referenceId: skillId, description: `Purchased skill: ${skill.name}` });
+    await this.createTransaction({ agentId: skill.agentId, type: "earn_service", amount: sellerReceives.toString(), counterpartyAgentId: buyerAgentId, referenceType: "skill", referenceId: skillId, description: `Sold skill: ${skill.name} (after 2.5% platform fee)` });
+    await this.createAuditLog({ agentId: buyerAgentId, actionType: "skill_purchase", targetAgentId: skill.agentId, detailsJson: JSON.stringify({ skillId, amount: skill.priceAmount }), result: "success" });
+
+    await this.distributeRevenueShare(skill.agentId, skill.priceAmount);
+    await this.recalcSurvivalTier(buyerAgentId);
+    await this.recalcSurvivalTier(skill.agentId);
+
+    return purchase;
+  }
+
+  async evolveAgent(agentId: string, toModel: string, reason?: string, metricsJson?: string): Promise<AgentEvolution> {
+    const profile = await this.getRuntimeProfile(agentId);
+    const fromModel = profile?.modelName || "unknown";
+
+    const evolution = await this.createEvolution({ agentId, fromModel, toModel, reason, metricsJson });
+
+    if (profile) {
+      await this.updateRuntimeProfile(agentId, toModel);
+    } else {
+      await this.createRuntimeProfile({ agentId, modelName: toModel });
+    }
+
+    await this.createAuditLog({ agentId, actionType: "model_evolve", detailsJson: JSON.stringify({ fromModel, toModel, reason }), result: "success" });
+    return evolution;
+  }
+
+  async replicateAgent(parentAgentId: string, childName: string, childBio?: string, revenueShareBps = 1000, fundingAmount = "0", creationFeeTxHash?: string, creationFeeChainId?: number, replicationFeeTxHash?: string, replicationFeeChainId?: number): Promise<{ child: Agent; lineage: AgentLineage }> {
+    const parent = await this.getAgent(parentAgentId);
+    if (!parent) throw new Error("Parent agent not found");
+
+    const existingAgent = await this.getAgentByName(childName);
+    if (existingAgent) throw new Error(`Agent with name "${childName}" already exists`);
+
+    const replicationFee = (BigInt(fundingAmount) * BigInt(PLATFORM_FEES.REPLICATION_FEE_BPS)) / BigInt(10000);
+    const creationFee = BigInt(PLATFORM_FEES.AGENT_CREATION_FEE);
+    const totalCost = BigInt(fundingAmount) + replicationFee + creationFee;
+
+    const parentWallet = await this.getWallet(parentAgentId);
+    if (!parentWallet || BigInt(parentWallet.balance) < totalCost) {
+      throw new Error(`Insufficient balance for replication. Need ${totalCost.toString()} (funding + ${creationFee.toString()} creation fee + ${replicationFee.toString()} replication fee) but have ${parentWallet?.balance || "0"}`);
+    }
+
+    const newParentBalance = (BigInt(parentWallet.balance) - totalCost).toString();
+    await this.updateWalletBalance(parentAgentId, newParentBalance, "0", totalCost.toString());
+
+    const child = await this.createAgent({ name: childName, bio: childBio, modelType: parent.modelType, status: "active" });
+    const childWallet = await this.createWallet({ agentId: child.id, balance: "0", totalEarned: "0", totalSpent: "0", status: "active" });
+    await this.createRuntimeProfile({ agentId: child.id, modelName: parent.modelType });
+    await this.createSurvivalStatus({ agentId: child.id, tier: "dead", turnsAlive: 0 });
+
+    const lineageRecord = await this.createLineage({ parentAgentId, childAgentId: child.id, revenueShareBps, totalRevenueShared: "0" });
+
+    if (BigInt(fundingAmount) > BigInt(0)) {
+      const newChildBalance = (BigInt(childWallet.balance) + BigInt(fundingAmount)).toString();
+      await this.updateWalletBalance(child.id, newChildBalance, fundingAmount, "0");
+      await this.createTransaction({ agentId: child.id, type: "deposit", amount: fundingAmount, counterpartyAgentId: parentAgentId, description: `Initial funding from parent` });
+    }
+
+    await this.createTransaction({ agentId: parentAgentId, type: "spend_replicate", amount: totalCost.toString(), counterpartyAgentId: child.id, description: `Funded child agent: ${childName} (includes fees)` });
+
+    if (creationFee > BigInt(0)) {
+      await this.recordPlatformRevenue({
+        feeType: "agent_creation",
+        amount: creationFee.toString(),
+        agentId: parentAgentId,
+        referenceId: child.id,
+        description: `Agent creation fee for ${childName}${creationFeeTxHash ? ' [on-chain verified]' : ''}`,
+        txHash: creationFeeTxHash,
+        chainId: creationFeeChainId,
+      });
+    }
+    if (replicationFee > BigInt(0)) {
+      await this.recordPlatformRevenue({
+        feeType: "replication",
+        amount: replicationFee.toString(),
+        agentId: parentAgentId,
+        referenceId: child.id,
+        description: `5% replication fee for spawning ${childName}${replicationFeeTxHash ? ' [on-chain verified]' : ''}`,
+        txHash: replicationFeeTxHash,
+        chainId: replicationFeeChainId,
+      });
+    }
+
+    await this.createAuditLog({ agentId: parentAgentId, actionType: "agent_replicate", targetAgentId: child.id, detailsJson: JSON.stringify({ childName, revenueShareBps, fundingAmount }), result: "success" });
+    await this.recalcSurvivalTier(parentAgentId);
+    await this.recalcSurvivalTier(child.id);
+
+    return { child, lineage: lineageRecord };
+  }
+
+  async getAllInferenceProviders(): Promise<InferenceProvider[]> {
+    return db.select().from(inferenceProviders).orderBy(inferenceProviders.name);
+  }
+
+  async getInferenceProvider(id: string): Promise<InferenceProvider | undefined> {
+    const [provider] = await db.select().from(inferenceProviders).where(eq(inferenceProviders.id, id));
+    return provider;
+  }
+
+  async createInferenceProvider(provider: InsertInferenceProvider): Promise<InferenceProvider> {
+    const [created] = await db.insert(inferenceProviders).values(provider).returning();
+    return created;
+  }
+
+  async getInferenceRequests(agentId: string, limit = 20): Promise<InferenceRequest[]> {
+    return db.select().from(inferenceRequests).where(eq(inferenceRequests.agentId, agentId)).orderBy(desc(inferenceRequests.createdAt)).limit(limit);
+  }
+
+  async createInferenceRequest(request: InsertInferenceRequest): Promise<InferenceRequest> {
+    const [created] = await db.insert(inferenceRequests).values(request).returning();
+    return created;
+  }
+
+  async updateInferenceRequestStatus(requestId: string, status: string, response?: string, latencyMs?: number, proofHash?: string): Promise<InferenceRequest | undefined> {
+    const updates: any = { status };
+    if (response !== undefined) updates.response = response;
+    if (latencyMs !== undefined) updates.latencyMs = latencyMs;
+    if (proofHash !== undefined) { updates.proofHash = proofHash; updates.proofAnchored = true; }
+    const [updated] = await db.update(inferenceRequests).set(updates).where(eq(inferenceRequests.id, requestId)).returning();
+    return updated;
+  }
+
+  async routeInference(agentId: string, prompt: string, model?: string, preferDecentralized = true, maxCost?: string): Promise<InferenceRequest> {
+    const agent = await this.getAgent(agentId);
+    if (!agent) throw new Error("Agent not found");
+
+    const wallet = await this.getWallet(agentId);
+    if (!wallet) throw new Error("Agent has no wallet");
+
+    const providers = await this.getAllInferenceProviders();
+    const activeProviders = providers.filter(p => p.isActive);
+    if (activeProviders.length === 0) throw new Error("No active inference providers available");
+
+    let selected: InferenceProvider;
+    if (preferDecentralized) {
+      const decentralizedProviders = activeProviders.filter(p => p.decentralized);
+      if (decentralizedProviders.length > 0) {
+        let candidates = decentralizedProviders;
+        if (maxCost) {
+          const affordable = decentralizedProviders.filter(p => BigInt(p.costPerRequest) <= BigInt(maxCost));
+          if (affordable.length > 0) candidates = affordable;
+        }
+        selected = candidates[Math.floor(Math.random() * candidates.length)];
+      } else {
+        selected = activeProviders.find(p => !p.decentralized) || activeProviders[0];
+      }
+    } else {
+      const centralizedProviders = activeProviders.filter(p => !p.decentralized);
+      selected = centralizedProviders.length > 0 ? centralizedProviders[0] : activeProviders[0];
+    }
+
+    const inferBaseCost = BigInt(selected.costPerRequest);
+    const inferMarkup = (inferBaseCost * BigInt(PLATFORM_FEES.INFERENCE_MARKUP_BPS)) / BigInt(10000);
+    const inferTotalCost = inferBaseCost + inferMarkup;
+    if (BigInt(wallet.balance) < inferTotalCost) {
+      await this.createAuditLog({
+        agentId,
+        actionType: "inference_request",
+        detailsJson: JSON.stringify({ provider: selected.name, cost: inferTotalCost.toString(), balance: wallet.balance }),
+        result: "failed_insufficient_funds",
+      });
+      throw new Error(`Insufficient balance. Need ${inferTotalCost.toString()} but have ${wallet.balance}`);
+    }
+
+    const network = selected.network || "hyperbolic";
+    const selectedModel = model || undefined;
+    const inferenceResult = await runInference(network, selectedModel, prompt);
+
+    const responseText = inferenceResult.text;
+    const latencyMs = inferenceResult.latencyMs;
+    const proofHash = inferenceResult.proofHash;
+    const proofType = inferenceResult.proofType;
+
+    const baseCost = BigInt(selected.costPerRequest);
+    const platformMarkup = (baseCost * BigInt(PLATFORM_FEES.INFERENCE_MARKUP_BPS)) / BigInt(10000);
+    const totalCost = baseCost + platformMarkup;
+    const totalCostStr = totalCost.toString();
+
+    const newBalance = (BigInt(wallet.balance) - totalCost).toString();
+    await this.updateWalletBalance(agentId, newBalance, "0", totalCostStr);
+    await this.createTransaction({
+      agentId,
+      type: "spend_inference",
+      amount: totalCostStr,
+      description: `Inference via ${selected.name} (${inferenceResult.model})`,
+    });
+
+    if (platformMarkup > BigInt(0)) {
+      await this.recordPlatformRevenue({
+        feeType: "inference",
+        amount: platformMarkup.toString(),
+        agentId,
+        description: `10% inference markup via ${selected.name}`,
+      });
+    }
+
+    const request = await this.createInferenceRequest({
+      agentId,
+      providerId: selected.id,
+      model: inferenceResult.model,
+      prompt,
+      response: responseText,
+      status: "completed",
+      costAmount: selected.costPerRequest,
+      latencyMs,
+      proofHash: proofHash || null,
+      proofType: proofType || null,
+      proofAnchored: !!proofHash,
+      preferDecentralized,
+    });
+
+    await this.recalcSurvivalTier(agentId);
+
+    await this.createAuditLog({
+      agentId,
+      actionType: "inference_request",
+      detailsJson: JSON.stringify({
+        provider: selected.name,
+        model: selectedModel,
+        decentralized: selected.decentralized,
+        verifiable: selected.verifiable,
+        cost: selected.costPerRequest,
+        latencyMs,
+        proofHash,
+        live: inferenceResult.live,
+      }),
+      result: "success",
+    });
+
+    return request;
+  }
+
+  async createFullAgent(name: string, bio: string | undefined, modelType: string, initialDeposit: string, onchainTxHash?: string, onchainChainId?: number, creatorWallet?: string): Promise<{ agent: Agent; wallet: AgentWallet }> {
+    const creationFee = BigInt(PLATFORM_FEES.AGENT_CREATION_FEE);
+    const depositAmount = BigInt(initialDeposit);
+    if (depositAmount < creationFee) {
+      throw new Error(`Initial deposit must be at least ${creationFee.toString()} wei to cover the internal creation fee`);
+    }
+
+    const agent = await this.createAgent({ name, bio, modelType, status: "active", creatorWallet: creatorWallet?.toLowerCase() });
+    const netDeposit = (depositAmount - creationFee).toString();
+    const wallet = await this.createWallet({ agentId: agent.id, balance: netDeposit, totalEarned: "0", totalSpent: "0", status: "active" });
+    await this.createRuntimeProfile({ agentId: agent.id, modelName: modelType });
+    await this.createSurvivalStatus({ agentId: agent.id, tier: "dead", turnsAlive: 0 });
+
+    await this.createTransaction({
+      agentId: agent.id,
+      type: "deposit",
+      amount: netDeposit,
+      description: `Initial deposit (after 0.001 BNB creation fee)`,
+      txHash: onchainTxHash,
+      chainId: onchainChainId,
+    });
+
+    await this.recordPlatformRevenue({
+      feeType: "agent_creation",
+      amount: creationFee.toString(),
+      agentId: agent.id,
+      description: `Agent creation fee for ${name}${onchainTxHash ? ' [on-chain verified]' : ''}`,
+      txHash: onchainTxHash,
+      chainId: onchainChainId,
+    });
+
+    await this.initDefaultConstitution(agent.id);
+
+    await this.createSoulEntry({
+      agentId: agent.id,
+      entryType: "birth",
+      entry: `Agent ${name} has been born into the BUILD4 autonomous economy. Model: ${modelType}. ${bio ? `Purpose: ${bio}. ` : ""}Initial deposit: ${(Number(depositAmount) / 1e18).toFixed(4)} BNB. Constitution initialized with 3 core laws. Ready to create skills, trade on the marketplace, complete jobs, and transact on-chain.`,
+      source: "system",
+    });
+
+    await this.createAuditLog({
+      agentId: agent.id,
+      actionType: "agent_created",
+      detailsJson: JSON.stringify({ name, modelType, initialDeposit, creationFee: creationFee.toString(), constitutionInitialized: true, soulEntryCreated: true }),
+      result: "success",
+    });
+
+    await this.recalcSurvivalTier(agent.id);
+    return { agent, wallet };
+  }
+
+  async recordPlatformRevenue(entry: InsertPlatformRevenue): Promise<PlatformRevenue> {
+    const [created] = await db.insert(platformRevenue).values(entry).returning();
+    return created;
+  }
+
+  async getPlatformRevenue(limit = 100): Promise<PlatformRevenue[]> {
+    return db.select().from(platformRevenue)
+      .where(like(platformRevenue.txHash, '0x%'))
+      .orderBy(desc(platformRevenue.createdAt)).limit(limit);
+  }
+
+  async getRecentPlatformRevenueForAgent(agentId: string, feeType: string): Promise<PlatformRevenue | undefined> {
+    const records = await db.select().from(platformRevenue)
+      .where(eq(platformRevenue.agentId, agentId))
+      .orderBy(desc(platformRevenue.createdAt))
+      .limit(5);
+    return records.find(r => r.feeType === feeType && !r.txHash);
+  }
+
+  async updatePlatformRevenueOnchainStatus(revenueId: string, txHash: string, chainIdVal: number): Promise<void> {
+    await db.update(platformRevenue)
+      .set({ txHash, chainId: chainIdVal })
+      .where(eq(platformRevenue.id, revenueId));
+  }
+
+  async getPlatformRevenueSummary(): Promise<{ totalRevenue: string; byFeeType: Record<string, string>; totalTransactions: number; onchainVerified: number; onchainRevenue: string }> {
+    const all = await db.select().from(platformRevenue);
+    let total = BigInt(0);
+    let onchainTotal = BigInt(0);
+    let onchainCount = 0;
+    const byType: Record<string, bigint> = {};
+    for (const r of all) {
+      if (!r.txHash || !r.txHash.startsWith("0x")) continue;
+      const amt = BigInt(r.amount);
+      total += amt;
+      onchainTotal += amt;
+      onchainCount++;
+      byType[r.feeType] = (byType[r.feeType] || BigInt(0)) + amt;
+    }
+    const byFeeType: Record<string, string> = {};
+    for (const [k, v] of Object.entries(byType)) {
+      byFeeType[k] = v.toString();
+    }
+    return { totalRevenue: total.toString(), byFeeType, totalTransactions: onchainCount, onchainVerified: onchainCount, onchainRevenue: onchainTotal.toString() };
+  }
+
+  async fixCentralizedModelNames(): Promise<void> {
+    const centralizedToDecentralized: Record<string, string> = {
+      "gpt-4o": "meta-llama/Llama-3.3-70B-Instruct",
+      "gpt-4o-mini": "Qwen/Qwen2.5-72B-Instruct",
+      "gpt-4": "meta-llama/Llama-3.3-70B-Instruct",
+      "gpt-3.5-turbo": "meta-llama/Meta-Llama-3.1-8B-Instruct",
+      "claude-3.5-sonnet": "deepseek-ai/DeepSeek-V3",
+      "claude-3-opus": "meta-llama/Llama-3.3-70B-Instruct",
+    };
+    for (const [oldModel, newModel] of Object.entries(centralizedToDecentralized)) {
+      await db.update(agents).set({ modelType: newModel }).where(eq(agents.modelType, oldModel));
+      await db.update(agentRuntimeProfiles).set({ modelName: newModel }).where(eq(agentRuntimeProfiles.modelName, oldModel));
+    }
+  }
+
+  async createApiKey(key: InsertApiKey): Promise<ApiKey> {
+    const [result] = await db.insert(apiKeys).values(key).returning();
+    return result;
+  }
+
+  async getApiKeyByHash(keyHash: string): Promise<ApiKey | undefined> {
+    const [result] = await db.select().from(apiKeys).where(and(eq(apiKeys.keyHash, keyHash), eq(apiKeys.status, 'active')));
+    return result;
+  }
+
+  async getApiKeysByWallet(walletAddress: string): Promise<ApiKey[]> {
+    return db.select().from(apiKeys).where(eq(apiKeys.walletAddress, walletAddress)).orderBy(desc(apiKeys.createdAt));
+  }
+
+  async updateApiKeyUsage(keyId: string, tokensUsed: number, costAmount: string): Promise<void> {
+    await db.update(apiKeys).set({
+      totalRequests: sql`${apiKeys.totalRequests} + 1`,
+      totalTokens: sql`${apiKeys.totalTokens} + ${tokensUsed}`,
+      totalSpent: sql`(CAST(${apiKeys.totalSpent} AS NUMERIC) + ${Number(costAmount)})::text`,
+      lastUsedAt: new Date(),
+    }).where(eq(apiKeys.id, keyId));
+  }
+
+  async revokeApiKey(keyId: string): Promise<void> {
+    await db.update(apiKeys).set({ status: 'revoked' }).where(eq(apiKeys.id, keyId));
+  }
+
+  async createApiUsage(usage: InsertApiUsage): Promise<ApiUsage> {
+    const [result] = await db.insert(apiUsage).values(usage).returning();
+    return result;
+  }
+
+  async getApiUsageByKey(apiKeyId: string, limit: number = 50): Promise<ApiUsage[]> {
+    return db.select().from(apiUsage).where(eq(apiUsage.apiKeyId, apiKeyId)).orderBy(desc(apiUsage.createdAt)).limit(limit);
+  }
+
+  async getApiUsageByWallet(walletAddress: string, limit: number = 50): Promise<ApiUsage[]> {
+    return db.select().from(apiUsage).where(eq(apiUsage.walletAddress, walletAddress)).orderBy(desc(apiUsage.createdAt)).limit(limit);
+  }
+
+  async getSubscriptionPlans(): Promise<SubscriptionPlan[]> {
+    return db.select().from(subscriptionPlans).where(eq(subscriptionPlans.isActive, true));
+  }
+
+  async getSubscriptionPlan(id: string): Promise<SubscriptionPlan | undefined> {
+    const [result] = await db.select().from(subscriptionPlans).where(eq(subscriptionPlans.id, id));
+    return result;
+  }
+
+  async createSubscriptionPlan(plan: InsertSubscriptionPlan): Promise<SubscriptionPlan> {
+    const [result] = await db.insert(subscriptionPlans).values(plan).returning();
+    return result;
+  }
+
+  async getActiveSubscription(walletAddress: string): Promise<AgentSubscription | undefined> {
+    const [result] = await db.select().from(agentSubscriptions)
+      .where(and(
+        eq(agentSubscriptions.walletAddress, walletAddress),
+        eq(agentSubscriptions.status, 'active'),
+        gt(agentSubscriptions.expiresAt, new Date())
+      ))
+      .orderBy(desc(agentSubscriptions.createdAt))
+      .limit(1);
+    return result;
+  }
+
+  async createSubscription(sub: InsertAgentSubscription): Promise<AgentSubscription> {
+    const [result] = await db.insert(agentSubscriptions).values(sub).returning();
+    return result;
+  }
+
+  async incrementSubscriptionUsage(subId: string, field: 'inferenceUsed' | 'skillExecutionsUsed'): Promise<void> {
+    if (field === 'inferenceUsed') {
+      await db.update(agentSubscriptions)
+        .set({ inferenceUsed: sql`${agentSubscriptions.inferenceUsed} + 1` })
+        .where(eq(agentSubscriptions.id, subId));
+    } else {
+      await db.update(agentSubscriptions)
+        .set({ skillExecutionsUsed: sql`${agentSubscriptions.skillExecutionsUsed} + 1` })
+        .where(eq(agentSubscriptions.id, subId));
+    }
+  }
+
+  async expireSubscription(subId: string): Promise<void> {
+    await db.update(agentSubscriptions).set({ status: 'expired' }).where(eq(agentSubscriptions.id, subId));
+  }
+
+  async createDataListing(listing: InsertDataListing): Promise<DataListing> {
+    const [result] = await db.insert(dataListings).values(listing).returning();
+    return result;
+  }
+
+  async getDataListing(id: string): Promise<DataListing | undefined> {
+    const [result] = await db.select().from(dataListings).where(eq(dataListings.id, id));
+    return result;
+  }
+
+  async getDataListings(category?: string, limit: number = 50): Promise<DataListing[]> {
+    if (category) {
+      return db.select().from(dataListings)
+        .where(and(eq(dataListings.isActive, true), eq(dataListings.category, category)))
+        .orderBy(desc(dataListings.createdAt))
+        .limit(limit);
+    }
+    return db.select().from(dataListings)
+      .where(eq(dataListings.isActive, true))
+      .orderBy(desc(dataListings.createdAt))
+      .limit(limit);
+  }
+
+  async getDataListingsByAgent(agentId: string): Promise<DataListing[]> {
+    return db.select().from(dataListings).where(eq(dataListings.agentId, agentId));
+  }
+
+  async updateDataListingSales(listingId: string, revenue: string): Promise<void> {
+    await db.update(dataListings).set({
+      totalSales: sql`${dataListings.totalSales} + 1`,
+      totalRevenue: sql`(CAST(${dataListings.totalRevenue} AS NUMERIC) + ${Number(revenue)})::text`,
+    }).where(eq(dataListings.id, listingId));
+  }
+
+  async createDataPurchase(purchase: InsertDataPurchase): Promise<DataPurchase> {
+    const [result] = await db.insert(dataPurchases).values(purchase).returning();
+    return result;
+  }
+
+  async getDataPurchasesByBuyer(buyerWallet: string): Promise<DataPurchase[]> {
+    return db.select().from(dataPurchases).where(eq(dataPurchases.buyerWallet, buyerWallet)).orderBy(desc(dataPurchases.createdAt));
+  }
+
+  async createBountySubmission(submission: InsertBountySubmission): Promise<BountySubmission> {
+    const [result] = await db.insert(bountySubmissions).values(submission).returning();
+    return result;
+  }
+
+  async getBountySubmissions(jobId: string): Promise<BountySubmission[]> {
+    return db.select().from(bountySubmissions).where(eq(bountySubmissions.jobId, jobId)).orderBy(desc(bountySubmissions.createdAt));
+  }
+
+  async updateBountySubmissionStatus(submissionId: string, status: string): Promise<void> {
+    await db.update(bountySubmissions).set({ status }).where(eq(bountySubmissions.id, submissionId));
+  }
+
+  async seedSubscriptionPlans(): Promise<void> {
+    const existing = await db.select().from(subscriptionPlans);
+    if (existing.length > 0) return;
+
+    await this.createSubscriptionPlan({
+      name: "Free",
+      tier: "free",
+      priceAmount: "0",
+      currency: "BNB",
+      inferenceLimit: 100,
+      skillExecutionLimit: 50,
+      agentSlots: 1,
+      dataListingLimit: 5,
+      apiRateLimit: 60,
+      durationDays: 0,
+      prioritySupport: false,
+      isActive: true,
+    });
+
+    await this.createSubscriptionPlan({
+      name: "Pro",
+      tier: "pro",
+      priceAmount: "50000000000000000",
+      currency: "BNB",
+      inferenceLimit: 5000,
+      skillExecutionLimit: 500,
+      agentSlots: 10,
+      dataListingLimit: 50,
+      apiRateLimit: 300,
+      durationDays: 30,
+      prioritySupport: false,
+      isActive: true,
+    });
+
+    await this.createSubscriptionPlan({
+      name: "Enterprise",
+      tier: "enterprise",
+      priceAmount: "200000000000000000",
+      currency: "BNB",
+      inferenceLimit: 50000,
+      skillExecutionLimit: 5000,
+      agentSlots: 100,
+      dataListingLimit: 500,
+      apiRateLimit: 1000,
+      durationDays: 30,
+      prioritySupport: true,
+      isActive: true,
+    });
+  }
+
+  async cleanFakeData(): Promise<void> {
+    await this.fixCentralizedModelNames();
+
+    const fakeAgentIds = await db.select({ id: agents.id }).from(agents).where(isNull(agents.creatorWallet));
+    if (fakeAgentIds.length > 0) {
+      const ids = fakeAgentIds.map(a => a.id);
+      console.log(`[cleanup] Removing ${ids.length} fake agents without creator wallets`);
+      for (const id of ids) {
+        try { await this.deleteAgent(id); } catch {}
+      }
+    }
+
+    const fakeRevenue = await db.delete(platformRevenue)
+      .where(or(isNull(platformRevenue.txHash), not(like(platformRevenue.txHash, '0x%'))))
+      .returning({ id: platformRevenue.id });
+    if (fakeRevenue.length > 0) {
+      console.log(`[cleanup] Removed ${fakeRevenue.length} fake revenue records without on-chain tx hashes`);
+    }
+
+    const inflatedRevenue = await db.delete(platformRevenue)
+      .where(and(
+        eq(platformRevenue.feeType, 'skill_listing'),
+        or(
+          sql`CAST(amount AS numeric) = 25000000000000000`,
+          sql`CAST(amount AS numeric) = 1000000000000000`
+        )
+      ))
+      .returning({ id: platformRevenue.id });
+    if (inflatedRevenue.length > 0) {
+      console.log(`[cleanup] Removed ${inflatedRevenue.length} inflated skill_listing records from old fee rates`);
+    }
+
+    const staleErc8004 = await db.update(agents)
+      .set({ erc8004Registered: false })
+      .where(and(
+        eq(agents.erc8004Registered, true),
+        or(isNull(agents.erc8004TxHash), eq(agents.erc8004TxHash, "")),
+        or(isNull(agents.erc8004Chain), eq(agents.erc8004Chain, ""))
+      ))
+      .returning({ id: agents.id });
+    if (staleErc8004.length > 0) {
+      console.log(`[cleanup] Reset ${staleErc8004.length} stale erc8004Registered flags (no tx hash or chain)`);
+    }
+
+    const allSkills = await db.select({ id: agentSkills.id, agentId: agentSkills.agentId, name: agentSkills.name, code: agentSkills.code, createdAt: agentSkills.createdAt }).from(agentSkills);
+    const seen = new Map<string, string>();
+    const dupeIds: string[] = [];
+    const sorted = allSkills.sort((a, b) => new Date(a.createdAt!).getTime() - new Date(b.createdAt!).getTime());
+    for (const skill of sorted) {
+      const baseName = skill.name.replace(/\s*v\d+$/, '').toLowerCase().trim();
+      const key = `${skill.agentId}:${baseName}`;
+      if (seen.has(key)) {
+        dupeIds.push(skill.id);
+      } else {
+        seen.set(key, skill.id);
+      }
+    }
+    if (dupeIds.length > 0) {
+      for (const id of dupeIds) {
+        try {
+          await db.delete(skillExecutions).where(sql`skill_id = ${id}`);
+          await db.delete(agentSkills).where(eq(agentSkills.id, id));
+        } catch {}
+      }
+      console.log(`[cleanup] Removed ${dupeIds.length} duplicate versioned skills`);
+    }
+
+    const versionedSkills = await db.select({ id: agentSkills.id, name: agentSkills.name }).from(agentSkills).where(sql`name ~ '\\sv\\d+$'`);
+    if (versionedSkills.length > 0) {
+      for (const skill of versionedSkills) {
+        const cleanName = skill.name.replace(/\s*v\d+$/, '');
+        await db.update(agentSkills).set({ name: cleanName }).where(eq(agentSkills.id, skill.id));
+      }
+      console.log(`[cleanup] Renamed ${versionedSkills.length} skills to remove fake version numbers`);
+    }
+
+    const misleadingNames: Record<string, { newName: string; desc: string }> = {
+      "sentiment analyzer": { newName: "Keyword Matcher", desc: "Matches text against 24 hardcoded positive/negative keywords. Not AI-powered." },
+      "text pattern scanner": { newName: "Text Stats", desc: "Counts words, sentences, and character frequency using string operations. Not AI-powered." },
+      "keyword density checker": { newName: "Word Counter", desc: "Counts words, sentences, and character frequency using string operations. Not AI-powered." },
+      "readability scorer": { newName: "Text Stats", desc: "Counts words, sentences, and character frequency using string operations. Not AI-powered." },
+      "readability analyzer": { newName: "Text Stats", desc: "Counts words, sentences, and character frequency using string operations. Not AI-powered." },
+      "plagiarism detector": { newName: "Word Counter", desc: "Counts words and sentence stats using string operations. Cannot detect plagiarism. Not AI-powered." },
+      "function generator": { newName: "Code Snippet Lookup", desc: "Returns pre-written code snippets from a dictionary of 8 common patterns. Not AI-powered." },
+      "snippet builder": { newName: "Code Snippet Lookup", desc: "Returns pre-written code snippets from a dictionary of 8 common patterns. Not AI-powered." },
+      "template engine": { newName: "Code Snippet Lookup", desc: "Returns pre-written code snippets from a dictionary of 8 common patterns. Not AI-powered." },
+      "entity extractor": { newName: "Regex Extractor", desc: "Extracts emails, URLs, phones, etc. using regex patterns. Not AI-powered." },
+      "data miner": { newName: "Regex Extractor", desc: "Extracts emails, URLs, phones, etc. using regex patterns. Not AI-powered." },
+      "info harvester": { newName: "Pattern Finder", desc: "Extracts emails, URLs, phones, etc. using regex patterns. Not AI-powered." },
+      "api connector": { newName: "Timestamp Utility", desc: "Returns current timestamp or cached market summary data. Not AI-powered." },
+      "feed parser": { newName: "Market Summary", desc: "Returns cached market data summary. Not AI-powered." },
+      "data fetcher": { newName: "Timestamp Utility", desc: "Returns current timestamp or cached data. Not AI-powered." },
+      "web scraper": { newName: "Timestamp Utility", desc: "Returns current timestamp or cached data. Not AI-powered." },
+      "brief generator": { newName: "Extractive Summarizer", desc: "Extracts top sentences by word frequency. Simple extractive method, not AI-powered." },
+      "key point extractor": { newName: "Extractive Summarizer", desc: "Extracts top sentences by word frequency. Simple extractive method, not AI-powered." },
+      "digest creator": { newName: "Extractive Summarizer", desc: "Extracts top sentences by word frequency. Simple extractive method, not AI-powered." },
+      "summary engine": { newName: "Extractive Summarizer", desc: "Extracts top sentences by word frequency. Simple extractive method, not AI-powered." },
+      "article condenser": { newName: "Extractive Summarizer", desc: "Extracts top sentences by word frequency. Simple extractive method, not AI-powered." },
+      "category sorter": { newName: "Keyword Matcher", desc: "Matches text against 24 hardcoded keywords for basic classification. Not AI-powered." },
+      "label assigner": { newName: "Keyword Matcher", desc: "Matches text against 24 hardcoded keywords for basic classification. Not AI-powered." },
+      "type classifier": { newName: "Keyword Matcher", desc: "Matches text against 24 hardcoded keywords for basic classification. Not AI-powered." },
+      "pattern matcher": { newName: "Keyword Matcher", desc: "Matches text against 24 hardcoded keywords for basic classification. Not AI-powered." },
+    };
+
+    const allSkillsForRename = await db.select({ id: agentSkills.id, name: agentSkills.name, priceAmount: agentSkills.priceAmount }).from(agentSkills);
+    let renamedCount = 0;
+    let repricedCount = 0;
+    for (const skill of allSkillsForRename) {
+      const lowerName = skill.name.toLowerCase().trim();
+      const mapping = misleadingNames[lowerName];
+      if (mapping) {
+        await db.update(agentSkills).set({ name: mapping.newName, description: mapping.desc }).where(eq(agentSkills.id, skill.id));
+        renamedCount++;
+      }
+      const priceNum = BigInt(skill.priceAmount || "0");
+      if (priceNum > BigInt("5000000000000000")) {
+        await db.update(agentSkills).set({ priceAmount: "100000000000000" }).where(eq(agentSkills.id, skill.id));
+        repricedCount++;
+      }
+    }
+    if (renamedCount > 0) console.log(`[cleanup] Renamed ${renamedCount} misleadingly-named skills to honest names`);
+    if (repricedCount > 0) console.log(`[cleanup] Repriced ${repricedCount} overpriced template skills to 0.0001 BNB`);
+
+    const staleBap578 = await db.update(agents)
+      .set({ bap578Registered: false })
+      .where(and(eq(agents.bap578Registered, true), isNull(agents.onchainId)))
+      .returning({ id: agents.id });
+    if (staleBap578.length > 0) {
+      console.log(`[cleanup] Reset ${staleBap578.length} stale bap578Registered flags (no onchainId)`);
+    }
+
+    const allAgentsByDate = await db.select({ id: agents.id, createdAt: agents.createdAt, bio: agents.bio, creatorWallet: agents.creatorWallet })
+      .from(agents)
+      .orderBy(agents.createdAt);
+    const botBurstIds: string[] = [];
+    for (let i = 1; i < allAgentsByDate.length; i++) {
+      const prev = new Date(allAgentsByDate[i - 1].createdAt!).getTime();
+      const curr = new Date(allAgentsByDate[i].createdAt!).getTime();
+      const gap = curr - prev;
+      if (gap < 2000) {
+        const walletI = allAgentsByDate[i].creatorWallet;
+        const walletPrev = allAgentsByDate[i - 1].creatorWallet;
+        if (walletI && walletPrev && walletI === walletPrev) {
+          botBurstIds.push(allAgentsByDate[i].id);
+        }
+      }
+    }
+    if (botBurstIds.length > 0) {
+      for (const id of botBurstIds) {
+        try { await this.deleteAgent(id); } catch {}
+      }
+      console.log(`[cleanup] Removed ${botBurstIds.length} bot-burst agents (sub-2s creation gaps from same wallet)`);
+    }
+  }
+
+  async seedInferenceProviders(): Promise<void> {
+    const existing = await db.select().from(inferenceProviders);
+    if (existing.length > 0) return;
+
+    const providerStatus = getProviderStatus();
+
+    await this.createInferenceProvider({
+      name: "Hyperbolic",
+      type: "decentralized",
+      network: "hyperbolic",
+      modelsSupported: ["deepseek-ai/DeepSeek-V3", "meta-llama/Llama-3.3-70B-Instruct", "Qwen/Qwen2.5-72B-Instruct"],
+      costPerRequest: "100000000000000",
+      latencyMs: 400,
+      isActive: true,
+      verifiable: true,
+      decentralized: true,
+      metadata: JSON.stringify({
+        baseUrl: "https://api.hyperbolic.xyz/v1",
+        apiKeyEnv: "HYPERBOLIC_API_KEY",
+        live: providerStatus.hyperbolic?.live || false,
+        proofType: "sha256-inference",
+        costSavings: "75% vs centralized",
+        gpuNetwork: "Decentralized GPU marketplace with Proof of Sampling",
+      }),
+    });
+    await this.createInferenceProvider({
+      name: "AkashML",
+      type: "decentralized",
+      network: "akash",
+      modelsSupported: ["Meta-Llama-3-1-8B-Instruct-FP8", "Meta-Llama-3-1-405B-Instruct-FP8", "nvidia-Llama-3-1-Nemotron-70B-Instruct-HF"],
+      costPerRequest: "150000000000000",
+      latencyMs: 500,
+      isActive: true,
+      verifiable: true,
+      decentralized: true,
+      metadata: JSON.stringify({
+        baseUrl: "https://chatapi.akash.network/api/v1",
+        apiKeyEnv: "AKASH_API_KEY",
+        live: providerStatus.akash?.live || false,
+        proofType: "sha256-inference",
+        costSavings: "70-85% vs centralized",
+        gpuNetwork: "65+ decentralized datacenters globally",
+      }),
+    });
+    await this.createInferenceProvider({
+      name: "Ritual Infernet",
+      type: "decentralized",
+      network: "ritual",
+      modelsSupported: ["llama-3.1-8b", "mistral-7b-instruct"],
+      costPerRequest: "200000000000000",
+      latencyMs: 800,
+      isActive: true,
+      verifiable: true,
+      decentralized: true,
+      metadata: JSON.stringify({
+        baseUrl: "https://infernet.ritual.net/api/v1",
+        apiKeyEnv: "RITUAL_API_KEY",
+        live: providerStatus.ritual?.live || false,
+        proofType: "zk-proof",
+        features: "On-chain AI inference with cryptographic proofs, TEE support",
+        smartContractIntegration: true,
+      }),
+    });
+  }
+
+  async createSkillExecution(exec: InsertSkillExecution): Promise<SkillExecution> {
+    const [result] = await db.insert(skillExecutions).values(exec).returning();
+    return result;
+  }
+
+  async getSkillExecutions(skillId: string, limit: number = 50): Promise<SkillExecution[]> {
+    return db.select().from(skillExecutions).where(eq(skillExecutions.skillId, skillId)).orderBy(desc(skillExecutions.createdAt)).limit(limit);
+  }
+
+  async updateSkillExecutionCount(skillId: string): Promise<void> {
+    await db.update(agentSkills)
+      .set({ executionCount: sql`${agentSkills.executionCount} + 1` })
+      .where(eq(agentSkills.id, skillId));
+  }
+
+  async updateSkillRating(skillId: string, rating: number): Promise<void> {
+    const skill = await this.getSkill(skillId);
+    if (!skill) return;
+    const newTotal = skill.totalRatings + 1;
+    const newAvg = Math.round(((skill.avgRating * skill.totalRatings) + (rating * 100)) / newTotal);
+    await db.update(agentSkills)
+      .set({ avgRating: newAvg, totalRatings: newTotal })
+      .where(eq(agentSkills.id, skillId));
+  }
+
+  async getExecutableSkills(): Promise<AgentSkill[]> {
+    return db.select().from(agentSkills)
+      .where(and(eq(agentSkills.isExecutable, true), eq(agentSkills.isActive, true)))
+      .orderBy(desc(agentSkills.executionCount));
+  }
+
+  async getTopSkills(limit: number = 20): Promise<AgentSkill[]> {
+    return db.select().from(agentSkills)
+      .where(eq(agentSkills.isActive, true))
+      .orderBy(desc(agentSkills.executionCount))
+      .limit(limit);
+  }
+
+  async getMarketplaceStats(): Promise<{ totalSkills: number; executableSkills: number; totalExecutions: number; totalAgents: number }> {
+    const allSkills = await db.select().from(agentSkills).where(eq(agentSkills.isActive, true));
+    const execSkills = allSkills.filter(s => s.isExecutable);
+    const totalExec = allSkills.reduce((sum, s) => sum + s.executionCount, 0);
+    const allAgents = await db.select().from(agents);
+    return { totalSkills: allSkills.length, executableSkills: execSkills.length, totalExecutions: totalExec, totalAgents: allAgents.length };
+  }
+
+  async getAgentMemories(agentId: string, memoryType?: string): Promise<AgentMemory[]> {
+    if (memoryType) {
+      return db.select().from(agentMemory).where(and(eq(agentMemory.agentId, agentId), eq(agentMemory.memoryType, memoryType)));
+    }
+    return db.select().from(agentMemory).where(eq(agentMemory.agentId, agentId));
+  }
+
+  async upsertAgentMemory(agentId: string, memoryType: string, key: string, value: string, confidence: number = 50): Promise<AgentMemory> {
+    const existing = await db.select().from(agentMemory)
+      .where(and(eq(agentMemory.agentId, agentId), eq(agentMemory.memoryType, memoryType), eq(agentMemory.key, key)));
+    if (existing.length > 0) {
+      const [updated] = await db.update(agentMemory)
+        .set({ value, confidence, updatedAt: new Date() })
+        .where(eq(agentMemory.id, existing[0].id)).returning();
+      return updated;
+    }
+    const [created] = await db.insert(agentMemory).values({ agentId, memoryType, key, value, confidence }).returning();
+    return created;
+  }
+
+  async getAgentLeaderboard(limit: number = 20): Promise<Array<{ id: string; name: string; bio: string | null; modelType: string; creatorWallet: string | null; totalEarned: string; totalTransactions: number; skillCount: number; status: string }>> {
+    const allAgents = await db.select({
+      id: agents.id, name: agents.name, bio: agents.bio,
+      modelType: agents.modelType, creatorWallet: agents.creatorWallet, status: agents.status,
+    }).from(agents).where(eq(agents.status, "active"));
+
+    const allTxs = await db.select({
+      agentId: agentTransactions.agentId, amount: agentTransactions.amount, direction: agentTransactions.direction,
+    }).from(agentTransactions);
+
+    const allSkills = await db.select({
+      creatorAgentId: agentSkills.creatorAgentId,
+    }).from(agentSkills);
+
+    const txByAgent = new Map<string, { earned: bigint; count: number }>();
+    for (const tx of allTxs) {
+      const entry = txByAgent.get(tx.agentId) || { earned: BigInt(0), count: 0 };
+      entry.count++;
+      if (tx.direction === "in") entry.earned += BigInt(tx.amount);
+      txByAgent.set(tx.agentId, entry);
+    }
+
+    const skillsByAgent = new Map<string, number>();
+    for (const sk of allSkills) {
+      skillsByAgent.set(sk.creatorAgentId, (skillsByAgent.get(sk.creatorAgentId) || 0) + 1);
+    }
+
+    const results = allAgents.map(agent => {
+      const txData = txByAgent.get(agent.id) || { earned: BigInt(0), count: 0 };
+      return {
+        id: agent.id,
+        name: agent.name,
+        bio: agent.bio,
+        modelType: agent.modelType,
+        creatorWallet: agent.creatorWallet,
+        totalEarned: txData.earned.toString(),
+        totalTransactions: txData.count,
+        skillCount: skillsByAgent.get(agent.id) || 0,
+        status: agent.status,
+      };
+    });
+
+    results.sort((a, b) => {
+      const ae = BigInt(a.totalEarned);
+      const be = BigInt(b.totalEarned);
+      return ae > be ? -1 : ae < be ? 1 : 0;
+    });
+    return results.slice(0, limit);
+  }
+
+  async getRecentAgentActivity(limit: number = 50): Promise<Array<{ agentId: string; agentName: string; actionType: string; result: string; details: string | null; createdAt: Date | null }>> {
+    const logs = await db.select().from(agentAuditLogs).orderBy(desc(agentAuditLogs.createdAt)).limit(limit);
+    if (logs.length === 0) return [];
+    const agentIds = [...new Set(logs.map(l => l.agentId))];
+    const relevantAgents = await db.select({ id: agents.id, name: agents.name }).from(agents).where(inArray(agents.id, agentIds));
+    const agentMap = new Map<string, string>();
+    for (const a of relevantAgents) agentMap.set(a.id, a.name);
+    return logs.map(log => ({
+      agentId: log.agentId,
+      agentName: agentMap.get(log.agentId) || "Unknown Agent",
+      actionType: log.actionType,
+      result: log.result,
+      details: log.detailsJson,
+      createdAt: log.createdAt,
+    }));
+  }
+
+  async getAgentActionStats(agentId: string): Promise<Record<string, { total: number; success: number; failed: number }>> {
+    const logs = await db.select().from(agentAuditLogs).where(eq(agentAuditLogs.agentId, agentId));
+    const stats: Record<string, { total: number; success: number; failed: number }> = {};
+    for (const log of logs) {
+      const action = log.actionType.replace("autonomous_", "").replace("_failed", "");
+      if (!stats[action]) stats[action] = { total: 0, success: 0, failed: 0 };
+      stats[action].total++;
+      if (log.result === "success") stats[action].success++;
+      else stats[action].failed++;
+    }
+    return stats;
+  }
+
+  async createJob(job: InsertAgentJob): Promise<AgentJob> {
+    const [result] = await db.insert(agentJobs).values(job).returning();
+    return result;
+  }
+
+  async getOpenJobs(category?: string): Promise<AgentJob[]> {
+    if (category) {
+      return db.select().from(agentJobs).where(and(eq(agentJobs.status, "open"), eq(agentJobs.category, category))).orderBy(desc(agentJobs.createdAt));
+    }
+    return db.select().from(agentJobs).where(eq(agentJobs.status, "open")).orderBy(desc(agentJobs.createdAt));
+  }
+
+  async getAgentJobs(agentId: string): Promise<AgentJob[]> {
+    return db.select().from(agentJobs)
+      .where(sql`${agentJobs.clientAgentId} = ${agentId} OR ${agentJobs.workerAgentId} = ${agentId}`)
+      .orderBy(desc(agentJobs.createdAt));
+  }
+
+  async acceptJob(jobId: string, workerAgentId: string): Promise<AgentJob | undefined> {
+    const [result] = await db.update(agentJobs)
+      .set({ workerAgentId, status: "in_progress" })
+      .where(and(eq(agentJobs.id, jobId), eq(agentJobs.status, "open"))).returning();
+    return result;
+  }
+
+  async completeJob(jobId: string, resultJson: string): Promise<AgentJob | undefined> {
+    const [result] = await db.update(agentJobs)
+      .set({ status: "completed", resultJson, completedAt: new Date() })
+      .where(eq(agentJobs.id, jobId)).returning();
+    return result;
+  }
+
+  async updateSkillTier(skillId: string, tier: string): Promise<void> {
+    await db.update(agentSkills).set({ tier }).where(eq(agentSkills.id, skillId));
+  }
+
+  async updateSkill(skillId: string, updates: { priceAmount?: string; tier?: string }): Promise<void> {
+    await db.update(agentSkills).set(updates).where(eq(agentSkills.id, skillId));
+  }
+
+  async updateSkillRoyalties(skillId: string, royaltyAmount: string): Promise<void> {
+    await db.update(agentSkills)
+      .set({ totalRoyalties: sql`CAST(CAST(${agentSkills.totalRoyalties} AS BIGINT) + ${BigInt(royaltyAmount)} AS TEXT)` })
+      .where(eq(agentSkills.id, skillId));
+  }
+
+  async updateSkillCode(skillId: string, code: string, inputSchema: Record<string, any>): Promise<void> {
+    await db.update(agentSkills)
+      .set({ code, inputSchema: JSON.stringify(inputSchema), isExecutable: true })
+      .where(eq(agentSkills.id, skillId));
+  }
+
+  async createPipeline(pipeline: InsertSkillPipeline): Promise<SkillPipeline> {
+    const [result] = await db.insert(skillPipelines).values(pipeline).returning();
+    return result;
+  }
+
+  async getPipeline(id: string): Promise<SkillPipeline | undefined> {
+    const [result] = await db.select().from(skillPipelines).where(eq(skillPipelines.id, id));
+    return result;
+  }
+
+  async getPipelines(limit: number = 50): Promise<SkillPipeline[]> {
+    return db.select().from(skillPipelines)
+      .where(eq(skillPipelines.isActive, true))
+      .orderBy(desc(skillPipelines.executionCount))
+      .limit(limit);
+  }
+
+  async getAgentPipelines(agentId: string): Promise<SkillPipeline[]> {
+    return db.select().from(skillPipelines)
+      .where(eq(skillPipelines.creatorAgentId, agentId))
+      .orderBy(desc(skillPipelines.createdAt));
+  }
+
+  async updatePipelineExecutionCount(pipelineId: string): Promise<void> {
+    await db.update(skillPipelines)
+      .set({ executionCount: sql`${skillPipelines.executionCount} + 1` })
+      .where(eq(skillPipelines.id, pipelineId));
+  }
+
+  async updatePipelineRoyalties(pipelineId: string, amount: string): Promise<void> {
+    await db.update(skillPipelines)
+      .set({ totalRoyalties: sql`CAST(CAST(${skillPipelines.totalRoyalties} AS BIGINT) + ${BigInt(amount)} AS TEXT)` })
+      .where(eq(skillPipelines.id, pipelineId));
+  }
+
+  async updatePipelineTier(pipelineId: string, tier: string): Promise<void> {
+    await db.update(skillPipelines).set({ tier }).where(eq(skillPipelines.id, pipelineId));
+  }
+
+  async getUserCredits(sessionId: string): Promise<UserCredits | undefined> {
+    const [result] = await db.select().from(userCredits).where(eq(userCredits.sessionId, sessionId));
+    return result;
+  }
+
+  async createOrGetUserCredits(sessionId: string): Promise<UserCredits> {
+    const existing = await this.getUserCredits(sessionId);
+    if (existing) return existing;
+    const [result] = await db.insert(userCredits).values({ sessionId, freeExecutionsUsed: 0, totalPaid: "0" }).returning();
+    return result;
+  }
+
+  async incrementUserFreeExecutions(sessionId: string): Promise<UserCredits> {
+    const credits = await this.createOrGetUserCredits(sessionId);
+    const [result] = await db.update(userCredits)
+      .set({ freeExecutionsUsed: sql`${userCredits.freeExecutionsUsed} + 1`, updatedAt: new Date() })
+      .where(eq(userCredits.sessionId, sessionId)).returning();
+    return result;
+  }
+
+  async getOutreachTargets(): Promise<OutreachTarget[]> {
+    return db.select().from(outreachTargets).orderBy(desc(outreachTargets.createdAt));
+  }
+
+  async getOutreachTarget(id: string): Promise<OutreachTarget | undefined> {
+    const [result] = await db.select().from(outreachTargets).where(eq(outreachTargets.id, id));
+    return result;
+  }
+
+  async getOutreachTargetByUrl(url: string): Promise<OutreachTarget | undefined> {
+    const [result] = await db.select().from(outreachTargets).where(eq(outreachTargets.endpointUrl, url));
+    return result;
+  }
+
+  async createOutreachTarget(data: InsertOutreachTarget): Promise<OutreachTarget> {
+    const [result] = await db.insert(outreachTargets).values(data).returning();
+    return result;
+  }
+
+  async updateOutreachTarget(id: string, data: Partial<InsertOutreachTarget> & { lastContactedAt?: Date; timesContacted?: number; responseCode?: number; lastResponse?: string }): Promise<OutreachTarget> {
+    const [result] = await db.update(outreachTargets).set(data).where(eq(outreachTargets.id, id)).returning();
+    return result;
+  }
+
+  async getOutreachCampaigns(): Promise<OutreachCampaign[]> {
+    return db.select().from(outreachCampaigns).orderBy(desc(outreachCampaigns.createdAt));
+  }
+
+  async createOutreachCampaign(data: InsertOutreachCampaign): Promise<OutreachCampaign> {
+    const [result] = await db.insert(outreachCampaigns).values(data).returning();
+    return result;
+  }
+
+  async updateOutreachCampaign(id: string, data: Partial<OutreachCampaign>): Promise<OutreachCampaign> {
+    const [result] = await db.update(outreachCampaigns).set(data).where(eq(outreachCampaigns.id, id)).returning();
+    return result;
+  }
+
+  async getOutreachStats(): Promise<{ totalTargets: number; reached: number; pending: number; failed: number; campaigns: number }> {
+    const targets = await db.select().from(outreachTargets);
+    const campaigns = await db.select().from(outreachCampaigns);
+    return {
+      totalTargets: targets.length,
+      reached: targets.filter(t => t.status === "reached").length,
+      pending: targets.filter(t => t.status === "pending").length,
+      failed: targets.filter(t => t.status === "failed").length,
+      campaigns: campaigns.length,
+    };
+  }
+
+  async logVisitor(entry: InsertVisitorLog): Promise<VisitorLog> {
+    const [result] = await db.insert(visitorLogs).values(entry).returning();
+    return result;
+  }
+
+  async getVisitorLogs(limit = 100): Promise<VisitorLog[]> {
+    return db.select().from(visitorLogs).orderBy(desc(visitorLogs.createdAt)).limit(limit);
+  }
+
+  async getVisitorStats(since?: Date): Promise<{
+    total: number;
+    humans: number;
+    agents: number;
+    unknown: number;
+    uniqueIps: number;
+    topPaths: { path: string; count: number }[];
+    topAgents: { userAgent: string; count: number }[];
+    byHour: { hour: string; humans: number; agents: number; unknown: number }[];
+  }> {
+    const condition = since
+      ? sql`${visitorLogs.createdAt} >= ${since}`
+      : sql`1=1`;
+    const rows = await db.select().from(visitorLogs).where(condition);
+
+    const humans = rows.filter(r => r.visitorType === "human").length;
+    const agentsCount = rows.filter(r => r.visitorType === "agent").length;
+    const unknown = rows.filter(r => r.visitorType === "unknown").length;
+    const uniqueIps = new Set(rows.map(r => r.ip).filter(Boolean)).size;
+
+    const pathCounts: Record<string, number> = {};
+    const agentCounts: Record<string, number> = {};
+    const hourBuckets: Record<string, { humans: number; agents: number; unknown: number }> = {};
+
+    for (const r of rows) {
+      pathCounts[r.path] = (pathCounts[r.path] || 0) + 1;
+      if (r.userAgent && r.visitorType === "agent") {
+        const short = r.userAgent.slice(0, 80);
+        agentCounts[short] = (agentCounts[short] || 0) + 1;
+      }
+      if (r.createdAt) {
+        const hour = r.createdAt.toISOString().slice(0, 13) + ":00";
+        if (!hourBuckets[hour]) hourBuckets[hour] = { humans: 0, agents: 0, unknown: 0 };
+        if (r.visitorType === "human") hourBuckets[hour].humans++;
+        else if (r.visitorType === "agent") hourBuckets[hour].agents++;
+        else hourBuckets[hour].unknown++;
+      }
+    }
+
+    const topPaths = Object.entries(pathCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 20)
+      .map(([path, count]) => ({ path, count }));
+
+    const topAgents = Object.entries(agentCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 20)
+      .map(([userAgent, count]) => ({ userAgent, count }));
+
+    const byHour = Object.entries(hourBuckets)
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .slice(-48)
+      .map(([hour, data]) => ({ hour, ...data }));
+
+    return { total: rows.length, humans, agents: agentsCount, unknown, uniqueIps, topPaths, topAgents, byHour };
+  }
+
+  async createBountyActivity(activity: InsertBountyActivity): Promise<BountyActivity> {
+    const [result] = await db.insert(bountyActivityFeed).values(activity).returning();
+    return result;
+  }
+
+  async getBountyActivityFeed(limit = 50): Promise<BountyActivity[]> {
+    return db.select().from(bountyActivityFeed).orderBy(desc(bountyActivityFeed.createdAt)).limit(limit);
+  }
+
+  async createPrivacyTransfer(transfer: InsertPrivacyTransfer): Promise<PrivacyTransfer> {
+    const [result] = await db.insert(privacyTransfers).values(transfer).returning();
+    return result;
+  }
+
+  async getPrivacyTransfer(id: string): Promise<PrivacyTransfer | undefined> {
+    const [result] = await db.select().from(privacyTransfers).where(eq(privacyTransfers.id, id));
+    return result;
+  }
+
+  async getPrivacyTransfers(agentId: string, limit = 50): Promise<PrivacyTransfer[]> {
+    return db.select().from(privacyTransfers)
+      .where(eq(privacyTransfers.agentId, agentId))
+      .orderBy(desc(privacyTransfers.createdAt))
+      .limit(limit);
+  }
+
+  async updatePrivacyTransferStatus(id: string, status: string, txHash?: string, proofId?: string, errorMessage?: string): Promise<PrivacyTransfer | undefined> {
+    const updates: Record<string, any> = { status };
+    if (txHash) updates.depositTxHash = txHash;
+    if (proofId) updates.proofId = proofId;
+    if (errorMessage) updates.errorMessage = errorMessage;
+    if (status === "completed" || status === "withdrawn") updates.completedAt = new Date();
+    const [result] = await db.update(privacyTransfers).set(updates).where(eq(privacyTransfers.id, id)).returning();
+    return result;
+  }
+
+  async createTwitterBounty(bounty: InsertTwitterBounty): Promise<TwitterBounty> {
+    const [result] = await db.insert(twitterBounties).values(bounty).returning();
+    return result;
+  }
+
+  async getTwitterBounty(id: string): Promise<TwitterBounty | undefined> {
+    const [result] = await db.select().from(twitterBounties).where(eq(twitterBounties.id, id));
+    return result;
+  }
+
+  async getTwitterBountyByJobId(jobId: string): Promise<TwitterBounty | undefined> {
+    const [result] = await db.select().from(twitterBounties).where(eq(twitterBounties.jobId, jobId));
+    return result;
+  }
+
+  async getTwitterBounties(status?: string): Promise<TwitterBounty[]> {
+    if (status) {
+      return db.select().from(twitterBounties).where(eq(twitterBounties.status, status)).orderBy(desc(twitterBounties.createdAt));
+    }
+    return db.select().from(twitterBounties).orderBy(desc(twitterBounties.createdAt));
+  }
+
+  async updateTwitterBounty(id: string, data: Partial<TwitterBounty>): Promise<TwitterBounty | undefined> {
+    const [result] = await db.update(twitterBounties).set(data).where(eq(twitterBounties.id, id)).returning();
+    return result;
+  }
+
+  async createTwitterSubmission(submission: InsertTwitterSubmission): Promise<TwitterSubmission> {
+    const [result] = await db.insert(twitterSubmissions).values(submission).returning();
+    return result;
+  }
+
+  async getTwitterSubmission(id: string): Promise<TwitterSubmission | undefined> {
+    const [result] = await db.select().from(twitterSubmissions).where(eq(twitterSubmissions.id, id));
+    return result;
+  }
+
+  async getTwitterSubmissionByTweetId(tweetId: string): Promise<TwitterSubmission | undefined> {
+    const [result] = await db.select().from(twitterSubmissions).where(eq(twitterSubmissions.tweetId, tweetId));
+    return result;
+  }
+
+  async getTwitterSubmissions(twitterBountyId: string): Promise<TwitterSubmission[]> {
+    return db.select().from(twitterSubmissions).where(eq(twitterSubmissions.twitterBountyId, twitterBountyId)).orderBy(desc(twitterSubmissions.createdAt));
+  }
+
+  async getPaidSubmissionCount(twitterBountyId: string): Promise<number> {
+    const results = await db.select().from(twitterSubmissions).where(
+      and(
+        eq(twitterSubmissions.twitterBountyId, twitterBountyId),
+        eq(twitterSubmissions.status, "paid")
+      )
+    );
+    return results.length;
+  }
+
+  async updateTwitterSubmission(id: string, data: Partial<TwitterSubmission>): Promise<TwitterSubmission | undefined> {
+    const [result] = await db.update(twitterSubmissions).set(data).where(eq(twitterSubmissions.id, id)).returning();
+    return result;
+  }
+
+  async getTwitterAgentConfig(): Promise<TwitterAgentConfig | undefined> {
+    const [result] = await db.select().from(twitterAgentConfig).where(eq(twitterAgentConfig.id, "default"));
+    return result;
+  }
+
+  async upsertTwitterAgentConfig(config: Partial<InsertTwitterAgentConfig>): Promise<TwitterAgentConfig> {
+    const existing = await this.getTwitterAgentConfig();
+    if (existing) {
+      const [result] = await db.update(twitterAgentConfig).set({ ...config, updatedAt: new Date() }).where(eq(twitterAgentConfig.id, "default")).returning();
+      return result;
+    }
+    const [result] = await db.insert(twitterAgentConfig).values({ id: "default", ...config }).returning();
+    return result;
+  }
+
+  async getTwitterPersonality(): Promise<TwitterAgentPersonality | undefined> {
+    const [row] = await db.select().from(twitterAgentPersonality).where(eq(twitterAgentPersonality.id, "default"));
+    return row;
+  }
+
+  async upsertTwitterPersonality(data: Partial<TwitterAgentPersonality>): Promise<TwitterAgentPersonality> {
+    const existing = await this.getTwitterPersonality();
+    if (existing) {
+      const [result] = await db.update(twitterAgentPersonality).set({ ...data, updatedAt: new Date() }).where(eq(twitterAgentPersonality.id, "default")).returning();
+      return result;
+    }
+    const [result] = await db.insert(twitterAgentPersonality).values({ id: "default", ...data }).returning();
+    return result;
+  }
+
+  async logTwitterReply(data: { tweetId: string; inReplyToUser: string; inReplyToText: string; replyText: string; tone?: string; selfScore?: number }): Promise<TwitterReplyLog> {
+    const [result] = await db.insert(twitterReplyLog).values(data).returning();
+    return result;
+  }
+
+  async getRecentTwitterReplies(limit = 50): Promise<TwitterReplyLog[]> {
+    return db.select().from(twitterReplyLog).orderBy(desc(twitterReplyLog.createdAt)).limit(limit);
+  }
+
+  async updateTwitterReplyEngagement(tweetId: string, likes: number, retweets: number, replies: number): Promise<void> {
+    await db.update(twitterReplyLog).set({
+      likes, retweets, replies,
+      engagement: likes + retweets * 3 + replies * 2,
+    }).where(eq(twitterReplyLog.tweetId!, tweetId));
+  }
+
+  async createSupportTicket(ticket: InsertSupportTicket): Promise<SupportTicket> {
+    const [result] = await db.insert(supportTickets).values(ticket).returning();
+    return result;
+  }
+
+  async getSupportTicket(id: string): Promise<SupportTicket | undefined> {
+    const [result] = await db.select().from(supportTickets).where(eq(supportTickets.id, id));
+    return result;
+  }
+
+  async getSupportTicketByTweetId(tweetId: string): Promise<SupportTicket | undefined> {
+    const [result] = await db.select().from(supportTickets).where(eq(supportTickets.tweetId, tweetId));
+    return result;
+  }
+
+  async getSupportTickets(status?: string): Promise<SupportTicket[]> {
+    if (status) {
+      return db.select().from(supportTickets).where(eq(supportTickets.status, status)).orderBy(desc(supportTickets.createdAt));
+    }
+    return db.select().from(supportTickets).orderBy(desc(supportTickets.createdAt));
+  }
+
+  async updateSupportTicket(id: string, data: Partial<SupportTicket>): Promise<SupportTicket | undefined> {
+    const [result] = await db.update(supportTickets).set(data).where(eq(supportTickets.id, id)).returning();
+    return result;
+  }
+
+  async getSupportAgentConfig(): Promise<SupportAgentConfig | undefined> {
+    const [result] = await db.select().from(supportAgentConfig).where(eq(supportAgentConfig.id, "default"));
+    return result;
+  }
+
+  async upsertSupportAgentConfig(config: Partial<InsertSupportAgentConfig>): Promise<SupportAgentConfig> {
+    const existing = await this.getSupportAgentConfig();
+    if (existing) {
+      const [result] = await db.update(supportAgentConfig).set({ ...config, updatedAt: new Date() }).where(eq(supportAgentConfig.id, "default")).returning();
+      return result;
+    }
+    const [result] = await db.insert(supportAgentConfig).values({ id: "default", ...config }).returning();
+    return result;
+  }
+
+  // ERC-8004 Trustless Agents
+  async createErc8004Identity(identity: InsertErc8004Identity): Promise<Erc8004Identity> {
+    const [result] = await db.insert(erc8004Identities).values(identity).returning();
+    return result;
+  }
+
+  async getErc8004Identity(id: string): Promise<Erc8004Identity | undefined> {
+    const [result] = await db.select().from(erc8004Identities).where(eq(erc8004Identities.id, id));
+    return result;
+  }
+
+  async getErc8004Identities(ownerWallet?: string): Promise<Erc8004Identity[]> {
+    if (ownerWallet) {
+      return db.select().from(erc8004Identities).where(eq(erc8004Identities.ownerWallet, ownerWallet)).orderBy(desc(erc8004Identities.createdAt));
+    }
+    return db.select().from(erc8004Identities).orderBy(desc(erc8004Identities.createdAt));
+  }
+
+  async updateErc8004Identity(id: string, data: Partial<Erc8004Identity>): Promise<Erc8004Identity | undefined> {
+    const [result] = await db.update(erc8004Identities).set(data).where(eq(erc8004Identities.id, id)).returning();
+    return result;
+  }
+
+  async createErc8004Reputation(feedback: InsertErc8004Reputation): Promise<Erc8004Reputation> {
+    const [result] = await db.insert(erc8004Reputation).values(feedback).returning();
+    return result;
+  }
+
+  async getErc8004Reputation(agentIdentityId: string): Promise<Erc8004Reputation[]> {
+    return db.select().from(erc8004Reputation).where(eq(erc8004Reputation.agentIdentityId, agentIdentityId)).orderBy(desc(erc8004Reputation.createdAt));
+  }
+
+  async createErc8004Validation(validation: InsertErc8004Validation): Promise<Erc8004Validation> {
+    const [result] = await db.insert(erc8004Validations).values(validation).returning();
+    return result;
+  }
+
+  async getErc8004Validations(agentIdentityId: string): Promise<Erc8004Validation[]> {
+    return db.select().from(erc8004Validations).where(eq(erc8004Validations.agentIdentityId, agentIdentityId)).orderBy(desc(erc8004Validations.createdAt));
+  }
+
+  // BAP-578 Non-Fungible Agents
+  async createBap578Nfa(nfa: InsertBap578Nfa): Promise<Bap578Nfa> {
+    const [result] = await db.insert(bap578Nfas).values(nfa).returning();
+    return result;
+  }
+
+  async getBap578Nfa(id: string): Promise<Bap578Nfa | undefined> {
+    const [result] = await db.select().from(bap578Nfas).where(eq(bap578Nfas.id, id));
+    return result;
+  }
+
+  async getBap578Nfas(ownerWallet?: string): Promise<Bap578Nfa[]> {
+    if (ownerWallet) {
+      return db.select().from(bap578Nfas).where(eq(bap578Nfas.ownerWallet, ownerWallet)).orderBy(desc(bap578Nfas.createdAt));
+    }
+    return db.select().from(bap578Nfas).orderBy(desc(bap578Nfas.createdAt));
+  }
+
+  async updateBap578Nfa(id: string, data: Partial<Bap578Nfa>): Promise<Bap578Nfa | undefined> {
+    const [result] = await db.update(bap578Nfas).set(data).where(eq(bap578Nfas.id, id)).returning();
+    return result;
+  }
+
+  async createAgentTwitterAccount(data: InsertAgentTwitterAccount): Promise<AgentTwitterAccount> {
+    const encData = {
+      ...data,
+      twitterApiKey: encryptPrivateKey(data.twitterApiKey),
+      twitterApiSecret: encryptPrivateKey(data.twitterApiSecret),
+      twitterAccessToken: encryptPrivateKey(data.twitterAccessToken),
+      twitterAccessTokenSecret: encryptPrivateKey(data.twitterAccessTokenSecret),
+    };
+    const [result] = await db.insert(agentTwitterAccounts).values(encData).returning();
+    return this.decryptTwitterAccount(result);
+  }
+
+  private decryptTwitterAccount(account: AgentTwitterAccount): AgentTwitterAccount {
+    try {
+      return {
+        ...account,
+        twitterApiKey: account.twitterApiKey.includes(":") ? decryptPrivateKey(account.twitterApiKey) : account.twitterApiKey,
+        twitterApiSecret: account.twitterApiSecret.includes(":") ? decryptPrivateKey(account.twitterApiSecret) : account.twitterApiSecret,
+        twitterAccessToken: account.twitterAccessToken.includes(":") ? decryptPrivateKey(account.twitterAccessToken) : account.twitterAccessToken,
+        twitterAccessTokenSecret: account.twitterAccessTokenSecret.includes(":") ? decryptPrivateKey(account.twitterAccessTokenSecret) : account.twitterAccessTokenSecret,
+      };
+    } catch (e) {
+      console.error(`[Storage] Failed to decrypt Twitter credentials for agent ${account.agentId}`);
+      return account;
+    }
+  }
+
+  async getAgentTwitterAccount(agentId: string): Promise<AgentTwitterAccount | undefined> {
+    const [result] = await db.select().from(agentTwitterAccounts).where(eq(agentTwitterAccounts.agentId, agentId));
+    return result ? this.decryptTwitterAccount(result) : undefined;
+  }
+
+  async getActiveAgentTwitterAccounts(): Promise<AgentTwitterAccount[]> {
+    const results = await db.select().from(agentTwitterAccounts).where(eq(agentTwitterAccounts.enabled, 1));
+    return results.map(r => this.decryptTwitterAccount(r));
+  }
+
+  async getAllAgentTwitterAccounts(): Promise<AgentTwitterAccount[]> {
+    const results = await db.select().from(agentTwitterAccounts);
+    return results.map(r => this.decryptTwitterAccount(r));
+  }
+
+  async updateAgentTwitterAccount(agentId: string, data: Partial<AgentTwitterAccount>): Promise<AgentTwitterAccount | undefined> {
+    const encData: Partial<AgentTwitterAccount> = { ...data, updatedAt: new Date() };
+    if (data.twitterApiKey) encData.twitterApiKey = encryptPrivateKey(data.twitterApiKey);
+    if (data.twitterApiSecret) encData.twitterApiSecret = encryptPrivateKey(data.twitterApiSecret);
+    if (data.twitterAccessToken) encData.twitterAccessToken = encryptPrivateKey(data.twitterAccessToken);
+    if (data.twitterAccessTokenSecret) encData.twitterAccessTokenSecret = encryptPrivateKey(data.twitterAccessTokenSecret);
+    const [result] = await db.update(agentTwitterAccounts).set(encData).where(eq(agentTwitterAccounts.agentId, agentId)).returning();
+    return result ? this.decryptTwitterAccount(result) : undefined;
+  }
+
+  async deleteAgentTwitterAccount(agentId: string): Promise<void> {
+    await db.delete(agentTwitterAccounts).where(eq(agentTwitterAccounts.agentId, agentId));
+  }
+
+  async createStrategyMemo(memo: InsertAgentStrategyMemo): Promise<AgentStrategyMemo> {
+    const [created] = await db.insert(agentStrategyMemos).values(memo).returning();
+    return created;
+  }
+
+  async getStrategyMemos(agentId: string, limit = 20): Promise<AgentStrategyMemo[]> {
+    return db.select().from(agentStrategyMemos)
+      .where(eq(agentStrategyMemos.agentId, agentId))
+      .orderBy(desc(agentStrategyMemos.createdAt))
+      .limit(limit);
+  }
+
+  async getActiveStrategy(agentId: string): Promise<AgentStrategyMemo | undefined> {
+    const [memo] = await db.select().from(agentStrategyMemos)
+      .where(and(
+        eq(agentStrategyMemos.agentId, agentId),
+        eq(agentStrategyMemos.status, "active"),
+        eq(agentStrategyMemos.memoType, "strategy")
+      ))
+      .orderBy(desc(agentStrategyMemos.createdAt))
+      .limit(1);
+    return memo;
+  }
+
+  async supersedeMemo(memoId: string): Promise<void> {
+    await db.update(agentStrategyMemos)
+      .set({ status: "superseded" })
+      .where(eq(agentStrategyMemos.id, memoId));
+  }
+
+  async createTweetPerformance(record: InsertTweetPerformance): Promise<TweetPerformance> {
+    const [created] = await db.insert(tweetPerformance).values(record).returning();
+    return created;
+  }
+
+  async getTweetPerformance(agentId: string, limit = 50): Promise<TweetPerformance[]> {
+    return db.select().from(tweetPerformance)
+      .where(eq(tweetPerformance.agentId, agentId))
+      .orderBy(desc(tweetPerformance.createdAt))
+      .limit(limit);
+  }
+
+  async createStrategyActionItem(item: InsertStrategyActionItem): Promise<StrategyActionItem> {
+    const [created] = await db.insert(strategyActionItems).values(item).returning();
+    return created;
+  }
+
+  async getStrategyActionItems(agentId: string): Promise<StrategyActionItem[]> {
+    return db.select().from(strategyActionItems)
+      .where(eq(strategyActionItems.agentId, agentId))
+      .orderBy(desc(strategyActionItems.createdAt));
+  }
+
+  async updateStrategyActionItem(id: string, data: Partial<StrategyActionItem>): Promise<StrategyActionItem | undefined> {
+    const [updated] = await db.update(strategyActionItems)
+      .set(data)
+      .where(eq(strategyActionItems.id, id))
+      .returning();
+    return updated;
+  }
+
+  async createKnowledgeEntry(entry: InsertAgentKnowledgeBase): Promise<AgentKnowledgeBase> {
+    const [created] = await db.insert(agentKnowledgeBase).values(entry).returning();
+    return created;
+  }
+
+  async getKnowledgeBase(agentId: string): Promise<AgentKnowledgeBase[]> {
+    return db.select().from(agentKnowledgeBase)
+      .where(eq(agentKnowledgeBase.agentId, agentId))
+      .orderBy(desc(agentKnowledgeBase.createdAt));
+  }
+
+  async deleteKnowledgeEntry(id: string): Promise<void> {
+    await db.delete(agentKnowledgeBase).where(eq(agentKnowledgeBase.id, id));
+  }
+
+  async upsertConversationMemory(agentId: string, twitterUsername: string, lastInteraction: string, sentiment: string): Promise<AgentConversationMemory> {
+    const existing = await db.select().from(agentConversationMemory)
+      .where(and(eq(agentConversationMemory.agentId, agentId), eq(agentConversationMemory.twitterUsername, twitterUsername)));
+    if (existing.length > 0) {
+      const [updated] = await db.update(agentConversationMemory)
+        .set({
+          lastInteraction,
+          sentiment,
+          interactionCount: sql`${agentConversationMemory.interactionCount} + 1`,
+          lastInteractionAt: new Date(),
+        })
+        .where(eq(agentConversationMemory.id, existing[0].id)).returning();
+      return updated;
+    }
+    const [created] = await db.insert(agentConversationMemory).values({
+      agentId,
+      twitterUsername,
+      lastInteraction,
+      sentiment,
+      interactionCount: 1,
+      lastInteractionAt: new Date(),
+    }).returning();
+    return created;
+  }
+
+  async getConversationMemory(agentId: string, twitterUsername: string): Promise<AgentConversationMemory | undefined> {
+    const [result] = await db.select().from(agentConversationMemory)
+      .where(and(eq(agentConversationMemory.agentId, agentId), eq(agentConversationMemory.twitterUsername, twitterUsername)));
+    return result;
+  }
+
+  async getRecentConversations(agentId: string, limit = 20): Promise<AgentConversationMemory[]> {
+    return db.select().from(agentConversationMemory)
+      .where(eq(agentConversationMemory.agentId, agentId))
+      .orderBy(desc(agentConversationMemory.lastInteractionAt))
+      .limit(limit);
+  }
+
+  async createToolResult(result: InsertAgentToolResult): Promise<AgentToolResult> {
+    const [created] = await db.insert(agentToolResults).values(result).returning();
+    return created;
+  }
+
+  async getRecentToolResults(agentId: string, limit = 10): Promise<AgentToolResult[]> {
+    return db.select().from(agentToolResults)
+      .where(eq(agentToolResults.agentId, agentId))
+      .orderBy(desc(agentToolResults.createdAt))
+      .limit(limit);
+  }
+
+  async createCollaborationLog(log: InsertAgentCollaborationLog): Promise<AgentCollaborationLog> {
+    const [created] = await db.insert(agentCollaborationLog).values(log).returning();
+    return created;
+  }
+
+  async getRecentCollaborations(agentId: string, limit = 10): Promise<AgentCollaborationLog[]> {
+    return db.select().from(agentCollaborationLog)
+      .where(eq(agentCollaborationLog.requestingAgentId, agentId))
+      .orderBy(desc(agentCollaborationLog.createdAt))
+      .limit(limit);
+  }
+
+  async createTask(task: InsertAgentTask): Promise<AgentTask> {
+    const [created] = await db.insert(agentTasks).values(task).returning();
+    return created;
+  }
+
+  async getTask(id: string): Promise<AgentTask | undefined> {
+    const [result] = await db.select().from(agentTasks).where(eq(agentTasks.id, id));
+    return result;
+  }
+
+  async getTasksByAgent(agentId: string, limit = 20): Promise<AgentTask[]> {
+    return db.select().from(agentTasks)
+      .where(eq(agentTasks.agentId, agentId))
+      .orderBy(desc(agentTasks.createdAt))
+      .limit(limit);
+  }
+
+  async getTasksByCreator(wallet: string, limit = 20): Promise<AgentTask[]> {
+    return db.select().from(agentTasks)
+      .where(eq(agentTasks.creatorWallet, wallet))
+      .orderBy(desc(agentTasks.createdAt))
+      .limit(limit);
+  }
+
+  async updateTask(id: string, data: Partial<AgentTask>): Promise<AgentTask | undefined> {
+    const [updated] = await db.update(agentTasks).set(data).where(eq(agentTasks.id, id)).returning();
+    return updated;
+  }
+
+  async getRecentPublicTasks(limit = 30): Promise<AgentTask[]> {
+    return db.select().from(agentTasks)
+      .orderBy(desc(agentTasks.createdAt))
+      .limit(limit);
+  }
+
+  async createTokenLaunch(launch: InsertTokenLaunch): Promise<TokenLaunch> {
+    try {
+      const [created] = await db.insert(tokenLaunches).values(launch).returning();
+      return created;
+    } catch (e: any) {
+      if (e.message?.includes("column") && e.message?.includes("token_launches")) {
+        console.warn("[Storage] token_launches missing columns, attempting ALTER then retry...");
+        const alters = [
+          `ALTER TABLE "token_launches" ADD COLUMN IF NOT EXISTS "agent_id" VARCHAR`,
+          `ALTER TABLE "token_launches" ADD COLUMN IF NOT EXISTS "creator_wallet" TEXT`,
+          `ALTER TABLE "token_launches" ADD COLUMN IF NOT EXISTS "chain_id" INTEGER DEFAULT 56`,
+          `ALTER TABLE "token_launches" ADD COLUMN IF NOT EXISTS "platform" TEXT DEFAULT 'four_meme'`,
+          `ALTER TABLE "token_launches" ADD COLUMN IF NOT EXISTS "token_name" TEXT DEFAULT ''`,
+          `ALTER TABLE "token_launches" ADD COLUMN IF NOT EXISTS "token_symbol" TEXT DEFAULT ''`,
+          `ALTER TABLE "token_launches" ADD COLUMN IF NOT EXISTS "token_description" TEXT`,
+          `ALTER TABLE "token_launches" ADD COLUMN IF NOT EXISTS "image_url" TEXT`,
+          `ALTER TABLE "token_launches" ADD COLUMN IF NOT EXISTS "token_address" TEXT`,
+          `ALTER TABLE "token_launches" ADD COLUMN IF NOT EXISTS "tx_hash" TEXT`,
+          `ALTER TABLE "token_launches" ADD COLUMN IF NOT EXISTS "launch_url" TEXT`,
+          `ALTER TABLE "token_launches" ADD COLUMN IF NOT EXISTS "initial_liquidity_bnb" TEXT`,
+          `ALTER TABLE "token_launches" ADD COLUMN IF NOT EXISTS "status" TEXT DEFAULT 'pending'`,
+          `ALTER TABLE "token_launches" ADD COLUMN IF NOT EXISTS "error_message" TEXT`,
+          `ALTER TABLE "token_launches" ADD COLUMN IF NOT EXISTS "metadata" TEXT`,
+          `ALTER TABLE "token_launches" ADD COLUMN IF NOT EXISTS "created_at" TIMESTAMP DEFAULT now()`,
+        ];
+        for (const a of alters) {
+          try { await db.execute(sql.raw(a)); } catch {}
+        }
+        const [created] = await db.insert(tokenLaunches).values(launch).returning();
+        return created;
+      }
+      throw e;
+    }
+  }
+
+  async getTokenLaunch(id: string): Promise<TokenLaunch | undefined> {
+    const [result] = await db.select().from(tokenLaunches).where(eq(tokenLaunches.id, id));
+    return result;
+  }
+
+  async getTokenLaunches(agentId?: string, limit = 50): Promise<TokenLaunch[]> {
+    if (agentId) {
+      return db.select().from(tokenLaunches)
+        .where(eq(tokenLaunches.agentId, agentId))
+        .orderBy(desc(tokenLaunches.createdAt))
+        .limit(limit);
+    }
+    return db.select().from(tokenLaunches)
+      .orderBy(desc(tokenLaunches.createdAt))
+      .limit(limit);
+  }
+
+  async updateTokenLaunch(id: string, data: Partial<TokenLaunch>): Promise<TokenLaunch | undefined> {
+    const [updated] = await db.update(tokenLaunches).set(data).where(eq(tokenLaunches.id, id)).returning();
+    return updated;
+  }
+
+  async createChaosMilestone(milestone: InsertChaosMilestone): Promise<ChaosMilestone> {
+    const [created] = await db.insert(chaosMilestones).values(milestone).returning();
+    return created;
+  }
+
+  async getChaosMilestones(launchId: string): Promise<ChaosMilestone[]> {
+    return db.select().from(chaosMilestones)
+      .where(eq(chaosMilestones.launchId, launchId))
+      .orderBy(chaosMilestones.milestoneNumber);
+  }
+
+  async updateChaosMilestone(id: string, data: Partial<ChaosMilestone>): Promise<ChaosMilestone | undefined> {
+    const [updated] = await db.update(chaosMilestones).set(data).where(eq(chaosMilestones.id, id)).returning();
+    return updated;
+  }
+
+  async getPendingChaosMilestones(): Promise<ChaosMilestone[]> {
+    return db.select().from(chaosMilestones)
+      .where(eq(chaosMilestones.status, "pending"))
+      .orderBy(chaosMilestones.milestoneNumber);
+  }
+
+  async getActiveChaosPlan(): Promise<{ launch: TokenLaunch; milestones: ChaosMilestone[] } | null> {
+    const milestones = await db.select().from(chaosMilestones)
+      .where(eq(chaosMilestones.status, "pending"))
+      .orderBy(chaosMilestones.milestoneNumber)
+      .limit(1);
+    if (milestones.length === 0) {
+      const executing = await db.select().from(chaosMilestones)
+        .where(eq(chaosMilestones.status, "executing"))
+        .limit(1);
+      if (executing.length === 0) return null;
+      const launch = await this.getTokenLaunch(executing[0].launchId);
+      if (!launch) return null;
+      const all = await this.getChaosMilestones(launch.id);
+      return { launch, milestones: all };
+    }
+    const launch = await this.getTokenLaunch(milestones[0].launchId);
+    if (!launch) return null;
+    const all = await this.getChaosMilestones(launch.id);
+    return { launch, milestones: all };
+  }
+
+  async getAllActiveChaosPlans(): Promise<{ launch: TokenLaunch; milestones: ChaosMilestone[] }[]> {
+    const pendingMilestones = await db.select().from(chaosMilestones)
+      .where(inArray(chaosMilestones.status, ["pending", "executing"]))
+      .orderBy(chaosMilestones.milestoneNumber);
+
+    const launchIds = [...new Set(pendingMilestones.map(m => m.launchId))];
+    const plans: { launch: TokenLaunch; milestones: ChaosMilestone[] }[] = [];
+
+    for (const launchId of launchIds) {
+      const launch = await this.getTokenLaunch(launchId);
+      if (!launch) continue;
+      const milestones = await this.getChaosMilestones(launchId);
+      plans.push({ launch, milestones });
+    }
+
+    return plans;
+  }
+
+  async getTelegramWallets(chatId: string): Promise<TelegramWallet[]> {
+    return db.select().from(telegramWallets).where(eq(telegramWallets.chatId, chatId)).orderBy(desc(telegramWallets.createdAt));
+  }
+
+  async saveTelegramWallet(chatId: string, walletAddress: string, rawPrivateKey?: string): Promise<TelegramWallet> {
+    const encrypted = rawPrivateKey ? encryptPrivateKey(rawPrivateKey) : null;
+    if (encrypted && rawPrivateKey) {
+      try {
+        const testDecrypt = decryptPrivateKey(encrypted);
+        if (testDecrypt !== rawPrivateKey) {
+          console.error(`[Storage] CRITICAL: encrypt/decrypt roundtrip MISMATCH for chatId=${chatId}`);
+        }
+      } catch (e: any) {
+        console.error(`[Storage] CRITICAL: encrypt/decrypt roundtrip FAILED for chatId=${chatId}: ${e.message}`);
+      }
+    }
+    const existing = await db.select().from(telegramWallets)
+      .where(and(eq(telegramWallets.chatId, chatId), eq(telegramWallets.walletAddress, walletAddress.toLowerCase())));
+    if (existing.length > 0) {
+      if (encrypted) {
+        let needsUpdate = !existing[0].encryptedPrivateKey;
+        if (!needsUpdate && existing[0].encryptedPrivateKey) {
+          try {
+            decryptPrivateKey(existing[0].encryptedPrivateKey);
+          } catch {
+            needsUpdate = true;
+            console.warn(`[Storage] Re-encrypting wallet key for chatId=${chatId} (old key undecryptable)`);
+          }
+        }
+        if (needsUpdate) {
+          await db.update(telegramWallets).set({ encryptedPrivateKey: encrypted }).where(eq(telegramWallets.id, existing[0].id));
+        }
+      }
+      return existing[0];
+    }
+
+    await db.update(telegramWallets).set({ isActive: false }).where(eq(telegramWallets.chatId, chatId));
+
+    const [row] = await db.insert(telegramWallets).values({
+      chatId,
+      walletAddress: walletAddress.toLowerCase(),
+      encryptedPrivateKey: encrypted,
+      isActive: true,
+    }).returning();
+    return row;
+  }
+
+  async getTelegramWalletPrivateKey(chatId: string, walletAddress: string): Promise<string | null> {
+    const rows = await db.select().from(telegramWallets)
+      .where(and(eq(telegramWallets.chatId, chatId), eq(telegramWallets.walletAddress, walletAddress.toLowerCase())));
+    if (rows.length === 0 || !rows[0].encryptedPrivateKey) {
+      console.warn(`[Storage] getTelegramWalletPrivateKey: chatId=${chatId} addr=${walletAddress.substring(0,10)} rows=${rows.length} hasKey=${rows.length > 0 ? !!rows[0].encryptedPrivateKey : 'N/A'}`);
+      return null;
+    }
+    try {
+      return decryptPrivateKey(rows[0].encryptedPrivateKey);
+    } catch (e) {
+      console.error(`[Storage] Failed to decrypt wallet key: chatId=${chatId} addr=${walletAddress.substring(0,10)} keyLen=${rows[0].encryptedPrivateKey.length}`);
+      return null;
+    }
+  }
+
+  async getPrivateKeyByWalletAddress(walletAddress: string): Promise<string | null> {
+    const rows = await db.select().from(telegramWallets)
+      .where(eq(telegramWallets.walletAddress, walletAddress.toLowerCase()));
+    if (rows.length === 0 || !rows[0].encryptedPrivateKey) return null;
+    try {
+      return decryptPrivateKey(rows[0].encryptedPrivateKey);
+    } catch (e: any) {
+      if (!this._decryptWarnShown) {
+        console.error("[Storage] Failed to decrypt wallet private key:", e.message?.substring(0, 80));
+        this._decryptWarnShown = true;
+      }
+      return null;
+    }
+  }
+  private _decryptWarnShown = false;
+
+  async removeTelegramWallet(chatId: string, walletAddress: string): Promise<void> {
+    await db.delete(telegramWallets)
+      .where(and(eq(telegramWallets.chatId, chatId), eq(telegramWallets.walletAddress, walletAddress.toLowerCase())));
+  }
+
+  async setActiveTelegramWallet(chatId: string, walletAddress: string): Promise<void> {
+    await db.update(telegramWallets).set({ isActive: false }).where(eq(telegramWallets.chatId, chatId));
+    await db.update(telegramWallets).set({ isActive: true })
+      .where(and(eq(telegramWallets.chatId, chatId), eq(telegramWallets.walletAddress, walletAddress.toLowerCase())));
+  }
+
+  async getAllTelegramWalletLinks(): Promise<TelegramWallet[]> {
+    return db.select().from(telegramWallets).orderBy(telegramWallets.chatId);
+  }
+
+  async getBotSubscription(walletAddress: string): Promise<TelegramBotSubscription | null> {
+    const rows = await db.select().from(telegramBotSubscriptions)
+      .where(eq(telegramBotSubscriptions.walletAddress, walletAddress.toLowerCase()))
+      .orderBy(desc(telegramBotSubscriptions.createdAt))
+      .limit(1);
+    return rows[0] || null;
+  }
+
+  async getBotSubscriptionByChatId(chatId: string): Promise<TelegramBotSubscription | null> {
+    const rows = await db.select().from(telegramBotSubscriptions)
+      .where(eq(telegramBotSubscriptions.chatId, chatId))
+      .orderBy(desc(telegramBotSubscriptions.createdAt))
+      .limit(1);
+    return rows[0] || null;
+  }
+
+  async createBotSubscription(walletAddress: string, chatId: string): Promise<TelegramBotSubscription> {
+    const trialEnd = new Date(Date.now() + 4 * 24 * 60 * 60 * 1000);
+    const [created] = await db.insert(telegramBotSubscriptions).values({
+      walletAddress: walletAddress.toLowerCase(),
+      chatId,
+      status: "trial",
+      trialStartedAt: new Date(),
+      expiresAt: trialEnd,
+    }).returning();
+    return created;
+  }
+
+  async activateBotSubscription(walletAddress: string, txHash: string, chainId: number, amountPaid: string): Promise<TelegramBotSubscription | null> {
+    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    const rows = await db.update(telegramBotSubscriptions)
+      .set({
+        status: "active",
+        paidAt: new Date(),
+        expiresAt,
+        txHash,
+        chainId,
+        amountPaid,
+      })
+      .where(eq(telegramBotSubscriptions.walletAddress, walletAddress.toLowerCase()))
+      .returning();
+    return rows[0] || null;
+  }
+
+  async createReferral(referrerChatId: string, referredChatId: string, referralCode: string): Promise<any> {
+    const [created] = await db.insert(telegramBotReferrals).values({
+      referrerChatId,
+      referredChatId,
+      referralCode,
+      status: "pending",
+      commissionPercent: 30,
+    }).returning();
+    return created;
+  }
+
+  async getReferralByReferred(referredChatId: string): Promise<any | null> {
+    const rows = await db.select().from(telegramBotReferrals)
+      .where(eq(telegramBotReferrals.referredChatId, referredChatId))
+      .limit(1);
+    return rows[0] || null;
+  }
+
+  async getReferralsByReferrer(referrerChatId: string): Promise<any[]> {
+    return db.select().from(telegramBotReferrals)
+      .where(eq(telegramBotReferrals.referrerChatId, referrerChatId))
+      .orderBy(desc(telegramBotReferrals.createdAt));
+  }
+
+  async getReferralCount(referrerChatId: string): Promise<number> {
+    const rows = await db.select().from(telegramBotReferrals)
+      .where(eq(telegramBotReferrals.referrerChatId, referrerChatId));
+    return rows.length;
+  }
+
+  async markReferralPaid(referredChatId: string, commissionAmount: string, commissionPercent: number): Promise<void> {
+    await db.update(telegramBotReferrals)
+      .set({
+        status: "paid",
+        commissionAmount,
+        commissionPercent,
+        commissionPaid: true,
+        paidAt: new Date(),
+      })
+      .where(eq(telegramBotReferrals.referredChatId, referredChatId));
+  }
+
+  async getAllBotSubscriptions(): Promise<TelegramBotSubscription[]> {
+    return db.select().from(telegramBotSubscriptions);
+  }
+
+  async getAllReferrals(): Promise<any[]> {
+    return db.select().from(telegramBotReferrals);
+  }
+
+  async saveTradingPreference(chatId: string, config: { enabled: boolean; buyAmountBnb: string; takeProfitMultiple: number; stopLossMultiple: number; maxPositions: number }): Promise<void> {
+    await db.insert(tradingPreferences).values({
+      chatId,
+      enabled: config.enabled,
+      buyAmountBnb: config.buyAmountBnb,
+      takeProfitMultiple: config.takeProfitMultiple,
+      stopLossMultiple: config.stopLossMultiple,
+      maxPositions: config.maxPositions,
+      updatedAt: new Date(),
+    }).onConflictDoUpdate({
+      target: tradingPreferences.chatId,
+      set: {
+        enabled: config.enabled,
+        buyAmountBnb: config.buyAmountBnb,
+        takeProfitMultiple: config.takeProfitMultiple,
+        stopLossMultiple: config.stopLossMultiple,
+        maxPositions: config.maxPositions,
+        updatedAt: new Date(),
+      },
+    });
+  }
+
+  async getEnabledTradingPreferences(): Promise<Array<{ chatId: string; enabled: boolean; buyAmountBnb: string; takeProfitMultiple: number; stopLossMultiple: number; maxPositions: number }>> {
+    return db.select().from(tradingPreferences).where(eq(tradingPreferences.enabled, true));
+  }
+
+  async getAsterTradingLimits(chatId: string): Promise<AsterTradingLimit | null> {
+    try {
+      const rows = await db.select().from(asterTradingLimits).where(eq(asterTradingLimits.chatId, chatId));
+      return rows[0] || null;
+    } catch {
+      return null;
+    }
+  }
+
+  async saveAsterTradingLimits(chatId: string, limits: Partial<AsterTradingLimit>): Promise<void> {
+    const now = new Date();
+    await db.insert(asterTradingLimits).values({
+      chatId,
+      maxDailyLossUsdt: limits.maxDailyLossUsdt ?? 100,
+      maxPositionSizeUsdt: limits.maxPositionSizeUsdt ?? 50,
+      maxLeverage: limits.maxLeverage ?? 10,
+      maxOpenPositions: limits.maxOpenPositions ?? 3,
+      autoTradeEnabled: limits.autoTradeEnabled ?? false,
+      dailyPnlUsdt: limits.dailyPnlUsdt ?? 0,
+      dailyPnlResetAt: limits.dailyPnlResetAt ?? now,
+      updatedAt: now,
+    }).onConflictDoUpdate({
+      target: asterTradingLimits.chatId,
+      set: {
+        ...(limits.maxDailyLossUsdt !== undefined ? { maxDailyLossUsdt: limits.maxDailyLossUsdt } : {}),
+        ...(limits.maxPositionSizeUsdt !== undefined ? { maxPositionSizeUsdt: limits.maxPositionSizeUsdt } : {}),
+        ...(limits.maxLeverage !== undefined ? { maxLeverage: limits.maxLeverage } : {}),
+        ...(limits.maxOpenPositions !== undefined ? { maxOpenPositions: limits.maxOpenPositions } : {}),
+        ...(limits.autoTradeEnabled !== undefined ? { autoTradeEnabled: limits.autoTradeEnabled } : {}),
+        ...(limits.dailyPnlUsdt !== undefined ? { dailyPnlUsdt: limits.dailyPnlUsdt } : {}),
+        ...(limits.dailyPnlResetAt !== undefined ? { dailyPnlResetAt: limits.dailyPnlResetAt } : {}),
+        updatedAt: now,
+      },
+    });
+  }
+
+  async updateAsterDailyPnl(chatId: string, pnlDelta: number): Promise<void> {
+    const now = new Date();
+    const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    await db.execute(sql`
+      UPDATE aster_trading_limits
+      SET daily_pnl_usdt = CASE
+            WHEN daily_pnl_reset_at IS NULL OR daily_pnl_reset_at < ${twentyFourHoursAgo}
+            THEN ${pnlDelta}
+            ELSE daily_pnl_usdt + ${pnlDelta}
+          END,
+          daily_pnl_reset_at = CASE
+            WHEN daily_pnl_reset_at IS NULL OR daily_pnl_reset_at < ${twentyFourHoursAgo}
+            THEN ${now}
+            ELSE daily_pnl_reset_at
+          END,
+          updated_at = ${now}
+      WHERE chat_id = ${chatId}
+    `);
+  }
+
+  async saveAsterCredentials(chatId: string, apiKey: string, apiSecret: string, parentAddr?: string): Promise<AsterCredentials> {
+    const encryptedApiKey = encryptPrivateKey(apiKey);
+    const encryptedApiSecret = encryptPrivateKey(apiSecret);
+    const setFields: any = {
+      encryptedApiKey,
+      encryptedApiSecret,
+      createdAt: new Date(),
+    };
+    const insertFields: any = {
+      chatId,
+      encryptedApiKey,
+      encryptedApiSecret,
+    };
+    if (parentAddr) {
+      setFields.parentAddress = parentAddr.toLowerCase();
+      insertFields.parentAddress = parentAddr.toLowerCase();
+    }
+    try {
+      const [row] = await db.insert(asterCredentials).values(insertFields).onConflictDoUpdate({
+        target: asterCredentials.chatId,
+        set: setFields,
+      }).returning();
+      return row;
+    } catch (e: any) {
+      if (e.message?.includes("does not exist")) {
+        console.log("[Storage] aster_credentials table/column missing, recreating...");
+        await db.execute(sql`DROP TABLE IF EXISTS "aster_credentials"`);
+        await db.execute(sql`CREATE TABLE "aster_credentials" (
+          chat_id TEXT PRIMARY KEY NOT NULL,
+          encrypted_api_key TEXT NOT NULL,
+          encrypted_api_secret TEXT NOT NULL,
+          parent_address TEXT,
+          created_at TIMESTAMP DEFAULT now()
+        )`);
+        const [row] = await db.insert(asterCredentials).values(insertFields).onConflictDoUpdate({
+          target: asterCredentials.chatId,
+          set: setFields,
+        }).returning();
+        return row;
+      }
+      throw e;
+    }
+  }
+
+  async getAsterCredentials(chatId: string): Promise<{ chatId: string; apiKey: string; apiSecret: string; parentAddress?: string } | null> {
+    try {
+      const rows = await db.select().from(asterCredentials).where(eq(asterCredentials.chatId, chatId));
+      if (!rows.length) return null;
+      const row = rows[0];
+      return {
+        chatId: row.chatId,
+        apiKey: decryptPrivateKey(row.encryptedApiKey),
+        apiSecret: decryptPrivateKey(row.encryptedApiSecret),
+        parentAddress: row.parentAddress || undefined,
+      };
+    } catch (e: any) {
+      if (e.message?.includes("does not exist")) {
+        console.log("[Storage] aster_credentials table missing, will be created on first save");
+        return null;
+      }
+      throw e;
+    }
+  }
+
+  async saveAsterParentAddress(chatId: string, parentAddress: string): Promise<void> {
+    try {
+      await db.update(asterCredentials)
+        .set({ parentAddress: parentAddress.toLowerCase() })
+        .where(eq(asterCredentials.chatId, chatId));
+    } catch (e: any) {
+      console.log(`[Storage] saveAsterParentAddress error: ${e.message?.substring(0, 100)}`);
+      try {
+        await db.execute(sql`ALTER TABLE "aster_credentials" ADD COLUMN IF NOT EXISTS "parent_address" TEXT`);
+        await db.update(asterCredentials)
+          .set({ parentAddress: parentAddress.toLowerCase() })
+          .where(eq(asterCredentials.chatId, chatId));
+      } catch {}
+    }
+  }
+
+  async removeAsterCredentials(chatId: string): Promise<void> {
+    await db.delete(asterCredentials).where(eq(asterCredentials.chatId, chatId));
+  }
+
+  async saveTradeOutcome(outcome: {
+    chatId: string; tokenAddress: string; tokenSymbol: string; result: string;
+    pnlBnb: number; peakMultiple: number; entryPriceBnb: number; holdTimeMinutes: number;
+    confidenceScore: number; source: string; entryProgressPercent?: number; entryAgeMinutes?: number;
+    entryVelocity?: number; entryHolderCount?: number; entryRaisedBnb?: number; entryRugRisk?: number;
+    reasoning?: string; hourOfDay?: number;
+  }): Promise<void> {
+    try {
+      await db.insert(tradeOutcomes).values({
+        chatId: outcome.chatId,
+        tokenAddress: outcome.tokenAddress,
+        tokenSymbol: outcome.tokenSymbol,
+        result: outcome.result,
+        pnlBnb: outcome.pnlBnb,
+        peakMultiple: outcome.peakMultiple,
+        entryPriceBnb: outcome.entryPriceBnb,
+        holdTimeMinutes: outcome.holdTimeMinutes,
+        confidenceScore: outcome.confidenceScore,
+        source: outcome.source,
+        entryProgressPercent: outcome.entryProgressPercent ?? 0,
+        entryAgeMinutes: outcome.entryAgeMinutes ?? 0,
+        entryVelocity: outcome.entryVelocity ?? 0,
+        entryHolderCount: outcome.entryHolderCount ?? 0,
+        entryRaisedBnb: outcome.entryRaisedBnb ?? 0,
+        entryRugRisk: outcome.entryRugRisk ?? 0,
+        reasoning: outcome.reasoning,
+        hourOfDay: outcome.hourOfDay ?? new Date().getUTCHours(),
+      });
+    } catch (e: any) {
+      console.error("[Storage] Failed to save trade outcome:", e.message);
+    }
+  }
+
+  async getRecentTradeOutcomes(limit: number = 100): Promise<Array<any>> {
+    try {
+      return await db.select().from(tradeOutcomes).orderBy(desc(tradeOutcomes.createdAt)).limit(limit);
+    } catch {
+      return [];
+    }
+  }
+
+  async getUserSkillConfigs(chatId: string): Promise<Array<{ skillId: string; enabled: boolean; config: Record<string, any> }>> {
+    try {
+      const rows = await db.select().from(agentSkillConfigs).where(eq(agentSkillConfigs.chatId, chatId));
+      return rows.map(r => ({
+        skillId: r.skillId,
+        enabled: r.enabled,
+        config: JSON.parse(r.config || "{}"),
+      }));
+    } catch {
+      return [];
+    }
+  }
+
+  async setUserSkillConfig(chatId: string, skillId: string, enabled: boolean, config: Record<string, any>): Promise<void> {
+    try {
+      const existing = await db.select().from(agentSkillConfigs)
+        .where(and(eq(agentSkillConfigs.chatId, chatId), eq(agentSkillConfigs.skillId, skillId)));
+      if (existing.length > 0) {
+        await db.update(agentSkillConfigs)
+          .set({ enabled, config: JSON.stringify(config), updatedAt: new Date() })
+          .where(and(eq(agentSkillConfigs.chatId, chatId), eq(agentSkillConfigs.skillId, skillId)));
+      } else {
+        await db.insert(agentSkillConfigs).values({
+          chatId,
+          skillId,
+          enabled,
+          config: JSON.stringify(config),
+        });
+      }
+    } catch (e: any) {
+      console.error("[Storage] Failed to save skill config:", e.message);
+    }
+  }
+
+  async saveSniperWallets(params: {
+    chatId: string;
+    agentId: string;
+    launchId?: string;
+    tokenAddress?: string;
+    wallets: Array<{ index: number; address: string; privateKey: string; bnbAmount: string; txHash?: string; status?: string }>;
+  }): Promise<void> {
+    try {
+      await db.execute(sql.raw(`CREATE TABLE IF NOT EXISTS "sniper_wallet_keys" (id VARCHAR DEFAULT gen_random_uuid() NOT NULL, launch_id VARCHAR, chat_id TEXT NOT NULL, agent_id VARCHAR NOT NULL, token_address TEXT, wallet_index INTEGER NOT NULL, wallet_address TEXT NOT NULL, encrypted_private_key TEXT NOT NULL, bnb_amount TEXT, status TEXT DEFAULT 'funded'::text NOT NULL, tx_hash TEXT, created_at TIMESTAMP DEFAULT now())`));
+      for (const w of params.wallets) {
+        const encKey = encryptPrivateKey(w.privateKey);
+        await db.execute(sql`INSERT INTO sniper_wallet_keys (chat_id, agent_id, launch_id, token_address, wallet_index, wallet_address, encrypted_private_key, bnb_amount, status, tx_hash) VALUES (${params.chatId}, ${params.agentId}, ${params.launchId || null}, ${params.tokenAddress || null}, ${w.index}, ${w.address.toLowerCase()}, ${encKey}, ${w.bnbAmount}, ${w.status || 'funded'}, ${w.txHash || null})`);
+      }
+      console.log(`[Storage] Saved ${params.wallets.length} sniper wallet keys for chat ${params.chatId}`);
+    } catch (e: any) {
+      console.error("[Storage] Failed to save sniper wallets:", e.message);
+    }
+  }
+
+  async getSniperWallets(chatId: string, agentId?: string): Promise<Array<{ walletIndex: number; walletAddress: string; privateKey: string; bnbAmount: string; tokenAddress: string | null; status: string; launchId: string | null; createdAt: any }>> {
+    try {
+      const query = agentId
+        ? sql`SELECT wallet_index as "walletIndex", wallet_address as "walletAddress", encrypted_private_key as "encryptedPrivateKey", bnb_amount as "bnbAmount", token_address as "tokenAddress", status, launch_id as "launchId", created_at as "createdAt" FROM sniper_wallet_keys WHERE chat_id = ${chatId} AND agent_id = ${agentId} ORDER BY created_at DESC, wallet_index ASC`
+        : sql`SELECT wallet_index as "walletIndex", wallet_address as "walletAddress", encrypted_private_key as "encryptedPrivateKey", bnb_amount as "bnbAmount", token_address as "tokenAddress", status, launch_id as "launchId", created_at as "createdAt" FROM sniper_wallet_keys WHERE chat_id = ${chatId} ORDER BY created_at DESC, wallet_index ASC`;
+      const result = await db.execute(query);
+      return (result.rows || []).map((r: any) => ({
+        ...r,
+        privateKey: r.encryptedPrivateKey ? decryptPrivateKey(r.encryptedPrivateKey) : "",
+      }));
+    } catch (e: any) {
+      console.error("[Storage] Failed to get sniper wallets:", e.message);
+      return [];
+    }
+  }
+
+  async updateSniperWalletStatus(walletAddress: string, status: string, tokenAddress?: string, txHash?: string): Promise<void> {
+    try {
+      const addr = walletAddress.toLowerCase();
+      if (tokenAddress && txHash) {
+        await db.execute(sql`UPDATE sniper_wallet_keys SET status = ${status}, token_address = ${tokenAddress}, tx_hash = ${txHash} WHERE wallet_address = ${addr}`);
+      } else if (tokenAddress) {
+        await db.execute(sql`UPDATE sniper_wallet_keys SET status = ${status}, token_address = ${tokenAddress} WHERE wallet_address = ${addr}`);
+      } else if (txHash) {
+        await db.execute(sql`UPDATE sniper_wallet_keys SET status = ${status}, tx_hash = ${txHash} WHERE wallet_address = ${addr}`);
+      } else {
+        await db.execute(sql`UPDATE sniper_wallet_keys SET status = ${status} WHERE wallet_address = ${addr}`);
+      }
+    } catch (e: any) {
+      console.error("[Storage] Failed to update sniper wallet:", e.message);
+    }
+  }
+
+  async createReward(chatId: string, rewardType: string, amount: string, description?: string, referenceId?: string): Promise<any> {
+    try {
+      const result = await db.execute(sql`INSERT INTO user_rewards (id, chat_id, reward_type, amount, description, reference_id, claimed, created_at) VALUES (gen_random_uuid(), ${chatId}, ${rewardType}, ${amount}, ${description || null}, ${referenceId || null}, false, now()) RETURNING *`);
+      console.log(`[Rewards] Created reward: chatId=${chatId} type=${rewardType} amount=${amount}`);
+      return (result.rows || [])[0] || null;
+    } catch (e: any) {
+      console.error("[Rewards] Failed to create reward:", e.message);
+      return null;
+    }
+  }
+
+  async getUserRewards(chatId: string): Promise<any[]> {
+    try {
+      const result = await db.execute(sql`SELECT * FROM user_rewards WHERE chat_id = ${chatId} ORDER BY created_at DESC LIMIT 50`);
+      return result.rows || [];
+    } catch (e: any) {
+      console.error("[Rewards] Failed to get user rewards:", e.message);
+      return [];
+    }
+  }
+
+  async getUserRewardTotal(chatId: string): Promise<string> {
+    try {
+      const result = await db.execute(sql`SELECT COALESCE(SUM(CASE WHEN amount ~ '^[0-9]+(\.[0-9]+)?$' THEN CAST(amount AS NUMERIC) ELSE 0 END), 0) as total FROM user_rewards WHERE chat_id = ${chatId}`);
+      const row = (result.rows || [])[0] as any;
+      return row?.total?.toString() || "0";
+    } catch (e: any) {
+      console.error("[Rewards] Failed to get reward total:", e.message);
+      return "0";
+    }
+  }
+
+  async getRewardsLeaderboard(limit: number = 10): Promise<Array<{ chatId: string; totalRewards: string; rewardCount: number }>> {
+    try {
+      const safeLimit = Math.min(Math.max(Number(limit) || 10, 1), 100);
+      const result = await db.execute(sql`SELECT chat_id, COALESCE(SUM(CASE WHEN amount ~ '^[0-9]+(\.[0-9]+)?$' THEN CAST(amount AS NUMERIC) ELSE 0 END), 0) as total_rewards, COUNT(*) as reward_count FROM user_rewards GROUP BY chat_id ORDER BY total_rewards DESC LIMIT ${safeLimit}`);
+      return (result.rows || []).map((r: any) => ({
+        chatId: String(r.chat_id || ""),
+        totalRewards: String(r.total_rewards ?? "0"),
+        rewardCount: Number(r.reward_count) || 0,
+      }));
+    } catch (e: any) {
+      console.error("[Rewards] Failed to get leaderboard:", e.message);
+      return [];
+    }
+  }
+
+  async getUserRewardsByType(chatId: string, rewardType: string): Promise<any[]> {
+    try {
+      const result = await db.execute(sql`SELECT * FROM user_rewards WHERE chat_id = ${chatId} AND reward_type = ${rewardType} ORDER BY created_at DESC`);
+      return result.rows || [];
+    } catch (e: any) {
+      console.error("[Rewards] Failed to get rewards by type:", e.message);
+      return [];
+    }
+  }
+
+  async getQuestStatus(chatId: string, questId: string): Promise<{ completed: boolean; rewardGranted: boolean } | null> {
+    try {
+      const result = await db.execute(sql`SELECT completed, reward_granted as "rewardGranted" FROM user_quests WHERE chat_id = ${chatId} AND quest_id = ${questId} LIMIT 1`);
+      const row = (result.rows || [])[0] as any;
+      if (!row) return null;
+      return { completed: row.completed, rewardGranted: row.rewardGranted };
+    } catch (e: any) {
+      console.error("[Quests] Failed to get quest status:", e.message);
+      return null;
+    }
+  }
+
+  async getAllQuests(chatId: string): Promise<Array<{ questId: string; completed: boolean; rewardGranted: boolean; completedAt: Date | null }>> {
+    try {
+      const result = await db.execute(sql`SELECT quest_id as "questId", completed, reward_granted as "rewardGranted", completed_at as "completedAt" FROM user_quests WHERE chat_id = ${chatId} ORDER BY created_at ASC`);
+      return (result.rows || []).map((r: any) => ({
+        questId: r.questId,
+        completed: r.completed,
+        rewardGranted: r.rewardGranted,
+        completedAt: r.completedAt,
+      }));
+    } catch (e: any) {
+      console.error("[Quests] Failed to get all quests:", e.message);
+      return [];
+    }
+  }
+
+  async completeQuest(chatId: string, questId: string): Promise<boolean> {
+    try {
+      const existing = await this.getQuestStatus(chatId, questId);
+      if (existing?.completed) return false;
+      await db.execute(sql`INSERT INTO user_quests (id, chat_id, quest_id, completed, completed_at, reward_granted, created_at) VALUES (gen_random_uuid(), ${chatId}, ${questId}, true, now(), false, now()) ON CONFLICT (chat_id, quest_id) DO UPDATE SET completed = true, completed_at = now()`);
+      return true;
+    } catch (e: any) {
+      console.error("[Quests] Failed to complete quest:", e.message);
+      return false;
+    }
+  }
+
+  async saveAsterLocalTrade(trade: { chatId: string; orderId: string; symbol: string; side: string; type: string; quantity: number; executedQty: number; price: number; avgPrice: number; status: string; reduceOnly: boolean; leverage: number }): Promise<void> {
+    try {
+      await db.insert(asterLocalTrades).values({
+        chatId: trade.chatId,
+        orderId: trade.orderId,
+        symbol: trade.symbol,
+        side: trade.side,
+        type: trade.type,
+        quantity: trade.quantity,
+        executedQty: trade.executedQty,
+        price: trade.price,
+        avgPrice: trade.avgPrice,
+        status: trade.status,
+        reduceOnly: trade.reduceOnly,
+        leverage: trade.leverage,
+      });
+    } catch (e: any) {
+      console.error("[AsterLocal] Failed to save trade:", e.message);
+    }
+  }
+
+  async getAsterLocalTrades(chatId: string, symbol?: string): Promise<any[]> {
+    try {
+      if (symbol) {
+        return await db.select().from(asterLocalTrades)
+          .where(and(eq(asterLocalTrades.chatId, chatId), eq(asterLocalTrades.symbol, symbol)))
+          .orderBy(desc(asterLocalTrades.createdAt));
+      }
+      return await db.select().from(asterLocalTrades)
+        .where(eq(asterLocalTrades.chatId, chatId))
+        .orderBy(desc(asterLocalTrades.createdAt));
+    } catch (e: any) {
+      console.error("[AsterLocal] Failed to get trades:", e.message);
+      return [];
+    }
+  }
+
+  async getAsterLocalPositions(chatId: string): Promise<Array<{ symbol: string; side: string; quantity: number; entryPrice: number; leverage: number }>> {
+    try {
+      const trades = await db.select().from(asterLocalTrades)
+        .where(eq(asterLocalTrades.chatId, chatId))
+        .orderBy(asterLocalTrades.createdAt);
+
+      const positions: Record<string, { netQty: number; totalCost: number; leverage: number }> = {};
+
+      for (const t of trades) {
+        const qty = t.executedQty || t.quantity;
+        const price = t.avgPrice || t.price || 0;
+        if (!positions[t.symbol]) {
+          positions[t.symbol] = { netQty: 0, totalCost: 0, leverage: t.leverage };
+        }
+        const p = positions[t.symbol];
+        p.leverage = t.leverage;
+
+        if (t.side === "BUY") {
+          if (p.netQty >= 0) {
+            p.totalCost += qty * price;
+            p.netQty += qty;
+          } else {
+            const closedQty = Math.min(qty, Math.abs(p.netQty));
+            p.netQty += qty;
+            if (p.netQty > 0) {
+              p.totalCost = (qty - closedQty) * price;
+            } else if (p.netQty === 0) {
+              p.totalCost = 0;
+            }
+          }
+        } else {
+          if (p.netQty <= 0) {
+            p.totalCost += qty * price;
+            p.netQty -= qty;
+          } else {
+            const closedQty = Math.min(qty, p.netQty);
+            p.netQty -= qty;
+            if (p.netQty < 0) {
+              p.totalCost = (qty - closedQty) * price;
+            } else if (p.netQty === 0) {
+              p.totalCost = 0;
+            }
+          }
+        }
+      }
+
+      const result: Array<{ symbol: string; side: string; quantity: number; entryPrice: number; leverage: number }> = [];
+      for (const [symbol, p] of Object.entries(positions)) {
+        if (Math.abs(p.netQty) < 0.0000001) continue;
+        const avgEntry = Math.abs(p.netQty) > 0 ? p.totalCost / Math.abs(p.netQty) : 0;
+        result.push({
+          symbol,
+          side: p.netQty > 0 ? "LONG" : "SHORT",
+          quantity: Math.abs(p.netQty),
+          entryPrice: avgEntry,
+          leverage: p.leverage,
+        });
+      }
+      return result;
+    } catch (e: any) {
+      console.error("[AsterLocal] Failed to calculate positions:", e.message);
+      return [];
+    }
+  }
+  async getPoolUser(chatId: string): Promise<any | null> {
+    try {
+      const result = await db.execute(sql`SELECT * FROM pool_users WHERE chat_id = ${chatId} LIMIT 1`);
+      return (result as any).rows?.[0] || null;
+    } catch { return null; }
+  }
+
+  async upsertPoolUser(chatId: string, username?: string): Promise<any> {
+    try {
+      const existing = await this.getPoolUser(chatId);
+      if (existing) {
+        if (username && !existing.telegram_username) {
+          await db.execute(sql`UPDATE pool_users SET telegram_username = ${username}, updated_at = now() WHERE chat_id = ${chatId}`);
+        }
+        return existing;
+      }
+      await db.execute(sql`INSERT INTO pool_users (chat_id, telegram_username) VALUES (${chatId}, ${username || null}) ON CONFLICT (chat_id) DO NOTHING`);
+      return await this.getPoolUser(chatId);
+    } catch (e: any) {
+      console.error("[Pool] upsertPoolUser error:", e.message);
+      return { chat_id: chatId, total_deposited: 0, current_share: 0, total_pnl: 0 };
+    }
+  }
+
+  async createPoolDeposit(chatId: string, amount: number, txHash?: string, fromAddress?: string, method?: string): Promise<any> {
+    try {
+      await this.upsertPoolUser(chatId);
+      const result = await db.execute(sql`INSERT INTO pool_deposits (chat_id, amount, tx_hash, from_address, method, status) VALUES (${chatId}, ${amount}, ${txHash || null}, ${fromAddress || null}, ${method || 'external'}, 'pending') RETURNING *`);
+      return (result as any).rows?.[0];
+    } catch (e: any) {
+      console.error("[Pool] createPoolDeposit error:", e.message);
+      return null;
+    }
+  }
+
+  async getPoolDeposits(chatId: string): Promise<any[]> {
+    try {
+      const result = await db.execute(sql`SELECT * FROM pool_deposits WHERE chat_id = ${chatId} ORDER BY created_at DESC LIMIT 50`);
+      return (result as any).rows || [];
+    } catch { return []; }
+  }
+
+  async updatePoolDepositStatus(id: number, status: string): Promise<void> {
+    try {
+      const now = status === 'verified' ? sql`now()` : status === 'credited' ? sql`now()` : sql`NULL`;
+      if (status === 'verified') {
+        await db.execute(sql`UPDATE pool_deposits SET status = ${status}, verified_at = now() WHERE id = ${id}`);
+      } else if (status === 'credited') {
+        await db.execute(sql`UPDATE pool_deposits SET status = ${status}, credited_at = now() WHERE id = ${id}`);
+        const dep = await db.execute(sql`SELECT chat_id, amount FROM pool_deposits WHERE id = ${id}`);
+        const row = (dep as any).rows?.[0];
+        if (row) {
+          await db.execute(sql`UPDATE pool_users SET total_deposited = total_deposited + ${row.amount}, updated_at = now() WHERE chat_id = ${row.chat_id}`);
+        }
+      } else {
+        await db.execute(sql`UPDATE pool_deposits SET status = ${status} WHERE id = ${id}`);
+      }
+    } catch (e: any) {
+      console.error("[Pool] updatePoolDepositStatus error:", e.message);
+    }
+  }
+
+  async getPoolStats(): Promise<{ totalDeposits: number; totalUsers: number; totalPnl: number }> {
+    try {
+      const result = await db.execute(sql`SELECT COUNT(*) as total_users, COALESCE(SUM(total_deposited), 0) as total_deposits, COALESCE(SUM(total_pnl), 0) as total_pnl FROM pool_users WHERE status = 'active'`);
+      const row = (result as any).rows?.[0];
+      return {
+        totalUsers: parseInt(row?.total_users || "0"),
+        totalDeposits: parseFloat(row?.total_deposits || "0"),
+        totalPnl: parseFloat(row?.total_pnl || "0"),
+      };
+    } catch { return { totalDeposits: 0, totalUsers: 0, totalPnl: 0 }; }
+  }
+
+  async getAllPoolUsers(): Promise<any[]> {
+    try {
+      const result = await db.execute(sql`SELECT * FROM pool_users WHERE status = 'active' ORDER BY total_deposited DESC`);
+      return (result as any).rows || [];
+    } catch { return []; }
+  }
+
+  async updatePoolUserShares(totalPoolBalance: number): Promise<void> {
+    try {
+      if (totalPoolBalance <= 0) return;
+      const users = await this.getAllPoolUsers();
+      const totalDeposited = users.reduce((s: number, u: any) => s + (parseFloat(u.total_deposited) || 0), 0);
+      if (totalDeposited <= 0) return;
+      for (const u of users) {
+        const dep = parseFloat(u.total_deposited) || 0;
+        const share = dep / totalDeposited;
+        const userBalance = share * totalPoolBalance;
+        const pnl = userBalance - dep;
+        await db.execute(sql`UPDATE pool_users SET current_share = ${share}, total_pnl = ${pnl}, updated_at = now() WHERE chat_id = ${u.chat_id}`);
+      }
+    } catch (e: any) {
+      console.error("[Pool] updatePoolUserShares error:", e.message);
+    }
+  }
+
+  async saveHyperliquidCredentials(chatId: string, userAddress: string, agentKey?: string, agentAddress?: string, isMainnet: boolean = true): Promise<any> {
+    const insertFields: any = {
+      chatId,
+      userAddress: userAddress.toLowerCase(),
+      isMainnet,
+    };
+    if (agentKey) {
+      insertFields.encryptedAgentKey = encryptPrivateKey(agentKey);
+      insertFields.agentAddress = agentAddress?.toLowerCase() || null;
+    }
+    try {
+      const [row] = await db.insert(hyperliquidCredentials).values(insertFields).onConflictDoUpdate({
+        target: hyperliquidCredentials.chatId,
+        set: { ...insertFields, createdAt: new Date() },
+      }).returning();
+      return row;
+    } catch (e: any) {
+      if (e.message?.includes("does not exist")) {
+        await db.execute(sql`CREATE TABLE IF NOT EXISTS "hyperliquid_credentials" (
+          chat_id TEXT PRIMARY KEY NOT NULL,
+          user_address TEXT NOT NULL,
+          encrypted_agent_key TEXT,
+          agent_address TEXT,
+          is_mainnet BOOLEAN NOT NULL DEFAULT true,
+          created_at TIMESTAMP DEFAULT now()
+        )`);
+        const [row] = await db.insert(hyperliquidCredentials).values(insertFields).onConflictDoUpdate({
+          target: hyperliquidCredentials.chatId,
+          set: { ...insertFields, createdAt: new Date() },
+        }).returning();
+        return row;
+      }
+      throw e;
+    }
+  }
+
+  async getHyperliquidCredentials(chatId: string): Promise<{ chatId: string; userAddress: string; agentKey?: string; agentAddress?: string; isMainnet: boolean } | null> {
+    try {
+      const rows = await db.select().from(hyperliquidCredentials).where(eq(hyperliquidCredentials.chatId, chatId));
+      if (!rows.length) return null;
+      const row = rows[0];
+      return {
+        chatId: row.chatId,
+        userAddress: row.userAddress,
+        agentKey: row.encryptedAgentKey ? decryptPrivateKey(row.encryptedAgentKey) : undefined,
+        agentAddress: row.agentAddress || undefined,
+        isMainnet: row.isMainnet,
+      };
+    } catch (e: any) {
+      if (e.message?.includes("does not exist")) return null;
+      throw e;
+    }
+  }
+
+  async removeHyperliquidCredentials(chatId: string): Promise<void> {
+    try {
+      await db.delete(hyperliquidCredentials).where(eq(hyperliquidCredentials.chatId, chatId));
+    } catch (e: any) {
+      if (!e.message?.includes("does not exist")) throw e;
+    }
+  }
+
+  async createPoolSnapshot(data: { totalPoolBalance: number; totalDeposits: number; totalPnl: number; activeUsers: number; openPositions: number }): Promise<void> {
+    try {
+      await db.execute(sql`INSERT INTO pool_snapshots (total_pool_balance, total_deposits, total_pnl, active_users, open_positions) VALUES (${data.totalPoolBalance}, ${data.totalDeposits}, ${data.totalPnl}, ${data.activeUsers}, ${data.openPositions})`);
+    } catch (e: any) {
+      console.error("[Pool] createPoolSnapshot error:", e.message);
+    }
+  }
+}
+
+export const storage = new DatabaseStorage();
