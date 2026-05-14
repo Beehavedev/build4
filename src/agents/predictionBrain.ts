@@ -12,18 +12,13 @@
 // {action, side, conviction, reasoning}. The Aster perp brain (ADX/RSI/
 // funding-rate) is the wrong tool for either of them.
 //
-// Provider fallback: xAI grok-3-mini → Hyperbolic Llama-3.3-70B →
-// Anthropic Sonnet (last resort). Scan-class call, not trade-class.
-// Intentionally broader than runScanInference's fatal-only Sonnet
-// gate: prediction scoring runs at low volume and we'd rather pay
-// the Hyperbolic-cheap fallback than blank a tick on a transient xAI
-// timeout. Sonnet still only fires if both cheap providers fail.
-// One LLM round-trip per (agent × market) per tick.
+// Provider routing goes through runScanInference: xAI grok-3-mini
+// primary, Sonnet fallback only on fatal status (401/402/403) or
+// circuit-open. Scan-class call, not trade-class. One LLM round-trip
+// per (agent × market) per tick.
 // ─────────────────────────────────────────────────────────────────────────
 
-import { callLLM, type Provider } from '../services/inference'
-
-const PROVIDER_FALLBACK: Provider[] = ['xai', 'hyperbolic', 'anthropic']
+import { runScanInference } from '../services/inference'
 
 export type PredictionVenue = 'polymarket' | 'fortytwo'
 
@@ -117,26 +112,17 @@ export async function scorePredictionMarket(
 
   const user = lines.join('\n')
 
-  let lastErr: Error | null = null
-  for (const provider of PROVIDER_FALLBACK) {
-    try {
-      const r = await callLLM({
-        provider,
-        system,
-        user,
-        jsonMode: true,
-        maxTokens: 300,
-        temperature: 0.2,
-        timeoutMs: 30_000,
-      })
-      const parsed = parsePredictionDecision(r.text)
-      if (parsed) return parsed
-      lastErr = new Error(`unparseable JSON from ${provider}`)
-    } catch (err) {
-      lastErr = err as Error
-    }
-  }
-  throw lastErr ?? new Error('no providers available')
+  const r = await runScanInference({
+    system,
+    user,
+    jsonMode: true,
+    maxTokens: 300,
+    temperature: 0.2,
+    timeoutMs: 30_000,
+  })
+  const parsed = parsePredictionDecision(r.text)
+  if (parsed) return parsed
+  throw new Error('unparseable JSON from scan inference')
 }
 
 export function parsePredictionDecision(raw: string): PredictionDecision | null {
