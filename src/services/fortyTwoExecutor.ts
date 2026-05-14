@@ -270,14 +270,15 @@ async function loadUserWalletPK(
   userId: string,
   agentId?: string | null,
 ): Promise<UserWalletPK | null> {
-  // Campaign-mode (Path A): if the agent has a dedicated walletId pinned,
-  // load that specific Wallet row instead of the user's primary BSC wallet.
-  // Keeps the campaign agent's trade history isolated from the user's main
-  // wallet — important for the 42.space leaderboard story.
-  // Gated on isCampaignAgent() so non-campaign agents (every existing
-  // production agent) skip the extra SQL round-trip entirely — guarantees
-  // a true zero-impact change for the existing trading path.
-  if (agentId && isCampaignAgent(agentId)) {
+  // Pinned-wallet routing: if the agent has a dedicated walletId set on
+  // its Agent row, load that specific Wallet row instead of the user's
+  // primary BSC wallet. The pin lives on the row regardless of campaign-
+  // mode env vars, so close/claim flows for positions opened by an
+  // agent-with-pinned-wallet keep working even after the campaign event
+  // ends and FT_CAMPAIGN_MODE is flipped off — without this, a stale
+  // env flag could silently misroute exits to the user's main wallet
+  // (which holds none of the agent's outcome tokens).
+  if (agentId) {
     try {
       const agentRows = await db.$queryRawUnsafe<Array<{ walletId: string | null }>>(
         `SELECT "walletId" FROM "Agent" WHERE id = $1 LIMIT 1`,
@@ -1403,7 +1404,13 @@ export async function closeUserPredictionPosition(
 
   // Honor the position's recorded mode (paper vs live) — see
   // closePredictionPosition for the rationale.
-  const built = await buildTrader(userId, pos.paperTrade);
+  // CRITICAL: pass pos.agentId so loadUserWalletPK can route to the
+  // campaign agent's pinned wallet when the position was opened by the
+  // campaign agent. Without this we build a trader from the user's
+  // ACTIVE wallet (typically the main wallet), which holds zero
+  // outcome tokens for the campaign-agent-opened position — and the
+  // on-chain sellOutcome reverts with "no balance" instead of closing.
+  const built = await buildTrader(userId, pos.paperTrade, pos.agentId ?? null);
   if (!built) return { ok: false, reason: 'no wallet' };
   const { trader, paperTrade } = built;
 
@@ -1498,120 +1505,139 @@ export async function claimUserResolvedForMarket(
     return { ok: false, reason: 'no claimable wins on this market' };
   }
 
-  // All rows for the same market share paperTrade mode in practice (a user's
-  // wallet either is or isn't on-chain). If they happen to mix, prefer the
-  // live path so the on-chain claim actually fires; paper rows still get
-  // their DB status flipped below.
-  const anyLive = wins.some((p) => !p.paperTrade);
-  const built = await buildTrader(userId, !anyLive);
-  if (!built) return { ok: false, reason: 'no wallet' };
-  const { trader } = built;
-
-  if (typeof trader.claimAllResolved !== 'function') {
-    return { ok: false, reason: 'trader does not implement claimAllResolved' };
-  }
-  let receipt: TxReceiptLike = null;
-  try {
-    receipt = await trader.claimAllResolved(marketAddress);
-  } catch (err) {
-    return { ok: false, reason: friendlyTraderError(err, 'claimAllResolved') };
-  }
-  const txHash = receiptHash(receipt);
-
-  // Reverted / dropped tx safety net.
-  //
-  // ethers v6 throws on a confirmed revert, but `tx.wait()` returns null when
-  // the tx is dropped/replaced and an empty-status receipt is technically
-  // possible on some BSC RPCs during reorgs. Either way: don't lie to the
-  // user that the position is claimed if the chain didn't pay out. We keep
-  // status='resolved_win' so they (or the agent) can retry.
-  //
-  // Skip this check for paper-trade dry-run receipts (they carry dryRun:true).
-  const r = receipt as any;
-  const isDryRun = r && r.dryRun === true;
-  const isLiveSuccess = r && typeof r.status === 'number' && r.status === 1;
-  if (!isDryRun && !isLiveSuccess) {
-    console.warn(
-      `[fortyTwo] claimAllResolved tx not confirmed for market=${marketAddress} ` +
-      `userId=${userId} hash=${txHash ?? '<none>'} status=${r?.status ?? '<null>'}`,
-    );
-    return {
-      ok: false,
-      reason: txHash
-        ? `claim transaction did not confirm on-chain (hash ${txHash}). Try again in a moment.`
-        : 'claim transaction was dropped before confirmation. Try again in a moment.',
-    };
+  // Group wins by EFFECTIVE WALLET. Each agentId routes through
+  // loadUserWalletPK to a (possibly distinct) Wallet row; manual
+  // positions (agentId IS NULL) route to the user's active wallet.
+  // Without grouping, a single claim from one wallet would mark wins
+  // from OTHER wallets as 'claimed' too — silently losing those
+  // payouts. We claim per group and only update each group's rows.
+  const groups = new Map<string, OutcomePositionRow[]>();
+  for (const w of wins) {
+    const key = w.agentId ?? '__manual__';
+    const arr = groups.get(key) ?? [];
+    arr.push(w);
+    groups.set(key, arr);
   }
 
-  // Read the ACTUAL on-chain payout from the receipt's USDT Transfer event
-  // and write that as the truth (overriding any pre-claim 1:1 estimate the
-  // settle path may have stored). 42.space outcome tokens do NOT redeem
-  // 1:1 with USDT — they redeem at the curve-implied resolution price,
-  // which can be 100×+ less than (token_count × $1). Trusting the
-  // 1:1 estimate produced bug reports like "$1 stake → $297 claim" when
-  // the wallet really received $1.14. Source of truth is the receipt.
-  let payoutUsdt = wins.reduce((s, p) => s + (p.payoutUsdt ?? 0), 0); // pre-claim estimate, kept only for the drift log
-  let onchainPayout: number | null = null;
-  if (!isDryRun) {
+  const errors: string[] = [];
+  let totalPayout = 0;
+  let totalClaimed = 0;
+  let firstTxHash: string | null = null;
+
+  for (const [key, groupWins] of groups) {
+    const groupAgentId = key === '__manual__' ? null : key;
+    // paperTrade mode usually agrees within a wallet group; if not, prefer
+    // live so the on-chain claim fires.
+    const anyLive = groupWins.some((p) => !p.paperTrade);
+    const built = await buildTrader(userId, !anyLive, groupAgentId);
+    if (!built) {
+      errors.push(`agent ${key}: no wallet`);
+      continue;
+    }
+    const { trader } = built;
+    if (typeof trader.claimAllResolved !== 'function') {
+      errors.push(`agent ${key}: trader missing claimAllResolved`);
+      continue;
+    }
+    let receipt: TxReceiptLike = null;
     try {
-      onchainPayout = parseClaimPayoutFromReceipt(r, marketAddress);
-      if (onchainPayout !== null) {
-        const drift = Math.abs(onchainPayout - payoutUsdt);
-        const log = drift > Math.max(0.01, payoutUsdt * 0.02) ? console.warn : console.log;
-        log(
-          `[fortyTwo] claim payout market=${marketAddress} userId=${userId} ` +
-          `dbEstimate=${payoutUsdt.toFixed(4)} onchain=${onchainPayout.toFixed(4)} ` +
-          `drift=${drift.toFixed(4)} hash=${txHash}`,
+      receipt = await trader.claimAllResolved(marketAddress);
+    } catch (err) {
+      errors.push(`agent ${key}: ${friendlyTraderError(err, 'claimAllResolved')}`);
+      continue;
+    }
+    const txHash = receiptHash(receipt);
+    if (!firstTxHash) firstTxHash = txHash;
+
+    // Reverted / dropped tx safety net (per-group). See claimAllSimple
+    // notes above — never lie to the user that a position is claimed
+    // when the chain didn't pay out. Keep status='resolved_win' so they
+    // (or the agent runner) can retry this group.
+    const r = receipt as any;
+    const isDryRun = r && r.dryRun === true;
+    const isLiveSuccess = r && typeof r.status === 'number' && r.status === 1;
+    if (!isDryRun && !isLiveSuccess) {
+      console.warn(
+        `[fortyTwo] claimAllResolved tx not confirmed for market=${marketAddress} ` +
+        `userId=${userId} agentId=${groupAgentId ?? '<manual>'} ` +
+        `hash=${txHash ?? '<none>'} status=${r?.status ?? '<null>'}`,
+      );
+      errors.push(
+        `agent ${key}: ${txHash ? `tx ${txHash} did not confirm` : 'tx dropped'}`,
+      );
+      continue;
+    }
+
+    // Read the ACTUAL on-chain payout from the receipt's USDT Transfer
+    // event for THIS group's wallet. See parent comment about why we
+    // never trust the pre-claim 1:1 estimate.
+    const groupEstimate = groupWins.reduce((s, p) => s + (p.payoutUsdt ?? 0), 0);
+    let onchainPayout: number | null = null;
+    if (!isDryRun) {
+      try {
+        onchainPayout = parseClaimPayoutFromReceipt(r, marketAddress);
+        if (onchainPayout !== null) {
+          const drift = Math.abs(onchainPayout - groupEstimate);
+          const log = drift > Math.max(0.01, groupEstimate * 0.02) ? console.warn : console.log;
+          log(
+            `[fortyTwo] claim payout market=${marketAddress} userId=${userId} ` +
+            `agentId=${groupAgentId ?? '<manual>'} ` +
+            `dbEstimate=${groupEstimate.toFixed(4)} onchain=${onchainPayout.toFixed(4)} ` +
+            `drift=${drift.toFixed(4)} hash=${txHash}`,
+          );
+        }
+      } catch (e) {
+        console.warn('[fortyTwo] claim payout parse failed:', (e as Error)?.message);
+      }
+    }
+
+    // Update only THIS group's rows. Allocation logic identical to the
+    // pre-grouping version but scoped to the group so we can never mark
+    // another wallet's wins as claimed by mistake.
+    if (onchainPayout !== null) {
+      const weights = groupWins.map((p) => {
+        if (p.outcomeTokenAmount && p.outcomeTokenAmount > 0) return p.outcomeTokenAmount;
+        if (p.usdtIn && p.usdtIn > 0) return p.usdtIn;
+        return 1;
+      });
+      const totalWeight = weights.reduce((a, b) => a + b, 0);
+      for (let i = 0; i < groupWins.length; i++) {
+        const pos = groupWins[i];
+        const share = (weights[i] / totalWeight) * onchainPayout;
+        const pnl = share - pos.usdtIn;
+        await db.$executeRawUnsafe(
+          `UPDATE "OutcomePosition"
+           SET status='claimed', "txHashClose"=COALESCE("txHashClose", $1),
+               "payoutUsdt"=$2, pnl=$3, "closedAt"=NOW()
+           WHERE id=$4`,
+          txHash,
+          share,
+          pnl,
+          pos.id,
         );
       }
-    } catch (e) {
-      // best-effort — never fail the claim because the receipt parse threw
-      console.warn('[fortyTwo] claim payout parse failed:', (e as Error)?.message);
+      totalPayout += onchainPayout;
+    } else {
+      // Dry-run or unparseable receipt — flip status/txHash for this
+      // group's rows only (id-scoped), keep prior payout/pnl values.
+      for (const pos of groupWins) {
+        await db.$executeRawUnsafe(
+          `UPDATE "OutcomePosition"
+           SET status='claimed', "txHashClose"=COALESCE("txHashClose", $1), "closedAt"=NOW()
+           WHERE id=$2`,
+          txHash,
+          pos.id,
+        );
+      }
+      totalPayout += groupEstimate;
     }
+    totalClaimed += groupWins.length;
   }
 
-  if (onchainPayout !== null) {
-    // Allocate the single on-chain payout across the N rows we're claiming
-    // for this market. Allocation is proportional to each row's recorded
-    // outcomeTokenAmount (each token contributes equally to the redemption);
-    // fall back to usdtIn for legacy rows missing tokenAmount; equal split
-    // if neither is available. This makes per-position pnl sane even when
-    // claimAllSimple settles multiple positions in one tx.
-    const weights = wins.map((p) => {
-      if (p.outcomeTokenAmount && p.outcomeTokenAmount > 0) return p.outcomeTokenAmount;
-      if (p.usdtIn && p.usdtIn > 0) return p.usdtIn;
-      return 1;
-    });
-    const totalWeight = weights.reduce((a, b) => a + b, 0);
-    for (let i = 0; i < wins.length; i++) {
-      const pos = wins[i];
-      const share = (weights[i] / totalWeight) * onchainPayout;
-      const pnl = share - pos.usdtIn;
-      await db.$executeRawUnsafe(
-        `UPDATE "OutcomePosition"
-         SET status='claimed', "txHashClose"=COALESCE("txHashClose", $1),
-             "payoutUsdt"=$2, pnl=$3, "closedAt"=NOW()
-         WHERE id=$4`,
-        txHash,
-        share,
-        pnl,
-        pos.id,
-      );
-    }
-    payoutUsdt = onchainPayout;
-  } else {
-    // Dry-run (paper) or unparseable receipt — keep the previous behaviour
-    // of stamping status/txHash without rewriting the per-row payout.
-    await db.$executeRawUnsafe(
-      `UPDATE "OutcomePosition"
-       SET status='claimed', "txHashClose"=COALESCE("txHashClose", $1), "closedAt"=NOW()
-       WHERE "userId" = $2 AND "marketAddress" = $3 AND status = 'resolved_win'`,
-      txHash,
-      userId,
-      marketAddress,
-    );
+  if (totalClaimed === 0) {
+    return { ok: false, reason: errors[0] ?? 'no claims succeeded' };
   }
-  return { ok: true, claimedPositions: wins.length, payoutUsdt, txHash };
+  return { ok: true, claimedPositions: totalClaimed, payoutUsdt: totalPayout, txHash: firstTxHash };
 }
 
 // USDT (BSC) ERC-20 Transfer event topic. Used to recover the actual USDT

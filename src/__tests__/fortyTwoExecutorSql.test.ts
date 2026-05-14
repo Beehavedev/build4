@@ -602,14 +602,18 @@ test('openPredictionPosition INSERT writes all columns with providers cast to js
   //   [1] same-market guard count → 0
   //   [2] daily-quota count → 0
   //   [3] max-open count → 0
-  //   [4] live-opt-in lookup inside buildTrader → enabled → live mode
-  //   [5] INSERT...RETURNING → id row
+  //   [4] Agent.walletId lookup inside loadUserWalletPK (called from
+  //       buildTrader BEFORE the opt-in lookup) → empty (no pinned
+  //       wallet → fall through to user's active BSC wallet)
+  //   [5] live-opt-in lookup inside buildTrader → enabled → live mode
+  //   [6] INSERT...RETURNING → id row
   // (The enable-check at the top duplicates the one inside buildTrader —
   // intentional, the upstream check exists to surface a precise error
   // message before we burn DB cycles on quotas.)
   const spy = installSqlSpies([
     [{ fortyTwoLiveTrade: true }],
     [{ c: 0n }], [{ c: 0n }], [{ c: 0n }],
+    [{ walletId: null }],
     [{ fortyTwoLiveTrade: true }],
     [{ id: 'pos_new_id' }],
   ])
@@ -624,9 +628,9 @@ test('openPredictionPosition INSERT writes all columns with providers cast to js
       providers,
     )
     assert.deepEqual(result, { ok: true, positionId: 'pos_new_id', paperTrade: false, usdtIn: 2 })
-    assert.equal(spy.calls.length, 6, 'exactly 6 SQL calls: enable-check + 3 guards + buildTrader opt-in + INSERT')
+    assert.equal(spy.calls.length, 7, 'exactly 7 SQL calls: enable-check + 3 guards + buildTrader opt-in + Agent.walletId lookup + INSERT')
 
-    const insert = spy.calls[5]
+    const insert = spy.calls[6]
     const n = norm(insert.sql)
     assert.match(n, /INSERT\s+INTO\s+"OutcomePosition"/i)
     // Column list must match our positional binding contract exactly.

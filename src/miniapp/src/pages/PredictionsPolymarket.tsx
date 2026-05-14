@@ -1014,8 +1014,25 @@ export default function PredictionsPolymarket() {
                          : colorBad ? '#ef4444'
                          : '#f59e0b'
             // SELL = exit a live (still-open) position back to the order book.
-            // Only allow it for filled BUYs that have outcome tokens to sell.
-            const canSell = colorOk && !!p.tokenId && p.side === 'BUY' && (p.fillSize ?? 0) > 0
+            // Allow it for any non-failed BUY whose tokens are (or might be) at
+            // the Safe. We previously gated on status === 'filled'|'matched'
+            // only — but Polymarket's SDK frequently returns the order in
+            // 'placed' state even after the book matches it (the fill comes
+            // through asynchronously and we don't always see the update),
+            // so positions stayed un-sellable forever. We now also allow
+            // SELL on 'placed' positions: the worst case is the SELL itself
+            // fails server-side ("no tokens at Safe") and the user gets the
+            // standard error toast, instead of being permanently stuck with
+            // no way to exit.
+            const sellableStatus = p.status === 'filled' || p.status === 'matched' || p.status === 'placed'
+            // Token quantity for the SELL: prefer the recorded fill, fall back
+            // to (sizeUsdc / entryPrice) when the SDK didn't report a fill
+            // size — an order placed at $5 @ 32¢ implies ~15.625 outcome
+            // tokens, which is the right size to dump back to the book.
+            const sellQty = (p.fillSize && p.fillSize > 0)
+              ? p.fillSize
+              : (p.entryPrice > 0 ? p.sizeUsdc / p.entryPrice : 0)
+            const canSell = sellableStatus && !!p.tokenId && p.side === 'BUY' && sellQty > 0
             // REDEEM = claim USDC from a resolved market via the CTF
             // (or NegRiskAdapter). Gasless — the relayer pays. Shown for
             // any winning resolution; losing resolutions have nothing to
@@ -1099,7 +1116,11 @@ export default function PredictionsPolymarket() {
                       // modal for this — exits are intentionally one-tap
                       // so a user can dump on news without friction.
                       // SELL amount is the outcome-token quantity, not USDC.
-                      const qty = p.fillSize ?? 0
+                      // Use the same sellQty resolved above so 'placed'
+                      // positions (which often have fillSize=0 even after
+                      // matching) still get a sensible quantity derived
+                      // from sizeUsdc/entryPrice.
+                      const qty = sellQty
                       if (qty <= 0) return
                       try {
                         await submitOrder({

@@ -79,6 +79,13 @@ export default function Dashboard({ userId, onNavigate, launchEnabled }: Dashboa
   const [hlEverOnboarded,    setHlEverOnboarded]    = useState(false)
   const [asterEverOnboarded, setAsterEverOnboarded] = useState(false)
   const [polyEverReady,      setPolyEverReady]      = useState(false)
+  // Live MTM of the user's open 42.space positions, summed across all
+  // markets. Fetched from /api/me/positions so we can show the user the
+  // value of their PREDICTIONS (not just their dry-powder USDT). Without
+  // this the 42.SPACE card reports $0 the moment the user spends their
+  // BSC USDT into outcome tokens — which then reads as "fund to start"
+  // even though they have live positions worth real money.
+  const [predPositionsValue, setPredPositionsValue] = useState(0)
 
   useEffect(() => {
     if (!userId) { setLoading(false); return }
@@ -169,6 +176,30 @@ export default function Dashboard({ userId, onNavigate, launchEnabled }: Dashboa
     // Promise.all so a slow Polygon RPC never blocks first paint.
     refreshPoly()
 
+    // 42.space open-position MTM — fetched independently from the wallet
+    // so the slower on-chain bonding-curve quote (per open position) never
+    // blocks first paint. The endpoint already caches per-position quotes
+    // for 60s server-side, so the 10s refresh below is cheap.
+    const refreshPredValue = () => {
+      if (cancelled) return
+      apiFetch<{ ok: boolean; positions: Array<{ status: string; currentValueUsdt: number | null; usdtIn: number; paperTrade: boolean }> }>('/api/me/positions')
+        .then((r) => {
+          if (cancelled || !r?.ok) return
+          // Sum the live MTM of every OPEN, non-paper position. Fall back
+          // to the entry-cost (usdtIn) when the on-chain quote couldn't be
+          // computed — that's the best estimate we have and it's strictly
+          // better than showing $0 for a position that genuinely cost the
+          // user money.
+          const sum = (r.positions ?? [])
+            .filter((p) => p.status === 'open' && !p.paperTrade)
+            .reduce((acc, p) => acc + (p.currentValueUsdt ?? p.usdtIn ?? 0), 0)
+          setPredPositionsValue(sum)
+        })
+        .catch(() => { /* network blip — keep last good value */ })
+    }
+    refreshPredValue()
+    const predValueId = setInterval(refreshPredValue, 10_000)
+
     // 1s wallet refresh — every venue balance (Aster USDT, HL
     // clearinghouse account value, BSC USDT) is re-pulled live so the
     // dashboard always shows real-time numbers. Self-heals if the
@@ -208,6 +239,7 @@ export default function Dashboard({ userId, onNavigate, launchEnabled }: Dashboa
       cancelled = true
       clearInterval(id)
       clearInterval(polyId)
+      clearInterval(predValueId)
       document.removeEventListener('visibilitychange', onVis)
     }
   }, [userId])
@@ -238,11 +270,13 @@ export default function Dashboard({ userId, onNavigate, launchEnabled }: Dashboa
   // a brand-new mount races against an in-flight 429 before the
   // server-side cache is populated.
   const hlOnboarded = !!wallet?.hyperliquid?.onboarded || hlEverOnboarded
-  // 42.space "value" — for now we surface BSC USDT here since 42.space
-  // positions live on BSC and the mini-app's open-position MTM lives in
-  // the Predictions tab. This card is the user's BSC pocket / dry powder
-  // available for prediction trades.
-  const predValue = bscUsdt
+  // 42.space "value" — BSC USDT dry powder PLUS the live MTM of any open
+  // 42.space positions. We previously showed only dry powder, which read
+  // as "$0 / fund to start" the moment the user spent their USDT into
+  // outcome tokens — visually erasing live positions that were still
+  // worth real money. Adding the position MTM keeps the card honest:
+  // it always reflects total 42.space exposure (idle USDT + live bets).
+  const predValue = bscUsdt + predPositionsValue
   // Polymarket dry powder = Polygon USDC the user holds at the custodial
   // address. We treat "ready" (creds exist + allowance approved) as
   // onboarded so the pill mirrors the other venues' onboarded/funded
