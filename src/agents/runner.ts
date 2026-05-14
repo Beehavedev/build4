@@ -109,7 +109,11 @@ export function initRunner(bot: Bot) {
   botRef = bot
 
   // Main tick — every 60 seconds
-  cron.schedule('* * * * *', async () => {
+  // Cost-reduction (2026-05-14): Aster+HL agent loop runs every 2 min
+  // instead of every 60s. Cron granularity is whole minutes so we use
+  // */2 (= 120s) — close to the 90s target in the plan and the cleanest
+  // mapping cron supports. CAMPAIGN cron block below is UNTOUCHED.
+  cron.schedule('*/2 * * * *', async () => {
     await runAllAgents()
   })
 
@@ -173,7 +177,12 @@ export function initRunner(bot: Bot) {
   // full 60s after a Render deploy to see Polymarket activity start.
   // Defer by 5s to let the rest of initRunner finish wiring up first.
   setTimeout(tickPolymarket, 5_000)
-  setInterval(tickPolymarket, 60_000)
+  // Cost-reduction (2026-05-14): 60s → 5min. Polymarket markets resolve
+  // on horizons of hours-to-weeks; a 5-min scan cadence still catches
+  // every meaningful price move and cuts ~80% of LLM scan calls. The
+  // shared-scan refactor in polymarketAgent.ts means one fetch now
+  // covers all enabled agents on the tick.
+  setInterval(tickPolymarket, 300_000)
 
   // Module 4 — autonomous four.meme token launches. Independent of every
   // other tick: a launch agent only creates new tokens, never trades.
@@ -203,7 +212,12 @@ export function initRunner(bot: Bot) {
     }
   }
   setTimeout(tickFourMemeLaunch, 7_000)
-  setInterval(tickFourMemeLaunch, 60_000)
+  // Cost-reduction (2026-05-14): 60s → 2min. Launch decisions are
+  // gated by a per-agent daily cap and BNB-balance guard; a 2-min
+  // cadence still catches every meaningful narrative move while
+  // halving the LLM scan calls. Take-profit sweep below stays at 60s
+  // because it's a price-only check (no LLM).
+  setInterval(tickFourMemeLaunch, 120_000)
 
   // Demo Day — autonomous take-profit sweep for already-launched dev
   // bags. Independent of the launch sweep above so a slow LLM round
@@ -567,7 +581,11 @@ async function newsMonitorTick() {
 }
 
 function startNewsMonitor() {
-  setInterval(newsMonitorTick, 60_000)
+  // Cost-reduction (2026-05-14): 60s → 3min. fetchNewsSignal() is itself
+  // cached for 60s and gated on score>=7+isBreaking, so most ticks
+  // were no-ops anyway. 3min still gives same-day breaking-news
+  // coverage with 1/3 the LLM calls.
+  setInterval(newsMonitorTick, 180_000)
   // First check after 10s so we don't block startup.
   setTimeout(newsMonitorTick, 10_000)
 }

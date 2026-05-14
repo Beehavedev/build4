@@ -387,8 +387,36 @@ async function tickOneAgent(
   // MAX_MARKETS_PER_EVENT child markets (binary YES/NO sub-questions on
   // multi-outcome events). One LLM call per market → bounded cost per
   // tick: O(MAX_EVENTS_PER_TICK * MAX_MARKETS_PER_EVENT).
+  // Cost-reduction (2026-05-14): strict crypto-only + Price-only filter.
+  // Polymarket carries everything from sports to elections to weather; the
+  // BUILD4 perp brain is a crypto-trader and the prediction brain is a
+  // generic edge-classifier — neither should burn LLM tokens scoring
+  // "Will the Lakers cover the spread?". Crypto Price markets are the
+  // only ones that share signals with the rest of the system (live
+  // Aster/HL prices, news sentiment, etc).
+  //
+  // Filter is intentionally permissive on the "crypto" axis (any of the
+  // major-asset keywords in title or question) and strict on the "price"
+  // axis (must look like a price-target market, not e.g. "Will Coinbase
+  // ship X?"). False-positive cost = one wasted LLM scan; false-negative
+  // cost = the user has to use the manual mini-app. Bias toward
+  // false-negative.
+  const CRYPTO_KW = ['btc','bitcoin','eth','ethereum','sol','solana','bnb','xrp','doge','crypto','altcoin','defi']
+  const PRICE_KW  = ['$','price','reach','hit','close above','close below',' above ',' below ','high of','low of','all-time high','ath']
+  const isCryptoPriceMarket = (eventTitle: string, marketQuestion: string): boolean => {
+    const hay = `${eventTitle} ${marketQuestion}`.toLowerCase()
+    const hasCrypto = CRYPTO_KW.some((k) => hay.includes(k))
+    const hasPrice  = PRICE_KW.some((k) => hay.includes(k))
+    return hasCrypto && hasPrice
+  }
   const candidates = events
     .filter((e) => e.active && !e.closed && !e.archived && e.enableOrderBook)
+    // Drop entire events whose title doesn't even hint at crypto so we
+    // skip the per-market loop for sports/elections/weather wholesale.
+    .filter((e) => {
+      const t = (e.title ?? '').toLowerCase()
+      return CRYPTO_KW.some((k) => t.includes(k))
+    })
     .slice(0, MAX_EVENTS_PER_TICK)
 
   for (const event of candidates) {
@@ -402,6 +430,12 @@ async function tickOneAgent(
                      // capital for months.
                      && m.endDate !== null
                      && new Date(m.endDate).getTime() <= maxEndDateMs)
+      // Architect-review fix: apply the crypto+price gate BEFORE slicing
+      // to MAX_MARKETS_PER_EVENT. Otherwise a crypto event whose first 3
+      // child markets happen to be non-price (e.g. "Will Coinbase list X
+      // by date?") would silently starve the agent of valid price markets
+      // further down the list.
+      .filter((m) => isCryptoPriceMarket(event.title ?? '', m.question ?? ''))
       .slice(0, MAX_MARKETS_PER_EVENT)
 
     for (const market of markets) {

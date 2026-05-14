@@ -1501,6 +1501,15 @@ export default function AgentStudio(_props: AgentStudioProps) {
           Allowed Trading Platforms
         </div>
         {VENUES.map(renderVenueRow)}
+        <div
+          data-testid="text-prediction-crypto-only-note"
+          style={{
+            fontSize: 11, color: '#64748b', marginTop: 8, paddingLeft: 2,
+            lineHeight: 1.4,
+          }}
+        >
+          AI agents trade Price markets on crypto only. Event/sports markets are not supported — use the mini-app to trade them manually.
+        </div>
       </div>
 
       {/* Flat list of every agent the user owns. No per-venue grouping —

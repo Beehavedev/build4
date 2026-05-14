@@ -12,14 +12,20 @@
 // {action, side, conviction, reasoning}. The Aster perp brain (ADX/RSI/
 // funding-rate) is the wrong tool for either of them.
 //
-// Provider fallback mirrors polymarketAgent's original behaviour: anthropic
-// first, then xai, then hyperbolic. One LLM round-trip per (agent × market)
-// per tick — bounded by MAX_EVENTS_PER_TICK upstream.
+// Provider fallback (Cost-reduction 2026-05-14): xAI grok-3-mini first
+// (~30× cheaper than Sonnet), then Hyperbolic Llama-3.3-70B, with
+// Anthropic Sonnet 4.5 as the last-resort fallback. Prediction-market
+// scoring is a low-stakes "is there an edge?" classification — Grok
+// handles it fine. The expensive Sonnet calls are reserved for the
+// trade-decision path on perps (tradingAgent.ts) and the 42.space
+// CAMPAIGN brain (fortyTwoCampaign.ts), both untouched.
+// One LLM round-trip per (agent × market) per tick — bounded by
+// MAX_EVENTS_PER_TICK upstream.
 // ─────────────────────────────────────────────────────────────────────────
 
 import { callLLM, type Provider } from '../services/inference'
 
-const PROVIDER_FALLBACK: Provider[] = ['anthropic', 'xai', 'hyperbolic']
+const PROVIDER_FALLBACK: Provider[] = ['xai', 'hyperbolic', 'anthropic']
 
 export type PredictionVenue = 'polymarket' | 'fortytwo'
 

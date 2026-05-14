@@ -1,9 +1,14 @@
 import axios from 'axios'
 import Parser from 'rss-parser'
-import Anthropic from '@anthropic-ai/sdk'
+import { callLLM, type Provider } from './inference'
 
 const parser = new Parser({ timeout: 8000 })
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+
+// Cost-reduction (2026-05-14): news sentiment classification is a cheap
+// task — Hyperbolic Llama-3.3-70B handles it just as well as Sonnet 4.5
+// at ~50× lower cost. Anthropic stays as a fallback so a temporary
+// Hyperbolic outage can't blank our breaking-news lane.
+const NEWS_PROVIDER_FALLBACK: Provider[] = ['hyperbolic', 'anthropic']
 
 const processedItems = new Set<string>()
 let latestSignal: NewsSignal | null = null
@@ -231,16 +236,43 @@ export async function fetchNewsSignal(): Promise<NewsSignal> {
     `}`
 
   try {
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-5',
-      max_tokens: 400,
-      messages: [{ role: 'user', content: prompt }]
-    })
-    const text = response.content[0].type === 'text' ? response.content[0].text : '{}'
-    const parsed = JSON.parse(text.match(/\{[\s\S]*\}/)?.[0] ?? '{}') as NewsSignal
-    if (!parsed.sentiment || typeof parsed.score !== 'number') {
-      throw new Error('Bad LLM JSON shape')
+    // Cost-reduction (2026-05-14): try cheap providers first, fall back
+    // to Sonnet only on outage. One-line per fallback for monitoring so
+    // we can spot a Hyperbolic regression in Render logs.
+    //
+    // IMPORTANT (architect-review fix): JSON extraction + shape validation
+    // happens *inside* the loop, not after it. If Hyperbolic returns
+    // malformed JSON or a wrong-shape NewsSignal we want to fall through
+    // to Anthropic, not return a neutral failure. The previous version
+    // silently masked Hyperbolic regressions because the parse error
+    // was thrown after we'd already broken out of the loop.
+    let parsed: NewsSignal | null = null
+    let lastErr: Error | null = null
+    for (const provider of NEWS_PROVIDER_FALLBACK) {
+      try {
+        const r = await callLLM({
+          provider,
+          user: prompt,
+          jsonMode: true,
+          maxTokens: 400,
+          temperature: 0.3,
+          timeoutMs: 20_000,
+        })
+        const candidate = JSON.parse(r.text.match(/\{[\s\S]*\}/)?.[0] ?? '{}') as NewsSignal
+        if (!candidate.sentiment || typeof candidate.score !== 'number') {
+          throw new Error('Bad LLM JSON shape')
+        }
+        parsed = candidate
+        if (provider !== NEWS_PROVIDER_FALLBACK[0]) {
+          console.warn(`[News] fallback to ${provider} after primary failed`)
+        }
+        lastErr = null
+        break
+      } catch (err) {
+        lastErr = err as Error
+      }
     }
+    if (!parsed) throw (lastErr ?? new Error('All news providers failed'))
     latestSignal = {
       sentiment: parsed.sentiment,
       score: parsed.score,
