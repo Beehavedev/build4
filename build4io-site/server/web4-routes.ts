@@ -2931,36 +2931,151 @@ ${urls}
   // Wallet Signature Authentication Middleware
   // ============================================================
 
+  // SIWE-style message parser + validator. Hardened per Phase 0 review.
+  function parseSiweLikeMessage(msg: string): Record<string, string> | null {
+    if (typeof msg !== "string" || msg.length > 4096) return null;
+    const lines = msg.split("\n");
+    const out: Record<string, string> = {};
+    // Line 0: "<domain> wants you to sign in with your Ethereum account:"
+    const m0 = lines[0]?.match(/^(\S+) wants you to sign in with your Ethereum account:$/);
+    if (!m0) return null;
+    out.domain = m0[1];
+    out.address = (lines[1] || "").trim();
+    if (!/^0x[a-fA-F0-9]{40}$/.test(out.address)) return null;
+    for (const line of lines.slice(2)) {
+      const idx = line.indexOf(":");
+      if (idx < 0) continue;
+      const k = line.slice(0, idx).trim();
+      const v = line.slice(idx + 1).trim();
+      if (k && v && !out[k]) out[k] = v;
+    }
+    return out;
+  }
+
+  function hostAllowedForSiwe(host: string, reqHost: string): boolean {
+    const allow = (process.env.DAPP_ALLOWED_HOSTS || "build4.io,www.build4.io")
+      .split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
+    const h = host.toLowerCase().split(":")[0];
+    if (allow.includes(h)) return true;
+    // Dev: allow request's own host (localhost, replit preview, etc.)
+    if (reqHost && h === reqHost.toLowerCase().split(":")[0]) return true;
+    return false;
+  }
+
+  // Bounded LRU-ish set for one-time-use nonces, TTL = 1h
+  const usedNonces: Map<string, number> = (globalThis as any).__siweUsedNonces ||= new Map();
+  function rememberNonce(key: string): boolean {
+    const now = Date.now();
+    // sweep expired
+    if (usedNonces.size > 2000) {
+      for (const [k, exp] of usedNonces) if (exp < now) usedNonces.delete(k);
+    }
+    if (usedNonces.has(key) && (usedNonces.get(key) as number) > now) return false;
+    usedNonces.set(key, now + 60 * 60 * 1000);
+    return true;
+  }
+
   app.post("/api/auth/verify-signature", async (req: Request, res: Response) => {
     try {
-      const { message, signature, walletAddress } = req.body;
+      const { message, signature, walletAddress } = req.body || {};
       if (!message || !signature || !walletAddress) {
         return res.status(400).json({ error: "Missing message, signature, or walletAddress" });
       }
-      const { ethers } = await import("ethers");
-      const recoveredAddress = ethers.verifyMessage(message, signature);
-      const authenticated = recoveredAddress.toLowerCase() === walletAddress.toLowerCase();
-
-      if (authenticated) {
-        const crypto = await import("crypto");
-        const sessionToken = crypto.randomBytes(32).toString("hex");
-        const expiry = Date.now() + 24 * 60 * 60 * 1000;
-
-        if (!(globalThis as any).__authSessions) (globalThis as any).__authSessions = new Map();
-        (globalThis as any).__authSessions.set(sessionToken, {
-          wallet: walletAddress.toLowerCase(),
-          expiry,
-        });
-
-        res.json({
-          authenticated: true,
-          wallet: recoveredAddress.toLowerCase(),
-          sessionToken,
-          expiresAt: new Date(expiry).toISOString(),
-        });
-      } else {
-        res.status(401).json({ authenticated: false, error: "Signature verification failed" });
+      if (typeof message !== "string" || message.length > 4096) {
+        return res.status(400).json({ authenticated: false, error: "Invalid message" });
       }
+      if (typeof signature !== "string" || signature.length > 200) {
+        return res.status(400).json({ authenticated: false, error: "Invalid signature" });
+      }
+
+      const parsed = parseSiweLikeMessage(message);
+      if (!parsed) return res.status(400).json({ authenticated: false, error: "Malformed sign-in message" });
+
+      const reqHost = (req.headers.host || "").toString();
+      if (!hostAllowedForSiwe(parsed.domain, reqHost)) {
+        return res.status(403).json({ authenticated: false, error: "Domain not allowed" });
+      }
+      try {
+        const uri = new URL(parsed.URI || "");
+        if (!hostAllowedForSiwe(uri.host, reqHost)) {
+          return res.status(403).json({ authenticated: false, error: "URI host not allowed" });
+        }
+      } catch {
+        return res.status(400).json({ authenticated: false, error: "Invalid URI" });
+      }
+      if ((parsed.Version || "") !== "1") {
+        return res.status(400).json({ authenticated: false, error: "Unsupported version" });
+      }
+      const chainId = Number(parsed["Chain ID"]);
+      if (!Number.isFinite(chainId) || chainId <= 0) {
+        return res.status(400).json({ authenticated: false, error: "Invalid chain id" });
+      }
+      const nonce = parsed.Nonce || "";
+      if (nonce.length < 8 || nonce.length > 128) {
+        return res.status(400).json({ authenticated: false, error: "Invalid nonce" });
+      }
+      const issuedAtMs = Date.parse(parsed["Issued At"] || "");
+      if (!Number.isFinite(issuedAtMs)) {
+        return res.status(400).json({ authenticated: false, error: "Invalid Issued At" });
+      }
+      const now = Date.now();
+      if (issuedAtMs > now + 60 * 1000 || issuedAtMs < now - 15 * 60 * 1000) {
+        return res.status(401).json({ authenticated: false, error: "Sign-in message expired — please try again" });
+      }
+      const expMs = parsed["Expiration Time"] ? Date.parse(parsed["Expiration Time"]) : NaN;
+      if (parsed["Expiration Time"]) {
+        if (!Number.isFinite(expMs) || expMs <= now) {
+          return res.status(401).json({ authenticated: false, error: "Sign-in message expired — please try again" });
+        }
+        if (expMs - issuedAtMs > 60 * 60 * 1000) {
+          return res.status(400).json({ authenticated: false, error: "Expiration too far in the future" });
+        }
+      }
+      if (parsed.address.toLowerCase() !== String(walletAddress).toLowerCase()) {
+        return res.status(400).json({ authenticated: false, error: "Address mismatch" });
+      }
+
+      const { ethers } = await import("ethers");
+      let recoveredAddress: string;
+      try { recoveredAddress = ethers.verifyMessage(message, signature); }
+      catch { return res.status(401).json({ authenticated: false, error: "Signature verification failed" }); }
+      if (recoveredAddress.toLowerCase() !== String(walletAddress).toLowerCase()) {
+        return res.status(401).json({ authenticated: false, error: "Signature verification failed" });
+      }
+
+      // One-time-use nonce (after sig check so we don't burn nonces on bad sigs)
+      if (!rememberNonce(`${recoveredAddress.toLowerCase()}:${nonce}`)) {
+        return res.status(401).json({ authenticated: false, error: "Sign-in message already used — please try again" });
+      }
+
+      const cryptoMod = await import("crypto");
+      const sessionToken = cryptoMod.randomBytes(32).toString("hex");
+      const expiry = Date.now() + 24 * 60 * 60 * 1000;
+
+      // Cross-DB lookup: existing bot account by wallet?
+      let linkedBotUser: any = null;
+      try {
+        const { findBotUserByWalletAddress } = await import("./web-mirror-lookup");
+        linkedBotUser = await findBotUserByWalletAddress(recoveredAddress);
+      } catch (e: any) {
+        console.warn("[siwe] linked-user lookup failed:", e?.message);
+      }
+
+      if (!(globalThis as any).__authSessions) (globalThis as any).__authSessions = new Map();
+      (globalThis as any).__authSessions.set(sessionToken, {
+        kind: "wallet",
+        wallet: recoveredAddress.toLowerCase(),
+        linkedBotUserId: linkedBotUser?.userId ?? null,
+        expiry,
+      });
+
+      res.json({
+        authenticated: true,
+        wallet: recoveredAddress.toLowerCase(),
+        sessionToken,
+        expiresAt: new Date(expiry).toISOString(),
+        linkedBotUser,
+      });
     } catch (e: any) {
       res.status(400).json({ authenticated: false, error: e.message });
     }
@@ -2984,8 +3099,44 @@ ${urls}
       telegramUsername: session.telegramUsername ?? null,
       telegramFirstName: session.telegramFirstName ?? null,
       telegramPhotoUrl: session.telegramPhotoUrl ?? null,
+      linkedBotUserId: session.linkedBotUserId ?? null,
       expiresAt: new Date(session.expiry).toISOString(),
     });
+  });
+
+  // ============================================================
+  // /api/web/me — full linked-bot-account summary for the dashboard
+  // ============================================================
+  app.get("/api/web/me", async (req: Request, res: Response) => {
+    try {
+      const token = req.headers["x-session-token"] as string;
+      if (!token) return res.status(401).json({ error: "No session token" });
+      const sessions = (globalThis as any).__authSessions as Map<string, any> | undefined;
+      const session = sessions?.get(token);
+      if (!session || session.expiry < Date.now()) {
+        sessions?.delete(token);
+        return res.status(401).json({ error: "Session expired or invalid" });
+      }
+      const { findBotUserByTelegramId, findBotUserByWalletAddress } = await import("./web-mirror-lookup");
+      let linkedBotUser: any = null;
+      if (session.kind === "telegram" && session.telegramId) {
+        linkedBotUser = await findBotUserByTelegramId(String(session.telegramId));
+      } else if (session.wallet) {
+        linkedBotUser = await findBotUserByWalletAddress(String(session.wallet));
+      }
+      res.json({
+        kind: session.kind || "wallet",
+        wallet: session.wallet ?? null,
+        telegramId: session.telegramId ?? null,
+        telegramUsername: session.telegramUsername ?? null,
+        telegramFirstName: session.telegramFirstName ?? null,
+        telegramPhotoUrl: session.telegramPhotoUrl ?? null,
+        linkedBotUser,
+      });
+    } catch (e: any) {
+      console.error("[/api/web/me]", e);
+      res.status(500).json({ error: e?.message || "Internal error" });
+    }
   });
 
   // ============================================================
@@ -3057,6 +3208,15 @@ ${urls}
 
       const sessionToken = crypto.randomBytes(32).toString("hex");
       const expiry = Date.now() + 24 * 60 * 60 * 1000;
+      // Cross-DB lookup: existing bot account by Telegram id?
+      let linkedBotUser: any = null;
+      try {
+        const { findBotUserByTelegramId } = await import("./web-mirror-lookup");
+        linkedBotUser = await findBotUserByTelegramId(String(id));
+      } catch (e: any) {
+        console.warn("[tg-auth] linked-user lookup failed:", e?.message);
+      }
+
       if (!(globalThis as any).__authSessions) (globalThis as any).__authSessions = new Map();
       (globalThis as any).__authSessions.set(sessionToken, {
         kind: "telegram",
@@ -3064,6 +3224,7 @@ ${urls}
         telegramUsername: fields.username ?? null,
         telegramFirstName: fields.first_name ?? null,
         telegramPhotoUrl: fields.photo_url ?? null,
+        linkedBotUserId: linkedBotUser?.userId ?? null,
         expiry,
       });
 
@@ -3076,6 +3237,7 @@ ${urls}
         telegramPhotoUrl: fields.photo_url ?? null,
         sessionToken,
         expiresAt: new Date(expiry).toISOString(),
+        linkedBotUser,
       });
     } catch (e: any) {
       res.status(400).json({ authenticated: false, error: e?.message || "Telegram auth failed" });

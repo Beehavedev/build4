@@ -4,10 +4,22 @@ import { WalletConnector } from "@/components/wallet-connector";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, ShieldCheck, Wallet, ExternalLink, LogOut, Send } from "lucide-react";
+import { Loader2, ShieldCheck, Wallet, ExternalLink, LogOut, Send, CheckCircle2, Bot } from "lucide-react";
 import { Link } from "wouter";
 
 const SESSION_KEY = "build4_session_token";
+
+type LinkedBotUser = {
+  userId: string;
+  telegramId: string;
+  username: string | null;
+  firstName: string | null;
+  b4Balance: number;
+  asterOnboarded: boolean;
+  bscWalletAddress: string | null;
+  agentCount: number;
+  activeAgentCount: number;
+};
 
 type Session =
   | { kind: "wallet"; wallet: string; expiresAt: string }
@@ -86,6 +98,8 @@ export default function AppDashboard() {
     enabled: false,
     botUsername: null,
   });
+  const [linkedBotUser, setLinkedBotUser] = useState<LinkedBotUser | null>(null);
+  const [meLoading, setMeLoading] = useState(false);
 
   const fetchSession = useCallback(async (): Promise<Session | null> => {
     try {
@@ -136,6 +150,31 @@ export default function AppDashboard() {
       cancelled = true;
     };
   }, [connected, address, fetchSession]);
+
+  // Fetch linked-bot-account summary whenever we're authed
+  useEffect(() => {
+    if (auth.kind !== "authed") {
+      setLinkedBotUser(null);
+      return;
+    }
+    const token = localStorage.getItem(SESSION_KEY);
+    if (!token) return;
+    let cancelled = false;
+    setMeLoading(true);
+    fetch("/api/web/me", { headers: { "x-session-token": token } })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => {
+        if (cancelled) return;
+        setLinkedBotUser(j?.linkedBotUser ?? null);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setMeLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [auth.kind]);
 
   const signIn = useCallback(async () => {
     if (!signer || !address) return;
@@ -382,6 +421,127 @@ export default function AppDashboard() {
                 </Badge>
               </div>
             </Card>
+
+            {meLoading && (
+              <Card className="p-6 flex items-center gap-2 text-sm text-muted-foreground" data-testid="card-me-loading">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Looking up your Build4 account…
+              </Card>
+            )}
+
+            {!meLoading && linkedBotUser && (
+              <Card className="p-6 space-y-4 border-primary/40" data-testid="card-linked-bot-user">
+                <div className="flex items-start justify-between gap-3 flex-wrap">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-5 h-5 text-primary" />
+                    <div>
+                      <h2 className="font-mono text-sm font-bold">
+                        Linked to your Build4 account
+                      </h2>
+                      <p className="text-xs text-muted-foreground">
+                        We found your existing account from the Telegram bot.
+                      </p>
+                    </div>
+                  </div>
+                  <Badge variant="default" className="font-mono text-[10px]">
+                    <Bot className="w-3 h-3 mr-1" />
+                    Bot account
+                  </Badge>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div className="space-y-1" data-testid="stat-b4-balance">
+                    <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-mono">
+                      B4 balance
+                    </p>
+                    <p className="font-mono text-lg font-bold">
+                      ${linkedBotUser.b4Balance.toFixed(2)}
+                    </p>
+                  </div>
+                  <div className="space-y-1" data-testid="stat-agents">
+                    <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-mono">
+                      AI agents
+                    </p>
+                    <p className="font-mono text-lg font-bold">
+                      {linkedBotUser.activeAgentCount}
+                      <span className="text-sm text-muted-foreground">
+                        {" "}
+                        / {linkedBotUser.agentCount}
+                      </span>
+                    </p>
+                  </div>
+                  <div className="space-y-1" data-testid="stat-aster">
+                    <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-mono">
+                      Aster
+                    </p>
+                    <p className="font-mono text-sm font-bold">
+                      {linkedBotUser.asterOnboarded ? "Onboarded" : "Not set up"}
+                    </p>
+                  </div>
+                  <div className="space-y-1" data-testid="stat-telegram">
+                    <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-mono">
+                      Telegram
+                    </p>
+                    <p className="font-mono text-sm font-bold truncate">
+                      {linkedBotUser.username
+                        ? `@${linkedBotUser.username}`
+                        : linkedBotUser.firstName || `ID ${linkedBotUser.telegramId}`}
+                    </p>
+                  </div>
+                </div>
+
+                {linkedBotUser.bscWalletAddress && (
+                  <div
+                    className="pt-3 border-t flex items-center justify-between gap-2 flex-wrap"
+                    data-testid="row-bsc-wallet"
+                  >
+                    <div>
+                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-mono">
+                        Your Build4 BSC deposit wallet
+                      </p>
+                      <p className="font-mono text-xs break-all">
+                        {linkedBotUser.bscWalletAddress}
+                      </p>
+                    </div>
+                    <a
+                      href={`https://bscscan.com/address/${linkedBotUser.bscWalletAddress}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs underline inline-flex items-center gap-1 font-mono"
+                      data-testid="link-bscscan"
+                    >
+                      BscScan <ExternalLink className="w-3 h-3" />
+                    </a>
+                  </div>
+                )}
+              </Card>
+            )}
+
+            {!meLoading && !linkedBotUser && (
+              <Card className="p-6 space-y-2" data-testid="card-no-linked-account">
+                <h2 className="font-mono text-sm font-bold">No Build4 account yet</h2>
+                <p className="text-sm text-muted-foreground">
+                  {session.kind === "wallet"
+                    ? "This wallet isn't linked to an existing Build4 account."
+                    : "This Telegram account hasn't started Build4 yet."}{" "}
+                  Account provisioning from the web is coming next — for now you can start on
+                  Telegram and come back here.
+                </p>
+                <a
+                  href={
+                    tgConfig.botUsername
+                      ? `https://t.me/${tgConfig.botUsername}`
+                      : "https://t.me/Build4bot"
+                  }
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sm underline inline-flex items-center gap-1 font-mono"
+                  data-testid="link-start-on-telegram"
+                >
+                  Start on Telegram <ExternalLink className="w-3 h-3" />
+                </a>
+              </Card>
+            )}
 
             <Card className="p-6 space-y-3" data-testid="card-coming-soon">
               <h2 className="font-mono text-sm font-bold">Coming next</h2>
