@@ -1,0 +1,59 @@
+[Agent Zephyr2017] 42.space scan: 25 live markets
+[Agent Phoenix2848] 42.space scan: 25 live markets
+[Agent Orion1687] 42.space scan: 25 live markets
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '15m', limit: 200 }
+[Agent Miiiiiiiiiineeeii] 42.space scan: 25 live markets
+[Agent Halcyon6425] 42.space scan: 25 live markets
+[Agent Ghost] 42.space scan: 25 live markets
+[Agent Lyra4800] 42.space scan: 25 live markets
+[Agent agvvfttcvvcg] 42.space scan: 25 live markets
+[Agent semok] 42.space scan: 25 live markets
+[Agent Nimbus1637] 42.space scan: 25 live markets
+[Agent Lyra9262] 42.space scan: 25 live markets
+[Agent SeanBuild4] 42.space scan: 25 live markets
+[Agent Apex5851] 42.space scan: 25 live markets
+[Agent Nimbus9438] 42.space scan: 25 live markets
+[Agent Helios4114] 42.space scan: 25 live markets
+[Agent LongYingKe] 42.space scan: 25 live markets
+[polymarketAgent] previous tick still running, skipping
+[Agent Andromeda5291] 42.space scan: 25 live markets
+[Agent Orion1192] 42.space scan: 25 live markets
+[Agent TENSHI] 42.space scan: 25 live markets
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '1h', limit: 200 }
+[GET]
+build4-1.onrender.com/api/agents/0x36ab0907cc526CBC26C5b688AbBA3f14A5bD7604/metadata.json clientIP="35.76.185.2" requestID="204021fd-9448-47ff" responseTimeMS=1634 responseBytes=1357 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10.8; rv:50.0) Gecko/20100101 Firefox/50.0"
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '1h', limit: 200 }
+[fourMemeLaunchAgent] scanned=0 — DB probe: enabled=0 active=73 both=0 total=77
+[fourMemeLaunchAgent] scanned=0 ticked=0 launched=0 skipped=0 errors=0
+[GET]
+build4-1.onrender.com/api/agents/0xCD9EB1c0164d326421429CBF02b779E2eCd880Ce/metadata.json clientIP="54.250.230.162" requestID="17090215-56e8-41de" responseTimeMS=2463 responseBytes=1350 userAgent="Mozilla/5.0 (X11; Ubuntu; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/56.0.2964.75 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/agents/0xA283872A766c8a1DD8f9151fE8b5348940f576BC/metadata.json clientIP="54.250.230.162" requestID="eafa5697-67e8-4802" responseTimeMS=2026 responseBytes=1353 userAgent="Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/49.0.2647.60 Safari/537.36"
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 200 }
+[GET]
+build4-1.onrender.com/api/agents/0xEb5176210e8eCB7677cBd56FCfa216f268fc0F8f/metadata.json clientIP="35.74.207.133" requestID="3aa2b07a-c340-4506" responseTimeMS=2169 responseBytes=1329 userAgent="Mozilla/5.0 (compatible; MSIE 10.0; Windows NT 10.0; Win64; x64; Trident/6.0)"
+[GET]
+build4-1.onrender.com/api/agents/0x62A986dB813a41c7C8C7BeCC120605214205F37F/metadata.json clientIP="35.76.185.2" requestID="5d078c67-ae46-4649" responseTimeMS=2001 responseBytes=325 userAgent="Mozilla/5.0 (compatible; MSIE 9.0; Windows NT 6.2; Trident/5.0)"
+[fortyTwo] on-chain read failed for 0xF3c455Da03f0761d647DD02b0249024BBFbe7250: missing response for request (value=[ { "error": { "code": -32005, "message": "method eth_call in batch triggered rate limit" }, "id": null, "jsonrpc": "2.0" } ], info={ "payload": { "id": 1912, "jsonrpc": "2.0", "method": "eth_call", "params": [ { "data": "0xb06a5c52", "to": "0xf3c455da03f0761d647dd02b0249024bbfbe7250" }, "latest" ] } }, code=BAD_DATA, version=6.16.0)
+[fortyTwo] on-chain read failed for 0xa74b54C5C468Ec3584dD4064277625A1a7DD170c: missing response for request (value=[ { "error": { "code": -32005, "message": "method eth_call in batch triggered rate limit" }, "id": null, "jsonrpc": "2.0" } ], info={ "payload": { "id": 1914, "jsonrpc": "2.0", "method": "eth_call", "params": [ { "data": "0xb06a5c52", "to": "0xa74b54c5c468ec3584dd4064277625a1a7dd170c" }, "latest" ] } }, code=BAD_DATA, version=6.16.0)
+[fortyTwo] on-chain read failed for 0x4fF65fF80eeC0419d9B75677F4b0F632ee8b6bFB: missing response for request (value=[ { "error": { "code": -32005, "message": "method eth_call in batch triggered rate limit" }, "id": null, "jsonrpc": "2.0" } ], info={ "payload": { "id": 1916, "jsonrpc": "2.0", "method": "eth_call", "params": [ { "data": "0xb06a5c52", "to": "0x4ff65ff80eec0419d9b75677f4b0f632ee8b6bfb" }, "latest" ] } }, code=BAD_DATA, version=6.16.0)
+[fortyTwo] on-chain read failed for 0xb254a14b341911B76C27Ac09bAEe4730EDB6D12A: missing response for request (value=[ { "error": { "code": -32005, "message": "method eth_call in batch triggered rate limit" }, "id": null, "jsonrpc": "2.0" } ], info={ "payload": { "id": 1918, "jsonrpc": "2.0", "method": "eth_call", "params": [ { "data": "0xb06a5c52", "to": "0xb254a14b341911b76c27ac09baee4730edb6d12a" }, "latest" ] } }, code=BAD_DATA, version=6.16.0)
+[fortyTwo] on-chain read failed for 0x312Ef0b5cA9d6f57839F46B105F5f33d1AC3F068: missing response for request (value=[ { "error": { "code": -32005, "message": "method eth_call in batch triggered rate limit" }, "id": null, "jsonrpc": "2.0" } ], info={ "payload": { "id": 1920, "jsonrpc": "2.0", "method": "eth_call", "params": [ { "data": "0xb06a5c52", "to": "0x312ef0b5ca9d6f57839f46b105f5f33d1ac3f068" }, "latest" ] } }, code=BAD_DATA, version=6.16.0)
+[fortyTwo] on-chain read failed for 0x3D06A3aEbaAb0E0a3f655BC149e81beBF5102c5e: missing response for request (value=[ { "error": { "code": -32005, "message": "method eth_call in batch triggered rate limit" }, "id": null, "jsonrpc": "2.0" } ], info={ "payload": { "id": 1922, "jsonrpc": "2.0", "method": "eth_call", "params": [ { "data": "0xb06a5c52", "to": "0x3d06a3aebaab0e0a3f655bc149e81bebf5102c5e" }, "latest" ] } }, code=BAD_DATA, version=6.16.0)
+[fortyTwo] on-chain read failed for 0x13dA8213e560b06F0cEF2659E7246F6d954386C5: missing response for request (value=[ { "error": { "code": -32005, "message": "method eth_call in batch triggered rate limit" }, "id": null, "jsonrpc": "2.0" } ], info={ "payload": { "id": 1924, "jsonrpc": "2.0", "method": "eth_call", "params": [ { "data": "0xb06a5c52", "to": "0x13da8213e560b06f0cef2659e7246f6d954386c5" }, "latest" ] } }, code=BAD_DATA, version=6.16.0)
+[fortyTwo] on-chain read failed for 0xa41E02c5F407469f13f966011D1e348e038b2aee: missing response for request (value=[ { "error": { "code": -32005, "message": "method eth_call in batch triggered rate limit" }, "id": null, "jsonrpc": "2.0" } ], info={ "payload": { "id": 1926, "jsonrpc": "2.0", "method": "eth_call", "params": [ { "data": "0xb06a5c52", "to": "0xa41e02c5f407469f13f966011d1e348e038b2aee" }, "latest" ] } }, code=BAD_DATA, version=6.16.0)
+[fortyTwo] on-chain read failed for 0x353c1206174588705276e296EF4A23849C446BbD: missing response for request (value=[ { "error": { "code": -32005, "message": "method eth_call in batch triggered rate limit" }, "id": null, "jsonrpc": "2.0" } ], info={ "payload": { "id": 1928, "jsonrpc": "2.0", "method": "eth_call", "params": [ { "data": "0xb06a5c52", "to": "0x353c1206174588705276e296ef4a23849c446bbd" }, "latest" ] } }, code=BAD_DATA, version=6.16.0)
+[fortyTwo] on-chain read failed for 0x377C37029eDE02076172b13DF817dF4366f75E2B: missing response for request (value=[ { "error": { "code": -32005, "message": "method eth_call in batch triggered rate limit" }, "id": null, "jsonrpc": "2.0" } ], info={ "payload": { "id": 1930, "jsonrpc": "2.0", "method": "eth_call", "params": [ { "data": "0xb06a5c52", "to": "0x377c37029ede02076172b13df817df4366f75e2b" }, "latest" ] } }, code=BAD_DATA, version=6.16.0)
+[fortyTwo] on-chain read failed for 0x5fb5F2315056b6bc5f1369FA9FFc2A7a5Ad11f52: missing response for request (value=[ { "error": { "code": -32005, "message": "method eth_call in batch triggered rate limit" }, "id": null, "jsonrpc": "2.0" } ], info={ "payload": { "id": 1932, "jsonrpc": "2.0", "method": "eth_call", "params": [ { "data": "0xb06a5c52", "to": "0x5fb5f2315056b6bc5f1369fa9ffc2a7a5ad11f52" }, "latest" ] } }, code=BAD_DATA, version=6.16.0)
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '1h', limit: 200 }
+[GET]
+build4-1.onrender.com/api/agents/0xFf7Be62F08643a3bC6759b2CAdd6C994a5106f01/metadata.json clientIP="57.180.103.27" requestID="fc33a7b3-8f98-48a2" responseTimeMS=1847 responseBytes=1355 userAgent="Mozilla/5.0 (Windows NT 5.1; Win64; x64; rv:50.0) Gecko/20100101 Firefox/50.0"
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '15m', limit: 200 }
+[GET]
+build4-1.onrender.com/api/agents/0x845E7005944dfDB532A22cea97A3DA194546565B/metadata.json clientIP="54.250.230.162" requestID="f8e42f0b-d2d9-49e8" responseTimeMS=1874 responseBytes=325 userAgent="Mozilla/5.0 (compatible; MSIE 10.0; Windows NT 6.2; Trident/6.0)"
+[GET]
+build4-1.onrender.com/api/agents/0xd6814F6A0a72Dca618C274BCE20AEcfE03F221F3/metadata.json clientIP="3.115.124.121" requestID="e7e14b7e-e914-4b26" responseTimeMS=1957 responseBytes=1372 userAgent="Mozilla/5.0 (Windows NT 6.1; Win64; x64; rv:48.0) Gecko/20100101 Firefox/48.0"
+[Aster] klines fetch (cache miss): { symbol: 'ALICEUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'ALICEUSDT', interval: '5m', limit: 100 }
+[GET]
+build4-1.onrender.com/api/agents/0xAD216228e11c22E9D0dA5eCb6B488adC61d8cca2/metadata.json clientIP="35.76.185.2" requestID="11c88534-d9b7-48c0" responseTimeMS=1823 responseBytes=1327 userAgent="Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:49.0) Gecko/20100101 Firefox/49.0"
