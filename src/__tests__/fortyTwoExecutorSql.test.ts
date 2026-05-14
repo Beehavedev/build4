@@ -6,6 +6,8 @@ import {
   __testDeps,
   openPredictionPosition,
   closePredictionPosition,
+  closeUserPredictionPosition,
+  claimUserResolvedForMarket,
   settleResolvedPositions,
   listOpenAgentPositions,
   listUserPositions,
@@ -730,5 +732,299 @@ test('closePredictionPosition UPDATE writes [exitPrice,payout,pnl,txHashClose,pa
     spy.restore()
     restore()
     restoreWallet()
+  }
+})
+
+// ── closeUserPredictionPosition / claimUserResolvedForMarket wallet routing ─
+//
+// Regression tests for commit 2357077: CLOSE and CLAIM on 42.space positions
+// must build the trader from the wallet that actually holds the outcome
+// tokens (Agent.walletId), not the user's primary BSC wallet. A miss here
+// silently re-introduces the "CLOSE does nothing" bug (sellOutcome reverts
+// because the active wallet holds zero outcome tokens for the position).
+//
+// We use a single shared scaffold:
+//   * `decryptPrivateKey` returns a deterministic PK derived from the
+//     encryptedPK string, so each wallet maps to a unique recoverable PK.
+//   * The trader ctor records `(pk, dryRun)` per construction so we can
+//     assert which wallet the executor reached for.
+//   * `withWalletFindFirst` returns different Wallet rows depending on the
+//     `where` clause the executor passes — pinned-id lookup vs userId-active
+//     lookup — proving the routing path actually changed.
+
+type TraderCtorCall = { pk: string; dryRun: boolean }
+type ClaimCall = { pk: string; marketAddress: string }
+type SellCall = { pk: string; marketAddress: string; tokenId: number }
+
+function pkFromEnc(enc: string): string {
+  // 32-byte hex derived from the encryptedPK label — distinct per wallet.
+  const h = enc.split('').reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7)
+  return '0x' + h.toString(16).padStart(8, '0').repeat(8)
+}
+
+function makeRoutingDeps(opts: {
+  traderCtorCalls: TraderCtorCall[]
+  claimCalls?: ClaimCall[]
+  sellCalls?: SellCall[]
+  claimReceipt?: () => DryRunReceipt | null
+  sellReceipt?: () => DryRunReceipt | null
+}): ExecutorDeps {
+  const claimCalls = opts.claimCalls
+  const sellCalls = opts.sellCalls
+  class RoutingTrader implements ExecutorTrader {
+    private readonly pk: string
+    constructor(pk: string, _rpc: string, o: { dryRun: boolean }) {
+      this.pk = pk
+      opts.traderCtorCalls.push({ pk, dryRun: o.dryRun })
+    }
+    async buyOutcome(): Promise<DryRunReceipt | null> { return null }
+    async sellOutcome(marketAddress: string, tokenId: number): Promise<DryRunReceipt | null> {
+      sellCalls?.push({ pk: this.pk, marketAddress, tokenId })
+      return opts.sellReceipt ? opts.sellReceipt() : dryReceipt('0xsell')
+    }
+    async balanceOfOutcome(): Promise<bigint> { return 0n }
+    async claimAllResolved(marketAddress: string): Promise<DryRunReceipt | null> {
+      claimCalls?.push({ pk: this.pk, marketAddress })
+      return opts.claimReceipt ? opts.claimReceipt() : dryReceipt('0xclaim')
+    }
+  }
+  return {
+    getMarketByAddress: async () => stubMarket({ status: 'live' }),
+    readMarketOnchain: async () => stubOnchainState({
+      outcomes: [stubOutcome({ tokenId: 7, label: 'YES', impliedProbability: 0.5 })],
+    }),
+    isWinningTokenId: () => true,
+    decryptPrivateKey: (enc: string) => pkFromEnc(enc),
+    FortyTwoTraderCtor: RoutingTrader as unknown as ExecutorTraderCtor,
+  }
+}
+
+// Wallet directory keyed by both the pinned `id` lookup (id+userId+chain)
+// and the active-wallet lookup (userId+chain+isActive). Production calls
+// db.wallet.findFirst with both shapes from loadUserWalletPK; the stub
+// switches on the `where.id` presence to pick the right row, exactly
+// like Prisma would.
+function walletDirectory(rows: {
+  pinned: Record<string, { address: string; encryptedPK: string }>
+  active: Record<string, { address: string; encryptedPK: string }>
+}): () => void {
+  return withWalletFindFirst(async (args) => {
+    const w = (args as { where?: { id?: string; userId?: string; isActive?: boolean } } | undefined)?.where
+    if (w?.id) {
+      const row = rows.pinned[w.id]
+      if (!row) return null
+      return { address: row.address, encryptedPK: row.encryptedPK, chain: 'BSC', isActive: true }
+    }
+    if (w?.userId && w.isActive === true) {
+      const row = rows.active[w.userId]
+      if (!row) return null
+      return { address: row.address, encryptedPK: row.encryptedPK, chain: 'BSC', isActive: true }
+    }
+    return null
+  })
+}
+
+function withCampaignMode(value: 'true' | 'unset'): () => void {
+  const prevMode = process.env.FT_CAMPAIGN_MODE
+  const prevId = process.env.FT_CAMPAIGN_AGENT_ID
+  if (value === 'unset') {
+    delete process.env.FT_CAMPAIGN_MODE
+    delete process.env.FT_CAMPAIGN_AGENT_ID
+  } else {
+    process.env.FT_CAMPAIGN_MODE = 'true'
+    process.env.FT_CAMPAIGN_AGENT_ID = 'agent_pinned'
+  }
+  return () => {
+    if (prevMode === undefined) delete process.env.FT_CAMPAIGN_MODE
+    else process.env.FT_CAMPAIGN_MODE = prevMode
+    if (prevId === undefined) delete process.env.FT_CAMPAIGN_AGENT_ID
+    else process.env.FT_CAMPAIGN_AGENT_ID = prevId
+  }
+}
+
+test('closeUserPredictionPosition builds trader from Agent.walletId PK when the agent has a pinned wallet (regardless of FT_CAMPAIGN_MODE)', async () => {
+  // Critical invariant: the routing is driven by Agent.walletId on the row,
+  // NOT by the campaign-mode env flag. We exercise both env states to lock
+  // that down — the original bug had a campaign-only gate on
+  // loadUserWalletPK that left close/claim broken once the event ended.
+  for (const mode of ['unset', 'true'] as const) {
+    const restoreEnv = withCampaignMode(mode)
+    const traderCtorCalls: TraderCtorCall[] = []
+    const sellCalls: SellCall[] = []
+    const restoreDeps = withDeps(makeRoutingDeps({ traderCtorCalls, sellCalls }))
+    const restoreWallet = walletDirectory({
+      pinned: { wallet_pinned: { address: '0xPinned', encryptedPK: 'enc_pinned' } },
+      active: { user_x: { address: '0xPrimary', encryptedPK: 'enc_primary' } },
+    })
+    // Calls: [0] SELECT pos lookup → returns pos (paperTrade=true so we
+    //          stay on the dry-run path and never need parseUsdtInflow).
+    //        [1] SELECT walletId FROM Agent → returns wallet_pinned.
+    //        [2] UPDATE OutcomePosition (exec, no result row consumed).
+    const pos = stubPosition({
+      id: 'pos_close', userId: 'user_x', agentId: 'agent_pinned',
+      paperTrade: true, outcomeTokenAmount: 5,
+    })
+    const spy = installSqlSpies([[pos], [{ walletId: 'wallet_pinned' }]])
+    try {
+      const result = await closeUserPredictionPosition('user_x', 'pos_close')
+      assert.equal(result.ok, true, `close ok (mode=${mode})`)
+      assert.equal(traderCtorCalls.length, 1, `trader built exactly once (mode=${mode})`)
+      assert.equal(
+        traderCtorCalls[0].pk,
+        pkFromEnc('enc_pinned'),
+        `trader PK derived from Agent.walletId wallet, not user's active wallet (mode=${mode})`,
+      )
+      // Defensive: confirm we actually hit the pinned-walletId Agent SELECT
+      // before building the trader — that is the new code path the fix
+      // introduced; the test must fail loudly if it gets removed.
+      const agentLookup = spy.calls.find((c) =>
+        /SELECT\s+"walletId"\s+FROM\s+"Agent"/i.test(norm(c.sql)),
+      )
+      assert.ok(agentLookup, `Agent.walletId lookup happened (mode=${mode})`)
+      assert.deepEqual(agentLookup!.params, ['agent_pinned'])
+      // And we actually used the trader to sell — proves we built the right
+      // one and that closeUserPredictionPosition reached on-chain code.
+      assert.equal(sellCalls.length, 1)
+      assert.equal(sellCalls[0].pk, pkFromEnc('enc_pinned'))
+    } finally {
+      spy.restore()
+      restoreDeps()
+      restoreWallet()
+      restoreEnv()
+    }
+  }
+})
+
+test('closeUserPredictionPosition falls back to the user\'s active wallet when Agent.walletId is null', async () => {
+  // Symmetric guard: manual positions (or positions opened by an agent that
+  // never had a wallet pinned) must still route through the user's active
+  // BSC wallet. If a future refactor "always" reads through Agent the manual
+  // flow would silently break — this test will catch that.
+  const restoreEnv = withCampaignMode('unset')
+  const traderCtorCalls: TraderCtorCall[] = []
+  const restoreDeps = withDeps(makeRoutingDeps({ traderCtorCalls }))
+  const restoreWallet = walletDirectory({
+    pinned: {},
+    active: { user_x: { address: '0xPrimary', encryptedPK: 'enc_primary' } },
+  })
+  const pos = stubPosition({
+    id: 'pos_close', userId: 'user_x', agentId: 'agent_no_pin',
+    paperTrade: true, outcomeTokenAmount: 5,
+  })
+  // Agent row exists but has no pinned walletId → fall through.
+  const spy = installSqlSpies([[pos], [{ walletId: null }]])
+  try {
+    const result = await closeUserPredictionPosition('user_x', 'pos_close')
+    assert.equal(result.ok, true)
+    assert.equal(traderCtorCalls.length, 1)
+    assert.equal(
+      traderCtorCalls[0].pk,
+      pkFromEnc('enc_primary'),
+      'trader built from user\'s active wallet when no pinned walletId',
+    )
+  } finally {
+    spy.restore()
+    restoreDeps()
+    restoreWallet()
+    restoreEnv()
+  }
+})
+
+test('claimUserResolvedForMarket groups wins by agent and routes each group through that agent\'s pinned wallet', async () => {
+  // The scenario that motivated the fix: user has open wins on the same
+  // market opened by TWO different agents, each pinned to a different
+  // wallet. A single claim from one wallet would (a) only redeem that
+  // wallet's outcome tokens and (b) — before the grouping fix — mark
+  // every win on the market as 'claimed', silently losing the other
+  // wallet's payout. We assert: two distinct trader constructions, each
+  // with the correct PK, two claim txs, and only the matching group's
+  // rows updated per tx.
+  const restoreEnv = withCampaignMode('unset')
+  const traderCtorCalls: TraderCtorCall[] = []
+  const claimCalls: ClaimCall[] = []
+  const restoreDeps = withDeps(makeRoutingDeps({
+    traderCtorCalls,
+    claimCalls,
+    claimReceipt: () => dryReceipt('0xclaimGroup'),
+  }))
+  const restoreWallet = walletDirectory({
+    pinned: {
+      wallet_A: { address: '0xWalletA', encryptedPK: 'enc_A' },
+      wallet_B: { address: '0xWalletB', encryptedPK: 'enc_B' },
+    },
+    active: { user_x: { address: '0xPrimary', encryptedPK: 'enc_primary' } },
+  })
+  const market = '0x' + 'ab'.repeat(20)
+  const winA1 = stubPosition({
+    id: 'win_A1', userId: 'user_x', agentId: 'agent_A',
+    marketAddress: market, status: 'resolved_win', paperTrade: true,
+    outcomeTokenAmount: 4, usdtIn: 2, payoutUsdt: 4, tokenId: 7,
+  })
+  const winA2 = stubPosition({
+    id: 'win_A2', userId: 'user_x', agentId: 'agent_A',
+    marketAddress: market, status: 'resolved_win', paperTrade: true,
+    outcomeTokenAmount: 6, usdtIn: 3, payoutUsdt: 6, tokenId: 7,
+  })
+  const winB1 = stubPosition({
+    id: 'win_B1', userId: 'user_x', agentId: 'agent_B',
+    marketAddress: market, status: 'resolved_win', paperTrade: true,
+    outcomeTokenAmount: 5, usdtIn: 2.5, payoutUsdt: 5, tokenId: 7,
+  })
+  // SQL queue:
+  //   [0] SELECT resolved_win rows for (userId, market) → 3 rows.
+  //   [1] Agent.walletId lookup for agent_A → wallet_A.
+  //   [2] Agent.walletId lookup for agent_B → wallet_B.
+  // (Three UPDATEs follow — one per row, ID-scoped. They go through
+  //  $executeRawUnsafe which doesn't drain the query queue.)
+  const spy = installSqlSpies([
+    [winA1, winA2, winB1],
+    [{ walletId: 'wallet_A' }],
+    [{ walletId: 'wallet_B' }],
+  ])
+  try {
+    const result = await claimUserResolvedForMarket('user_x', market)
+    assert.equal(result.ok, true)
+    if (!result.ok) return
+    assert.equal(result.claimedPositions, 3)
+
+    // Two traders built — one PK per group. Order follows the Map's
+    // insertion order (agent_A first, then agent_B).
+    assert.equal(traderCtorCalls.length, 2, 'one trader per agent group, never a shared wallet')
+    assert.equal(traderCtorCalls[0].pk, pkFromEnc('enc_A'), 'group A built from wallet_A PK')
+    assert.equal(traderCtorCalls[1].pk, pkFromEnc('enc_B'), 'group B built from wallet_B PK')
+
+    // Two claim txs — one per group's pinned wallet. A bug that built a
+    // single trader from the user's active wallet would only have one
+    // entry here, and the PK would not match either wallet_A or wallet_B.
+    assert.equal(claimCalls.length, 2)
+    assert.equal(claimCalls[0].pk, pkFromEnc('enc_A'))
+    assert.equal(claimCalls[1].pk, pkFromEnc('enc_B'))
+
+    // Verify the per-row UPDATEs are scoped by id (not by agentId or by
+    // market). Without id-scoping, a claim from wallet_A would mark
+    // wallet_B's win as 'claimed' too — that is the silent-loss bug.
+    const updates = spy.calls.filter((c) =>
+      /UPDATE\s+"OutcomePosition"/i.test(norm(c.sql))
+      && /status\s*=\s*'claimed'/i.test(norm(c.sql)),
+    )
+    assert.equal(updates.length, 3, 'one UPDATE per resolved win, id-scoped')
+    const updatedIds = updates.map((u) => u.params[u.params.length - 1])
+    assert.deepEqual(
+      updatedIds.sort(),
+      ['win_A1', 'win_A2', 'win_B1'].sort(),
+      'every win id touched exactly once via id-scoped UPDATE',
+    )
+    for (const u of updates) {
+      assert.match(
+        norm(u.sql),
+        /WHERE\s+id\s*=\s*\$\d+\s*$/i,
+        'UPDATE filters on id ONLY, never on agentId/marketAddress — proves cross-group rows can\'t be touched',
+      )
+    }
+  } finally {
+    spy.restore()
+    restoreDeps()
+    restoreWallet()
+    restoreEnv()
   }
 })
