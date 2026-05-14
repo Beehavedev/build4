@@ -31,8 +31,8 @@ PORT = "5000"
 
 [deployment]
 deploymentTarget = "autoscale"
-run = ["npm", "run", "start"]
-build = ["npm", "run", "build"]
+run = ["bash", "-c", "cd build4io-site && npm run start"]
+build = ["bash", "-c", "cd build4io-site && npm install && npm run build"]
 publicDir = "dist/public"
 
 [workflows]
