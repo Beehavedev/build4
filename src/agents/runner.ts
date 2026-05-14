@@ -5,7 +5,7 @@ import { Bot } from 'grammy'
 import { buildAlignmentBar } from './indicators'
 
 let botRef: Bot | null = null
-const runningAgents = new Set<string>()
+export const runningAgents = new Set<string>()
 
 export function getBot(): Bot | null {
   return botRef
@@ -108,25 +108,32 @@ export function markPairNotificationSent(agentId: string, pair: string, kind: Pa
 export function initRunner(bot: Bot) {
   botRef = bot
 
-  // Main tick — minute-cron with a 90s in-handler interval guard so we
-  // skip every second invocation by default (effective cadence ~90s,
-  // which matches the cost-reduction plan without losing minute-level
-  // granularity for the campaign / heartbeat logic that shares this
-  // process). CAMPAIGN cron block below is UNTOUCHED.
-  cron.schedule('* * * * *', async () => {
-    const now = Date.now()
-    if (now - lastAgentSweepAt < AGENT_SWEEP_MIN_INTERVAL_MS) return
-    lastAgentSweepAt = now
+  // Main tick — true 90s setInterval (Task #90 cost reduction). cron
+  // can't realize sub-minute cadence, so we use setInterval directly.
+  // CAMPAIGN cron block below is UNTOUCHED.
+  setInterval(async () => {
     await runAllAgents()
-  })
+  }, 90_000)
 
-  // 42.space regular (non-campaign) scan cost reduction (Task #90) is
-  // implemented as a 10-min per-(agent) gate INSIDE runAllAgents (see
-  // FORTYTWO_AGENT_MIN_INTERVAL_MS below) rather than a separate cron.
-  // This preserves the existing trade-execution path in tradingAgent.ts
-  // unchanged while still cutting the scan cadence to one per 10 min
-  // per agent. Campaign agent stays on its dedicated +5m/+1h30m/+3h/
-  // +3h45m cron (CAMPAIGN block, untouched).
+  // 42.space regular (non-campaign) scan — dedicated */10 cron.
+  // Campaign agent (FT_CAMPAIGN_AGENT_ID) is excluded at the scheduler
+  // level so the campaign cron path (+5m/+1h30m/+3h/+3h45m) remains
+  // the only writer for that agent.
+  const tickFortyTwo = async () => {
+    if (fortyTwoTickInflight) return
+    fortyTwoTickInflight = true
+    try {
+      const { tickAllFortyTwoAgents } = await import('./fortyTwoAgent')
+      const r = await tickAllFortyTwoAgents()
+      console.log(`[fortyTwoAgent] dispatched=${r.dispatched} skippedCampaign=${r.skippedCampaign} skippedInflight=${r.skippedInflight}`)
+    } catch (err) {
+      console.error('[fortyTwoAgent] sweep failed:', (err as Error).message)
+    } finally {
+      fortyTwoTickInflight = false
+    }
+  }
+  cron.schedule('*/10 * * * *', tickFortyTwo)
+  setTimeout(tickFortyTwo, 8_000) // boot-time warm-up
 
   // Daily summary — 09:00 UTC
   cron.schedule('0 9 * * *', async () => {
@@ -372,17 +379,8 @@ export function initRunner(bot: Bot) {
 // because they'd contend for the same polymarketCreds rows + LLM quota.
 let polymarketTickInflight = false
 
-// 90s minimum interval between Aster+HL agent sweeps. Cron fires every
-// minute (so the per-minute heartbeat / campaign scheduler stays happy)
-// but only every other tick actually runs runAllAgents.
-const AGENT_SWEEP_MIN_INTERVAL_MS = 90_000
-let lastAgentSweepAt = 0
-
-// 10-min per-(agent) gate for the 42.space regular scan inside
-// runAllAgents (Task #90 cost reduction). Campaign agent bypasses
-// this — its dedicated cron owns scheduling.
-const FORTYTWO_AGENT_MIN_INTERVAL_MS = 10 * 60_000
-const lastFortyTwoTickAt = new Map<string, number>()
+// In-flight guard for the dedicated 42.space regular sweep (*/10 cron).
+let fortyTwoTickInflight = false
 
 // In-flight guard for the four.meme launch agent sweep. createToken
 // can take 30s+ on-chain — we never want a second sweep to start one
@@ -698,19 +696,12 @@ async function runAllAgents() {
         // so the dedicated polymarket runner is the only writer for
         // exchange='polymarket' brain logs.
         if (venue === 'polymarket') continue
-        // 42.space regular (non-campaign) scan: gated to once per 10 min
-        // per (agent) for cost reduction (Task #90). Campaign agent is
-        // exempt because it has its own dedicated +5m/+1h30m/+3h/+3h45m
-        // scheduler — the gate would otherwise serialize-block round
-        // ticks. Trade execution stays in tradingAgent.ts unchanged.
-        if (venue === 'fortytwo' || venue === '42') {
-          const isCampaignAgent = !!process.env.FT_CAMPAIGN_AGENT_ID && agent.id === process.env.FT_CAMPAIGN_AGENT_ID
-          if (!isCampaignAgent) {
-            const last = lastFortyTwoTickAt.get(agent.id) ?? 0
-            if (Date.now() - last < FORTYTWO_AGENT_MIN_INTERVAL_MS) continue
-            lastFortyTwoTickAt.set(agent.id, Date.now())
-          }
-        }
+        // 42.space regular (non-campaign) scan is owned by the dedicated
+        // tickAllFortyTwoAgents loop on the */10 cron above (Task #90).
+        // Campaign agent has its own +5m/+1h30m/+3h/+3h45m scheduler
+        // (CAMPAIGN block, untouched). Skipping here ensures neither
+        // path is double-driven from this generic loop.
+        if (venue === 'fortytwo' || venue === '42') continue
         tickUnits.push({ agent, venue })
       }
     }

@@ -977,14 +977,26 @@ export async function runAgentTick(agent: Agent): Promise<void> {
         const markets = await getAllMarkets({
           status: 'live', limit: 25, order: 'volume', ascending: false,
         })
-        if (markets.length === 0) {
-          console.log(`[Agent ${agent.name}] 42.space scan: no live markets returned`)
-        } else {
-          console.log(`[Agent ${agent.name}] 42.space scan: ${markets.length} live markets`)
+        // Crypto + Price-target filter (Task #90 cost reduction). The
+        // 42.space venue carries everything from macro/AI to memes; the
+        // BUILD4 prediction brain is a generic edge-classifier that
+        // shares signals with the rest of the system only on crypto
+        // price markets. Mirrors polymarketAgent's POLY_CRYPTO_KW /
+        // POLY_PRICE_KW gate.
+        const FT_CRYPTO_KW = ['btc','bitcoin','eth','ethereum','sol','solana','bnb','xrp','doge','crypto','altcoin','defi']
+        const FT_PRICE_KW  = ['$','price','reach','close above','close below',' above ',' below ','high of','low of','all-time high','ath']
+        const isCryptoPriceMarket = (m: any): boolean => {
+          const hay = ((m.question ?? '') + ' ' + ((m.categories ?? []) as string[]).join(' ')).toLowerCase()
+          return FT_CRYPTO_KW.some((k) => hay.includes(k)) && FT_PRICE_KW.some((k) => hay.includes(k))
         }
-        // Cap LLM round-trips at 5 per tick to bound spend (matches the
-        // MAX_EVENTS_PER_TICK budget in polymarketAgent).
-        const top = markets.slice(0, 5)
+        const filtered = markets.filter(isCryptoPriceMarket)
+        if (filtered.length === 0) {
+          console.log(`[Agent ${agent.name}] 42.space scan: 0 crypto+price markets (of ${markets.length} live)`)
+        } else {
+          console.log(`[Agent ${agent.name}] 42.space scan: ${filtered.length} crypto+price markets (of ${markets.length} live)`)
+        }
+        // Cap LLM round-trips at 5 per tick to bound spend.
+        const top = filtered.slice(0, 5)
         for (const m of top) {
           // Best-effort on-chain price read. The BSC public RPC rate-
           // limits hard, so a failure here must NOT block the brain
