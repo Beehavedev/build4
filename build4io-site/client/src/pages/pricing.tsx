@@ -110,11 +110,11 @@ export default function TelegramBotPage() {
                   <span className="font-mono text-xs text-[#858585]">Telegram Bot</span>
                 </div>
               </div>
-              <a href="https://t.me/BUILD4_Bot" target="_blank" rel="noopener noreferrer">
+              <Link href="/app" aria-label="Launch the BUILD4 dApp">
                 <Button size="sm" className="gap-1 h-7 px-3 bg-emerald-600 hover:bg-emerald-500 text-white font-mono text-[10px]" data-testid="button-open-bot-header">
-                  <MessageSquare className="w-3 h-3" /> Open Bot
+                  <MessageSquare className="w-3 h-3" /> Launch dApp
                 </Button>
-              </a>
+              </Link>
             </div>
           </div>
         </header>
@@ -133,12 +133,12 @@ export default function TelegramBotPage() {
               Smart money signals, instant trading, security scanning, token launching, and an autonomous AI trading agent — all from a single Telegram bot. No browser needed. No app to install. Just tap and trade.
             </p>
             <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
-              <a href="https://t.me/BUILD4_Bot" target="_blank" rel="noopener noreferrer">
+              <Link href="/app" aria-label="Launch the BUILD4 dApp">
                 <Button className="gap-2 px-6 h-10 bg-emerald-600 hover:bg-emerald-500 text-white font-mono text-xs" data-testid="button-open-bot-hero">
-                  <MessageSquare className="w-4 h-4" /> Start Trading Now
+                  <MessageSquare className="w-4 h-4" /> Launch dApp
                   <ExternalLink className="w-3 h-3 opacity-50" />
                 </Button>
-              </a>
+              </Link>
               <div className="flex items-center gap-2 px-4 h-10 rounded-md border border-[#252526] bg-[#141414]">
                 <Sparkles className="w-3.5 h-3.5 text-amber-400" />
                 <span className="font-mono text-xs text-[#cccccc]">4-day free trial included</span>
@@ -240,12 +240,12 @@ export default function TelegramBotPage() {
             </div>
 
             <div className="flex flex-col items-center gap-3">
-              <a href="https://t.me/BUILD4_Bot" target="_blank" rel="noopener noreferrer">
+              <Link href="/app" aria-label="Launch the BUILD4 dApp">
                 <Button className="gap-2 px-8 h-11 bg-emerald-600 hover:bg-emerald-500 text-white font-mono text-xs" data-testid="button-subscribe-cta">
-                  <MessageSquare className="w-4 h-4" /> Start 4-Day Free Trial
+                  <MessageSquare className="w-4 h-4" /> Launch dApp
                   <ExternalLink className="w-3 h-3 opacity-50" />
                 </Button>
-              </a>
+              </Link>
               <span className="font-mono text-[10px] text-[#505050]">No credit card needed. Cancel anytime.</span>
             </div>
           </Card>
@@ -308,12 +308,12 @@ export default function TelegramBotPage() {
           <div className="max-w-3xl mx-auto px-4 text-center space-y-4">
             <h2 className="font-mono text-lg font-bold text-white">Ready to trade smarter?</h2>
             <p className="font-mono text-xs text-[#505050]">Join thousands of traders using BUILD4 to stay ahead of the market.</p>
-            <a href="https://t.me/BUILD4_Bot" target="_blank" rel="noopener noreferrer">
+            <Link href="/app" aria-label="Launch the BUILD4 dApp">
               <Button className="gap-2 px-8 h-10 bg-emerald-600 hover:bg-emerald-500 text-white font-mono text-xs mt-2" data-testid="button-final-cta">
-                <MessageSquare className="w-4 h-4" /> Open BUILD4 Bot
+                <MessageSquare className="w-4 h-4" /> Launch dApp
                 <ExternalLink className="w-3 h-3 opacity-50" />
               </Button>
-            </a>
+            </Link>
           </div>
         </section>
 
