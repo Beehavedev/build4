@@ -249,6 +249,8 @@ function BalancesCard() {
                     href={`https://bscscan.com/address/${data.bsc.address}`}
                     target="_blank"
                     rel="noopener noreferrer"
+                    aria-label={`View Build4 BSC deposit wallet ${data.bsc.address} on BscScan`}
+                    title="View on BscScan"
                     className="text-[10px] font-mono text-muted-foreground underline break-all inline-flex items-center gap-1"
                     data-testid="link-bsc-address"
                   >
@@ -284,6 +286,8 @@ function BalancesCard() {
                     href={`https://polygonscan.com/address/${data.polymarket.safeAddress}`}
                     target="_blank"
                     rel="noopener noreferrer"
+                    aria-label={`View Polymarket Safe wallet ${data.polymarket.safeAddress} on Polygonscan`}
+                    title="View Polymarket Safe on Polygonscan"
                     className="text-[10px] font-mono text-muted-foreground underline break-all inline-flex items-center gap-1"
                     data-testid="link-polymarket-safe"
                   >
@@ -530,6 +534,36 @@ function ActivityCard() {
 
 export default function AppDashboard() {
   const { connected, address, signer, disconnect, chainId } = useWallet();
+
+  // Per-route SEO: explicit indexing intent + descriptive title for /app.
+  // The dashboard itself shows account-specific data once authed, but the
+  // public landing card is a real entry point and should be crawlable.
+  useEffect(() => {
+    document.title = "Sign in to BUILD4 — AI Trading Dashboard";
+    const setMeta = (name: string, content: string) => {
+      let el = document.querySelector(`meta[name="${name}"]`);
+      if (!el) {
+        el = document.createElement("meta");
+        el.setAttribute("name", name);
+        document.head.appendChild(el);
+      }
+      el.setAttribute("content", content);
+    };
+    setMeta(
+      "description",
+      "Sign in to BUILD4 with Telegram or your wallet to access your AI trading dashboard, on-chain balances, AI agents, and recent activity.",
+    );
+    setMeta("robots", "index, follow, max-image-preview:large, max-snippet:-1");
+    setMeta("googlebot", "index, follow, max-image-preview:large, max-snippet:-1");
+    let canonical = document.querySelector('link[rel="canonical"]');
+    if (!canonical) {
+      canonical = document.createElement("link");
+      canonical.setAttribute("rel", "canonical");
+      document.head.appendChild(canonical);
+    }
+    canonical.setAttribute("href", "https://build4.io/app");
+  }, []);
+
   const [auth, setAuth] = useState<AuthState>({ kind: "loading" });
   const [tgConfig, setTgConfig] = useState<{ enabled: boolean; botUsername: string | null }>({
     enabled: false,
@@ -666,7 +700,13 @@ export default function AppDashboard() {
     <div className="min-h-screen bg-background text-foreground">
       <header className="border-b sticky top-0 bg-background/95 backdrop-blur z-30">
         <div className="container mx-auto px-4 py-3 flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-2" data-testid="link-home">
+          <Link
+            href="/"
+            className="flex items-center gap-2"
+            aria-label="BUILD4 home"
+            title="BUILD4 home"
+            data-testid="link-home"
+          >
             <span className="font-mono text-sm font-bold">BUILD4</span>
             <Badge variant="outline" className="text-[10px]">dApp</Badge>
           </Link>
@@ -759,6 +799,8 @@ export default function AppDashboard() {
                 }
                 target="_blank"
                 rel="noopener noreferrer"
+                aria-label={`Start a new Build4 account on the @${tgConfig.botUsername || "Build4bot"} Telegram bot`}
+                title="Open the Build4 Telegram bot"
                 className="underline inline-flex items-center gap-1"
                 data-testid="link-start-on-telegram"
               >
@@ -823,6 +865,8 @@ export default function AppDashboard() {
                 }
                 target="_blank"
                 rel="noopener noreferrer"
+                aria-label={`Open the Build4 Telegram bot (@${tgConfig.botUsername || "Build4bot"})`}
+                title="Open the Build4 Telegram bot"
                 data-testid="link-open-telegram-bot"
               >
                 <Button className="font-mono gap-2">
@@ -938,10 +982,12 @@ export default function AppDashboard() {
                     href={`https://bscscan.com/address/${auth.botUser.bscWalletAddress}`}
                     target="_blank"
                     rel="noopener noreferrer"
+                    aria-label={`View BSC deposit wallet ${auth.botUser.bscWalletAddress} on BscScan`}
+                    title="View deposit wallet on BscScan"
                     className="text-xs underline inline-flex items-center gap-1 font-mono"
                     data-testid="link-bscscan"
                   >
-                    BscScan <ExternalLink className="w-3 h-3" />
+                    View on BscScan <ExternalLink className="w-3 h-3" aria-hidden="true" />
                   </a>
                 </div>
               )}
@@ -974,6 +1020,8 @@ export default function AppDashboard() {
                   }
                   target="_blank"
                   rel="noopener noreferrer"
+                  aria-label={`Open @${tgConfig.botUsername || "Build4bot"} on Telegram to use Build4 features`}
+                  title="Open the Build4 Telegram bot"
                   className="underline inline-flex items-center gap-1"
                   data-testid="link-telegram-bot"
                 >
