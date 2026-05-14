@@ -11,6 +11,10 @@ localPort = 5000
 externalPort = 80
 
 [[ports]]
+localPort = 5173
+externalPort = 5173
+
+[[ports]]
 localPort = 5904
 externalPort = 3000
 
@@ -59,6 +63,10 @@ args = "Web dApp preview"
 task = "workflow.run"
 args = "Pitch deck preview"
 
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Green site preview"
+
 [[workflows.workflow]]
 name = "Start application"
 author = "agent"
@@ -102,6 +110,18 @@ author = "agent"
 task = "shell.exec"
 args = "cd pitch && python3 -m http.server 8080"
 waitForPort = 8080
+
+[workflows.workflow.metadata]
+outputType = "console"
+
+[[workflows.workflow]]
+name = "Green site preview"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd build4io-site && (test -d node_modules || npm install --no-audit --no-fund) && PORT=5173 npm run dev"
+waitForPort = 5173
 
 [workflows.workflow.metadata]
 outputType = "console"
