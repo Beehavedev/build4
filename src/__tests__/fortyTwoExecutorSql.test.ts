@@ -8,6 +8,7 @@ import {
   closePredictionPosition,
   closeUserPredictionPosition,
   claimUserResolvedForMarket,
+  claimAllAgentResolved,
   settleResolvedPositions,
   listOpenAgentPositions,
   listUserPositions,
@@ -1021,6 +1022,372 @@ test('claimUserResolvedForMarket groups wins by agent and routes each group thro
         'UPDATE filters on id ONLY, never on agentId/marketAddress — proves cross-group rows can\'t be touched',
       )
     }
+  } finally {
+    spy.restore()
+    restoreDeps()
+    restoreWallet()
+    restoreEnv()
+  }
+})
+
+// ── claimAllAgentResolved / claimAgentResolvedForMarket ─────────────────
+//
+// Companion to claimUserResolvedForMarket but scoped to a SINGLE agent —
+// this is what the 42.space campaign tick calls every round to redeem
+// wins on the agent's pinned wallet. A regression here leaves campaign
+// payouts stuck at status='resolved_win' and skews the brain feed's
+// Realised PnL. The invariants we lock down:
+//
+//   1. The DISTINCT-market discovery SELECT filters by agentId (NOT
+//      userId) so we never touch a user's manual positions on the same
+//      market by accident.
+//   2. The per-market lookup also filters by agentId + status, and the
+//      trader is built via buildTrader(userId, !anyLive, agentId) so
+//      loadUserWalletPK routes to Agent.walletId. Same wallet-pinning
+//      bug Task #98 fixed for the user-scoped path would silently
+//      regress here without coverage.
+//   3. When the on-chain payout can be parsed, UPDATEs are id-scoped
+//      (WHERE id=$N) and one per resolved row — never agentId/market
+//      bulk-updates that could clobber a row added after the SELECT.
+//   4. When the claim tx didn't confirm (dryRun=false AND status!=1)
+//      the function returns ok:false with an error per market and
+//      issues ZERO UPDATEs, so the rows stay 'resolved_win' for the
+//      next tick to retry. The settle/discover branch must not pre-
+//      flip them to 'claimed' either.
+
+function makeLiveClaimReceipt(
+  txHash: string,
+  payoutWei: bigint,
+  toAddress = '0x0000000000000000000000000000000000000abc',
+): { hash: string; status: number; logs: unknown[] } {
+  const toPadded = '0x' + '0'.repeat(24) + toAddress.replace(/^0x/, '').toLowerCase()
+  return {
+    hash: txHash,
+    status: 1,
+    logs: [
+      {
+        // USDT (BSC) Transfer event — only logs the executor inspects.
+        address: '0x55d398326f99059fF775485246999027B3197955',
+        topics: [
+          '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef',
+          '0x' + '0'.repeat(64),
+          toPadded,
+        ],
+        data: '0x' + payoutWei.toString(16).padStart(64, '0'),
+      },
+    ],
+  }
+}
+
+test('claimAllAgentResolved discovers markets via a DISTINCT SELECT scoped to agentId AND status=resolved_win', async () => {
+  // No wins → no claims, but we still want to assert the discovery SQL
+  // shape: any drift here (e.g. filtering by userId instead of agentId)
+  // would scoop up the user's manual positions and try to redeem them
+  // from the agent's pinned wallet — guaranteed silent loss.
+  const restoreEnv = withCampaignMode('unset')
+  const restoreDeps = withDeps(makeRoutingDeps({ traderCtorCalls: [] }))
+  // SQL queue:
+  //   [0] SELECT userId FROM Agent → user found
+  //   [1] settleResolvedPositions SELECT open rows → none
+  //   [2] DISTINCT-market discovery → none
+  const spy = installSqlSpies([
+    [{ userId: 'user_x' }],
+    [],
+    [],
+  ])
+  try {
+    const result = await claimAllAgentResolved('agent_pinned')
+    assert.equal(result.ok, true)
+    assert.equal(result.marketsClaimed, 0)
+    assert.equal(result.claimedPositions, 0)
+    assert.equal(result.payoutUsdt, 0)
+    assert.deepEqual(result.errors, [])
+
+    const distinct = spy.calls.find((c) =>
+      /SELECT\s+DISTINCT\s+"marketAddress"\s+FROM\s+"OutcomePosition"/i.test(norm(c.sql)),
+    )
+    assert.ok(distinct, 'DISTINCT-market discovery SELECT happened')
+    const n = norm(distinct!.sql)
+    assert.match(n, /"agentId"\s*=\s*\$1/i, 'agentId placeholder is $1')
+    assert.match(n, /status\s*=\s*'resolved_win'/i, "status pinned to 'resolved_win'")
+    assert.doesNotMatch(n, /"userId"/i, 'never filters by userId — that would leak manual positions')
+    assert.deepEqual(distinct!.params, ['agent_pinned'])
+
+    // Defensive: the settle sweep that runs before discovery is ALSO
+    // agent-scoped. Without that, we'd flip every open row in the table
+    // before claiming.
+    const settleSelect = spy.calls.find((c) =>
+      /FROM\s+"OutcomePosition"\s+WHERE\s+status\s*=\s*'open'/i.test(norm(c.sql)),
+    )
+    assert.ok(settleSelect, 'settle sweep ran first')
+    assert.match(norm(settleSelect!.sql), /"agentId"\s*=\s*\$1/i)
+    assert.deepEqual(settleSelect!.params, ['agent_pinned'])
+  } finally {
+    spy.restore()
+    restoreDeps()
+    restoreEnv()
+  }
+})
+
+test('claimAllAgentResolved builds the trader from Agent.walletId so the claim fires from the agent\'s pinned wallet', async () => {
+  // Mirror of the user-scoped wallet-routing test but for the campaign-
+  // tick claim path. If loadUserWalletPK ever loses its Agent.walletId
+  // branch on this code path the claim tx would fire from the user's
+  // primary BSC wallet, which holds zero outcome tokens for any
+  // agent-opened position → on-chain revert, payouts stuck.
+  for (const mode of ['unset', 'true'] as const) {
+    const restoreEnv = withCampaignMode(mode)
+    const traderCtorCalls: TraderCtorCall[] = []
+    const claimCalls: ClaimCall[] = []
+    const restoreDeps = withDeps(makeRoutingDeps({
+      traderCtorCalls,
+      claimCalls,
+      claimReceipt: () => dryReceipt('0xclaimAgent'),
+    }))
+    const restoreWallet = walletDirectory({
+      pinned: { wallet_pinned: { address: '0xPinned', encryptedPK: 'enc_pinned' } },
+      active: { user_x: { address: '0xPrimary', encryptedPK: 'enc_primary' } },
+    })
+    const market = '0x' + 'cd'.repeat(20)
+    const win = stubPosition({
+      id: 'win_only', userId: 'user_x', agentId: 'agent_pinned',
+      marketAddress: market, status: 'resolved_win', paperTrade: true,
+      outcomeTokenAmount: 5, usdtIn: 2, payoutUsdt: 5, tokenId: 7,
+    })
+    // SQL queue:
+    //   [0] Agent → userId
+    //   [1] settle SELECT → none
+    //   [2] DISTINCT markets → [market]
+    //   [3] per-market wins SELECT → [win]
+    //   [4] Agent.walletId lookup inside loadUserWalletPK → wallet_pinned
+    const spy = installSqlSpies([
+      [{ userId: 'user_x' }],
+      [],
+      [{ marketAddress: market }],
+      [win],
+      [{ walletId: 'wallet_pinned' }],
+    ])
+    try {
+      const result = await claimAllAgentResolved('agent_pinned')
+      assert.equal(result.ok, true, `result.ok (mode=${mode})`)
+      assert.equal(result.marketsClaimed, 1, `one market claimed (mode=${mode})`)
+      assert.equal(result.claimedPositions, 1)
+      assert.deepEqual(result.errors, [])
+
+      // The per-market wins SELECT must filter by agentId + marketAddress
+      // — agent-scoping is what keeps user manual positions out of this
+      // group's claim tx.
+      const perMarket = spy.calls.find((c) =>
+        /SELECT\s+\*\s+FROM\s+"OutcomePosition"/i.test(norm(c.sql))
+        && /"agentId"\s*=\s*\$1/i.test(norm(c.sql))
+        && /"marketAddress"\s*=\s*\$2/i.test(norm(c.sql)),
+      )
+      assert.ok(perMarket, `per-market wins SELECT is agent-scoped (mode=${mode})`)
+      assert.match(norm(perMarket!.sql), /status\s*=\s*'resolved_win'/i)
+      assert.deepEqual(perMarket!.params, ['agent_pinned', market])
+
+      // Agent.walletId routing fires regardless of campaign-mode env state.
+      const agentLookup = spy.calls.find((c) =>
+        /SELECT\s+"walletId"\s+FROM\s+"Agent"/i.test(norm(c.sql)),
+      )
+      assert.ok(agentLookup, `Agent.walletId lookup happened (mode=${mode})`)
+      assert.deepEqual(agentLookup!.params, ['agent_pinned'])
+
+      assert.equal(traderCtorCalls.length, 1, `one trader built (mode=${mode})`)
+      assert.equal(
+        traderCtorCalls[0].pk,
+        pkFromEnc('enc_pinned'),
+        `trader PK derived from Agent.walletId, not user's primary wallet (mode=${mode})`,
+      )
+      // Paper-trade row → dry-run trader, so forcePaperTrade=true is passed.
+      assert.equal(traderCtorCalls[0].dryRun, true)
+      assert.equal(claimCalls.length, 1)
+      assert.equal(claimCalls[0].pk, pkFromEnc('enc_pinned'))
+      assert.equal(claimCalls[0].marketAddress, market)
+    } finally {
+      spy.restore()
+      restoreDeps()
+      restoreWallet()
+      restoreEnv()
+    }
+  }
+})
+
+test('claimAllAgentResolved issues id-scoped UPDATEs, one per resolved row, only for the market just claimed', async () => {
+  // Two wins on the same market for the SAME agent. We return a live
+  // (non-dry-run) receipt with a parseable USDT Transfer log so the
+  // executor takes the onchainPayout != null branch — that's the branch
+  // that issues per-row UPDATEs. The previous shape of the dry-run
+  // branch was a single agentId+market bulk UPDATE, which could touch
+  // a row inserted between the SELECT and the UPDATE; id-scoping makes
+  // that impossible.
+  const restoreEnv = withCampaignMode('unset')
+  const traderCtorCalls: TraderCtorCall[] = []
+  const claimCalls: ClaimCall[] = []
+  const restoreDeps = withDeps(makeRoutingDeps({
+    traderCtorCalls,
+    claimCalls,
+    claimReceipt: () => makeLiveClaimReceipt('0xliveclaim', 10n * 10n ** 18n),
+  }))
+  const restoreWallet = walletDirectory({
+    pinned: { wallet_pinned: { address: '0xPinned', encryptedPK: 'enc_pinned' } },
+    active: { user_x: { address: '0xPrimary', encryptedPK: 'enc_primary' } },
+  })
+  const market = '0x' + 'ef'.repeat(20)
+  const win1 = stubPosition({
+    id: 'agent_win_1', userId: 'user_x', agentId: 'agent_pinned',
+    marketAddress: market, status: 'resolved_win', paperTrade: false,
+    outcomeTokenAmount: 4, usdtIn: 2, payoutUsdt: 4, tokenId: 7,
+  })
+  const win2 = stubPosition({
+    id: 'agent_win_2', userId: 'user_x', agentId: 'agent_pinned',
+    marketAddress: market, status: 'resolved_win', paperTrade: false,
+    outcomeTokenAmount: 6, usdtIn: 3, payoutUsdt: 6, tokenId: 7,
+  })
+  const spy = installSqlSpies([
+    [{ userId: 'user_x' }],
+    [],
+    [{ marketAddress: market }],
+    [win1, win2],
+    [{ walletId: 'wallet_pinned' }],
+  ])
+  try {
+    const result = await claimAllAgentResolved('agent_pinned')
+    assert.equal(result.ok, true)
+    assert.equal(result.marketsClaimed, 1)
+    assert.equal(result.claimedPositions, 2)
+    // payoutUsdt is the parsed on-chain truth, not the DB estimate.
+    assert.equal(result.payoutUsdt, 10)
+    assert.deepEqual(result.errors, [])
+
+    // anyLive=true → buildTrader called with forcePaperTrade=false →
+    // live-mode trader. Locks in the !anyLive flip.
+    assert.equal(traderCtorCalls.length, 1)
+    assert.equal(traderCtorCalls[0].pk, pkFromEnc('enc_pinned'))
+    assert.equal(traderCtorCalls[0].dryRun, false, 'live receipt → live trader')
+
+    const updates = spy.calls.filter((c) =>
+      /UPDATE\s+"OutcomePosition"/i.test(norm(c.sql))
+      && /status\s*=\s*'claimed'/i.test(norm(c.sql)),
+    )
+    assert.equal(updates.length, 2, 'one UPDATE per resolved win — never a bulk agentId+market UPDATE')
+    for (const u of updates) {
+      const n = norm(u.sql)
+      assert.match(
+        n,
+        /WHERE\s+id\s*=\s*\$\d+\s*$/i,
+        'UPDATE filters on id ONLY — a row inserted post-SELECT can\'t be clobbered',
+      )
+      assert.match(n, /"payoutUsdt"\s*=\s*\$2/i, 'payoutUsdt bound to $2')
+      assert.match(n, /pnl\s*=\s*\$3/i, 'pnl bound to $3')
+      assert.match(n, /"closedAt"\s*=\s*NOW\(\)/i, 'closedAt always NOW(), not parameterised')
+      assert.equal(u.params[0], '0xliveclaim', 'txHash bound to $1')
+    }
+    const updatedIds = updates.map((u) => u.params[u.params.length - 1]).sort()
+    assert.deepEqual(
+      updatedIds,
+      ['agent_win_1', 'agent_win_2'],
+      'every win id touched exactly once via id-scoped UPDATE',
+    )
+
+    // Weighted share allocation: weights [4,6], total 10, payout 10 →
+    // shares [4, 6]; pnl = share - usdtIn → [2, 3]. Locks in the
+    // outcomeTokenAmount weighting that the on-chain-payout branch uses
+    // so a rewrite can't silently swap to even split or to usdtIn weights.
+    const byId: Record<string, { share: number; pnl: number }> = {}
+    for (const u of updates) {
+      const id = u.params[u.params.length - 1] as string
+      byId[id] = { share: u.params[1] as number, pnl: u.params[2] as number }
+    }
+    assert.equal(byId.agent_win_1.share, 4)
+    assert.equal(byId.agent_win_2.share, 6)
+    assert.equal(byId.agent_win_1.pnl, 2)
+    assert.equal(byId.agent_win_2.pnl, 3)
+  } finally {
+    spy.restore()
+    restoreDeps()
+    restoreWallet()
+    restoreEnv()
+  }
+})
+
+test('claimAllAgentResolved leaves rows as resolved_win when the claim tx fails to confirm, so the next tick can retry', async () => {
+  // The retry safety net: if the claim tx is dropped (status undefined)
+  // or reverted (status=0) we must NOT mark anything 'claimed'. Otherwise
+  // the row looks settled to the brain feed forever and the agent never
+  // retries — silent payout loss. We assert (a) the function reports the
+  // failure per market via the `errors` array, (b) ZERO UPDATEs touch
+  // OutcomePosition, and (c) the row's status stays untouched (which we
+  // prove via the absence of any "status='claimed'" UPDATE).
+  const restoreEnv = withCampaignMode('unset')
+  const traderCtorCalls: TraderCtorCall[] = []
+  const claimCalls: ClaimCall[] = []
+  const restoreDeps = withDeps(makeRoutingDeps({
+    traderCtorCalls,
+    claimCalls,
+    // status=0 reverted tx, NOT a dry run → tx-not-confirmed branch fires.
+    claimReceipt: () => ({
+      // Cast: we deliberately return a shape that exercises the
+      // reverted/dropped branch — not a valid DryRunReceipt.
+      hash: '0xdroppedclaim',
+      status: 0,
+    }) as unknown as DryRunReceipt,
+  }))
+  const restoreWallet = walletDirectory({
+    pinned: { wallet_pinned: { address: '0xPinned', encryptedPK: 'enc_pinned' } },
+    active: { user_x: { address: '0xPrimary', encryptedPK: 'enc_primary' } },
+  })
+  const market = '0x' + '12'.repeat(20)
+  const win = stubPosition({
+    id: 'win_stuck', userId: 'user_x', agentId: 'agent_pinned',
+    marketAddress: market, status: 'resolved_win', paperTrade: false,
+    outcomeTokenAmount: 5, usdtIn: 2, payoutUsdt: 5, tokenId: 7,
+  })
+  const spy = installSqlSpies([
+    [{ userId: 'user_x' }],
+    [],
+    [{ marketAddress: market }],
+    [win],
+    [{ walletId: 'wallet_pinned' }],
+  ])
+  try {
+    const result = await claimAllAgentResolved('agent_pinned')
+    // The outer function still resolves ok:true (it's a sweep), but it
+    // reports the failed market in `errors` and counts zero successes.
+    assert.equal(result.ok, true)
+    assert.equal(result.marketsClaimed, 0)
+    assert.equal(result.claimedPositions, 0)
+    assert.equal(result.payoutUsdt, 0)
+    assert.equal(result.errors.length, 1, 'failed market surfaced for the next tick to see')
+    assert.equal(result.errors[0].marketAddress, market)
+    assert.match(result.errors[0].reason, /confirm|drop/i)
+
+    // The claim actually fired — proves we reached the on-chain step and
+    // it was the receipt-status check (not an early bail) that stopped us.
+    assert.equal(claimCalls.length, 1)
+    assert.equal(traderCtorCalls[0].pk, pkFromEnc('enc_pinned'))
+
+    // No row ever got flipped — status stays 'resolved_win', so the next
+    // campaign tick (or watchdog cron) picks it up again.
+    const claimedUpdates = spy.calls.filter((c) =>
+      /UPDATE\s+"OutcomePosition"/i.test(norm(c.sql))
+      && /status\s*=\s*'claimed'/i.test(norm(c.sql)),
+    )
+    assert.equal(
+      claimedUpdates.length,
+      0,
+      "tx-not-confirmed branch must NOT issue a status='claimed' UPDATE",
+    )
+    // Also defensive: no UPDATEs of any kind on OutcomePosition during
+    // the failed claim — proves we don't half-write txHashClose either.
+    const anyOutcomeUpdates = spy.calls.filter((c) =>
+      /UPDATE\s+"OutcomePosition"/i.test(norm(c.sql)),
+    )
+    assert.equal(
+      anyOutcomeUpdates.length,
+      0,
+      'failed claim leaves OutcomePosition completely untouched for retry',
+    )
   } finally {
     spy.restore()
     restoreDeps()
