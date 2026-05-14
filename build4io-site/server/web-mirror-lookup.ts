@@ -50,6 +50,93 @@ export async function findBotUserByTelegramId(telegramId: string): Promise<BotUs
   return buildSummary(r.rows[0]);
 }
 
+export type AgentSummary = {
+  id: string;
+  name: string;
+  description: string | null;
+  exchange: string;
+  enabledVenues: string[];
+  pairs: string[];
+  isActive: boolean;
+  isPaused: boolean;
+  totalPnl: number;
+  totalTrades: number;
+  winRate: number;
+  walletAddress: string | null;
+  createdAt: string;
+};
+
+export type AgentLogEntry = {
+  id: string;
+  agentId: string;
+  agentName: string | null;
+  createdAt: string;
+  action: string;
+  parsedAction: string | null;
+  pair: string | null;
+  price: number | null;
+  reason: string | null;
+  exchange: string | null;
+  error: string | null;
+};
+
+export async function getAgentsForUser(userId: string): Promise<AgentSummary[]> {
+  if (!userId) return [];
+  const r = await pool.query(
+    `SELECT id, name, description, exchange, "enabledVenues", pairs,
+            "isActive", "isPaused", "totalPnl", "totalTrades", "winRate",
+            "walletAddress", "createdAt"
+       FROM "Agent" WHERE "userId" = $1 ORDER BY "createdAt" DESC LIMIT 50`,
+    [userId],
+  );
+  return r.rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    description: row.description ?? null,
+    exchange: row.exchange,
+    enabledVenues: row.enabledVenues || [],
+    pairs: row.pairs || [],
+    isActive: !!row.isActive,
+    isPaused: !!row.isPaused,
+    totalPnl: Number(row.totalPnl ?? 0),
+    totalTrades: Number(row.totalTrades ?? 0),
+    winRate: Number(row.winRate ?? 0),
+    walletAddress: row.walletAddress ?? null,
+    createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt),
+  }));
+}
+
+export async function getRecentAgentLogsForUser(
+  userId: string,
+  limit = 20,
+): Promise<AgentLogEntry[]> {
+  if (!userId) return [];
+  const cap = Math.min(Math.max(1, Number(limit) || 20), 50);
+  const r = await pool.query(
+    `SELECT l.id, l."agentId", a.name AS "agentName", l."createdAt", l.action,
+            l."parsedAction", l.pair, l.price, l.reason, l.exchange, l.error
+       FROM "AgentLog" l
+       LEFT JOIN "Agent" a ON a.id = l."agentId"
+      WHERE l."userId" = $1
+      ORDER BY l."createdAt" DESC
+      LIMIT $2`,
+    [userId, cap],
+  );
+  return r.rows.map((row) => ({
+    id: row.id,
+    agentId: row.agentId,
+    agentName: row.agentName ?? null,
+    createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt),
+    action: row.action,
+    parsedAction: row.parsedAction ?? null,
+    pair: row.pair ?? null,
+    price: row.price != null ? Number(row.price) : null,
+    reason: row.reason ?? null,
+    exchange: row.exchange ?? null,
+    error: row.error ?? null,
+  }));
+}
+
 export async function findBotUserByWalletAddress(address: string): Promise<BotUserSummary | null> {
   if (!address) return null;
   const lower = address.toLowerCase();

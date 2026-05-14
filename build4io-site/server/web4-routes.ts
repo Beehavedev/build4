@@ -3152,6 +3152,67 @@ ${urls}
   });
 
   // ============================================================
+  // /api/web/agents + /api/web/activity — Phase 2 read-only mirrors
+  // ============================================================
+  function getAuthedSession(req: Request) {
+    const token = req.headers["x-session-token"] as string;
+    if (!token) return null;
+    const sessions = (globalThis as any).__authSessions as Map<string, any> | undefined;
+    const s = sessions?.get(token);
+    if (!s || s.expiry < Date.now()) {
+      sessions?.delete(token);
+      return null;
+    }
+    return s;
+  }
+
+  async function resolveBotUserIdFromSession(s: any): Promise<string | null> {
+    if (!s) return null;
+    if (s.botUserId) return s.botUserId;
+    const { findBotUserByTelegramId, findBotUserByWalletAddress } = await import("./web-mirror-lookup");
+    if (s.kind === "telegram" && s.telegramId) {
+      const u = await findBotUserByTelegramId(String(s.telegramId));
+      return u?.userId ?? null;
+    }
+    if (s.wallet) {
+      const u = await findBotUserByWalletAddress(String(s.wallet));
+      return u?.userId ?? null;
+    }
+    return null;
+  }
+
+  app.get("/api/web/agents", async (req: Request, res: Response) => {
+    try {
+      const session = getAuthedSession(req);
+      if (!session) return res.status(401).json({ error: "unauthorized" });
+      const botUserId = await resolveBotUserIdFromSession(session);
+      if (!botUserId) return res.status(404).json({ error: "no_account" });
+      const { getAgentsForUser } = await import("./web-mirror-lookup");
+      const agents = await getAgentsForUser(botUserId);
+      res.json({ agents });
+    } catch (e: any) {
+      console.error("[/api/web/agents]", e);
+      res.status(500).json({ error: e?.message || "Internal error" });
+    }
+  });
+
+  app.get("/api/web/activity", async (req: Request, res: Response) => {
+    try {
+      const session = getAuthedSession(req);
+      if (!session) return res.status(401).json({ error: "unauthorized" });
+      const botUserId = await resolveBotUserIdFromSession(session);
+      if (!botUserId) return res.status(404).json({ error: "no_account" });
+      const { getRecentAgentLogsForUser } = await import("./web-mirror-lookup");
+      const limit = Math.min(50, Math.max(1, parseInt(String(req.query.limit ?? "20"), 10) || 20));
+      const logs = await getRecentAgentLogsForUser(botUserId, limit);
+      res.json({ logs });
+    } catch (e: any) {
+      console.error("[/api/web/activity]", e);
+      res.status(500).json({ error: e?.message || "Internal error" });
+    }
+  });
+
+  // ============================================================
   // Telegram Login Widget — config + verify
   // Docs: https://core.telegram.org/widgets/login#checking-authorization
   // ============================================================

@@ -13,10 +13,46 @@ import {
   Send,
   Bot,
   AlertCircle,
+  Activity,
+  TrendingUp,
+  TrendingDown,
+  Pause,
+  Play,
+  Circle,
 } from "lucide-react";
 import { Link } from "wouter";
 
 const SESSION_KEY = "build4_session_token";
+
+type AgentSummary = {
+  id: string;
+  name: string;
+  description: string | null;
+  exchange: string;
+  enabledVenues: string[];
+  pairs: string[];
+  isActive: boolean;
+  isPaused: boolean;
+  totalPnl: number;
+  totalTrades: number;
+  winRate: number;
+  walletAddress: string | null;
+  createdAt: string;
+};
+
+type AgentLogEntry = {
+  id: string;
+  agentId: string;
+  agentName: string | null;
+  createdAt: string;
+  action: string;
+  parsedAction: string | null;
+  pair: string | null;
+  price: number | null;
+  reason: string | null;
+  exchange: string | null;
+  error: string | null;
+};
 
 type BotUser = {
   userId: string;
@@ -95,6 +131,234 @@ function TelegramLoginButton({
   }, [botUsername]);
 
   return <div ref={containerRef} data-testid="telegram-login-widget" />;
+}
+
+function fmtRelative(iso: string): string {
+  const d = new Date(iso);
+  const ms = Date.now() - d.getTime();
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return `${s}s ago`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const dd = Math.floor(h / 24);
+  if (dd < 30) return `${dd}d ago`;
+  return d.toISOString().slice(0, 10);
+}
+
+function AgentsCard() {
+  const [agents, setAgents] = useState<AgentSummary[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    const token = localStorage.getItem(SESSION_KEY);
+    if (!token) return;
+    let cancelled = false;
+    fetch("/api/web/agents", { headers: { "x-session-token": token } })
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
+      .then((j) => {
+        if (cancelled) return;
+        setAgents(j.agents || []);
+      })
+      .catch((e) => {
+        if (!cancelled) setError(e?.message || "Failed to load agents");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return (
+    <Card className="p-6 space-y-4" data-testid="card-agents">
+      <div className="flex items-center justify-between gap-2">
+        <h2 className="font-mono text-sm font-bold">Your AI agents</h2>
+        {agents && (
+          <Badge variant="outline" className="font-mono text-[10px]" data-testid="badge-agents-count">
+            {agents.length} total
+          </Badge>
+        )}
+      </div>
+      {!agents && !error && (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="w-4 h-4 animate-spin" /> Loading agents…
+        </div>
+      )}
+      {error && (
+        <p className="text-xs text-destructive font-mono" data-testid="text-agents-error">
+          {error}
+        </p>
+      )}
+      {agents && agents.length === 0 && (
+        <p className="text-sm text-muted-foreground" data-testid="text-no-agents">
+          You don't have any AI agents yet. Create one in the Telegram bot via <span className="font-mono">/agent</span>.
+        </p>
+      )}
+      {agents && agents.length > 0 && (
+        <div className="space-y-2" data-testid="list-agents">
+          {agents.map((a) => {
+            const status = a.isPaused ? "paused" : a.isActive ? "active" : "stopped";
+            const StatusIcon = a.isPaused ? Pause : a.isActive ? Play : Circle;
+            const statusColor = a.isPaused
+              ? "text-yellow-500"
+              : a.isActive
+              ? "text-green-500"
+              : "text-muted-foreground";
+            return (
+              <div
+                key={a.id}
+                className="border rounded-md p-3 flex items-start justify-between gap-3 flex-wrap hover-elevate"
+                data-testid={`row-agent-${a.id}`}
+              >
+                <div className="min-w-0 flex-1 space-y-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="font-mono text-sm font-bold truncate">{a.name}</p>
+                    <Badge variant="outline" className={`font-mono text-[10px] gap-1 ${statusColor}`}>
+                      <StatusIcon className="w-3 h-3" />
+                      {status}
+                    </Badge>
+                    <Badge variant="outline" className="font-mono text-[10px] uppercase">
+                      {a.exchange}
+                    </Badge>
+                    {a.pairs.slice(0, 3).map((p) => (
+                      <Badge key={p} variant="secondary" className="font-mono text-[10px]">
+                        {p}
+                      </Badge>
+                    ))}
+                  </div>
+                  {a.description && (
+                    <p className="text-xs text-muted-foreground line-clamp-2">{a.description}</p>
+                  )}
+                </div>
+                <div className="text-right">
+                  <p
+                    className={`font-mono text-sm font-bold ${
+                      a.totalPnl > 0 ? "text-green-500" : a.totalPnl < 0 ? "text-destructive" : ""
+                    }`}
+                    data-testid={`stat-agent-pnl-${a.id}`}
+                  >
+                    {a.totalPnl >= 0 ? "+" : ""}${a.totalPnl.toFixed(2)}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground font-mono">
+                    {a.totalTrades} trades · {(a.winRate * 100).toFixed(0)}% win
+                  </p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function ActivityCard() {
+  const [logs, setLogs] = useState<AgentLogEntry[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    const token = localStorage.getItem(SESSION_KEY);
+    if (!token) return;
+    let cancelled = false;
+    fetch("/api/web/activity?limit=20", { headers: { "x-session-token": token } })
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
+      .then((j) => {
+        if (cancelled) return;
+        setLogs(j.logs || []);
+      })
+      .catch((e) => {
+        if (!cancelled) setError(e?.message || "Failed to load activity");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return (
+    <Card className="p-6 space-y-4" data-testid="card-activity">
+      <div className="flex items-center justify-between gap-2">
+        <h2 className="font-mono text-sm font-bold flex items-center gap-2">
+          <Activity className="w-4 h-4" /> Recent agent activity
+        </h2>
+      </div>
+      {!logs && !error && (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="w-4 h-4 animate-spin" /> Loading activity…
+        </div>
+      )}
+      {error && (
+        <p className="text-xs text-destructive font-mono" data-testid="text-activity-error">
+          {error}
+        </p>
+      )}
+      {logs && logs.length === 0 && (
+        <p className="text-sm text-muted-foreground" data-testid="text-no-activity">
+          No agent activity yet. Once your agents start running, their decisions show up here.
+        </p>
+      )}
+      {logs && logs.length > 0 && (
+        <div className="space-y-2" data-testid="list-activity">
+          {logs.map((l) => {
+            const action = (l.parsedAction || l.action || "").toLowerCase();
+            const isBuy = action.includes("buy") || action.includes("long");
+            const isSell = action.includes("sell") || action.includes("short") || action.includes("close");
+            const Icon = isBuy ? TrendingUp : isSell ? TrendingDown : Circle;
+            const color = l.error
+              ? "text-destructive"
+              : isBuy
+              ? "text-green-500"
+              : isSell
+              ? "text-yellow-500"
+              : "text-muted-foreground";
+            return (
+              <div
+                key={l.id}
+                className="border rounded-md p-2.5 flex items-start gap-2.5 text-xs"
+                data-testid={`row-activity-${l.id}`}
+              >
+                <Icon className={`w-4 h-4 mt-0.5 flex-shrink-0 ${color}`} />
+                <div className="min-w-0 flex-1 space-y-0.5">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-mono font-bold uppercase">
+                      {l.parsedAction || l.action}
+                    </span>
+                    {l.pair && (
+                      <Badge variant="secondary" className="font-mono text-[9px]">
+                        {l.pair}
+                      </Badge>
+                    )}
+                    {l.exchange && (
+                      <Badge variant="outline" className="font-mono text-[9px] uppercase">
+                        {l.exchange}
+                      </Badge>
+                    )}
+                    {l.price != null && (
+                      <span className="font-mono text-muted-foreground">
+                        @ ${l.price.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                      </span>
+                    )}
+                  </div>
+                  {l.reason && (
+                    <p className="text-muted-foreground line-clamp-2">{l.reason}</p>
+                  )}
+                  {l.error && (
+                    <p className="text-destructive font-mono line-clamp-1">{l.error}</p>
+                  )}
+                  <p className="text-muted-foreground font-mono">
+                    {l.agentName || `Agent ${l.agentId.slice(0, 6)}`} · {fmtRelative(l.createdAt)}
+                  </p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </Card>
+  );
 }
 
 export default function AppDashboard() {
@@ -516,26 +780,24 @@ export default function AppDashboard() {
               )}
             </Card>
 
+            <AgentsCard />
+            <ActivityCard />
+
             <Card className="p-6 space-y-3" data-testid="card-coming-soon">
               <h2 className="font-mono text-sm font-bold">Coming next</h2>
               <p className="text-sm text-muted-foreground">
-                This is your dashboard shell. We're rolling out features in phases — each one
-                mirrors what the Telegram bot already does.
+                Read-only mirror of your bot is live. Trading from the web is rolling out next.
               </p>
               <ul className="text-sm space-y-1.5 font-mono">
-                <li className="flex items-center gap-2">
-                  <span className="text-muted-foreground">Phase 2 →</span> Wallets + deposits page
-                </li>
                 <li className="flex items-center gap-2">
                   <span className="text-muted-foreground">Phase 3 →</span> Aster perps trading
                 </li>
                 <li className="flex items-center gap-2">
-                  <span className="text-muted-foreground">Phase 4+ →</span> Hyperliquid, predictions,
-                  AI agents, copy trading
+                  <span className="text-muted-foreground">Phase 4+ →</span> Hyperliquid, predictions, agent management, copy trading
                 </li>
               </ul>
               <p className="text-xs text-muted-foreground pt-2">
-                Or use any feature today on Telegram:{" "}
+                Use any feature today on Telegram:{" "}
                 <a
                   href={
                     tgConfig.botUsername
