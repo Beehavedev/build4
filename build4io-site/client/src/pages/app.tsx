@@ -1,20 +1,31 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useWallet } from "@/hooks/use-wallet";
 import { WalletConnector } from "@/components/wallet-connector";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, ShieldCheck, Wallet, ExternalLink, LogOut } from "lucide-react";
+import { Loader2, ShieldCheck, Wallet, ExternalLink, LogOut, Send } from "lucide-react";
 import { Link } from "wouter";
 
 const SESSION_KEY = "build4_session_token";
+
+type Session =
+  | { kind: "wallet"; wallet: string; expiresAt: string }
+  | {
+      kind: "telegram";
+      telegramId: string;
+      telegramUsername: string | null;
+      telegramFirstName: string | null;
+      telegramPhotoUrl: string | null;
+      expiresAt: string;
+    };
 
 type AuthState =
   | { kind: "loading" }
   | { kind: "disconnected" }
   | { kind: "needs-signature" }
   | { kind: "signing" }
-  | { kind: "authed"; wallet: string; expiresAt: string }
+  | { kind: "authed"; session: Session }
   | { kind: "error"; message: string };
 
 function buildSiweMessage(address: string, nonce: string, chainId: number): string {
@@ -37,26 +48,77 @@ function buildSiweMessage(address: string, nonce: string, chainId: number): stri
   ].join("\n");
 }
 
-export default function AppDashboard() {
-  const { connected, address, signer, disconnect, chainName, balance, chainCurrency, chainId } = useWallet();
-  const [auth, setAuth] = useState<AuthState>({ kind: "loading" });
+function TelegramLoginButton({
+  botUsername,
+  onAuth,
+}: {
+  botUsername: string;
+  onAuth: (data: any) => void;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const callbackName = useRef(`onTgAuth_${Math.floor(Math.random() * 1e9)}`);
 
-  const fetchSession = useCallback(async () => {
+  useEffect(() => {
+    (window as any)[callbackName.current] = onAuth;
+    const script = document.createElement("script");
+    script.async = true;
+    script.src = "https://telegram.org/js/telegram-widget.js?22";
+    script.setAttribute("data-telegram-login", botUsername);
+    script.setAttribute("data-size", "large");
+    script.setAttribute("data-userpic", "false");
+    script.setAttribute("data-request-access", "write");
+    script.setAttribute("data-onauth", `${callbackName.current}(user)`);
+    containerRef.current?.appendChild(script);
+    return () => {
+      try { delete (window as any)[callbackName.current]; } catch {}
+      if (containerRef.current) containerRef.current.innerHTML = "";
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [botUsername]);
+
+  return <div ref={containerRef} data-testid="telegram-login-widget" />;
+}
+
+export default function AppDashboard() {
+  const { connected, address, signer, disconnect, chainId } = useWallet();
+  const [auth, setAuth] = useState<AuthState>({ kind: "loading" });
+  const [tgConfig, setTgConfig] = useState<{ enabled: boolean; botUsername: string | null }>({
+    enabled: false,
+    botUsername: null,
+  });
+
+  const fetchSession = useCallback(async (): Promise<Session | null> => {
     try {
       const token = localStorage.getItem(SESSION_KEY);
       if (!token) return null;
-      const r = await fetch("/api/auth/session", {
-        headers: { "x-session-token": token },
-      });
+      const r = await fetch("/api/auth/session", { headers: { "x-session-token": token } });
       if (!r.ok) {
         localStorage.removeItem(SESSION_KEY);
         return null;
       }
       const j = await r.json();
-      return j as { authenticated: boolean; wallet: string; expiresAt: string };
+      if (!j?.authenticated) return null;
+      if (j.kind === "telegram") {
+        return {
+          kind: "telegram",
+          telegramId: j.telegramId,
+          telegramUsername: j.telegramUsername,
+          telegramFirstName: j.telegramFirstName,
+          telegramPhotoUrl: j.telegramPhotoUrl,
+          expiresAt: j.expiresAt,
+        };
+      }
+      return { kind: "wallet", wallet: j.wallet, expiresAt: j.expiresAt };
     } catch {
       return null;
     }
+  }, []);
+
+  useEffect(() => {
+    fetch("/api/auth/telegram-config")
+      .then((r) => r.json())
+      .then((j) => setTgConfig({ enabled: !!j.enabled, botUsername: j.botUsername }))
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -64,15 +126,11 @@ export default function AppDashboard() {
     (async () => {
       const s = await fetchSession();
       if (cancelled) return;
-      if (s?.authenticated) {
-        setAuth({ kind: "authed", wallet: s.wallet, expiresAt: s.expiresAt });
+      if (s) {
+        setAuth({ kind: "authed", session: s });
         return;
       }
-      if (!connected) {
-        setAuth({ kind: "disconnected" });
-      } else {
-        setAuth({ kind: "needs-signature" });
-      }
+      setAuth(connected ? { kind: "needs-signature" } : { kind: "disconnected" });
     })();
     return () => {
       cancelled = true;
@@ -97,7 +155,10 @@ export default function AppDashboard() {
         return;
       }
       localStorage.setItem(SESSION_KEY, j.sessionToken);
-      setAuth({ kind: "authed", wallet: j.wallet, expiresAt: j.expiresAt });
+      setAuth({
+        kind: "authed",
+        session: { kind: "wallet", wallet: j.wallet, expiresAt: j.expiresAt },
+      });
     } catch (e: any) {
       const raw = e?.message || "";
       let friendly = "Signature failed. Please try again.";
@@ -106,13 +167,46 @@ export default function AppDashboard() {
       }
       setAuth({ kind: "error", message: friendly });
     }
-  }, [signer, address]);
+  }, [signer, address, chainId]);
+
+  const handleTelegramAuth = useCallback(async (data: any) => {
+    setAuth({ kind: "loading" });
+    try {
+      const r = await fetch("/api/auth/telegram", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      const j = await r.json();
+      if (!r.ok || !j.authenticated) {
+        setAuth({ kind: "error", message: j.error || "Telegram sign-in failed" });
+        return;
+      }
+      localStorage.setItem(SESSION_KEY, j.sessionToken);
+      setAuth({
+        kind: "authed",
+        session: {
+          kind: "telegram",
+          telegramId: j.telegramId,
+          telegramUsername: j.telegramUsername,
+          telegramFirstName: j.telegramFirstName,
+          telegramPhotoUrl: j.telegramPhotoUrl,
+          expiresAt: j.expiresAt,
+        },
+      });
+    } catch (e: any) {
+      setAuth({ kind: "error", message: e?.message || "Telegram sign-in failed" });
+    }
+  }, []);
 
   const signOut = useCallback(async () => {
     localStorage.removeItem(SESSION_KEY);
-    await disconnect();
+    try { await disconnect(); } catch {}
     setAuth({ kind: "disconnected" });
   }, [disconnect]);
+
+  const isAuthed = auth.kind === "authed";
+  const session = isAuthed ? auth.session : null;
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -123,8 +217,8 @@ export default function AppDashboard() {
             <Badge variant="outline" className="text-[10px]">dApp</Badge>
           </Link>
           <div className="flex items-center gap-2">
-            <WalletConnector />
-            {auth.kind === "authed" && (
+            {(!session || session.kind === "wallet") && <WalletConnector />}
+            {isAuthed && (
               <Button
                 variant="ghost"
                 size="sm"
@@ -148,30 +242,55 @@ export default function AppDashboard() {
         )}
 
         {auth.kind === "disconnected" && (
-          <Card className="p-8 text-center space-y-4" data-testid="card-connect">
-            <Wallet className="w-10 h-10 mx-auto text-primary" />
-            <div>
-              <h1 className="text-xl font-mono font-bold mb-1">Welcome to BUILD4</h1>
-              <p className="text-sm text-muted-foreground">
-                Connect your wallet to access your AI trading dashboard.
+          <Card className="p-8 space-y-6" data-testid="card-connect">
+            <div className="text-center space-y-3">
+              <Wallet className="w-10 h-10 mx-auto text-primary" />
+              <div>
+                <h1 className="text-xl font-mono font-bold mb-1">Welcome to BUILD4</h1>
+                <p className="text-sm text-muted-foreground">
+                  Sign in to access your AI trading dashboard.
+                </p>
+              </div>
+            </div>
+
+            {tgConfig.enabled && tgConfig.botUsername && (
+              <>
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 justify-center text-xs text-muted-foreground font-mono">
+                    <Send className="w-3.5 h-3.5" /> Already use BUILD4 on Telegram?
+                  </div>
+                  <div className="flex justify-center" data-testid="container-telegram-login">
+                    <TelegramLoginButton
+                      botUsername={tgConfig.botUsername}
+                      onAuth={handleTelegramAuth}
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground text-center">
+                    Signs you in with the same Telegram account you use in the bot.
+                  </p>
+                </div>
+                <div className="relative">
+                  <div className="absolute inset-0 flex items-center">
+                    <span className="w-full border-t" />
+                  </div>
+                  <div className="relative flex justify-center text-xs uppercase">
+                    <span className="bg-card px-2 text-muted-foreground font-mono">or</span>
+                  </div>
+                </div>
+              </>
+            )}
+
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 justify-center text-xs text-muted-foreground font-mono">
+                <Wallet className="w-3.5 h-3.5" /> Connect with a crypto wallet
+              </div>
+              <div className="flex justify-center">
+                <WalletConnector />
+              </div>
+              <p className="text-xs text-muted-foreground text-center">
+                MetaMask, WalletConnect (mobile), or OKX. New here? You'll get a fresh BUILD4 account.
               </p>
             </div>
-            <div className="flex justify-center pt-2">
-              <WalletConnector />
-            </div>
-            <p className="text-xs text-muted-foreground pt-2">
-              Already use BUILD4 on Telegram?{" "}
-              <a
-                href="https://t.me/Build4bot"
-                target="_blank"
-                rel="noopener noreferrer"
-                aria-label="Open BUILD4 bot on Telegram"
-                className="underline"
-              >
-                Open the bot
-              </a>{" "}
-              — connect the same wallet here to see your account.
-            </p>
           </Card>
         )}
 
@@ -214,33 +333,53 @@ export default function AppDashboard() {
             </Card>
           )}
 
-        {auth.kind === "authed" && (
+        {isAuthed && session && (
           <div className="space-y-4" data-testid="view-dashboard">
             <Card className="p-6 space-y-3">
-              <div className="flex items-center justify-between">
-                <div>
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div className="min-w-0">
                   <p className="text-xs text-muted-foreground font-mono">Signed in as</p>
-                  <p className="font-mono text-sm break-all" data-testid="text-session-wallet">
-                    {auth.wallet}
-                  </p>
+                  {session.kind === "wallet" ? (
+                    <p
+                      className="font-mono text-sm break-all"
+                      data-testid="text-session-wallet"
+                    >
+                      {session.wallet}
+                    </p>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      {session.telegramPhotoUrl && (
+                        <img
+                          src={session.telegramPhotoUrl}
+                          alt=""
+                          className="w-8 h-8 rounded-full"
+                        />
+                      )}
+                      <div>
+                        <p
+                          className="font-mono text-sm"
+                          data-testid="text-session-telegram-name"
+                        >
+                          {session.telegramFirstName ||
+                            session.telegramUsername ||
+                            `User ${session.telegramId}`}
+                        </p>
+                        {session.telegramUsername && (
+                          <p
+                            className="font-mono text-xs text-muted-foreground"
+                            data-testid="text-session-telegram-username"
+                          >
+                            @{session.telegramUsername}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
                 <Badge variant="default" className="font-mono text-[10px]">
-                  <ShieldCheck className="w-3 h-3 mr-1" /> Verified
+                  <ShieldCheck className="w-3 h-3 mr-1" />
+                  {session.kind === "wallet" ? "Wallet verified" : "Telegram verified"}
                 </Badge>
-              </div>
-              <div className="grid grid-cols-2 gap-3 pt-2 border-t">
-                <div>
-                  <p className="text-xs text-muted-foreground font-mono">Network</p>
-                  <p className="font-mono text-sm" data-testid="text-network">
-                    {chainName || "—"}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground font-mono">Wallet balance</p>
-                  <p className="font-mono text-sm" data-testid="text-balance">
-                    {parseFloat(balance || "0").toFixed(4)} {chainCurrency}
-                  </p>
-                </div>
               </div>
             </Card>
 
@@ -252,11 +391,11 @@ export default function AppDashboard() {
               </p>
               <ul className="text-sm space-y-1.5 font-mono">
                 <li className="flex items-center gap-2">
-                  <span className="text-muted-foreground">Phase 1 →</span> Auto-provision trading
-                  wallets (BSC, Hyperliquid, Aster, Polymarket Safe)
+                  <span className="text-muted-foreground">Phase 1 →</span> Link to your Telegram
+                  account + show real balances and agents
                 </li>
                 <li className="flex items-center gap-2">
-                  <span className="text-muted-foreground">Phase 2 →</span> Balances + deposit page
+                  <span className="text-muted-foreground">Phase 2 →</span> Wallets + deposits page
                 </li>
                 <li className="flex items-center gap-2">
                   <span className="text-muted-foreground">Phase 3 →</span> Aster perps trading
@@ -269,14 +408,18 @@ export default function AppDashboard() {
               <p className="text-xs text-muted-foreground pt-2">
                 Full feature list available today on Telegram:{" "}
                 <a
-                  href="https://t.me/Build4bot"
+                  href={
+                    tgConfig.botUsername
+                      ? `https://t.me/${tgConfig.botUsername}`
+                      : "https://t.me/Build4bot"
+                  }
                   target="_blank"
                   rel="noopener noreferrer"
                   aria-label="Open BUILD4 bot on Telegram"
                   className="underline inline-flex items-center gap-1"
                   data-testid="link-telegram-bot"
                 >
-                  @Build4bot <ExternalLink className="w-3 h-3" />
+                  @{tgConfig.botUsername || "Build4bot"} <ExternalLink className="w-3 h-3" />
                 </a>
               </p>
             </Card>

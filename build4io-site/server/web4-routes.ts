@@ -2970,13 +2970,116 @@ ${urls}
     const token = req.headers["x-session-token"] as string;
     if (!token) return res.status(401).json({ authenticated: false, error: "No session token" });
 
-    const sessions = (globalThis as any).__authSessions as Map<string, { wallet: string; expiry: number }> | undefined;
+    const sessions = (globalThis as any).__authSessions as Map<string, any> | undefined;
     const session = sessions?.get(token);
     if (!session || session.expiry < Date.now()) {
       sessions?.delete(token);
       return res.status(401).json({ authenticated: false, error: "Session expired or invalid" });
     }
-    res.json({ authenticated: true, wallet: session.wallet, expiresAt: new Date(session.expiry).toISOString() });
+    res.json({
+      authenticated: true,
+      kind: session.kind || "wallet",
+      wallet: session.wallet ?? null,
+      telegramId: session.telegramId ?? null,
+      telegramUsername: session.telegramUsername ?? null,
+      telegramFirstName: session.telegramFirstName ?? null,
+      telegramPhotoUrl: session.telegramPhotoUrl ?? null,
+      expiresAt: new Date(session.expiry).toISOString(),
+    });
+  });
+
+  // ============================================================
+  // Telegram Login Widget — config + verify
+  // Docs: https://core.telegram.org/widgets/login#checking-authorization
+  // ============================================================
+
+  let cachedBotUsername: string | null | undefined = undefined;
+  async function resolveBotUsername(): Promise<string | null> {
+    if (cachedBotUsername !== undefined) return cachedBotUsername;
+    const envOverride = process.env.TELEGRAM_LOGIN_BOT_USERNAME;
+    if (envOverride && envOverride.trim()) {
+      cachedBotUsername = envOverride.trim().replace(/^@/, "");
+      return cachedBotUsername;
+    }
+    const token = process.env.TELEGRAM_BOT_TOKEN;
+    if (!token) { cachedBotUsername = null; return null; }
+    try {
+      const r = await fetch(`https://api.telegram.org/bot${token}/getMe`);
+      const j: any = await r.json();
+      if (j?.ok && j.result?.username) {
+        cachedBotUsername = j.result.username as string;
+        return cachedBotUsername;
+      }
+    } catch {}
+    cachedBotUsername = null;
+    return null;
+  }
+
+  app.get("/api/auth/telegram-config", async (_req: Request, res: Response) => {
+    const botUsername = await resolveBotUsername();
+    res.json({ enabled: !!botUsername, botUsername });
+  });
+
+  app.post("/api/auth/telegram", async (req: Request, res: Response) => {
+    try {
+      const token = process.env.TELEGRAM_BOT_TOKEN;
+      if (!token) {
+        return res.status(503).json({ authenticated: false, error: "Telegram login not configured on server" });
+      }
+      const data = req.body || {};
+      const { hash, ...fields } = data;
+      if (!hash || typeof hash !== "string") {
+        return res.status(400).json({ authenticated: false, error: "Missing hash" });
+      }
+      const id = fields.id;
+      const authDate = Number(fields.auth_date);
+      if (!id || !Number.isFinite(authDate)) {
+        return res.status(400).json({ authenticated: false, error: "Missing id or auth_date" });
+      }
+      // 24h freshness window per Telegram docs
+      if (Math.abs(Math.floor(Date.now() / 1000) - authDate) > 24 * 60 * 60) {
+        return res.status(401).json({ authenticated: false, error: "Auth payload expired" });
+      }
+      const crypto = await import("crypto");
+      const dataCheckString = Object.keys(fields)
+        .filter((k) => fields[k] !== undefined && fields[k] !== null && fields[k] !== "")
+        .sort()
+        .map((k) => `${k}=${fields[k]}`)
+        .join("\n");
+      const secretKey = crypto.createHash("sha256").update(token).digest();
+      const computedHash = crypto.createHmac("sha256", secretKey).update(dataCheckString).digest("hex");
+      // constant-time compare
+      const a = Buffer.from(computedHash, "hex");
+      const b = Buffer.from(hash, "hex");
+      if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+        return res.status(401).json({ authenticated: false, error: "Invalid Telegram signature" });
+      }
+
+      const sessionToken = crypto.randomBytes(32).toString("hex");
+      const expiry = Date.now() + 24 * 60 * 60 * 1000;
+      if (!(globalThis as any).__authSessions) (globalThis as any).__authSessions = new Map();
+      (globalThis as any).__authSessions.set(sessionToken, {
+        kind: "telegram",
+        telegramId: String(id),
+        telegramUsername: fields.username ?? null,
+        telegramFirstName: fields.first_name ?? null,
+        telegramPhotoUrl: fields.photo_url ?? null,
+        expiry,
+      });
+
+      res.json({
+        authenticated: true,
+        kind: "telegram",
+        telegramId: String(id),
+        telegramUsername: fields.username ?? null,
+        telegramFirstName: fields.first_name ?? null,
+        telegramPhotoUrl: fields.photo_url ?? null,
+        sessionToken,
+        expiresAt: new Date(expiry).toISOString(),
+      });
+    } catch (e: any) {
+      res.status(400).json({ authenticated: false, error: e?.message || "Telegram auth failed" });
+    }
   });
 
   // ============================================================
