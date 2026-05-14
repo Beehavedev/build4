@@ -3,19 +3,10 @@ import { pgTable, text, varchar, boolean, integer, timestamp, doublePrecision, s
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
-export const users = pgTable("users", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  username: text("username").notNull().unique(),
-  password: text("password").notNull(),
-});
-
-export const insertUserSchema = createInsertSchema(users).pick({
-  username: true,
-  password: true,
-});
-
-export type InsertUser = z.infer<typeof insertUserSchema>;
-export type User = typeof users.$inferSelect;
+// Legacy local `users` table removed — /app authenticates against the bot's
+// existing User table (~17,500 Telegram users) via build4io-site/server/web-mirror-lookup.ts.
+// All user identity for the web app is sourced from the bot's database; the
+// green site never creates or stores its own users.
 
 export const agents = pgTable("agents", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

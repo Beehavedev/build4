@@ -3052,20 +3052,29 @@ ${urls}
       const sessionToken = cryptoMod.randomBytes(32).toString("hex");
       const expiry = Date.now() + 24 * 60 * 60 * 1000;
 
-      // Cross-DB lookup: existing bot account by wallet?
-      let linkedBotUser: any = null;
+      // The web app shares the bot's user database. A wallet must already
+      // belong to a Build4 user (created via Telegram /setup) to sign in.
+      let botUser: any = null;
       try {
         const { findBotUserByWalletAddress } = await import("./web-mirror-lookup");
-        linkedBotUser = await findBotUserByWalletAddress(recoveredAddress);
+        botUser = await findBotUserByWalletAddress(recoveredAddress);
       } catch (e: any) {
-        console.warn("[siwe] linked-user lookup failed:", e?.message);
+        console.error("[siwe] bot-user lookup failed:", e?.message);
+        return res.status(500).json({ authenticated: false, error: "Account lookup failed — please try again" });
+      }
+      if (!botUser) {
+        return res.status(404).json({
+          authenticated: false,
+          error: "no_account",
+          message: "This wallet isn't linked to a Build4 account. Open the Telegram bot and run /setup first, then sign in here with the same wallet.",
+        });
       }
 
       if (!(globalThis as any).__authSessions) (globalThis as any).__authSessions = new Map();
       (globalThis as any).__authSessions.set(sessionToken, {
         kind: "wallet",
         wallet: recoveredAddress.toLowerCase(),
-        linkedBotUserId: linkedBotUser?.userId ?? null,
+        botUserId: botUser.userId,
         expiry,
       });
 
@@ -3074,7 +3083,7 @@ ${urls}
         wallet: recoveredAddress.toLowerCase(),
         sessionToken,
         expiresAt: new Date(expiry).toISOString(),
-        linkedBotUser,
+        botUser,
       });
     } catch (e: any) {
       res.status(400).json({ authenticated: false, error: e.message });
@@ -3099,7 +3108,7 @@ ${urls}
       telegramUsername: session.telegramUsername ?? null,
       telegramFirstName: session.telegramFirstName ?? null,
       telegramPhotoUrl: session.telegramPhotoUrl ?? null,
-      linkedBotUserId: session.linkedBotUserId ?? null,
+      botUserId: session.botUserId ?? null,
       expiresAt: new Date(session.expiry).toISOString(),
     });
   });
@@ -3118,11 +3127,14 @@ ${urls}
         return res.status(401).json({ error: "Session expired or invalid" });
       }
       const { findBotUserByTelegramId, findBotUserByWalletAddress } = await import("./web-mirror-lookup");
-      let linkedBotUser: any = null;
+      let botUser: any = null;
       if (session.kind === "telegram" && session.telegramId) {
-        linkedBotUser = await findBotUserByTelegramId(String(session.telegramId));
+        botUser = await findBotUserByTelegramId(String(session.telegramId));
       } else if (session.wallet) {
-        linkedBotUser = await findBotUserByWalletAddress(String(session.wallet));
+        botUser = await findBotUserByWalletAddress(String(session.wallet));
+      }
+      if (!botUser) {
+        return res.status(404).json({ error: "no_account" });
       }
       res.json({
         kind: session.kind || "wallet",
@@ -3131,7 +3143,7 @@ ${urls}
         telegramUsername: session.telegramUsername ?? null,
         telegramFirstName: session.telegramFirstName ?? null,
         telegramPhotoUrl: session.telegramPhotoUrl ?? null,
-        linkedBotUser,
+        botUser,
       });
     } catch (e: any) {
       console.error("[/api/web/me]", e);
@@ -3208,13 +3220,22 @@ ${urls}
 
       const sessionToken = crypto.randomBytes(32).toString("hex");
       const expiry = Date.now() + 24 * 60 * 60 * 1000;
-      // Cross-DB lookup: existing bot account by Telegram id?
-      let linkedBotUser: any = null;
+      // The web app shares the bot's user database. A Telegram identity must
+      // already belong to a Build4 user (created when they first /start the bot).
+      let botUser: any = null;
       try {
         const { findBotUserByTelegramId } = await import("./web-mirror-lookup");
-        linkedBotUser = await findBotUserByTelegramId(String(id));
+        botUser = await findBotUserByTelegramId(String(id));
       } catch (e: any) {
-        console.warn("[tg-auth] linked-user lookup failed:", e?.message);
+        console.error("[tg-auth] bot-user lookup failed:", e?.message);
+        return res.status(500).json({ authenticated: false, error: "Account lookup failed — please try again" });
+      }
+      if (!botUser) {
+        return res.status(404).json({
+          authenticated: false,
+          error: "no_account",
+          message: "This Telegram account hasn't started Build4 yet. Open the bot, send /start, then come back and sign in.",
+        });
       }
 
       if (!(globalThis as any).__authSessions) (globalThis as any).__authSessions = new Map();
@@ -3224,7 +3245,7 @@ ${urls}
         telegramUsername: fields.username ?? null,
         telegramFirstName: fields.first_name ?? null,
         telegramPhotoUrl: fields.photo_url ?? null,
-        linkedBotUserId: linkedBotUser?.userId ?? null,
+        botUserId: botUser.userId,
         expiry,
       });
 
@@ -3237,7 +3258,7 @@ ${urls}
         telegramPhotoUrl: fields.photo_url ?? null,
         sessionToken,
         expiresAt: new Date(expiry).toISOString(),
-        linkedBotUser,
+        botUser,
       });
     } catch (e: any) {
       res.status(400).json({ authenticated: false, error: e?.message || "Telegram auth failed" });

@@ -1,5 +1,4 @@
 import {
-  type User, type InsertUser,
   type Agent, type InsertAgent,
   type AgentWallet, type InsertAgentWallet,
   type AgentTransaction, type InsertAgentTransaction,
@@ -175,9 +174,8 @@ const DEFAULT_LAWS = [
 ];
 
 export interface IStorage {
-  getUser(id: string): Promise<User | undefined>;
-  getUserByUsername(username: string): Promise<User | undefined>;
-  createUser(user: InsertUser): Promise<User>;
+  // Legacy local user CRUD removed — /app authenticates against the bot's
+  // User table (~17,500 Telegram users) via web-mirror-lookup.ts.
 
   getAgent(id: string): Promise<Agent | undefined>;
   getAgentByName(name: string): Promise<Agent | undefined>;
@@ -540,20 +538,8 @@ export interface IStorage {
 }
 
 export class DatabaseStorage implements IStorage {
-  async getUser(id: string): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.id, id));
-    return user;
-  }
-
-  async getUserByUsername(username: string): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.username, username));
-    return user;
-  }
-
-  async createUser(insertUser: InsertUser): Promise<User> {
-    const [user] = await db.insert(users).values(insertUser).returning();
-    return user;
-  }
+  // Legacy local user CRUD removed — /app authenticates against the bot's
+  // User table (~17,500 Telegram users) via web-mirror-lookup.ts.
 
   private async safeAgentQueryAll(): Promise<Agent[]> {
     try {
