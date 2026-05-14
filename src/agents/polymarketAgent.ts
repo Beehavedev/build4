@@ -50,6 +50,29 @@ const MAX_MARKETS_PER_EVENT = 3
 // markets move slowly relative to perps, and this keeps LLM cost low.
 const MIN_TICK_INTERVAL_MS = 60_000
 
+// Polymarket Gamma "Crypto" tag. Used as a server-side pre-filter on
+// /events so the BUILD4 agent runner never even sees the sports/elections/
+// weather long tail. Looked up via Gamma /tags?slug=crypto. Hardcoded
+// because tag ids on Gamma are stable; a refresh script would only run
+// once a year. If Polymarket ever renumbers, the keyword belt-and-
+// suspenders below still keeps us crypto-only.
+export const POLYMARKET_CRYPTO_TAG_ID = 21
+
+// Crypto + Price-target keyword filter. Two purposes:
+//  - belt-and-suspenders if Gamma tag fetch returns an off-topic event
+//  - per-market gate: a crypto event can host non-price sub-markets
+//    ("Will Coinbase list X?"); the agent only trades price targets.
+const POLY_CRYPTO_KW = ['btc','bitcoin','eth','ethereum','sol','solana','bnb','xrp','doge','crypto','altcoin','defi']
+const POLY_PRICE_KW  = ['$','price','reach','close above','close below',' above ',' below ','high of','low of','all-time high','ath']
+function isCryptoEventTitle(title: string): boolean {
+  const t = title.toLowerCase()
+  return POLY_CRYPTO_KW.some((k) => t.includes(k))
+}
+function isCryptoPriceMarket(eventTitle: string, marketQuestion: string): boolean {
+  const hay = `${eventTitle} ${marketQuestion}`.toLowerCase()
+  return POLY_CRYPTO_KW.some((k) => hay.includes(k)) && POLY_PRICE_KW.some((k) => hay.includes(k))
+}
+
 // Phase 4 (2026-05-03) — live sweep telemetry. Captured on every sweep
 // completion, exposed via /api/me/debug-polymarket and the /debugpoly
 // bot command so users (and us) can see *why* a sweep returned what it
@@ -212,7 +235,7 @@ export async function tickAllPolymarketAgents(): Promise<{
   let events: PolymarketEvent[] = []
   let listEventsError: string | null = null
   try {
-    events = await listEvents({ limit: 20, order: 'volume24hr' })
+    events = await listEvents({ limit: 20, order: 'volume24hr', tagId: POLYMARKET_CRYPTO_TAG_ID })
   } catch (err) {
     errors++
     listEventsError = (err as Error).message ?? String(err)
@@ -383,40 +406,15 @@ async function tickOneAgent(
     })).map((p) => p.conditionId),
   )
 
-  // Score the top events by 24h volume. Inside each event, score up to
-  // MAX_MARKETS_PER_EVENT child markets (binary YES/NO sub-questions on
-  // multi-outcome events). One LLM call per market → bounded cost per
-  // tick: O(MAX_EVENTS_PER_TICK * MAX_MARKETS_PER_EVENT).
-  // Cost-reduction (2026-05-14): strict crypto-only + Price-only filter.
-  // Polymarket carries everything from sports to elections to weather; the
-  // BUILD4 perp brain is a crypto-trader and the prediction brain is a
-  // generic edge-classifier — neither should burn LLM tokens scoring
-  // "Will the Lakers cover the spread?". Crypto Price markets are the
-  // only ones that share signals with the rest of the system (live
-  // Aster/HL prices, news sentiment, etc).
-  //
-  // Filter is intentionally permissive on the "crypto" axis (any of the
-  // major-asset keywords in title or question) and strict on the "price"
-  // axis (must look like a price-target market, not e.g. "Will Coinbase
-  // ship X?"). False-positive cost = one wasted LLM scan; false-negative
-  // cost = the user has to use the manual mini-app. Bias toward
-  // false-negative.
-  const CRYPTO_KW = ['btc','bitcoin','eth','ethereum','sol','solana','bnb','xrp','doge','crypto','altcoin','defi']
-  const PRICE_KW  = ['$','price','reach','hit','close above','close below',' above ',' below ','high of','low of','all-time high','ath']
-  const isCryptoPriceMarket = (eventTitle: string, marketQuestion: string): boolean => {
-    const hay = `${eventTitle} ${marketQuestion}`.toLowerCase()
-    const hasCrypto = CRYPTO_KW.some((k) => hay.includes(k))
-    const hasPrice  = PRICE_KW.some((k) => hay.includes(k))
-    return hasCrypto && hasPrice
-  }
+  // Crypto-only universe filter. The Gamma API is pre-filtered server-side
+  // via tag_id=POLYMARKET_CRYPTO_TAG_ID upstream in tickAllPolymarketAgents
+  // (one fetch shared across all enabled agents). The keyword check below
+  // is a belt-and-suspenders pass in case Gamma returns a tagged-but-
+  // off-topic event, AND it implements the per-market Price-target gate
+  // (the agent only trades price markets, not "Will Coinbase list X?").
   const candidates = events
     .filter((e) => e.active && !e.closed && !e.archived && e.enableOrderBook)
-    // Drop entire events whose title doesn't even hint at crypto so we
-    // skip the per-market loop for sports/elections/weather wholesale.
-    .filter((e) => {
-      const t = (e.title ?? '').toLowerCase()
-      return CRYPTO_KW.some((k) => t.includes(k))
-    })
+    .filter((e) => isCryptoEventTitle(e.title ?? ''))
     .slice(0, MAX_EVENTS_PER_TICK)
 
   for (const event of candidates) {

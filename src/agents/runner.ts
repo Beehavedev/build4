@@ -108,14 +108,36 @@ export function markPairNotificationSent(agentId: string, pair: string, kind: Pa
 export function initRunner(bot: Bot) {
   botRef = bot
 
-  // Main tick — every 60 seconds
-  // Cost-reduction (2026-05-14): Aster+HL agent loop runs every 2 min
-  // instead of every 60s. Cron granularity is whole minutes so we use
-  // */2 (= 120s) — close to the 90s target in the plan and the cleanest
-  // mapping cron supports. CAMPAIGN cron block below is UNTOUCHED.
-  cron.schedule('*/2 * * * *', async () => {
+  // Main tick — minute-cron with a 90s in-handler interval guard so we
+  // skip every second invocation by default (effective cadence ~90s,
+  // which matches the cost-reduction plan without losing minute-level
+  // granularity for the campaign / heartbeat logic that shares this
+  // process). CAMPAIGN cron block below is UNTOUCHED.
+  cron.schedule('* * * * *', async () => {
+    const now = Date.now()
+    if (now - lastAgentSweepAt < AGENT_SWEEP_MIN_INTERVAL_MS) return
+    lastAgentSweepAt = now
     await runAllAgents()
   })
+
+  // 42.space regular (non-campaign) scan — every 10 min. Keeps spend
+  // tiny on prediction-market scoring while still reacting to fresh
+  // markets within one round of the typical 4-30 min book-update cycle.
+  // Skips the campaign agent (separate scheduler above).
+  const tickFortyTwo = async () => {
+    if (fortyTwoTickInflight) return
+    fortyTwoTickInflight = true
+    try {
+      const { tickAllFortyTwoAgents } = await import('./fortyTwoAgent')
+      const r = await tickAllFortyTwoAgents()
+      console.log(`[fortyTwoAgent] scanned=${r.scanned} ticked=${r.ticked} placed=${r.ordersPlaced} skipped=${r.ordersSkipped} errors=${r.errors}`)
+    } catch (err) {
+      console.error('[fortyTwoAgent] sweep failed:', (err as Error).message)
+    } finally {
+      fortyTwoTickInflight = false
+    }
+  }
+  cron.schedule('*/10 * * * *', tickFortyTwo)
 
   // Daily summary — 09:00 UTC
   cron.schedule('0 9 * * *', async () => {
@@ -177,11 +199,8 @@ export function initRunner(bot: Bot) {
   // full 60s after a Render deploy to see Polymarket activity start.
   // Defer by 5s to let the rest of initRunner finish wiring up first.
   setTimeout(tickPolymarket, 5_000)
-  // Cost-reduction (2026-05-14): 60s → 5min. Polymarket markets resolve
-  // on horizons of hours-to-weeks; a 5-min scan cadence still catches
-  // every meaningful price move and cuts ~80% of LLM scan calls. The
-  // shared-scan refactor in polymarketAgent.ts means one fetch now
-  // covers all enabled agents on the tick.
+  // 5-min cadence — Polymarket horizons are hours/weeks, shared-scan
+  // refactor means one fetch covers all enabled agents per tick.
   setInterval(tickPolymarket, 300_000)
 
   // Module 4 — autonomous four.meme token launches. Independent of every
@@ -212,11 +231,8 @@ export function initRunner(bot: Bot) {
     }
   }
   setTimeout(tickFourMemeLaunch, 7_000)
-  // Cost-reduction (2026-05-14): 60s → 2min. Launch decisions are
-  // gated by a per-agent daily cap and BNB-balance guard; a 2-min
-  // cadence still catches every meaningful narrative move while
-  // halving the LLM scan calls. Take-profit sweep below stays at 60s
-  // because it's a price-only check (no LLM).
+  // 2-min cadence — daily-cap + BNB guard already throttle launches;
+  // halves LLM scan cost. TP sweep below stays at 60s (price-only, no LLM).
   setInterval(tickFourMemeLaunch, 120_000)
 
   // Demo Day — autonomous take-profit sweep for already-launched dev
@@ -366,6 +382,15 @@ export function initRunner(bot: Bot) {
 // parallel-friendly internally, but we never want two concurrent sweeps
 // because they'd contend for the same polymarketCreds rows + LLM quota.
 let polymarketTickInflight = false
+
+// 90s minimum interval between Aster+HL agent sweeps. Cron fires every
+// minute (so the per-minute heartbeat / campaign scheduler stays happy)
+// but only every other tick actually runs runAllAgents.
+const AGENT_SWEEP_MIN_INTERVAL_MS = 90_000
+let lastAgentSweepAt = 0
+
+// In-flight guard for the 42.space regular (non-campaign) sweep.
+let fortyTwoTickInflight = false
 
 // In-flight guard for the four.meme launch agent sweep. createToken
 // can take 30s+ on-chain — we never want a second sweep to start one
@@ -581,7 +606,7 @@ async function newsMonitorTick() {
 }
 
 function startNewsMonitor() {
-  // Cost-reduction (2026-05-14): 60s → 3min. fetchNewsSignal() is itself
+  // 3-min cadence — fetchNewsSignal() is itself
   // cached for 60s and gated on score>=7+isBreaking, so most ticks
   // were no-ops anyway. 3min still gives same-day breaking-news
   // coverage with 1/3 the LLM calls.
@@ -681,6 +706,13 @@ async function runAllAgents() {
         // so the dedicated polymarket runner is the only writer for
         // exchange='polymarket' brain logs.
         if (venue === 'polymarket') continue
+        // 42.space (a.k.a. 'fortytwo' / '42') is handled by the dedicated
+        // tickAllFortyTwoAgents loop on the */10 cron above (see Task #90
+        // cost-reduction). Skipping here keeps the regular 42 scan from
+        // running on every Aster/HL tick. Campaign agent is excluded
+        // inside fortyTwoAgent.ts via FT_CAMPAIGN_AGENT_ID and continues
+        // to scan on its dedicated +5m / +1h30m / +3h / +3h45m cron.
+        if (venue === 'fortytwo' || venue === '42') continue
         tickUnits.push({ agent, venue })
       }
     }

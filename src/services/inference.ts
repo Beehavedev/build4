@@ -201,6 +201,47 @@ export function getCircuitState(): Partial<Record<Provider, number>> {
   return { ...circuitParkedUntil }
 }
 
+// ---- Cost-aware role helpers (Task #90) ------------------------------------
+// Two roles share the cheap-first-with-Sonnet-fallback pattern:
+//   - SCAN  (event/market relevance scoring) → xAI grok-3-mini
+//   - NEWS  (headline summarisation)         → Akash llama-3-70b
+// Both fall back to Anthropic Sonnet only when the cheap provider hits a
+// fatal auth/billing condition (401/402/403) or its circuit is parked.
+// Non-fatal failures (timeouts, 5xx) bubble up so the caller can decide;
+// we only fail-over when the cheap provider is *known dead*.
+
+export const SCAN_PROVIDER_PRIMARY: Provider = 'xai'
+export const NEWS_PROVIDER_PRIMARY: Provider = 'akash'
+export const NEWS_PROVIDER_PRIMARY_MODEL = 'meta-llama/Meta-Llama-3-70B-Instruct'
+export const FALLBACK_PROVIDER: Provider = 'anthropic'
+
+function shouldFailoverToSonnet(err: unknown): boolean {
+  if (!(err instanceof InferenceError)) return false
+  if (FATAL_STATUS.has(err.status)) return true
+  if (err.status === 503 && err.body === 'circuit-open') return true
+  return false
+}
+
+export async function runScanInference(args: Omit<CallLLMArgs, 'provider'>): Promise<CallLLMResult> {
+  try {
+    return await callLLM({ ...args, provider: SCAN_PROVIDER_PRIMARY })
+  } catch (err) {
+    if (!shouldFailoverToSonnet(err)) throw err
+    console.warn(`[inference] scan fallback ${SCAN_PROVIDER_PRIMARY} → ${FALLBACK_PROVIDER}: ${(err as Error).message.slice(0, 120)}`)
+    return await callLLM({ ...args, provider: FALLBACK_PROVIDER })
+  }
+}
+
+export async function runNewsInference(args: Omit<CallLLMArgs, 'provider'>): Promise<CallLLMResult> {
+  try {
+    return await callLLM({ ...args, provider: NEWS_PROVIDER_PRIMARY, model: args.model ?? NEWS_PROVIDER_PRIMARY_MODEL })
+  } catch (err) {
+    if (!shouldFailoverToSonnet(err)) throw err
+    console.warn(`[inference] news fallback ${NEWS_PROVIDER_PRIMARY} → ${FALLBACK_PROVIDER}: ${(err as Error).message.slice(0, 120)}`)
+    return await callLLM({ ...args, provider: FALLBACK_PROVIDER })
+  }
+}
+
 interface ResolvedCall {
   apiKey: string
   model: string

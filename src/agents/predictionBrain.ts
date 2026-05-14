@@ -12,15 +12,13 @@
 // {action, side, conviction, reasoning}. The Aster perp brain (ADX/RSI/
 // funding-rate) is the wrong tool for either of them.
 //
-// Provider fallback (Cost-reduction 2026-05-14): xAI grok-3-mini first
-// (~30× cheaper than Sonnet), then Hyperbolic Llama-3.3-70B, with
-// Anthropic Sonnet 4.5 as the last-resort fallback. Prediction-market
-// scoring is a low-stakes "is there an edge?" classification — Grok
-// handles it fine. The expensive Sonnet calls are reserved for the
-// trade-decision path on perps (tradingAgent.ts) and the 42.space
-// CAMPAIGN brain (fortyTwoCampaign.ts), both untouched.
-// One LLM round-trip per (agent × market) per tick — bounded by
-// MAX_EVENTS_PER_TICK upstream.
+// Provider fallback: xAI grok-3-mini → Hyperbolic Llama-3.3-70B →
+// Anthropic Sonnet (last resort). Scan-class call, not trade-class.
+// Intentionally broader than runScanInference's fatal-only Sonnet
+// gate: prediction scoring runs at low volume and we'd rather pay
+// the Hyperbolic-cheap fallback than blank a tick on a transient xAI
+// timeout. Sonnet still only fires if both cheap providers fail.
+// One LLM round-trip per (agent × market) per tick.
 // ─────────────────────────────────────────────────────────────────────────
 
 import { callLLM, type Provider } from '../services/inference'
