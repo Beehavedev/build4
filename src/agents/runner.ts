@@ -108,17 +108,15 @@ export function markPairNotificationSent(agentId: string, pair: string, kind: Pa
 export function initRunner(bot: Bot) {
   botRef = bot
 
-  // Main tick — true 90s setInterval (Task #90 cost reduction). cron
-  // can't realize sub-minute cadence, so we use setInterval directly.
-  // CAMPAIGN cron block below is UNTOUCHED.
-  setInterval(async () => {
+  // Aster+HL: minute cron with 90s in-handler guard.
+  cron.schedule('* * * * *', async () => {
+    const now = Date.now()
+    if (now - lastAsterHlTickAt < ASTER_HL_TICK_MIN_INTERVAL_MS) return
+    lastAsterHlTickAt = now
     await runAllAgents()
-  }, 90_000)
+  })
 
   // 42.space regular (non-campaign) scan — dedicated */10 cron.
-  // Campaign agent (FT_CAMPAIGN_AGENT_ID) is excluded at the scheduler
-  // level so the campaign cron path (+5m/+1h30m/+3h/+3h45m) remains
-  // the only writer for that agent.
   const tickFortyTwo = async () => {
     if (fortyTwoTickInflight) return
     fortyTwoTickInflight = true
@@ -133,7 +131,7 @@ export function initRunner(bot: Bot) {
     }
   }
   cron.schedule('*/10 * * * *', tickFortyTwo)
-  setTimeout(tickFortyTwo, 8_000) // boot-time warm-up
+  setTimeout(tickFortyTwo, 8_000)
 
   // Daily summary — 09:00 UTC
   cron.schedule('0 9 * * *', async () => {
@@ -381,6 +379,10 @@ let polymarketTickInflight = false
 
 // In-flight guard for the dedicated 42.space regular sweep (*/10 cron).
 let fortyTwoTickInflight = false
+
+// 90s in-handler guard for the Aster+HL minute cron.
+const ASTER_HL_TICK_MIN_INTERVAL_MS = 90_000
+let lastAsterHlTickAt = 0
 
 // In-flight guard for the four.meme launch agent sweep. createToken
 // can take 30s+ on-chain — we never want a second sweep to start one

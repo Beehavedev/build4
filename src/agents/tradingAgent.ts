@@ -969,32 +969,26 @@ export async function runAgentTick(agent: Agent): Promise<void> {
       // on User.fortyTwoLiveTrade; this block is brain-feed visibility.
       try {
         const { getAllMarkets } = await import('../services/fortyTwo')
+        type Market42 = Awaited<ReturnType<typeof getAllMarkets>>[number]
         const { readMarketOnchain } = await import('../services/fortyTwoOnchain')
         const { scorePredictionMarket } = await import('./predictionBrain')
 
-        // Pull the top markets ordered by cumulative volume (descending)
-        // — same "highest volume wins" rule we apply on Polymarket.
+        // Pull the top markets ordered by cumulative volume (descending).
         const markets = await getAllMarkets({
           status: 'live', limit: 25, order: 'volume', ascending: false,
         })
-        // Crypto + Price-target filter (Task #90 cost reduction). The
-        // 42.space venue carries everything from macro/AI to memes; the
-        // BUILD4 prediction brain is a generic edge-classifier that
-        // shares signals with the rest of the system only on crypto
-        // price markets. Mirrors polymarketAgent's POLY_CRYPTO_KW /
-        // POLY_PRICE_KW gate.
+        // Crypto + price-target gate. Mirrors polymarketAgent's
+        // POLY_CRYPTO_KW / POLY_PRICE_KW filter so both prediction
+        // venues only score markets that share signals with the rest
+        // of the system.
         const FT_CRYPTO_KW = ['btc','bitcoin','eth','ethereum','sol','solana','bnb','xrp','doge','crypto','altcoin','defi']
         const FT_PRICE_KW  = ['$','price','reach','close above','close below',' above ',' below ','high of','low of','all-time high','ath']
-        const isCryptoPriceMarket = (m: any): boolean => {
-          const hay = ((m.question ?? '') + ' ' + ((m.categories ?? []) as string[]).join(' ')).toLowerCase()
+        const isCryptoPriceMarket = (m: Market42): boolean => {
+          const hay = ((m.question ?? '') + ' ' + (m.categories ?? []).join(' ')).toLowerCase()
           return FT_CRYPTO_KW.some((k) => hay.includes(k)) && FT_PRICE_KW.some((k) => hay.includes(k))
         }
         const filtered = markets.filter(isCryptoPriceMarket)
-        if (filtered.length === 0) {
-          console.log(`[Agent ${agent.name}] 42.space scan: 0 crypto+price markets (of ${markets.length} live)`)
-        } else {
-          console.log(`[Agent ${agent.name}] 42.space scan: ${filtered.length} crypto+price markets (of ${markets.length} live)`)
-        }
+        console.log(`[Agent ${agent.name}] 42.space scan: ${filtered.length} crypto+price markets (of ${markets.length} live)`)
         // Cap LLM round-trips at 5 per tick to bound spend.
         const top = filtered.slice(0, 5)
         for (const m of top) {
