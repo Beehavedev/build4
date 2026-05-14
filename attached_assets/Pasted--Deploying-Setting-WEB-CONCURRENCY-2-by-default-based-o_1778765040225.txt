@@ -1,0 +1,43 @@
+==> Deploying...
+==> Setting WEB_CONCURRENCY=2 by default, based on available CPUs in the instance
+==> Running 'npx tsx src/server.ts'
+[HL config] builder=0x5ff57464152c9285a8526a0665d996da66e2def1 (HYPERLIQUID_BUILDER_ADDRESS=0x5Ff57464152c9285A8526a0665d996dA66e2def1, ASTER_BUILDER_ADDRESS=0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4) rate=0.1% feeTenths=100
+[DB] Connected (attempt 1)
+[DB] Ensuring new tables exist (safe — no drops)...
+==> No open ports detected, continuing to scan...
+==> Docs on specifying a port: https://render.com/docs/web-services#port-binding
+[DB] All new tables ready
+[Migration] Checking for old user data to migrate...
+[Migration] Already have 1981 users in new tables, skipping migration
+[Migration] All agents already on AUTO mode
+[Runner] 42.space campaign scheduler ARMED — ENTRY +5m + every-5min watchdog, REASSESS +1h30m/+3h, FINAL +3h45m past every 4h UTC boundary; boot-time ENTRY catch-up in 10s
+[Runner] Agent runner initialized
+[Runner] Agent runner started
+[Server] Running on port 500
+[Bot] setMyCommands failed: Call to 'setMyCommands' failed! (401: Unauthorized)
+/opt/render/project/src/node_modules/grammy/out/core/error.js:47
+    return new GrammyError(`Call to '${method}' failed!`, err, method, payload);
+           ^
+GrammyError: Call to 'getMe' failed! (401: Unauthorized)
+    at toGrammyError (/opt/render/project/src/node_modules/grammy/out/core/error.js:47:12)
+    at ApiClient.callApi (/opt/render/project/src/node_modules/grammy/out/core/client.js:100:48)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async withRetries (/opt/render/project/src/node_modules/grammy/out/bot.js:523:41)
+    at async Bot.init (/opt/render/project/src/node_modules/grammy/out/bot.js:169:22)
+    at async Server.<anonymous> (/opt/render/project/src/src/server.ts:8788:7) {
+  method: 'getMe',
+  payload: {},
+  ok: false,
+  error_code: 401,
+  description: 'Unauthorized',
+  parameters: {}
+Menu
+}
+Node.js v22.22.0
+==> Exited with status 1
+==> Common ways to troubleshoot your deploy: https://render.com/docs/troubleshooting-deploys
+==> Instance srv-d77trkshg0os73c7nqmg-2dnqg restarted
+==> Running 'npx tsx src/server.ts'
+[HL config] builder=0x5ff57464152c9285a8526a0665d996da66e2def1 (HYPERLIQUID_BUILDER_ADDRESS=0x5Ff57464152c9285A8526a0665d996dA66e2def1, ASTER_BUILDER_ADDRESS=0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4) rate=0.1% feeTenths=100
+[DB] Connected (attempt 1)
+[DB] Ensuring new tables exist (safe — no drops)...
