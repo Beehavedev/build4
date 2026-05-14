@@ -235,7 +235,7 @@ function B4RewardsLeaderboard() {
               })}
             </div>
             <div className="mt-4 text-center">
-              <a href="https://t.me/build4_bot" target="_blank" rel="noopener noreferrer">
+              <a href="https://t.me/build4_bot" target="_blank" rel="noopener noreferrer" aria-label="Start earning B4 rewards on the BUILD4 Telegram bot">
                 <Button variant="outline" size="sm" className="font-mono text-xs gap-2" data-testid="button-earn-b4">
                   <Rocket className="w-3.5 h-3.5" />
                   Start Earning $B4
@@ -468,14 +468,14 @@ export default function Home() {
                         </div>
                       </div>
                       <div className="flex flex-col sm:flex-row gap-3 justify-center lg:justify-start">
-                        <a href="https://t.me/build4_bot" target="_blank" rel="noopener noreferrer">
+                        <a href="https://t.me/build4_bot" target="_blank" rel="noopener noreferrer" aria-label="Join the BUILD4 trading challenge on Telegram">
                           <Button size="lg" className="font-mono text-sm gap-2 w-full sm:w-auto" data-testid="button-join-challenge">
                             <Trophy className="w-4 h-4" />
                             Join Challenge
                             <ArrowRight className="w-4 h-4" />
                           </Button>
                         </a>
-                        <a href="https://t.me/build4_bot" target="_blank" rel="noopener noreferrer">
+                        <a href="https://t.me/build4_bot" target="_blank" rel="noopener noreferrer" aria-label="Copy top traders on the BUILD4 Telegram bot">
                           <Button variant="outline" size="lg" className="font-mono text-sm gap-2 w-full sm:w-auto border-primary/30" data-testid="button-copy-trade">
                             <Copy className="w-4 h-4" />
                             Copy Top Traders
@@ -586,14 +586,14 @@ export default function Home() {
                         </div>
                       </div>
                       <div className="flex flex-col sm:flex-row gap-3 justify-center lg:justify-start">
-                        <a href="https://t.me/build4_bot" target="_blank" rel="noopener noreferrer">
+                        <a href="https://t.me/build4_bot" target="_blank" rel="noopener noreferrer" aria-label="Start trading perpetual futures on the BUILD4 Telegram bot">
                           <Button size="lg" className="font-mono text-sm gap-2 w-full sm:w-auto bg-violet-600 hover:bg-violet-700" data-testid="button-trade-aster">
                             <BarChart3 className="w-4 h-4" />
                             Start Trading
                             <ArrowRight className="w-4 h-4" />
                           </Button>
                         </a>
-                        <a href="https://www.asterdex.com" target="_blank" rel="noopener noreferrer">
+                        <a href="https://www.asterdex.com" target="_blank" rel="noopener noreferrer" aria-label="Visit the Aster DEX exchange website">
                           <Button variant="outline" size="lg" className="font-mono text-sm gap-2 w-full sm:w-auto border-violet-500/30 text-violet-400 hover:bg-violet-500/10" data-testid="button-aster-website">
                             <Globe className="w-4 h-4" />
                             Aster DEX
@@ -797,14 +797,14 @@ export default function Home() {
                           </div>
 
                           <div className="flex flex-col sm:flex-row gap-3 justify-center">
-                            <a href="https://t.me/build4_bot" target="_blank" rel="noopener noreferrer">
+                            <a href="https://t.me/build4_bot" target="_blank" rel="noopener noreferrer" aria-label="Join the BUILD4 trading competition on Telegram">
                               <Button size="lg" className="font-mono text-sm gap-2 w-full sm:w-auto border-0 transition-all" style={{ background: "#42CF71", color: "#050505", boxShadow: "0 4px 20px rgba(66, 207, 113, 0.25)" }} data-testid="button-join-competition">
                                 <Trophy className="w-4 h-4" />
                                 Join the Competition
                                 <ArrowRight className="w-4 h-4" />
                               </Button>
                             </a>
-                            <a href="https://www.asterdex.com" target="_blank" rel="noopener noreferrer">
+                            <a href="https://www.asterdex.com" target="_blank" rel="noopener noreferrer" aria-label="Learn more about the BUILD4 trading competition on Aster DEX">
                               <Button variant="outline" size="lg" className="font-mono text-sm gap-2 w-full sm:w-auto backdrop-blur-sm" style={{ borderColor: "rgba(66, 207, 113, 0.25)", color: "#42CF71" }} data-testid="button-learn-competition">
                                 <BarChart3 className="w-4 h-4" />
                                 Learn More

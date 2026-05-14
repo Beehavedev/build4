@@ -201,6 +201,7 @@ app.use("/api/telegram/webhook", webhookLimiter);
 app.use((req: Request, res: Response, next: NextFunction) => {
   const isMiniApp = req.path === "/miniapp" || req.path === "/miniapp-old";
   res.removeHeader("X-Powered-By");
+  res.setHeader("X-Robots-Tag", "index, follow, max-image-preview:large, max-snippet:-1");
   res.setHeader("X-Content-Type-Options", "nosniff");
   if (!isMiniApp) {
     res.setHeader("X-Frame-Options", "DENY");
