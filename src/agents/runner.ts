@@ -108,13 +108,8 @@ export function markPairNotificationSent(agentId: string, pair: string, kind: Pa
 export function initRunner(bot: Bot) {
   botRef = bot
 
-  // Aster+HL: minute cron with 90s in-handler guard.
-  cron.schedule('* * * * *', async () => {
-    const now = Date.now()
-    if (now - lastAsterHlTickAt < ASTER_HL_TICK_MIN_INTERVAL_MS) return
-    lastAsterHlTickAt = now
-    await runAllAgents()
-  })
+  // Aster+HL: true 90s setInterval (cron can't express sub-minute).
+  setInterval(() => { void runAllAgents() }, 90_000)
 
   // 42.space regular (non-campaign) scan — dedicated */10 cron.
   const tickFortyTwo = async () => {
@@ -379,10 +374,6 @@ let polymarketTickInflight = false
 
 // In-flight guard for the dedicated 42.space regular sweep (*/10 cron).
 let fortyTwoTickInflight = false
-
-// 90s in-handler guard for the Aster+HL minute cron.
-const ASTER_HL_TICK_MIN_INTERVAL_MS = 90_000
-let lastAsterHlTickAt = 0
 
 // In-flight guard for the four.meme launch agent sweep. createToken
 // can take 30s+ on-chain — we never want a second sweep to start one

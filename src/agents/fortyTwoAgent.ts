@@ -30,11 +30,13 @@ export async function tickAllFortyTwoAgents(): Promise<FortyTwoSweepResult> {
     agents = await db.agent.findMany({
       where: {
         isActive: true,
+        isPaused: false,
         ...(campaignAgentId ? { id: { not: campaignAgentId } } : {}),
         OR: [
           { enabledVenues: { has: '42' } },
           { enabledVenues: { has: 'fortytwo' } },
           { exchange: 'fortytwo' },
+          { exchange: '42' },
         ],
       },
     })
