@@ -71,14 +71,8 @@ async function buildForRender() {
   } catch {}
 
 
-  console.log("Running database schema migration...");
-  const { execSync } = await import("child_process");
-  try {
-    execSync("npx drizzle-kit push --force", { stdio: "inherit" });
-    console.log("Database schema migrated successfully");
-  } catch (e: any) {
-    console.warn("Schema migration warning (may already be up to date):", e.message?.substring(0, 100));
-  }
+  console.log("Skipping drizzle-kit push at build time — DB is shared with bot's Prisma schema.");
+  console.log("Schema changes must be applied manually via reviewed migrations.");
 }
 
 async function buildAll() {
