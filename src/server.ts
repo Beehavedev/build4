@@ -82,11 +82,13 @@ function getLandingHtml(): string {
   }
 }
 app.get('/', (_req, res) => {
-  res.setHeader('Content-Type', 'text/html; charset=utf-8')
-  // Short cache — the HTML rarely changes but we want users to pick up
-  // fixes within minutes rather than hours.
-  res.setHeader('Cache-Control', 'public, max-age=300')
-  res.send(getLandingHtml())
+  // One website: build4.io. The bot's root redirects there so visitors
+  // never see a separate landing page. Miniapp routes (/app/*) and API
+  // routes (/api/*) are unaffected and continue to serve Telegram users.
+  // 302 (temporary) instead of 301 to avoid aggressive browser caching
+  // in case we want to change this back.
+  res.setHeader('Cache-Control', 'no-store')
+  res.redirect(302, 'https://build4.io/')
 })
 
 // REST API routes
