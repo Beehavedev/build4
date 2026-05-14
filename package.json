@@ -12,7 +12,7 @@
     "test": "sh -c \"tsx --test \\$(find src -name '*.test.ts')\""
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.89.0",
+    "@anthropic-ai/sdk": "^0.96.0",
     "@exodus/bigint-buffer": "^1.1.5-exodus.1",
     "@grammyjs/conversations": "^2.1.1",
     "@hookform/resolvers": "^3.10.0",
@@ -63,7 +63,7 @@
     "@types/qrcode": "^1.5.6",
     "@walletconnect/ethereum-provider": "^2.23.6",
     "adm-zip": "^0.5.17",
-    "axios": "^1.15.0",
+    "axios": "^1.16.1",
     "bn.js": "^5.2.3",
     "bs58": "^6.0.0",
     "circomlibjs": "^0.1.7",
@@ -73,6 +73,7 @@
     "compression": "^1.8.1",
     "concurrently": "^9.2.1",
     "connect-pg-simple": "^10.0.0",
+    "cookie": "^0.7.2",
     "date-fns": "^3.6.0",
     "decimal.js": "^10.6.0",
     "drizzle-orm": "^0.45.2",
@@ -82,6 +83,7 @@
     "express": "^5.0.1",
     "express-rate-limit": "^8.3.1",
     "express-session": "^1.18.1",
+    "fast-uri": "^3.1.2",
     "framer-motion": "^11.13.1",
     "grammy": "^1.42.0",
     "h3": "^1.15.6",
@@ -91,6 +93,7 @@
     "immutable": "^4.3.8",
     "input-otp": "^1.4.2",
     "ioredis": "^5.10.1",
+    "ip-address": "^10.2.0",
     "isolated-vm": "^5.0.4",
     "lightweight-charts": "^4.2.1",
     "lodash": "^4.17.21",
@@ -116,6 +119,7 @@
     "recharts": "^2.15.2",
     "rollup": "^4.59.0",
     "rss-parser": "^3.13.0",
+    "serialize-javascript": "^7.0.5",
     "sharp": "^0.34.5",
     "tailwind-merge": "^2.6.0",
     "tailwindcss-animate": "^1.0.7",
@@ -146,7 +150,7 @@
     "autoprefixer": "^10.4.20",
     "drizzle-kit": "^0.31.8",
     "esbuild": "^0.25.0",
-    "postcss": "^8.4.47",
+    "postcss": "^8.5.14",
     "tailwindcss": "^3.4.17",
     "tsx": "^4.20.5",
     "typescript": "5.6.3",
@@ -157,7 +161,21 @@
       "@esbuild-kit/esm-loader": "npm:tsx@^4.20.4"
     },
     "minimatch": "10.2.3",
-    "serialize-javascript": "7.0.3",
+    "axios": "^1.16.1",
+    "fast-uri": "^3.1.2",
+    "ip-address": "^10.2.0",
+    "mocha": {
+      "serialize-javascript": "7.0.5"
+    },
+    "@sentry/node": {
+      "cookie": "^0.7.0"
+    },
+    "ethjs-unit": {
+      "bn.js": "^4.12.3"
+    },
+    "number-to-bn": {
+      "bn.js": "^4.12.3"
+    },
     "request": {
       "form-data": "2.5.4",
       "qs": "6.14.1"
