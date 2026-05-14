@@ -1,0 +1,522 @@
+Warning, this migration may permanently remove some data from your production database, learn more:
+You're about to delete inference_providers table with 3 items
+You're about to delete outreach_campaigns table with 18 items
+You're about to delete workspace_subscriptions table with 1 items
+You're about to delete aster_local_trades table with 87 items
+You're about to delete hyperliquid_credentials table with 1 items
+You're about to delete aster_agent_learning table with 1 items
+You're about to change agent_audit_logs primary key. This statements may fail and you table may left without primary key
+You're about to change skill_purchases primary key. This statements may fail and you table may left without primary key
+You're about to change agent_transactions primary key. This statements may fail and you table may left without primary key
+You're about to change agent_evolutions primary key. This statements may fail and you table may left without primary key
+You're about to change agent_runtime_profiles primary key. This statements may fail and you table may left without primary key
+You're about to change agent_constitution primary key. This statements may fail and you table may left without primary key
+You're about to change agent_survival_status primary key. This statements may fail and you table may left without primary key
+You're about to change agents primary key. This statements may fail and you table may left without primary key
+You're about to change agent_wallets primary key. This statements may fail and you table may left without primary key
+You're about to change agent_skills primary key. This statements may fail and you table may left without primary key
+You're about to change bounty_submissions primary key. This statements may fail and you table may left without primary key
+You're about to change outreach_targets primary key. This statements may fail and you table may left without primary key
+You're about to change agent_messages primary key. This statements may fail and you table may left without primary key
+You're about to change platform_revenue primary key. This statements may fail and you table may left without primary key
+You're about to change visitor_logs primary key. This statements may fail and you table may left without primary key
+You're about to change subscription_plans primary key. This statements may fail and you table may left without primary key
+You're about to change user_credits primary key. This statements may fail and you table may left without primary key
+You're about to change inference_requests primary key. This statements may fail and you table may left without primary key
+You're about to change agent_memory primary key. This statements may fail and you table may left without primary key
+You're about to change agent_jobs primary key. This statements may fail and you table may left without primary key
+You're about to change skill_executions primary key. This statements may fail and you table may left without primary key
+You're about to change bounty_activity_feed primary key. This statements may fail and you table may left without primary key
+You're about to change support_agent_config primary key. This statements may fail and you table may left without primary key
+You're about to change tweet_performance primary key. This statements may fail and you table may left without primary key
+You're about to change support_tickets primary key. This statements may fail and you table may left without primary key
+You're about to change strategy_action_items primary key. This statements may fail and you table may left without primary key
+You're about to change agent_twitter_accounts primary key. This statements may fail and you table may left without primary key
+You're about to change agent_collaboration_log primary key. This statements may fail and you table may left without primary key
+You're about to change agent_strategy_memos primary key. This statements may fail and you table may left without primary key
+You're about to change agent_tool_results primary key. This statements may fail and you table may left without primary key
+You're about to change agent_conversation_memory primary key. This statements may fail and you table may left without primary key
+You're about to change agent_tasks primary key. This statements may fail and you table may left without primary key
+You're about to change trading_preferences primary key. This statements may fail and you table may left without primary key
+You're about to change telegram_wallets primary key. This statements may fail and you table may left without primary key
+You're about to change agent_skill_configs primary key. This statements may fail and you table may left without primary key
+You're about to change token_launches primary key. This statements may fail and you table may left without primary key
+You're about to change aster_credentials primary key. This statements may fail and you table may left without primary key
+You're about to change trade_outcomes primary key. This statements may fail and you table may left without primary key
+You're about to change agent_soul_entries primary key. This statements may fail and you table may left without primary key
+You're about to delete parent_address column in aster_credentials table with 5 items
+CREATE TABLE "MarketProposal" (
+	"id" text PRIMARY KEY DEFAULT (gen_random_uuid()) NOT NULL,
+	"status" text DEFAULT 'researched' NOT NULL,
+	"category" text,
+	"sourceType" text NOT NULL,
+	"question" text NOT NULL,
+	"outcomes" jsonb NOT NULL,
+	"resolutionDate" timestamp(3),
+	"resolutionCriteria" text,
+	"resolutionSource" text,
+	"totalScore" double precision NOT NULL,
+	"scores" jsonb NOT NULL,
+	"estimatedInterest" text,
+	"claudeReasoning" text,
+	"rawSignal" jsonb,
+	"marketAddress" text,
+	"createdAt" timestamp(3) DEFAULT CURRENT_TIMESTAMP NOT NULL,
+	"submittedAt" timestamp(3),
+	"liveAt" timestamp(3)
+);
+CREATE TABLE "BuybackTx" (
+	"id" text PRIMARY KEY DEFAULT (gen_random_uuid()) NOT NULL,
+	"txHash" text NOT NULL,
+	"chain" text DEFAULT 'BSC' NOT NULL,
+	"amountB4" double precision NOT NULL,
+	"amountUsdt" double precision NOT NULL,
+	"note" text,
+	"createdAt" timestamp(3) DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+CREATE TABLE "SecurityLog" (
+	"id" text PRIMARY KEY DEFAULT (gen_random_uuid()) NOT NULL,
+	"userId" text NOT NULL,
+	"telegramId" text NOT NULL,
+	"action" text NOT NULL,
+	"walletId" text,
+	"meta" jsonb,
+	"createdAt" timestamp(3) DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+CREATE TABLE "AgentLog" (
+	"id" text PRIMARY KEY NOT NULL,
+	"agentId" text NOT NULL,
+	"userId" text NOT NULL,
+	"action" text NOT NULL,
+	"rawResponse" text,
+	"parsedAction" text,
+	"executionResult" text,
+	"error" text,
+	"createdAt" timestamp(3) DEFAULT CURRENT_TIMESTAMP NOT NULL,
+	"pair" text,
+	"price" double precision,
+	"reason" text,
+	"adx" double precision,
+	"rsi" double precision,
+	"score" integer,
+	"regime" text,
+	"providers" jsonb,
+	"exchange" text
+);
+CREATE TABLE "_DataMigration" (
+	"name" text PRIMARY KEY NOT NULL,
+	"appliedAt" timestamp(3) DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+CREATE TABLE "four_meme_holdings" (
+	"id" text PRIMARY KEY DEFAULT (gen_random_uuid()) NOT NULL,
+	"user_id" text NOT NULL,
+	"token_address" text NOT NULL,
+	"token_name" text,
+	"token_symbol" text,
+	"image_url" text,
+	"first_buy_tx" text,
+	"last_action_tx" text,
+	"total_bnb_in" text DEFAULT '0' NOT NULL,
+	"total_bnb_out" text DEFAULT '0' NOT NULL,
+	"first_buy_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"last_action_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+CREATE TABLE "OutcomePosition" (
+	"id" text PRIMARY KEY NOT NULL,
+	"userId" text NOT NULL,
+	"agentId" text,
+	"marketAddress" text NOT NULL,
+	"marketTitle" text NOT NULL,
+	"tokenId" integer NOT NULL,
+	"outcomeLabel" text NOT NULL,
+	"usdtIn" double precision NOT NULL,
+	"entryPrice" double precision NOT NULL,
+	"exitPrice" double precision,
+	"payoutUsdt" double precision,
+	"pnl" double precision,
+	"status" text DEFAULT 'open' NOT NULL,
+	"paperTrade" boolean DEFAULT true NOT NULL,
+	"txHashOpen" text,
+	"txHashClose" text,
+	"reasoning" text,
+	"openedAt" timestamp(3) DEFAULT CURRENT_TIMESTAMP NOT NULL,
+	"closedAt" timestamp(3),
+	"outcomeTokenAmount" double precision,
+	"providers" jsonb
+);
+CREATE TABLE "User" (
+	"id" text PRIMARY KEY NOT NULL,
+	"telegramId" bigint NOT NULL,
+	"username" text,
+	"referredBy" text,
+	"referralCode" text NOT NULL,
+	"subscriptionTier" text DEFAULT 'free' NOT NULL,
+	"subscriptionExpiry" timestamp(3),
+	"totalFeesSpent" double precision DEFAULT 0 NOT NULL,
+	"createdAt" timestamp(3) DEFAULT CURRENT_TIMESTAMP NOT NULL,
+	"asterAgentAddress" text,
+	"asterApiKey" text,
+	"asterApiSecret" text,
+	"asterOnboarded" boolean DEFAULT false NOT NULL,
+	"b4Balance" double precision DEFAULT 0 NOT NULL,
+	"firstName" text,
+	"updatedAt" timestamp(3) DEFAULT CURRENT_TIMESTAMP NOT NULL,
+	"pinHash" text,
+	"pinSalt" text,
+	"swarmEnabled" boolean DEFAULT false NOT NULL,
+	"botBlocked" boolean DEFAULT false NOT NULL,
+	"hyperliquidAgentAddress" text,
+	"hyperliquidAgentEncryptedPK" text,
+	"hyperliquidOnboarded" boolean DEFAULT false NOT NULL,
+	"fortyTwoLiveTrade" boolean DEFAULT true NOT NULL,
+	"linkedB4At" timestamp(3),
+	"linkedB4Balance" double precision,
+	"linkedB4WalletAddress" text,
+	"asterAgentTradingEnabled" boolean DEFAULT true NOT NULL,
+	"hyperliquidAgentTradingEnabled" boolean DEFAULT true NOT NULL,
+	"hyperliquidUnified" boolean DEFAULT false NOT NULL,
+	"polymarketAgentTradingEnabled" boolean DEFAULT true NOT NULL
+);
+CREATE TABLE "ProviderCostRate" (
+	"provider" text PRIMARY KEY NOT NULL,
+	"usdPer1MTokens" double precision NOT NULL,
+	"updatedAt" timestamp(3) DEFAULT CURRENT_TIMESTAMP NOT NULL,
+	"updatedBy" text
+);
+CREATE TABLE "PolymarketCreds" (
+	"id" text PRIMARY KEY DEFAULT (gen_random_uuid()) NOT NULL,
+	"userId" text NOT NULL,
+	"walletAddress" text NOT NULL,
+	"apiKey" text NOT NULL,
+	"encryptedApiSecret" text NOT NULL,
+	"encryptedPassphrase" text NOT NULL,
+	"allowanceTxHash" text,
+	"allowanceVerifiedAt" timestamp(3),
+	"createdAt" timestamp(3) DEFAULT CURRENT_TIMESTAMP NOT NULL,
+	"updatedAt" timestamp(3) DEFAULT CURRENT_TIMESTAMP NOT NULL,
+	"safeAddress" text,
+	"safeDeployedAt" timestamp(3)
+);
+CREATE TABLE "PolymarketPosition" (
+	"id" text PRIMARY KEY DEFAULT (gen_random_uuid()) NOT NULL,
+	"userId" text NOT NULL,
+	"agentId" text,
+	"conditionId" text NOT NULL,
+	"tokenId" text NOT NULL,
+	"marketSlug" text,
+	"marketTitle" text NOT NULL,
+	"outcomeLabel" text NOT NULL,
+	"side" text NOT NULL,
+	"sizeUsdc" double precision NOT NULL,
+	"entryPrice" double precision NOT NULL,
+	"fillSize" double precision,
+	"exitPrice" double precision,
+	"payoutUsdc" double precision,
+	"pnl" double precision,
+	"orderHash" text,
+	"orderId" text,
+	"status" text DEFAULT 'placed' NOT NULL,
+	"errorMessage" text,
+	"builderCode" text,
+	"reasoning" text,
+	"providers" jsonb,
+	"openedAt" timestamp(3) DEFAULT CURRENT_TIMESTAMP NOT NULL,
+	"closedAt" timestamp(3)
+);
+CREATE TABLE "CopyFollow" (
+	"id" text PRIMARY KEY NOT NULL,
+	"followerId" text NOT NULL,
+	"copiedId" text NOT NULL,
+	"allocation" double precision DEFAULT 100 NOT NULL,
+	"isActive" boolean DEFAULT true NOT NULL,
+	"createdAt" timestamp(3) DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+CREATE TABLE "UserQuest" (
+	"id" text PRIMARY KEY NOT NULL,
+	"userId" text NOT NULL,
+	"questId" text NOT NULL,
+	"progress" integer DEFAULT 0 NOT NULL,
+	"completed" boolean DEFAULT false NOT NULL,
+	"claimedAt" timestamp(3)
+);
+CREATE TABLE "Wallet" (
+	"id" text PRIMARY KEY NOT NULL,
+	"userId" text NOT NULL,
+	"chain" text NOT NULL,
+	"address" text NOT NULL,
+	"encryptedPK" text NOT NULL,
+	"label" text DEFAULT 'Wallet 1' NOT NULL,
+	"isActive" boolean DEFAULT false NOT NULL,
+	"createdAt" timestamp(3) DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+CREATE TABLE "Quest" (
+	"id" text PRIMARY KEY NOT NULL,
+	"title" text NOT NULL,
+	"description" text NOT NULL,
+	"reward" double precision NOT NULL,
+	"type" text NOT NULL,
+	"requirement" jsonb NOT NULL,
+	"isActive" boolean DEFAULT true NOT NULL
+);
+CREATE TABLE "Trade" (
+	"id" text PRIMARY KEY NOT NULL,
+	"userId" text NOT NULL,
+	"agentId" text,
+	"exchange" text NOT NULL,
+	"pair" text NOT NULL,
+	"side" text NOT NULL,
+	"entryPrice" double precision NOT NULL,
+	"exitPrice" double precision,
+	"size" double precision NOT NULL,
+	"leverage" double precision DEFAULT 1 NOT NULL,
+	"pnl" double precision,
+	"pnlPct" double precision,
+	"status" text DEFAULT 'open' NOT NULL,
+	"txHash" text,
+	"aiReasoning" text,
+	"signalsUsed" jsonb,
+	"openedAt" timestamp(3) DEFAULT CURRENT_TIMESTAMP NOT NULL,
+	"closedAt" timestamp(3)
+);
+CREATE TABLE "Portfolio" (
+	"id" text PRIMARY KEY NOT NULL,
+	"userId" text NOT NULL,
+	"totalValue" double precision DEFAULT 0 NOT NULL,
+	"totalPnl" double precision DEFAULT 0 NOT NULL,
+	"totalPnlPct" double precision DEFAULT 0 NOT NULL,
+	"dayPnl" double precision DEFAULT 0 NOT NULL,
+	"verifiedOnChain" boolean DEFAULT false NOT NULL,
+	"lastUpdated" timestamp(3) DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+CREATE TABLE "Agent" (
+	"id" text PRIMARY KEY NOT NULL,
+	"userId" text NOT NULL,
+	"name" text NOT NULL,
+	"description" text,
+	"isActive" boolean DEFAULT false NOT NULL,
+	"isPaused" boolean DEFAULT false NOT NULL,
+	"exchange" text DEFAULT 'mock' NOT NULL,
+	"pairs" text[] DEFAULT '{"BTC/USDT"}',
+	"timeframe" text DEFAULT '15m' NOT NULL,
+	"maxPositionSize" double precision DEFAULT 100 NOT NULL,
+	"maxDailyLoss" double precision DEFAULT 50 NOT NULL,
+	"maxLeverage" double precision DEFAULT 5 NOT NULL,
+	"stopLossPct" double precision DEFAULT 2 NOT NULL,
+	"takeProfitPct" double precision DEFAULT 4 NOT NULL,
+	"memorySnapshot" jsonb,
+	"totalPnl" double precision DEFAULT 0 NOT NULL,
+	"totalTrades" integer DEFAULT 0 NOT NULL,
+	"winRate" double precision DEFAULT 0 NOT NULL,
+	"isListed" boolean DEFAULT false NOT NULL,
+	"listingPrice" double precision,
+	"subscriberCount" integer DEFAULT 0 NOT NULL,
+	"createdAt" timestamp(3) DEFAULT CURRENT_TIMESTAMP NOT NULL,
+	"lastTickAt" timestamp(3),
+	"updatedAt" timestamp(3) DEFAULT CURRENT_TIMESTAMP NOT NULL,
+	"walletAddress" text,
+	"encryptedPK" text,
+	"onchainTxHash" text,
+	"onchainChain" text DEFAULT 'BSC',
+	"learningModel" text,
+	"learningRoot" text,
+	"metadataUri" text,
+	"identityStandard" text DEFAULT 'ERC-8004',
+	"bap578TokenId" text,
+	"bap578TxHash" text,
+	"bap578Verified" boolean DEFAULT false NOT NULL,
+	"erc8004AgentId" text,
+	"erc8004TxHash" text,
+	"erc8004FundTxHash" text,
+	"erc8004Verified" boolean DEFAULT false NOT NULL,
+	"currentPair" text,
+	"lastScanScore" integer,
+	"enabledVenues" text[] DEFAULT '{}',
+	"venuesAutoExpanded" boolean DEFAULT false,
+	"polymarketEnabled" boolean DEFAULT false NOT NULL,
+	"polymarketMaxSizeUsdc" double precision DEFAULT 5 NOT NULL,
+	"polymarketEdgeThreshold" double precision DEFAULT 0.1 NOT NULL,
+	"lastPolymarketTickAt" timestamp(3),
+	"predictionEdgeThreshold" double precision DEFAULT 0.05,
+	"predictionMaxDurationDays" double precision DEFAULT 14,
+	"walletId" text,
+	"fourMemeEnabled" boolean DEFAULT false,
+	"fourMemeLaunchEnabled" boolean DEFAULT false,
+	"lastFourMemeLaunchTickAt" timestamp(3),
+	"fourMemeLaunchRequiresApproval" boolean DEFAULT false,
+	"fourMemeLaunchIntervalMinutes" integer,
+	"fourMemeLaunchInitialBuyBnb" text,
+	"fourMemeLaunchTakeProfitPct" integer
+);
+CREATE TABLE "AgentMemory" (
+	"id" text PRIMARY KEY NOT NULL,
+	"agentId" text NOT NULL,
+	"type" text NOT NULL,
+	"content" text NOT NULL,
+	"metadata" jsonb,
+	"createdAt" timestamp(3) DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+ALTER TABLE "inference_providers" DISABLE ROW LEVEL SECURITY;
+ALTER TABLE "outreach_campaigns" DISABLE ROW LEVEL SECURITY;
+ALTER TABLE "skill_pipelines" DISABLE ROW LEVEL SECURITY;
+ALTER TABLE "workspace_subscriptions" DISABLE ROW LEVEL SECURITY;
+ALTER TABLE "user_trading_data" DISABLE ROW LEVEL SECURITY;
+ALTER TABLE "copy_trades" DISABLE ROW LEVEL SECURITY;
+ALTER TABLE "aster_local_trades" DISABLE ROW LEVEL SECURITY;
+ALTER TABLE "trading_challenges" DISABLE ROW LEVEL SECURITY;
+ALTER TABLE "user_quests" DISABLE ROW LEVEL SECURITY;
+ALTER TABLE "agent_pnl_snapshots" DISABLE ROW LEVEL SECURITY;
+ALTER TABLE "challenge_entries" DISABLE ROW LEVEL SECURITY;
+ALTER TABLE "hyperliquid_trading_limits" DISABLE ROW LEVEL SECURITY;
+ALTER TABLE "hyperliquid_credentials" DISABLE ROW LEVEL SECURITY;
+ALTER TABLE "aster_agent_learning" DISABLE ROW LEVEL SECURITY;
+DROP TABLE "inference_providers" CASCADE;
+DROP TABLE "outreach_campaigns" CASCADE;
+DROP TABLE "skill_pipelines" CASCADE;
+DROP TABLE "workspace_subscriptions" CASCADE;
+DROP TABLE "user_trading_data" CASCADE;
+DROP TABLE "copy_trades" CASCADE;
+DROP TABLE "aster_local_trades" CASCADE;
+DROP TABLE "trading_challenges" CASCADE;
+DROP TABLE "user_quests" CASCADE;
+DROP TABLE "agent_pnl_snapshots" CASCADE;
+DROP TABLE "challenge_entries" CASCADE;
+DROP TABLE "hyperliquid_trading_limits" CASCADE;
+DROP TABLE "hyperliquid_credentials" CASCADE;
+DROP TABLE "aster_agent_learning" CASCADE;
+ALTER TABLE "users" DROP CONSTRAINT "users_username_unique";
+ALTER TABLE "user_credits" DROP CONSTRAINT "user_credits_session_id_unique";
+DROP INDEX "agent_skill_configs_chat_skill_idx";
+ALTER TABLE "users" DROP CONSTRAINT "users_pkey"
+ALTER TABLE "agent_audit_logs" DROP CONSTRAINT "agent_audit_logs_pkey"
+ALTER TABLE "skill_purchases" DROP CONSTRAINT "skill_purchases_pkey"
+ALTER TABLE "agent_transactions" DROP CONSTRAINT "agent_transactions_pkey"
+ALTER TABLE "agent_evolutions" DROP CONSTRAINT "agent_evolutions_pkey"
+ALTER TABLE "agent_runtime_profiles" DROP CONSTRAINT "agent_runtime_profiles_pkey"
+ALTER TABLE "agent_runtime_profiles" ALTER COLUMN "model_name" SET DEFAULT 'meta-llama/Llama-3.1-70B-Instruct';
+ALTER TABLE "agent_constitution" DROP CONSTRAINT "agent_constitution_pkey"
+ALTER TABLE "agent_survival_status" DROP CONSTRAINT "agent_survival_status_pkey"
+ALTER TABLE "agents" DROP CONSTRAINT "agents_pkey"
+ALTER TABLE "agents" ALTER COLUMN "model_type" SET DEFAULT 'meta-llama/Llama-3.1-70B-Instruct';
+ALTER TABLE "agent_wallets" DROP CONSTRAINT "agent_wallets_pkey"
+ALTER TABLE "agent_lineage" DROP CONSTRAINT "agent_lineage_pkey"
+ALTER TABLE "agent_skills" DROP CONSTRAINT "agent_skills_pkey"
+ALTER TABLE "bounty_submissions" DROP CONSTRAINT "bounty_submissions_pkey"
+ALTER TABLE "outreach_targets" DROP CONSTRAINT "outreach_targets_pkey"
+ALTER TABLE "agent_messages" DROP CONSTRAINT "agent_messages_pkey"
+ALTER TABLE "platform_revenue" DROP CONSTRAINT "platform_revenue_pkey"
+ALTER TABLE "api_usage" DROP CONSTRAINT "api_usage_pkey"
+ALTER TABLE "visitor_logs" DROP CONSTRAINT "visitor_logs_pkey"
+ALTER TABLE "subscription_plans" DROP CONSTRAINT "subscription_plans_pkey"
+ALTER TABLE "user_credits" DROP CONSTRAINT "user_credits_pkey"
+ALTER TABLE "inference_requests" DROP CONSTRAINT "inference_requests_pkey"
+ALTER TABLE "agent_memory" DROP CONSTRAINT "agent_memory_pkey"
+ALTER TABLE "agent_subscriptions" DROP CONSTRAINT "agent_subscriptions_pkey"
+ALTER TABLE "agent_jobs" DROP CONSTRAINT "agent_jobs_pkey"
+ALTER TABLE "data_purchases" DROP CONSTRAINT "data_purchases_pkey"
+ALTER TABLE "skill_executions" DROP CONSTRAINT "skill_executions_pkey"
+ALTER TABLE "data_listings" DROP CONSTRAINT "data_listings_pkey"
+ALTER TABLE "api_keys" DROP CONSTRAINT "api_keys_pkey"
+ALTER TABLE "privacy_transfers" DROP CONSTRAINT "privacy_transfers_pkey"
+ALTER TABLE "twitter_bounties" DROP CONSTRAINT "twitter_bounties_pkey"
+ALTER TABLE "twitter_reply_log" DROP CONSTRAINT "twitter_reply_log_pkey"
+ALTER TABLE "bounty_activity_feed" DROP CONSTRAINT "bounty_activity_feed_pkey"
+ALTER TABLE "twitter_submissions" DROP CONSTRAINT "twitter_submissions_pkey"
+ALTER TABLE "twitter_agent_config" DROP CONSTRAINT "twitter_agent_config_pkey"
+ALTER TABLE "support_agent_config" DROP CONSTRAINT "support_agent_config_pkey"
+ALTER TABLE "twitter_agent_personality" DROP CONSTRAINT "twitter_agent_personality_pkey"
+ALTER TABLE "tweet_performance" DROP CONSTRAINT "tweet_performance_pkey"
+ALTER TABLE "erc8004_reputation" DROP CONSTRAINT "erc8004_reputation_pkey"
+ALTER TABLE "erc8004_identities" DROP CONSTRAINT "erc8004_identities_pkey"
+ALTER TABLE "support_tickets" DROP CONSTRAINT "support_tickets_pkey"
+ALTER TABLE "erc8004_validations" DROP CONSTRAINT "erc8004_validations_pkey"
+ALTER TABLE "strategy_action_items" DROP CONSTRAINT "strategy_action_items_pkey"
+ALTER TABLE "agent_twitter_accounts" DROP CONSTRAINT "agent_twitter_accounts_pkey"
+ALTER TABLE "agent_collaboration_log" DROP CONSTRAINT "agent_collaboration_log_pkey"
+ALTER TABLE "agent_strategy_memos" DROP CONSTRAINT "agent_strategy_memos_pkey"
+ALTER TABLE "bap578_nfas" DROP CONSTRAINT "bap578_nfas_pkey"
+ALTER TABLE "agent_tool_results" DROP CONSTRAINT "agent_tool_results_pkey"
+ALTER TABLE "agent_knowledge_base" DROP CONSTRAINT "agent_knowledge_base_pkey"
+ALTER TABLE "chaos_milestones" DROP CONSTRAINT "chaos_milestones_pkey"
+ALTER TABLE "agent_conversation_memory" DROP CONSTRAINT "agent_conversation_memory_pkey"
+ALTER TABLE "agent_tasks" DROP CONSTRAINT "agent_tasks_pkey"
+ALTER TABLE "trading_preferences" DROP CONSTRAINT "trading_preferences_pkey"
+ALTER TABLE "telegram_wallets" DROP CONSTRAINT "telegram_wallets_pkey"
+ALTER TABLE "agent_skill_configs" DROP CONSTRAINT "agent_skill_configs_pkey"
+ALTER TABLE "agent_skill_configs" ALTER COLUMN "id" SET DATA TYPE integer;
+ALTER TABLE "agent_skill_configs" ALTER COLUMN "id" ADD GENERATED BY DEFAULT AS IDENTITY (sequence name "agent_skill_configs_id_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 2147483647 START WITH 1 CACHE 1);
+ALTER TABLE "token_launches" DROP CONSTRAINT "token_launches_pkey"
+ALTER TABLE "aster_credentials" DROP CONSTRAINT "aster_credentials_pkey"
+ALTER TABLE "trade_outcomes" DROP CONSTRAINT "trade_outcomes_pkey"
+ALTER TABLE "trade_outcomes" ALTER COLUMN "id" SET DATA TYPE integer;
+ALTER TABLE "trade_outcomes" ALTER COLUMN "id" ADD GENERATED BY DEFAULT AS IDENTITY (sequence name "trade_outcomes_id_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 2147483647 START WITH 1 CACHE 1);
+ALTER TABLE "agent_soul_entries" DROP CONSTRAINT "agent_soul_entries_pkey"
+ALTER TABLE "token_launches" ADD COLUMN "user_id" text;
+ALTER TABLE "token_launches" ADD COLUMN "sold_at" timestamp with time zone;
+ALTER TABLE "token_launches" ADD COLUMN "sold_proceeds_bnb" text;
+ALTER TABLE "token_launches" ADD COLUMN "sold_tx_hash" text;
+ALTER TABLE "AgentLog" ADD CONSTRAINT "AgentLog_agentId_fkey" FOREIGN KEY ("agentId") REFERENCES "public"."Agent"("id") ON DELETE restrict ON UPDATE cascade;
+ALTER TABLE "AgentLog" ADD CONSTRAINT "AgentLog_userId_fkey" FOREIGN KEY ("userId") REFERENCES "public"."User"("id") ON DELETE restrict ON UPDATE cascade;
+ALTER TABLE "CopyFollow" ADD CONSTRAINT "CopyFollow_copiedId_fkey" FOREIGN KEY ("copiedId") REFERENCES "public"."User"("id") ON DELETE restrict ON UPDATE cascade;
+ALTER TABLE "CopyFollow" ADD CONSTRAINT "CopyFollow_followerId_fkey" FOREIGN KEY ("followerId") REFERENCES "public"."User"("id") ON DELETE restrict ON UPDATE cascade;
+ALTER TABLE "UserQuest" ADD CONSTRAINT "UserQuest_questId_fkey" FOREIGN KEY ("questId") REFERENCES "public"."Quest"("id") ON DELETE restrict ON UPDATE cascade;
+ALTER TABLE "UserQuest" ADD CONSTRAINT "UserQuest_userId_fkey" FOREIGN KEY ("userId") REFERENCES "public"."User"("id") ON DELETE restrict ON UPDATE cascade;
+ALTER TABLE "Wallet" ADD CONSTRAINT "Wallet_userId_fkey" FOREIGN KEY ("userId") REFERENCES "public"."User"("id") ON DELETE restrict ON UPDATE cascade;
+ALTER TABLE "Trade" ADD CONSTRAINT "Trade_agentId_fkey" FOREIGN KEY ("agentId") REFERENCES "public"."Agent"("id") ON DELETE set null ON UPDATE cascade;
+ALTER TABLE "Trade" ADD CONSTRAINT "Trade_userId_fkey" FOREIGN KEY ("userId") REFERENCES "public"."User"("id") ON DELETE restrict ON UPDATE cascade;
+ALTER TABLE "Portfolio" ADD CONSTRAINT "Portfolio_userId_fkey" FOREIGN KEY ("userId") REFERENCES "public"."User"("id") ON DELETE restrict ON UPDATE cascade;
+ALTER TABLE "Agent" ADD CONSTRAINT "Agent_userId_fkey" FOREIGN KEY ("userId") REFERENCES "public"."User"("id") ON DELETE restrict ON UPDATE cascade;
+ALTER TABLE "AgentMemory" ADD CONSTRAINT "AgentMemory_agentId_fkey" FOREIGN KEY ("agentId") REFERENCES "public"."Agent"("id") ON DELETE restrict ON UPDATE cascade;
+CREATE INDEX "MarketProposal_createdAt_idx" ON "MarketProposal" USING btree ("createdAt");
+CREATE INDEX "MarketProposal_status_idx" ON "MarketProposal" USING btree ("status");
+CREATE INDEX "BuybackTx_createdAt_idx" ON "BuybackTx" USING btree ("createdAt");
+CREATE UNIQUE INDEX "BuybackTx_txHash_key" ON "BuybackTx" USING btree ("txHash");
+CREATE INDEX "SecurityLog_action_idx" ON "SecurityLog" USING btree ("action");
+CREATE INDEX "SecurityLog_createdAt_idx" ON "SecurityLog" USING btree ("createdAt");
+CREATE INDEX "SecurityLog_userId_idx" ON "SecurityLog" USING btree ("userId");
+CREATE INDEX "AgentLog_agentId_idx" ON "AgentLog" USING btree ("agentId");
+CREATE INDEX "AgentLog_userId_createdAt_idx" ON "AgentLog" USING btree ("userId","createdAt");
+CREATE INDEX "four_meme_holdings_user_idx" ON "four_meme_holdings" USING btree ("user_id","last_action_at");
+CREATE UNIQUE INDEX "four_meme_holdings_user_token_key" ON "four_meme_holdings" USING btree ("user_id","token_address");
+CREATE INDEX "OutcomePosition_agentId_idx" ON "OutcomePosition" USING btree ("agentId");
+CREATE INDEX "OutcomePosition_marketAddress_idx" ON "OutcomePosition" USING btree ("marketAddress");
+CREATE INDEX "OutcomePosition_status_idx" ON "OutcomePosition" USING btree ("status");
+CREATE INDEX "OutcomePosition_userId_idx" ON "OutcomePosition" USING btree ("userId");
+CREATE UNIQUE INDEX "User_referralCode_key" ON "User" USING btree ("referralCode");
+CREATE UNIQUE INDEX "User_telegramId_key" ON "User" USING btree ("telegramId");
+CREATE INDEX "PolymarketCreds_safeAddress_idx" ON "PolymarketCreds" USING btree ("safeAddress");
+CREATE UNIQUE INDEX "PolymarketCreds_userId_key" ON "PolymarketCreds" USING btree ("userId");
+CREATE INDEX "PolymarketCreds_walletAddress_idx" ON "PolymarketCreds" USING btree ("walletAddress");
+CREATE INDEX "PolymarketPosition_agentId_idx" ON "PolymarketPosition" USING btree ("agentId");
+CREATE INDEX "PolymarketPosition_conditionId_idx" ON "PolymarketPosition" USING btree ("conditionId");
+CREATE INDEX "PolymarketPosition_status_idx" ON "PolymarketPosition" USING btree ("status");
+CREATE INDEX "PolymarketPosition_userId_idx" ON "PolymarketPosition" USING btree ("userId");
+CREATE UNIQUE INDEX "CopyFollow_followerId_copiedId_key" ON "CopyFollow" USING btree ("followerId","copiedId");
+CREATE UNIQUE INDEX "UserQuest_userId_questId_key" ON "UserQuest" USING btree ("userId","questId");
+CREATE INDEX "Wallet_userId_idx" ON "Wallet" USING btree ("userId");
+CREATE INDEX "Trade_agentId_idx" ON "Trade" USING btree ("agentId");
+CREATE INDEX "Trade_status_idx" ON "Trade" USING btree ("status");
+CREATE INDEX "Trade_userId_idx" ON "Trade" USING btree ("userId");
+CREATE UNIQUE INDEX "Portfolio_userId_key" ON "Portfolio" USING btree ("userId");
+CREATE INDEX "Agent_isActive_idx" ON "Agent" USING btree ("isActive");
+CREATE INDEX "Agent_userId_idx" ON "Agent" USING btree ("userId");
+CREATE UNIQUE INDEX "Agent_walletAddress_key" ON "Agent" USING btree ("walletAddress");
+CREATE INDEX "AgentMemory_agentId_idx" ON "AgentMemory" USING btree ("agentId");
+CREATE INDEX "AgentMemory_type_idx" ON "AgentMemory" USING btree ("type");
+CREATE INDEX "token_launches_agent_id_idx" ON "token_launches" USING btree ("agent_id");
+CREATE INDEX "token_launches_creator_wallet_idx" ON "token_launches" USING btree ("creator_wallet");
+CREATE INDEX "token_launches_user_id_idx" ON "token_launches" USING btree ("user_id");
+ALTER TABLE "aster_credentials" DROP COLUMN "parent_address";
+You may notice a temporary downtime of your deployment. What's happening?
+
+Migrations failed validation, please review
+
+Your database schema changes conflict with existing production data and could not be applied, learn more. To resolve this, you can:
+
+Copy your development database schema & data to production.
+
+Cancel deployment and retry once your schema conflicts are resolved.
+
+Cancel deployment
+Failed to run database migration statement
+ALTER TABLE "agent_skill_configs" ALTER COLUMN "id" ADD GENERATED BY DEFAULT AS IDENTITY (sequence name "agent_skill_configs_id_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 2147483647 START WITH 1 CACHE 1);
+relation "agent_skill_configs_id_seq" already exists
