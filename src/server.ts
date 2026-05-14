@@ -964,7 +964,42 @@ app.get('/api/me/wallet', requireTgUser, async (req, res) => {
     })
     if (!wallet) return res.status(404).json({ error: 'No active wallet' })
 
+    // ─── Per-section timeout helper ──────────────────────────────────────
+    // Each venue read goes out to a different external RPC (BSC dataseed,
+    // Aster tapi, Hyperliquid api, Polygon RPC, etc). Without a timeout, a
+    // single hung endpoint blocks the whole /api/me/wallet response — which
+    // is exactly what made the mini-app Wallet tab spin forever in
+    // production. The timeout is intentionally short (5s): if a provider
+    // can't answer in 5s the user sees a per-card error string rather than
+    // a blank loading screen.
+    const SECTION_TIMEOUT_MS = 5000
+    const withTimeout = async <T>(p: Promise<T>, label: string): Promise<T> => {
+      let timer: NodeJS.Timeout | undefined
+      try {
+        return await Promise.race([
+          p,
+          new Promise<T>((_, reject) => {
+            timer = setTimeout(
+              () => reject(new Error(`${label}_timeout_${SECTION_TIMEOUT_MS}ms`)),
+              SECTION_TIMEOUT_MS,
+            )
+          }),
+        ])
+      } finally {
+        if (timer) clearTimeout(timer)
+      }
+    }
+
     const USDT_BSC = '0x55d398326f99059fF775485246999027B3197955'
+
+    // ─── Per-venue async readers ─────────────────────────────────────────
+    // Each reader is self-contained so we can fan them out in parallel
+    // via Promise.allSettled below. They each return a fully-shaped object
+    // matching the section's response field — never throw. A failed
+    // section surfaces as a per-card error string so the UI's existing
+    // error-state handling kicks in, instead of dragging the entire
+    // endpoint into a 500.
+
     // Use the robust multi-endpoint BSC provider with staticNetwork +
     // FallbackProvider — a single bare JsonRpcProvider against
     // bsc-dataseed silently returns empty `0x` for balanceOf under
@@ -973,38 +1008,44 @@ app.get('/api/me/wallet', requireTgUser, async (req, res) => {
     // provider transparently retries against three other public
     // dataseeds, eliminating that whole class of "I funded my wallet
     // but the app says zero" reports.
-    const { buildBscProvider } = await import('./services/bscProvider')
-    const provider = buildBscProvider(process.env.BSC_RPC_URL)
-
-    // Each balance is fetched independently so a slow/throttled USDT
-    // contract call can no longer take the BNB read down with it (and
-    // vice-versa). Per-call try/catch surfaces a partial result instead
-    // of zeroing both balances on a single endpoint hiccup.
-    let usdt = 0, bnb = 0, balanceError: string | null = null
-    try {
-      const bnbWei = await provider.getBalance(wallet.address)
-      bnb = parseFloat(ethers.formatEther(bnbWei))
-    } catch (e: any) {
-      balanceError = `bnb: ${e?.shortMessage ?? e?.message ?? 'rpc_failed'}`
+    const readBsc = async () => {
+      const { buildBscProvider } = await import('./services/bscProvider')
+      const provider = buildBscProvider(process.env.BSC_RPC_URL)
+      let usdt = 0, bnb = 0, balanceError: string | null = null
+      // BNB and USDT calls run in parallel under the section budget so a
+      // slow USDT contract call can't take BNB down with it.
+      const [bnbRes, usdtRes] = await Promise.allSettled([
+        withTimeout(provider.getBalance(wallet.address), 'bsc_bnb'),
+        withTimeout(
+          new ethers.Contract(
+            USDT_BSC,
+            ['function balanceOf(address) view returns (uint256)'],
+            provider,
+          ).balanceOf(wallet.address) as Promise<bigint>,
+          'bsc_usdt',
+        ),
+      ])
+      if (bnbRes.status === 'fulfilled') {
+        bnb = parseFloat(ethers.formatEther(bnbRes.value))
+      } else {
+        balanceError = `bnb: ${bnbRes.reason?.shortMessage ?? bnbRes.reason?.message ?? 'rpc_failed'}`
+      }
+      if (usdtRes.status === 'fulfilled') {
+        usdt = parseFloat(ethers.formatUnits(usdtRes.value, 18))
+      } else {
+        const usdtErr = `usdt: ${usdtRes.reason?.shortMessage ?? usdtRes.reason?.message ?? 'rpc_failed'}`
+        balanceError = balanceError ? `${balanceError}; ${usdtErr}` : usdtErr
+      }
+      return { usdt, bnb, error: balanceError }
     }
-    try {
-      const usdtWei = await new ethers.Contract(
-        USDT_BSC,
-        ['function balanceOf(address) view returns (uint256)'],
-        provider,
-      ).balanceOf(wallet.address)
-      usdt = parseFloat(ethers.formatUnits(usdtWei, 18))
-    } catch (e: any) {
-      const usdtErr = `usdt: ${e?.shortMessage ?? e?.message ?? 'rpc_failed'}`
-      balanceError = balanceError ? `${balanceError}; ${usdtErr}` : usdtErr
-    }
 
-    const qrDataUrl = await QRCode.toDataURL(wallet.address, {
-      errorCorrectionLevel: 'M',
-      margin: 2,
-      width: 360,
-      color: { dark: '#000000', light: '#FFFFFF' }
-    })
+    const readQr = () =>
+      QRCode.toDataURL(wallet.address, {
+        errorCorrectionLevel: 'M',
+        margin: 2,
+        width: 360,
+        color: { dark: '#000000', light: '#FFFFFF' }
+      })
 
     // ── Aster account balance via public RPC (no signing required) ──
     // Aster's tapi.asterdex.com/info JSON-RPC accepts any wallet address
@@ -1012,108 +1053,113 @@ app.get('/api/me/wallet', requireTgUser, async (req, res) => {
     // approveAgent yet. If they have no Aster futures account, the RPC
     // returns an "account does not exist" error which we surface as
     // not_onboarded so the mini app shows the activation flow.
-    let aster: {
+    const readAster = async (): Promise<{
       usdt: number; availableMargin: number;
       onboarded: boolean; error: string | null
-    } = { usdt: 0, availableMargin: 0, onboarded: !!user.asterOnboarded, error: null }
+    }> => {
+      const out = { usdt: 0, availableMargin: 0, onboarded: !!user.asterOnboarded, error: null as string | null }
+      try {
+        // CRITICAL: only make a SIGNED Aster balance call if this user has
+        // their OWN per-user agent on file (set during /activate). For brand-
+        // new / not-onboarded users, `resolveAgentCreds` would otherwise fall
+        // back to the shared platform agent (env ASTER_AGENT_PRIVATE_KEY) and
+        // signed `/fapi/v3/balance` can return USDT held by that shared agent
+        // — which then surfaced on the home screen as a fictitious balance
+        // (e.g. "$9.41 ASTER" + "not activated") for users who had genuinely
+        // never deposited. We instead use the address-scoped public RPC,
+        // which only reads the user's own on-chain Aster account.
+        const asterMod = await import('./services/aster')
+        const hasOwnAgent = !!(user as any).asterAgentEncryptedPK
+        const isOnboarded = !!user.asterOnboarded
 
-    try {
-      // CRITICAL: only make a SIGNED Aster balance call if this user has
-      // their OWN per-user agent on file (set during /activate). For brand-
-      // new / not-onboarded users, `resolveAgentCreds` would otherwise fall
-      // back to the shared platform agent (env ASTER_AGENT_PRIVATE_KEY) and
-      // signed `/fapi/v3/balance` can return USDT held by that shared agent
-      // — which then surfaced on the home screen as a fictitious balance
-      // (e.g. "$9.41 ASTER" + "not activated") for users who had genuinely
-      // never deposited. We instead use the address-scoped public RPC,
-      // which only reads the user's own on-chain Aster account.
-      const asterMod = await import('./services/aster')
-      const hasOwnAgent = !!(user as any).asterAgentEncryptedPK
-      const isOnboarded = !!user.asterOnboarded
-
-      if (hasOwnAgent && isOnboarded) {
-        const creds = await asterMod.resolveAgentCreds(user, wallet.address)
-        if (!creds) {
-          aster.error = 'no_agent_credentials'
+        if (hasOwnAgent && isOnboarded) {
+          const creds = await asterMod.resolveAgentCreds(user, wallet.address)
+          if (!creds) {
+            out.error = 'no_agent_credentials'
+          } else {
+            const bal = await withTimeout(asterMod.getAccountBalanceStrict(creds), 'aster_signed')
+            out.usdt = bal.usdt
+            out.availableMargin = bal.availableMargin
+          }
         } else {
-          const bal = await asterMod.getAccountBalanceStrict(creds)
-          aster.usdt = bal.usdt
-          aster.availableMargin = bal.availableMargin
+          // Pre-activation path: address-scoped public RPC only. If the user
+          // has never opened an Aster futures account this returns an
+          // "account does not exist" error which we translate to
+          // not_onboarded so the UI shows the activation flow.
+          const bal = await withTimeout(asterMod.getAccountBalance({
+            userAddress: wallet.address,
+            signerAddress: wallet.address, // unused by RPC path
+            signerPrivKey: '0x' + '0'.repeat(64), // unused by RPC path
+          } as any), 'aster_rpc')
+          out.usdt = bal.usdt
+          out.availableMargin = bal.availableMargin
+          if (bal.usdt === 0 && bal.availableMargin === 0) {
+            out.error = 'not_onboarded'
+          }
         }
-      } else {
-        // Pre-activation path: address-scoped public RPC only. If the user
-        // has never opened an Aster futures account this returns an
-        // "account does not exist" error which we translate to
-        // not_onboarded so the UI shows the activation flow.
-        const bal = await asterMod.getAccountBalance({
-          userAddress: wallet.address,
-          signerAddress: wallet.address, // unused by RPC path
-          signerPrivKey: '0x' + '0'.repeat(64), // unused by RPC path
-        } as any)
-        aster.usdt = bal.usdt
-        aster.availableMargin = bal.availableMargin
-        if (bal.usdt === 0 && bal.availableMargin === 0) {
-          aster.error = 'not_onboarded'
+      } catch (e: any) {
+        const msg = String(e?.message ?? 'aster_unavailable').toLowerCase()
+        if (msg.includes('account does not exist') || msg.includes('no aster user')) {
+          out.error = 'not_onboarded'
+        } else {
+          console.error('[API] /me/wallet aster failed:', wallet.address, '→', e?.message)
+          out.error = String(e?.message ?? 'aster_unavailable')
         }
       }
-    } catch (e: any) {
-      const msg = String(e?.message ?? 'aster_unavailable').toLowerCase()
-      if (msg.includes('account does not exist') || msg.includes('no aster user')) {
-        aster.error = 'not_onboarded'
-      } else {
-        console.error('[API] /me/wallet aster failed:', wallet.address, '→', e?.message)
-        aster.error = String(e?.message ?? 'aster_unavailable')
-      }
+      return out
     }
 
     // ── Arbitrum balances (ETH for gas + USDC). Same wallet address as BSC.
     // Surfaced so the user can see funds they parked on Arbitrum (e.g. for
     // bridging to Hyperliquid) without leaving the app.
-    let arbitrum: { eth: number; usdc: number; error: string | null } =
-      { eth: 0, usdc: 0, error: null }
-    try {
-      const { getArbitrumBalances } = await import('./services/wallet')
-      arbitrum = await getArbitrumBalances(wallet.address)
-    } catch (e: any) {
-      arbitrum.error = e?.message ?? 'arb_unavailable'
+    const readArbitrum = async (): Promise<{ eth: number; usdc: number; error: string | null }> => {
+      try {
+        const { getArbitrumBalances } = await import('./services/wallet')
+        return await withTimeout(getArbitrumBalances(wallet.address), 'arbitrum')
+      } catch (e: any) {
+        return { eth: 0, usdc: 0, error: e?.message ?? 'arb_unavailable' }
+      }
     }
 
     // ── Hyperliquid clearinghouse equity ───────────────────────────────────
     // Same wallet address as BSC (HL is EVM, derived from the same secp256k1
     // key). Gives us parity with the Aster card so users see HL equity at
     // a glance without leaving the Wallet tab.
-    let hyperliquid: {
+    const readHyperliquid = async (): Promise<{
       usdc: number; accountValue: number;
       onboarded: boolean; error: string | null
-    } = { usdc: 0, accountValue: 0, onboarded: !!user.hyperliquidOnboarded, error: null }
-    try {
-      const hlMod = await import('./services/hyperliquid')
-      const acc = await hlMod.getAccountState(wallet.address)
-      hyperliquid.usdc = acc.withdrawableUsdc
-      hyperliquid.accountValue = acc.accountValue
-      hyperliquid.onboarded = acc.onboarded
-    } catch (e: any) {
-      const msg = String(e?.message ?? 'hl_unavailable').toLowerCase()
-      if (msg.includes('does not exist') || msg.includes('no user')) {
-        hyperliquid.error = 'not_onboarded'
-      } else {
-        console.error('[API] /me/wallet hyperliquid failed:', wallet.address, '→', e?.message)
-        hyperliquid.error = String(e?.message ?? 'hl_unavailable')
+    }> => {
+      const out = { usdc: 0, accountValue: 0, onboarded: !!user.hyperliquidOnboarded, error: null as string | null }
+      try {
+        const hlMod = await import('./services/hyperliquid')
+        const acc = await withTimeout(hlMod.getAccountState(wallet.address), 'hyperliquid')
+        out.usdc = acc.withdrawableUsdc
+        out.accountValue = acc.accountValue
+        out.onboarded = acc.onboarded
+      } catch (e: any) {
+        const msg = String(e?.message ?? 'hl_unavailable').toLowerCase()
+        if (msg.includes('does not exist') || msg.includes('no user')) {
+          out.error = 'not_onboarded'
+        } else {
+          console.error('[API] /me/wallet hyperliquid failed:', wallet.address, '→', e?.message)
+          out.error = String(e?.message ?? 'hl_unavailable')
+        }
       }
+      return out
     }
 
     // ── XLayer (chain id 196) — native OKB balance ────────────────────────
     // Same EVM address; surfaced so users can see whether they've topped up
     // OKB for XLayer registry txs / future XLayer trading.
-    let xlayer: { okb: number; error: string | null } = { okb: 0, error: null }
-    try {
-      const { buildXLayerProvider } = await import('./services/xlayerProvider')
-      const xp = buildXLayerProvider()
-      const wei = await xp.getBalance(wallet.address)
-      const { ethers } = await import('ethers')
-      xlayer.okb = parseFloat(ethers.formatEther(wei))
-    } catch (e: any) {
-      xlayer.error = e?.shortMessage ?? e?.message ?? 'xlayer_rpc_failed'
+    const readXLayer = async (): Promise<{ okb: number; error: string | null }> => {
+      try {
+        const { buildXLayerProvider } = await import('./services/xlayerProvider')
+        const xp = buildXLayerProvider()
+        const wei = await withTimeout(xp.getBalance(wallet.address), 'xlayer')
+        return { okb: parseFloat(ethers.formatEther(wei)), error: null }
+      } catch (e: any) {
+        return { okb: 0, error: e?.shortMessage ?? e?.message ?? 'xlayer_rpc_failed' }
+      }
     }
 
     // ── Polygon (chain id 137) — USDC.e + MATIC at custodial EOA + Safe ─
@@ -1121,61 +1167,102 @@ app.get('/api/me/wallet', requireTgUser, async (req, res) => {
     // collateral Polymarket's CTF Exchange uses, MATIC is the gas needed
     // for the one-tap fund tx that moves USDC.e from the EOA into their
     // gasless Safe). `safe.usdc` is what's actually tradable on Polymarket.
-    let polygon: {
+    const readPolygon = async (): Promise<{
       eoa: { address: string; usdcE: number; matic: number; error: string | null }
       safe: { address: string | null; usdcE: number; deployed: boolean; ready: boolean; error: string | null }
       hasCreds: boolean
-    } = {
-      eoa:  { address: wallet.address, usdcE: 0, matic: 0, error: null },
-      safe: { address: null, usdcE: 0, deployed: false, ready: false, error: null },
-      hasCreds: false,
-    }
-    try {
-      const { getPolygonBalances, getFunderAddress } = await import('./services/polymarketTrading')
-      const safeAddr = await getFunderAddress(user.id)
-      const creds    = await db.polymarketCreds.findUnique({ where: { userId: user.id } })
-      polygon.hasCreds      = Boolean(creds)
-      polygon.safe.address  = safeAddr
-      polygon.safe.deployed = Boolean(creds?.safeDeployedAt)
+    }> => {
+      const out = {
+        eoa:  { address: wallet.address, usdcE: 0, matic: 0, error: null as string | null },
+        safe: { address: null as string | null, usdcE: 0, deployed: false, ready: false, error: null as string | null },
+        hasCreds: false,
+      }
+      try {
+        const { getPolygonBalances, getFunderAddress } = await import('./services/polymarketTrading')
+        const [safeAddr, creds] = await Promise.all([
+          withTimeout(getFunderAddress(user.id), 'polygon_funder'),
+          db.polymarketCreds.findUnique({ where: { userId: user.id } }),
+        ])
+        out.hasCreds      = Boolean(creds)
+        out.safe.address  = safeAddr
+        out.safe.deployed = Boolean(creds?.safeDeployedAt)
 
-      const [eoaBal, safeBal] = await Promise.all([
-        getPolygonBalances(wallet.address).catch((e: any) => {
-          polygon.eoa.error = e?.shortMessage ?? e?.message ?? 'polygon_rpc_failed'
-          return null
-        }),
-        safeAddr
-          ? getPolygonBalances(safeAddr).catch((e: any) => {
-              polygon.safe.error = e?.shortMessage ?? e?.message ?? 'polygon_rpc_failed'
-              return null
-            })
-          : Promise.resolve(null),
-      ])
-      if (eoaBal) {
-        polygon.eoa.usdcE = eoaBal.usdc
-        polygon.eoa.matic = eoaBal.matic
+        const [eoaBal, safeBal] = await Promise.all([
+          withTimeout(getPolygonBalances(wallet.address), 'polygon_eoa').catch((e: any) => {
+            out.eoa.error = e?.shortMessage ?? e?.message ?? 'polygon_rpc_failed'
+            return null
+          }),
+          safeAddr
+            ? withTimeout(getPolygonBalances(safeAddr), 'polygon_safe').catch((e: any) => {
+                out.safe.error = e?.shortMessage ?? e?.message ?? 'polygon_rpc_failed'
+                return null
+              })
+            : Promise.resolve(null),
+        ])
+        if (eoaBal) {
+          out.eoa.usdcE = eoaBal.usdc
+          out.eoa.matic = eoaBal.matic
+        }
+        if (safeBal) {
+          out.safe.usdcE = safeBal.usdc
+          out.safe.ready = Boolean(
+            creds?.allowanceVerifiedAt ||
+            (safeBal.allowanceCtf        >= 1_000_000 &&
+             safeBal.allowanceNeg        >= 1_000_000 &&
+             safeBal.allowanceNegAdapter >= 1_000_000 &&
+             safeBal.ctfApprovedCtfExchange &&
+             safeBal.ctfApprovedNegExchange &&
+             safeBal.ctfApprovedNegAdapter)
+          )
+        }
+      } catch (e: any) {
+        out.eoa.error = out.eoa.error ?? (e?.message ?? 'polygon_unavailable')
       }
-      if (safeBal) {
-        polygon.safe.usdcE = safeBal.usdc
-        polygon.safe.ready = Boolean(
-          creds?.allowanceVerifiedAt ||
-          (safeBal.allowanceCtf        >= 1_000_000 &&
-           safeBal.allowanceNeg        >= 1_000_000 &&
-           safeBal.allowanceNegAdapter >= 1_000_000 &&
-           safeBal.ctfApprovedCtfExchange &&
-           safeBal.ctfApprovedNegExchange &&
-           safeBal.ctfApprovedNegAdapter)
-        )
-      }
-    } catch (e: any) {
-      polygon.eoa.error = polygon.eoa.error ?? (e?.message ?? 'polygon_unavailable')
+      return out
     }
+
+    // ─── Fan out all venue reads in parallel ─────────────────────────────
+    // allSettled so a thrown reader (shouldn't happen — they all swallow
+    // their own errors — but defensive) can never take the response down.
+    // Each settled value is the fully-shaped section object the response
+    // expects. QR generation runs in the same gather since it's independent
+    // and ~50ms, so latency is dominated by the slowest section, not summed.
+    const [
+      bscRes, qrRes, asterRes, arbitrumRes, hyperliquidRes, xlayerRes, polygonRes,
+    ] = await Promise.allSettled([
+      readBsc(), readQr(), readAster(), readArbitrum(), readHyperliquid(), readXLayer(), readPolygon(),
+    ])
+
+    const balances = bscRes.status === 'fulfilled'
+      ? bscRes.value
+      : { usdt: 0, bnb: 0, error: bscRes.reason?.message ?? 'bsc_unavailable' }
+    const qrDataUrl = qrRes.status === 'fulfilled' ? qrRes.value : ''
+    const aster = asterRes.status === 'fulfilled'
+      ? asterRes.value
+      : { usdt: 0, availableMargin: 0, onboarded: !!user.asterOnboarded, error: 'aster_unavailable' }
+    const arbitrum = arbitrumRes.status === 'fulfilled'
+      ? arbitrumRes.value
+      : { eth: 0, usdc: 0, error: 'arb_unavailable' }
+    const hyperliquid = hyperliquidRes.status === 'fulfilled'
+      ? hyperliquidRes.value
+      : { usdc: 0, accountValue: 0, onboarded: !!user.hyperliquidOnboarded, error: 'hl_unavailable' }
+    const xlayer = xlayerRes.status === 'fulfilled'
+      ? xlayerRes.value
+      : { okb: 0, error: 'xlayer_unavailable' }
+    const polygon = polygonRes.status === 'fulfilled'
+      ? polygonRes.value
+      : {
+          eoa:  { address: wallet.address, usdcE: 0, matic: 0, error: 'polygon_unavailable' },
+          safe: { address: null, usdcE: 0, deployed: false, ready: false, error: null },
+          hasCreds: false,
+        }
 
     res.json({
       address: wallet.address,
       chain: wallet.chain,
       label: wallet.label,
       pinProtected: !!user.pinHash,
-      balances: { usdt, bnb, error: balanceError },
+      balances,
       arbitrum,
       aster,
       hyperliquid,
