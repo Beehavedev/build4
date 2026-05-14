@@ -765,6 +765,16 @@ export default function AppDashboard() {
                       onAuth={handleTelegramAuth}
                     />
                   </div>
+                  <p
+                    className="text-[10px] text-muted-foreground text-center font-mono leading-relaxed max-w-md mx-auto"
+                    data-testid="text-telegram-help"
+                  >
+                    Button greyed out? Telegram only enables its login widget on
+                    the bot's registered domain (build4.io). On other origins
+                    (e.g. preview links) the button stays disabled — use
+                    Connect Wallet below with the same wallet that's already
+                    linked to your @{tgConfig.botUsername} account.
+                  </p>
                 </div>
                 <div className="relative">
                   <div className="absolute inset-0 flex items-center">
