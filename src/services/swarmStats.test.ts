@@ -71,7 +71,7 @@ test('getSwarmStats reads only AgentLog (not OutcomePosition) and computes USD w
   })
   assert.match(capturedSql, /FROM "AgentLog"/)
   assert.doesNotMatch(capturedSql, /OutcomePosition/)
-  assert.match(capturedSql, /interval '24 hours'/)
+  assert.match(capturedSql, /createdAt" >= '\d{4}-\d{2}-\d{2}T/)
   // Must extract input/output split AND fall back to tokens_used when both
   // input_tokens and output_tokens are absent from the JSONB row (legacy
   // telemetry written before Task #24). Legacy rows are split 70/30
@@ -145,7 +145,7 @@ test('getSwarmQuorumStats counts swarm ticks and no-quorum fallbacks', async () 
   assert.match(capturedSql, /FROM "AgentLog"/)
   assert.match(capturedSql, /providers" IS NOT NULL/)
   assert.match(capturedSql, /\[swarm-no-quorum,/)
-  assert.match(capturedSql, /interval '7 days'/)
+  assert.match(capturedSql, /createdAt" >= '\d{4}-\d{2}-\d{2}T/)
   assert.equal(stats.swarmTicks, 10)
   assert.equal(stats.noQuorumTicks, 3)
   assert.equal(stats.quorumTicks, 7)

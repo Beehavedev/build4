@@ -26,7 +26,7 @@ import { db } from '../db'
  *      output. Use the env var if you need an asymmetric override.
  */
 
-export type Window = '24h' | '7d'
+export type Window = '24h' | '7d' | '30d' | 'today' | 'mtd' | 'ytd'
 
 export interface CostRate {
   input: number
@@ -137,9 +137,27 @@ async function defaultLoadDbRows(): Promise<CostRateRow[]> {
   )
 }
 
-function windowToInterval(w: Window): { sql: string; ms: number } {
-  if (w === '24h') return { sql: "interval '24 hours'", ms: 24 * 60 * 60 * 1000 }
-  return { sql: "interval '7 days'", ms: 7 * 24 * 60 * 60 * 1000 }
+function windowToInterval(w: Window): { sinceSql: string; since: Date; ms: number } {
+  const now = new Date()
+  let since: Date
+  if (w === '24h') {
+    since = new Date(now.getTime() - 24 * 60 * 60 * 1000)
+  } else if (w === '7d') {
+    since = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+  } else if (w === '30d') {
+    since = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
+  } else if (w === 'today') {
+    since = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
+  } else if (w === 'mtd') {
+    since = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
+  } else {
+    since = new Date(Date.UTC(now.getUTCFullYear(), 0, 1))
+  }
+  return {
+    sinceSql: `'${since.toISOString()}'::timestamptz`,
+    since,
+    ms: now.getTime() - since.getTime(),
+  }
 }
 
 interface RawRollupRow {
@@ -175,7 +193,7 @@ export async function getSwarmQuorumStats(
   window: Window,
   deps: { query?: (sql: string) => Promise<RawQuorumRow[]> } = {},
 ): Promise<SwarmQuorumStats> {
-  const { sql: intervalSql } = windowToInterval(window)
+  const { sinceSql } = windowToInterval(window)
   const sql = `
     SELECT
       COUNT(*) FILTER (WHERE "providers" IS NOT NULL)::bigint AS swarm_ticks,
@@ -184,7 +202,7 @@ export async function getSwarmQuorumStats(
           AND "rawResponse" LIKE '[swarm-no-quorum,%'
       )::bigint AS no_quorum_ticks
     FROM "AgentLog"
-    WHERE "createdAt" >= NOW() - ${intervalSql}
+    WHERE "createdAt" >= ${sinceSql}
   `
   const runQuery = deps.query ?? ((q: string) => db.$queryRawUnsafe<RawQuorumRow[]>(q))
   const raw = await runQuery(sql)
@@ -208,8 +226,7 @@ export async function getSwarmStats(
     quorumQuery?: (sql: string) => Promise<RawQuorumRow[]>
   } = {},
 ): Promise<SwarmStatsReport> {
-  const { sql: intervalSql, ms } = windowToInterval(window)
-  const since = new Date(Date.now() - ms)
+  const { sinceSql, since } = windowToInterval(window)
 
   const sql = `
     WITH telemetry AS (
@@ -229,7 +246,7 @@ export async function getSwarmStats(
         -- terms, so we must additionally check the JSON type. A single
         -- malformed legacy row was crashing /api/swarm/stats in prod.
         AND jsonb_typeof("providers") = 'array'
-        AND "createdAt" >= NOW() - ${intervalSql}
+        AND "createdAt" >= ${sinceSql}
     )
     SELECT
       provider,
@@ -297,6 +314,96 @@ function formatQuorumLine(q: SwarmQuorumStats): string {
     `_Quorum: ${q.quorumTicks}/${q.swarmTicks} reached · ` +
     `${q.noQuorumTicks} no-quorum fallbacks (${pct}%)${flag}_`
   )
+}
+
+/**
+ * Daily timeseries: one bucket per UTC day in the window. Used by the
+ * AI Usage mini-app page to render the spend chart. Cost is computed
+ * per-row using the same provider rate map as getSwarmStats so the
+ * daily totals reconcile with the rolled-up window total.
+ */
+export interface DailyUsageBucket {
+  date: string
+  calls: number
+  inputTokens: number
+  outputTokens: number
+  totalTokens: number
+  estimatedUsd: number
+}
+
+interface RawDailyRow {
+  day: Date | string
+  provider: string | null
+  call_count: bigint | number
+  input_tokens: bigint | number | null
+  output_tokens: bigint | number | null
+}
+
+export async function getDailyUsage(
+  window: Window,
+  deps: {
+    query?: (sql: string) => Promise<RawDailyRow[]>
+    loadCostRates?: () => Promise<CostRateRow[]>
+  } = {},
+): Promise<DailyUsageBucket[]> {
+  const { sinceSql } = windowToInterval(window)
+  const sql = `
+    WITH telemetry AS (
+      SELECT
+        date_trunc('day', "createdAt" AT TIME ZONE 'UTC')::date AS day,
+        (elem->>'provider') AS provider,
+        NULLIF(elem->>'inputTokens', '')::float AS input_tokens,
+        NULLIF(elem->>'outputTokens', '')::float AS output_tokens,
+        NULLIF(elem->>'tokensUsed', '')::float AS tokens_used
+      FROM "AgentLog",
+           LATERAL jsonb_array_elements("providers") AS elem
+      WHERE "providers" IS NOT NULL
+        AND jsonb_typeof("providers") = 'array'
+        AND "createdAt" >= ${sinceSql}
+    )
+    SELECT
+      day,
+      provider,
+      COUNT(*)::bigint AS call_count,
+      COALESCE(SUM(
+        CASE
+          WHEN input_tokens IS NULL AND output_tokens IS NULL THEN COALESCE(tokens_used, 0) * 0.7
+          ELSE COALESCE(input_tokens, 0)
+        END
+      ), 0)::bigint AS input_tokens,
+      COALESCE(SUM(
+        CASE
+          WHEN input_tokens IS NULL AND output_tokens IS NULL THEN COALESCE(tokens_used, 0) * 0.3
+          ELSE COALESCE(output_tokens, 0)
+        END
+      ), 0)::bigint AS output_tokens
+    FROM telemetry
+    WHERE provider IS NOT NULL
+    GROUP BY day, provider
+    ORDER BY day ASC
+  `
+  const runQuery = deps.query ?? ((q: string) => db.$queryRawUnsafe<RawDailyRow[]>(q))
+  const raw = await runQuery(sql)
+  const costs = await loadCostMap(deps.loadCostRates)
+  const buckets = new Map<string, DailyUsageBucket>()
+  for (const r of raw) {
+    const day = r.day instanceof Date ? r.day.toISOString().slice(0, 10) : String(r.day).slice(0, 10)
+    const provider = r.provider ?? 'unknown'
+    const inT = Number(r.input_tokens ?? 0)
+    const outT = Number(r.output_tokens ?? 0)
+    const rate = costs[provider] ?? { input: 0, output: 0 }
+    const usd = (inT / 1_000_000) * rate.input + (outT / 1_000_000) * rate.output
+    const existing = buckets.get(day) ?? {
+      date: day, calls: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedUsd: 0,
+    }
+    existing.calls += Number(r.call_count ?? 0)
+    existing.inputTokens += inT
+    existing.outputTokens += outT
+    existing.totalTokens += inT + outT
+    existing.estimatedUsd += usd
+    buckets.set(day, existing)
+  }
+  return Array.from(buckets.values()).sort((a, b) => a.date.localeCompare(b.date))
 }
 
 export function formatSwarmStats(report: SwarmStatsReport): string {

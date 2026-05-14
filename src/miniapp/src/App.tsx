@@ -13,6 +13,7 @@ import Wallet from './pages/Wallet'
 import { Trade } from './pages/Trade'
 import Hyperliquid from './pages/Hyperliquid'
 import Admin from './pages/Admin'
+import AiUsage from './pages/AiUsage'
 import Onboard from './pages/Onboard'
 import LaunchToken from './pages/LaunchToken'
 import TokenTrade from './pages/TokenTrade'
@@ -25,7 +26,7 @@ declare global {
   }
 }
 
-type Page = 'dashboard' | 'agents' | 'wallet' | 'trade' | 'copy' | 'portfolio' | 'predictions' | 'hyperliquid' | 'admin' | 'onboard' | 'launchToken' | 'tokenTrade' | 'brain'
+type Page = 'dashboard' | 'agents' | 'wallet' | 'trade' | 'copy' | 'portfolio' | 'predictions' | 'hyperliquid' | 'admin' | 'aiusage' | 'onboard' | 'launchToken' | 'tokenTrade' | 'brain'
 
 export default function App() {
   const [page, setPage] = useState<Page>('dashboard')
@@ -162,6 +163,7 @@ export default function App() {
   // having to add another bottom-nav slot for each.
   const overflowItems: { id: Page; label: string; icon: string }[] = [
     ...(launchEnabled ? [{ id: 'launchToken' as Page, label: 'Launch token', icon: '🚀' }] : []),
+    ...(isAdmin ? [{ id: 'aiusage' as Page, label: 'AI Usage', icon: '🧠' }] : []),
     ...(isAdmin ? [{ id: 'admin' as Page, label: 'Admin', icon: '🛠' }] : []),
   ]
   const hasOverflow = overflowItems.length > 0
@@ -290,6 +292,7 @@ export default function App() {
         {page === 'predictions' && <Predictions />}
         {page === 'hyperliquid' && <Hyperliquid />}
         {page === 'admin' && <Admin />}
+        {page === 'aiusage' && <AiUsage />}
         {page === 'launchToken' && <LaunchToken />}
         {page === 'tokenTrade' && <TokenTrade />}
         {page === 'brain' && <CampaignBrain />}

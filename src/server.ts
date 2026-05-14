@@ -8310,6 +8310,125 @@ app.get('/api/swarm/stats', async (req, res) => {
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
+// AI usage dashboard — combined per-provider rollup + daily timeseries for a
+// calendar-aligned window (today/mtd/ytd) or a rolling window (24h/7d/30d).
+// Drives the admin "AI Usage" mini-app page so operators can track ecosystem
+// LLM spend at a glance.
+// ─────────────────────────────────────────────────────────────────────────────
+app.get('/api/admin/ai-usage', requireAdmin, async (req, res) => {
+  try {
+    const { getSwarmStats, getDailyUsage } = await import('./services/swarmStats')
+    type W = Awaited<ReturnType<typeof getSwarmStats>>['window']
+    const allowed = new Set(['24h', '7d', '30d', 'today', 'mtd', 'ytd'])
+    const raw = String(req.query.window ?? 'today').toLowerCase()
+    const window = (allowed.has(raw) ? raw : 'today') as W
+    const [report, daily] = await Promise.all([
+      getSwarmStats(window),
+      getDailyUsage(window),
+    ])
+    const totals = report.rows.reduce(
+      (acc, r) => ({
+        calls: acc.calls + r.callCount,
+        inputTokens: acc.inputTokens + r.inputTokens,
+        outputTokens: acc.outputTokens + r.outputTokens,
+        totalTokens: acc.totalTokens + r.totalTokens,
+        estimatedUsd: acc.estimatedUsd + r.estimatedUsd,
+      }),
+      { calls: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedUsd: 0 },
+    )
+    res.json({
+      window: report.window,
+      since: report.since.toISOString(),
+      now: new Date().toISOString(),
+      totals,
+      rows: report.rows,
+      daily,
+      quorum: report.quorum,
+    })
+  } catch (err) {
+    console.error('[API] /admin/ai-usage failed:', err)
+    res.status(500).json({ error: 'Internal error' })
+  }
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AI provider credits / health snapshot.
+//
+// Honesty note: most LLM providers (Anthropic, xAI, OpenAI, Akash) do NOT
+// expose an account-balance endpoint via the standard inference API key. We
+// surface what we *can* — env-key presence, circuit-breaker park status,
+// default model — and link out to each provider's billing dashboard for the
+// rest, instead of fabricating numbers. Hyperbolic is the only one with a
+// public balance endpoint at time of writing; we attempt it with a short
+// timeout and fall through to "see dashboard" on any failure.
+// ─────────────────────────────────────────────────────────────────────────────
+const PROVIDER_DASHBOARDS: Record<string, string> = {
+  anthropic: 'https://console.anthropic.com/settings/billing',
+  xai: 'https://console.x.ai/team/default/usage',
+  hyperbolic: 'https://app.hyperbolic.xyz/settings/billing',
+  akash: 'https://chatapi.akash.network/',
+}
+
+async function fetchHyperbolicBalance(apiKey: string): Promise<number | null> {
+  const ctrl = new AbortController()
+  const t = setTimeout(() => ctrl.abort(), 5000)
+  try {
+    const r = await fetch('https://api.hyperbolic.xyz/billing/balance', {
+      headers: { Authorization: `Bearer ${apiKey}` },
+      signal: ctrl.signal,
+    })
+    if (!r.ok) return null
+    const j = (await r.json()) as { credits?: number; balance?: number }
+    const v = typeof j.credits === 'number' ? j.credits : typeof j.balance === 'number' ? j.balance : null
+    return v
+  } catch {
+    return null
+  } finally {
+    clearTimeout(t)
+  }
+}
+
+app.get('/api/admin/ai-credits', requireAdmin, async (_req, res) => {
+  try {
+    const { getProviderStatus, getCircuitState } = await import('./services/inference')
+    const status = getProviderStatus()
+    const circuits = getCircuitState()
+    const now = Date.now()
+    const out = await Promise.all(
+      (Object.keys(status) as Array<keyof typeof status>).map(async (provider) => {
+        const cfg = status[provider]
+        const parkedUntil = circuits[provider] ?? 0
+        const tripped = parkedUntil > now
+        let balance: number | null = null
+        let balanceError: string | null = null
+        if (cfg.live && provider === 'hyperbolic') {
+          const apiKey = process.env[cfg.envVar]
+          if (apiKey) {
+            balance = await fetchHyperbolicBalance(apiKey)
+            if (balance === null) balanceError = 'Endpoint did not return a balance'
+          }
+        }
+        return {
+          provider,
+          configured: cfg.live,
+          envVar: cfg.envVar,
+          defaultModel: cfg.defaultModel,
+          circuitTripped: tripped,
+          circuitParkedUntil: tripped ? new Date(parkedUntil).toISOString() : null,
+          balanceUsd: balance,
+          balanceError,
+          dashboardUrl: PROVIDER_DASHBOARDS[provider] ?? null,
+        }
+      }),
+    )
+    res.json({ providers: out, fetchedAt: new Date().toISOString() })
+  } catch (err) {
+    console.error('[API] /admin/ai-credits failed:', err)
+    res.status(500).json({ error: 'Internal error' })
+  }
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Admin: re-activate Aster for a specific user.
 //
 // Used when a user shows up in the logs as `400 { code: -1000, msg: 'No agent
