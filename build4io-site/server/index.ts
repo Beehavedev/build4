@@ -144,12 +144,12 @@ const helmetMiddleware = helmet({
   contentSecurityPolicy: process.env.NODE_ENV === "production" ? {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'"],
+      scriptSrc: ["'self'", "https://telegram.org", "https://oauth.telegram.org"],
       styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
       fontSrc: ["'self'", "https://fonts.gstatic.com"],
       imgSrc: ["'self'", "data:", "https:", "blob:"],
       connectSrc: ["'self'", "https:", "wss:", "wss://relay.walletconnect.com", "wss://relay.walletconnect.org", "https://verify.walletconnect.com", "https://rpc.walletconnect.com"],
-      frameSrc: ["'self'", "https://verify.walletconnect.com"],
+      frameSrc: ["'self'", "https://verify.walletconnect.com", "https://oauth.telegram.org"],
       frameAncestors: ["'none'"],
       objectSrc: ["'none'"],
       baseUri: ["'self'"],
