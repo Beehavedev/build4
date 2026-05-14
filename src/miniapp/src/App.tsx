@@ -46,6 +46,14 @@ export default function App() {
   // true so users on environments without the flag never see a CTA
   // that would just 503.
   const [launchEnabled, setLaunchEnabled] = useState(false)
+  // `noTelegramAuth` = the WebApp loaded but window.Telegram.WebApp.initData
+  // is empty. Happens when a user opens the /app URL directly in a browser
+  // (shared link, bookmark) instead of through the Telegram bot menu/button.
+  // Every protected /api/me/* call would otherwise 401 with the unhelpful
+  // "Missing Telegram auth" message and a Retry button that does nothing —
+  // we'd rather catch it once at the root and tell the user where to go.
+  // The brain feed (?brain=1) is intentionally exempt — it's a public page.
+  const [noTelegramAuth, setNoTelegramAuth] = useState(false)
 
   useEffect(() => {
     // Init Telegram WebApp
@@ -76,6 +84,18 @@ export default function App() {
     if (wantBrain) {
       setPage('brain')
       return // skip auth probes for public visitors
+    }
+
+    // Detect "opened outside Telegram" early. If initData is empty we know
+    // every authed call will 401, so short-circuit and render a friendly
+    // "open from Telegram" screen instead of letting child pages spin and
+    // surface a raw "Missing Telegram auth" + dead Retry button.
+    // tg may exist (Telegram injects window.Telegram on Android even when
+    // the page is opened in the in-app browser, not a WebApp) but initData
+    // is the real signal — without it the bot HMAC can't be verified.
+    if (!tg?.initData) {
+      setNoTelegramAuth(true)
+      return
     }
     if (wantOnboard) setPage('onboard')
 
@@ -145,6 +165,58 @@ export default function App() {
     ...(isAdmin ? [{ id: 'admin' as Page, label: 'Admin', icon: '🛠' }] : []),
   ]
   const hasOverflow = overflowItems.length > 0
+
+  // Early-return: page was loaded outside a Telegram WebApp (no initData).
+  // Instead of letting every authed fetch 401 and surface a raw error
+  // string with a useless Retry button, show a single clear screen that
+  // tells the user where to actually open the app. The deep-link target
+  // is hard-coded to t.me/BUILD4_BOT — if we ever rename the bot this
+  // string and the public landing page both need updating.
+  if (noTelegramAuth) {
+    return (
+      <div
+        data-testid="screen-no-telegram-auth"
+        style={{
+          minHeight: '100vh', display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center', padding: '24px',
+          textAlign: 'center', color: 'var(--text-primary)',
+        }}
+      >
+        <div style={{ fontSize: 48, marginBottom: 16 }}>🤖</div>
+        <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 8 }}>
+          Open BUILD4 from Telegram
+        </div>
+        <div style={{
+          fontSize: 14, color: 'var(--text-secondary)',
+          maxWidth: 320, lineHeight: 1.5, marginBottom: 24,
+        }}>
+          This mini-app only works when opened from the @BUILD4_BOT
+          Telegram chat — that's how we verify your account safely.
+          Tap the button below to open the bot.
+        </div>
+        <a
+          href="https://t.me/BUILD4_BOT"
+          data-testid="link-open-bot"
+          style={{
+            display: 'inline-block', padding: '12px 24px',
+            background: 'var(--purple)', color: '#fff',
+            borderRadius: 10, textDecoration: 'none', fontWeight: 600,
+            fontSize: 15,
+          }}
+        >
+          Open @BUILD4_BOT
+        </a>
+        <div style={{
+          fontSize: 12, color: 'var(--text-secondary)',
+          marginTop: 28, maxWidth: 320, opacity: 0.7,
+        }}>
+          If you're already in Telegram and still seeing this, your app
+          may be out of date — try closing and reopening it from the
+          bot's menu button.
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div style={{ minHeight: '100vh', paddingBottom: '72px' }}>

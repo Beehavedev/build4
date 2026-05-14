@@ -37,7 +37,19 @@ export function parseInitData(initData: string, botToken: string): TelegramAuthU
 export async function requireTgUser(req: Request, res: Response, next: NextFunction) {
   const initData = (req.header('x-telegram-init-data') ?? '').trim()
   const botToken = process.env.TELEGRAM_BOT_TOKEN ?? ''
-  if (!initData || !botToken) {
+  // Split the two failure modes so logs + clients can tell them apart.
+  // Before, both surfaced as "Missing Telegram auth" which left us unable
+  // to tell whether the bot was misconfigured (operator error, affects
+  // ALL users) or the request just came from outside a WebApp (user
+  // error, affects one user). The client error string for the
+  // user-error case stays "Missing Telegram auth" so the mini-app's
+  // initData-empty detector still triggers; the bot-token case gets a
+  // distinct string + a loud server log so operators can grep for it.
+  if (!botToken) {
+    console.error('[tgAuth] TELEGRAM_BOT_TOKEN is not set — every authed request will 401. Set the env var on this deployment.')
+    return res.status(500).json({ error: 'Server misconfigured: TELEGRAM_BOT_TOKEN missing' })
+  }
+  if (!initData) {
     return res.status(401).json({ error: 'Missing Telegram auth' })
   }
 
