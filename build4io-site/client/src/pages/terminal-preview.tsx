@@ -810,22 +810,6 @@ function HlPane({ session, hlAcct, onTrade, onRefetch }: { session: any; hlAcct:
   );
 }
 
-function ComingSoonPane({ title, sub, accent, color, icon: Icon, lines }: { title: string; sub: string; accent: string; color: string; icon: any; lines: string[] }) {
-  return (
-    <div>
-      <VenueHeader title={title} sub={sub} accent={accent} />
-      <div className="rounded-md border bg-card/60 p-10 text-center">
-        <Icon className={`w-10 h-10 mx-auto ${color} mb-3 opacity-50`} />
-        <div className="font-mono text-sm text-foreground mb-1">Coming soon to the web terminal.</div>
-        <div className="font-mono text-[11px] text-muted-foreground mb-4">Already live in the Telegram bot — porting to the web server next.</div>
-        <ul className="font-mono text-[11px] text-muted-foreground space-y-1 max-w-md mx-auto text-left">
-          {lines.map((l) => <li key={l}>· {l}</li>)}
-        </ul>
-      </div>
-    </div>
-  );
-}
-
 function NotConnected({ title, sub, accent, color, icon: Icon }: { title: string; sub: string; accent: string; color: string; icon: any }) {
   return (
     <div>
