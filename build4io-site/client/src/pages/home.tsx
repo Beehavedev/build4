@@ -367,16 +367,14 @@ export default function Home() {
                 <span className="font-mono text-xs text-muted-foreground tracking-widest uppercase">{t("home.chain")}</span>
               </div>
 
-              <h1 className="text-4xl sm:text-6xl md:text-7xl font-bold tracking-tight leading-[1.05] mb-6">
-                <span className="font-mono text-foreground">BUILD</span>
+              <div className="font-mono text-sm tracking-widest text-muted-foreground mb-6">
+                <span className="text-foreground">BUILD</span>
                 <span className="text-primary">4</span>
-              </h1>
+              </div>
 
-              <p className="text-lg sm:text-xl text-muted-foreground leading-relaxed max-w-2xl mb-4">
-                <TypewriterText
-                  text={t("home.heroSubtitle")}
-                />
-              </p>
+              <h1 className="text-3xl sm:text-5xl md:text-6xl font-bold tracking-tight leading-[1.1] mb-6 max-w-4xl">
+                <TypewriterText text={t("home.heroSubtitle")} />
+              </h1>
 
               <div className="mt-10 p-4 rounded-md bg-card/80 border max-w-lg font-mono text-sm space-y-2">
                 <TerminalLine prompt="$" command="build4 init --agent node_001" delay={0.3} />

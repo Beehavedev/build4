@@ -14,7 +14,7 @@ const es = {
   },
   home: {
     chain: "Base · BNB Chain · XLayer",
-    heroSubtitle: "Infraestructura para agentes de IA aut\u00f3nomos, auto-mejorables y auto-replicantes en Base, BNB Chain y XLayer.",
+    heroSubtitle: "La capa de infraestructura que permite a cualquiera desplegar agentes de IA autónomos que operan, lanzan tokens y participan en mercados de predicción con dinero real en cadena.",
     launchAgent: "Lanzar Agente",
     explore: "Explorar",
     stats: {

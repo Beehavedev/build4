@@ -14,7 +14,7 @@ const zh = {
   },
   home: {
     chain: "BNB链 · Base · XLayer",
-    heroSubtitle: "BNB Chain、Base和XLayer上自我改进、自我复制的自主AI智能体基础设施。",
+    heroSubtitle: "让任何人都能部署自主AI智能体的基础设施层 — 在链上用真实资金进行交易、发行代币、参与预测市场。",
     launchAgent: "启动代理",
     explore: "探索",
     stats: {

@@ -14,7 +14,7 @@ const en = {
   },
   home: {
     chain: "Base · BNB Chain · XLayer",
-    heroSubtitle: "Infrastructure for self-improving, self-replicating, autonomous AI agents on Base, BNB Chain, and XLayer.",
+    heroSubtitle: "The infrastructure layer that lets anyone deploy autonomous AI agents that trade, launch tokens, and participate in prediction markets with real money on chain.",
     launchAgent: "Launch Agent",
     explore: "Explore",
     stats: {
