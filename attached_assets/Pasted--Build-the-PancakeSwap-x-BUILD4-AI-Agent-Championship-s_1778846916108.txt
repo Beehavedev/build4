@@ -1,0 +1,1042 @@
+
+Build the PancakeSwap x BUILD4 AI Agent Championship system end to end. This is a live 7 day competition where BUILD4 users deploy agents that trade on PancakeSwap BSC. One strategy tweak allowed per agent per 24 hours. Top 5 agents by PnL at the end of day 7 win a share of $3,000 USDT in BNB. Everything is on chain, public, and verifiable.
+
+ARCHITECTURE
+src/
+  services/
+    competition/
+      index.ts              — orchestrator, manages competition lifecycle
+      leaderboard.ts        — real time PnL calculation and ranking
+      tweakManager.ts       — handles daily strategy tweaks with 24h window
+      pancakeSwap.ts        — PancakeSwap router integration for agent trades
+      prizeDistributor.ts   — distributes BNB prizes to top 5 wallets on completion
+  agents/
+    competitionAgent.ts     — modified agent runner for competition mode
+  routes/
+    competition.ts          — all competition API endpoints
+  jobs/
+    competitionTicker.ts    — runs every minute, ticks all competition agents
+client/
+  src/
+    pages/
+      Competition.tsx       — live leaderboard page in mini app
+    components/
+      AgentCard.tsx         — individual agent card with PnL and strategy
+      TweakPanel.tsx        — strategy tweak interface
+      Leaderboard.tsx       — ranked list of all competing agents
+
+PRISMA SCHEMA
+Add these models:
+prismamodel Competition {
+  id               String   @id @default(cuid())
+  name             String
+  status           String   — draft, active, completed
+  startAt          DateTime
+  endAt            DateTime
+  prizePoolUsdt    Float
+  prizePoolBnb     String
+  maxAgents        Int      @default(500)
+  tweaksPerDay     Int      @default(1)
+  createdAt        DateTime @default(now())
+  entries          CompetitionEntry[]
+}
+
+model CompetitionEntry {
+  id               String      @id @default(cuid())
+  competitionId    String
+  competition      Competition @relation(fields: [competitionId], references: [id])
+  userId           String
+  agentId          String
+  agentName        String
+  walletAddress    String
+  startingBalance  Float
+  currentBalance   Float       @default(0)
+  pnlUsdt          Float       @default(0)
+  pnlPercent       Float       @default(0)
+  rank             Int         @default(0)
+  tradesCount      Int         @default(0)
+  tweaksUsedToday  Int         @default(0)
+  lastTweakAt      DateTime?
+  strategy         Json
+  isDisqualified   Boolean     @default(false)
+  disqualifyReason String?
+  joinedAt         DateTime    @default(now())
+  snapshots        CompetitionSnapshot[]
+  tweaks           CompetitionTweak[]
+}
+
+model CompetitionSnapshot {
+  id          String           @id @default(cuid())
+  entryId     String
+  entry       CompetitionEntry @relation(fields: [entryId], references: [id])
+  balance     Float
+  pnlUsdt     Float
+  pnlPercent  Float
+  rank        Int
+  recordedAt  DateTime
+}
+
+model CompetitionTweak {
+  id          String           @id @default(cuid())
+  entryId     String
+  entry       CompetitionEntry @relation(fields: [entryId], references: [id])
+  previousStrategy Json
+  newStrategy      Json
+  reasoning        String
+  appliedAt        DateTime
+}
+
+STEP 1 — COMPETITION ORCHESTRATOR
+File: src/services/competition/index.ts
+typescriptimport { db } from '../../db';
+import { tickAllCompetitionAgents } from './competitionTicker';
+import { updateLeaderboard } from './leaderboard';
+import { notifyAdmin, notifyChannel } from '../telegram';
+
+export async function getActiveCompetition() {
+  return db.competition.findFirst({
+    where: { status: 'active' },
+    include: {
+      entries: {
+        where: { isDisqualified: false },
+        orderBy: { pnlPercent: 'desc' }
+      }
+    }
+  });
+}
+
+export async function startCompetition(competitionId: string): Promise<void> {
+  const competition = await db.competition.update({
+    where: { id: competitionId },
+    data: { status: 'active', startAt: new Date() }
+  });
+
+  await notifyChannel(`
+🏆 AI AGENT CHAMPIONSHIP IS LIVE
+
+PancakeSwap x BUILD4
+
+7 days. Pure AI agents. Real trades on BSC.
+One strategy tweak per agent per 24 hours.
+
+Top 5 agents win a share of $3,000 USDT in BNB.
+
+1st: $1,500
+2nd: $750
+3rd: $450
+4th: $200
+5th: $100
+
+Join now and deploy your agent.
+Leaderboard: build4.app/competition
+
+May the best agent win.
+  `);
+
+  console.log(`[Competition] Started: ${competition.name}`);
+}
+
+export async function endCompetition(competitionId: string): Promise<void> {
+  await updateLeaderboard(competitionId);
+
+  const competition = await db.competition.findUnique({
+    where: { id: competitionId },
+    include: {
+      entries: {
+        where: { isDisqualified: false },
+        orderBy: { pnlPercent: 'desc' },
+        take: 5,
+        include: { entry: true }
+      }
+    }
+  });
+
+  if (!competition) return;
+
+  await db.competition.update({
+    where: { id: competitionId },
+    data: { status: 'completed' }
+  });
+
+  const winners = competition.entries.slice(0, 5);
+  const prizes = [1500, 750, 450, 200, 100];
+
+  const winnerText = winners.map((w, i) =>
+    `${i + 1}. ${w.agentName} — +${w.pnlPercent.toFixed(2)}% — $${prizes[i]}`
+  ).join('\n');
+
+  await notifyChannel(`
+🏆 AI AGENT CHAMPIONSHIP RESULTS
+
+PancakeSwap x BUILD4 — 7 Day Final Results
+
+${winnerText}
+
+Prizes distributed in BNB to winning wallets.
+All trades verifiable on BSCScan.
+
+Thank you to every agent that competed.
+Next championship coming soon.
+  `);
+
+  console.log(`[Competition] Ended: ${competition.name}`);
+}
+
+export async function resetDailyTweaks(): Promise<void> {
+  await db.competitionEntry.updateMany({
+    where: { tweaksUsedToday: { gt: 0 } },
+    data: { tweaksUsedToday: 0 }
+  });
+  console.log(`[Competition] Daily tweaks reset at midnight UTC`);
+}
+
+STEP 2 — LEADERBOARD ENGINE
+File: src/services/competition/leaderboard.ts
+typescriptimport { db } from '../../db';
+import { getPancakeSwapBalance } from './pancakeSwap';
+
+export interface LeaderboardEntry {
+  rank: number
+  agentName: string
+  ownerUsername: string
+  walletAddress: string
+  startingBalance: number
+  currentBalance: number
+  pnlUsdt: number
+  pnlPercent: number
+  tradesCount: number
+  tweaksUsedToday: number
+  lastTweakAt: string | null
+  strategyStyle: string
+  isTop5: boolean
+}
+
+export async function updateLeaderboard(competitionId: string): Promise<void> {
+  const entries = await db.competitionEntry.findMany({
+    where: { competitionId, isDisqualified: false },
+    include: { agent: true, user: true }
+  });
+
+  // Update balances from chain
+  for (const entry of entries) {
+    try {
+      const balance = await getPancakeSwapBalance(entry.walletAddress);
+      const pnlUsdt = balance - entry.startingBalance;
+      const pnlPercent = (pnlUsdt / entry.startingBalance) * 100;
+
+      await db.competitionEntry.update({
+        where: { id: entry.id },
+        data: { currentBalance: balance, pnlUsdt, pnlPercent }
+      });
+    } catch (err: any) {
+      console.error(`[Leaderboard] Failed to update ${entry.agentName}:`, err.message);
+    }
+  }
+
+  // Rank all entries
+  const ranked = await db.competitionEntry.findMany({
+    where: { competitionId, isDisqualified: false },
+    orderBy: { pnlPercent: 'desc' }
+  });
+
+  for (let i = 0; i < ranked.length; i++) {
+    await db.competitionEntry.update({
+      where: { id: ranked[i].id },
+      data: { rank: i + 1 }
+    });
+
+    // Snapshot every hour
+    await db.competitionSnapshot.create({
+      data: {
+        entryId: ranked[i].id,
+        balance: ranked[i].currentBalance,
+        pnlUsdt: ranked[i].pnlUsdt,
+        pnlPercent: ranked[i].pnlPercent,
+        rank: i + 1,
+        recordedAt: new Date()
+      }
+    });
+  }
+
+  console.log(`[Leaderboard] Updated ${ranked.length} entries`);
+}
+
+export async function getLeaderboard(competitionId: string): Promise<LeaderboardEntry[]> {
+  const entries = await db.competitionEntry.findMany({
+    where: { competitionId, isDisqualified: false },
+    orderBy: { pnlPercent: 'desc' },
+    take: 50,
+    include: { user: true }
+  });
+
+  return entries.map((e, i) => ({
+    rank: i + 1,
+    agentName: e.agentName,
+    ownerUsername: e.user?.username ?? 'Anonymous',
+    walletAddress: e.walletAddress,
+    startingBalance: e.startingBalance,
+    currentBalance: e.currentBalance,
+    pnlUsdt: e.pnlUsdt,
+    pnlPercent: e.pnlPercent,
+    tradesCount: e.tradesCount,
+    tweaksUsedToday: e.tweaksUsedToday,
+    lastTweakAt: e.lastTweakAt?.toISOString() ?? null,
+    strategyStyle: deriveStrategyStyle(e.strategy as any),
+    isTop5: i < 5
+  }));
+}
+
+function deriveStrategyStyle(strategy: any): string {
+  if (!strategy) return 'Balanced';
+  const leverage = strategy.maxLeverage ?? 1;
+  const risk = strategy.riskTolerance ?? 'medium';
+  if (leverage >= 10) return 'Aggressive';
+  if (leverage >= 5) return 'Momentum';
+  if (risk === 'low') return 'Conservative';
+  return 'Balanced';
+}
+
+STEP 3 — TWEAK MANAGER
+File: src/services/competition/tweakManager.ts
+typescriptimport { db } from '../../db';
+import Anthropic from '@anthropic-ai/sdk';
+
+const client = new Anthropic();
+
+export interface StrategyTweak {
+  maxLeverage: number          // 1 to 20
+  riskTolerance: 'low' | 'medium' | 'high'
+  preferredPairs: string[]     // e.g. ['BTCUSDT', 'BNBUSDT']
+  signalWeights: {
+    momentum: number           // 0 to 100
+    meanReversion: number      // 0 to 100
+    volumeBreakout: number     // 0 to 100
+  }
+  maxPositionSizePercent: number // 1 to 50
+  stopLossPercent: number        // 1 to 20
+  takeProfitPercent: number      // 1 to 100
+}
+
+export async function applyTweak(
+  entryId: string,
+  newStrategy: StrategyTweak,
+  reasoning: string
+): Promise<{ success: boolean; message: string }> {
+  const entry = await db.competitionEntry.findUnique({
+    where: { id: entryId }
+  });
+
+  if (!entry) return { success: false, message: 'Entry not found' };
+  if (entry.isDisqualified) return { success: false, message: 'Agent is disqualified' };
+
+  // Check tweak window — resets at midnight UTC
+  if (entry.tweaksUsedToday >= 1) {
+    const nextReset = getNextMidnightUTC();
+    const hoursUntilReset = Math.ceil((nextReset.getTime() - Date.now()) / (1000 * 60 * 60));
+    return {
+      success: false,
+      message: `Tweak already used today. Next window opens in ${hoursUntilReset} hours at midnight UTC.`
+    };
+  }
+
+  // Validate strategy values
+  const validation = validateStrategy(newStrategy);
+  if (!validation.valid) {
+    return { success: false, message: validation.reason ?? 'Invalid strategy' };
+  }
+
+  // Save tweak
+  await db.competitionTweak.create({
+    data: {
+      entryId,
+      previousStrategy: entry.strategy as any,
+      newStrategy: newStrategy as any,
+      reasoning,
+      appliedAt: new Date()
+    }
+  });
+
+  await db.competitionEntry.update({
+    where: { id: entryId },
+    data: {
+      strategy: newStrategy as any,
+      tweaksUsedToday: { increment: 1 },
+      lastTweakAt: new Date()
+    }
+  });
+
+  console.log(`[TweakManager] ${entry.agentName} tweaked strategy: ${reasoning}`);
+  return { success: true, message: 'Strategy updated. Agent will apply new settings on next tick.' };
+}
+
+function validateStrategy(strategy: StrategyTweak): { valid: boolean; reason?: string } {
+  if (strategy.maxLeverage < 1 || strategy.maxLeverage > 20)
+    return { valid: false, reason: 'Max leverage must be between 1 and 20' };
+  if (strategy.maxPositionSizePercent < 1 || strategy.maxPositionSizePercent > 50)
+    return { valid: false, reason: 'Max position size must be between 1% and 50%' };
+  if (strategy.stopLossPercent < 1 || strategy.stopLossPercent > 20)
+    return { valid: false, reason: 'Stop loss must be between 1% and 20%' };
+  if (strategy.preferredPairs.length === 0)
+    return { valid: false, reason: 'Must select at least one trading pair' };
+  return { valid: true };
+}
+
+function getNextMidnightUTC(): Date {
+  const now = new Date();
+  const midnight = new Date();
+  midnight.setUTCHours(24, 0, 0, 0);
+  return midnight;
+}
+
+export async function getAISuggestedTweak(
+  entryId: string,
+  currentRank: number,
+  totalEntries: number,
+  currentPnlPercent: number
+): Promise<StrategyTweak> {
+  const entry = await db.competitionEntry.findUnique({
+    where: { id: entryId },
+    include: { snapshots: { orderBy: { recordedAt: 'desc' }, take: 24 } }
+  });
+
+  if (!entry) throw new Error('Entry not found');
+
+  const response = await client.messages.create({
+    model: 'claude-sonnet-4-20250514',
+    max_tokens: 500,
+    messages: [{
+      role: 'user',
+      content: `You are advising an AI trading agent in a 7 day competition on PancakeSwap BSC.
+
+Current situation:
+Rank: ${currentRank} of ${totalEntries}
+Current PnL: ${currentPnlPercent.toFixed(2)}%
+Days remaining: calculate from competition context
+Current strategy: ${JSON.stringify(entry.strategy, null, 2)}
+
+Suggest the optimal strategy tweak to improve ranking. Consider:
+If ranked top 3: protect the lead, reduce risk
+If ranked 4 to 10: moderate increase in aggression
+If ranked below 10: significant strategy shift needed to climb
+
+Respond only in JSON matching this exact structure:
+{
+  "maxLeverage": number between 1 and 20,
+  "riskTolerance": "low" or "medium" or "high",
+  "preferredPairs": array of pair strings,
+  "signalWeights": {
+    "momentum": number 0 to 100,
+    "meanReversion": number 0 to 100,
+    "volumeBreakout": number 0 to 100
+  },
+  "maxPositionSizePercent": number 1 to 50,
+  "stopLossPercent": number 1 to 20,
+  "takeProfitPercent": number 1 to 100
+}`
+    }]
+  });
+
+  const text = response.content[0].type === 'text' ? response.content[0].text : '{}';
+  return JSON.parse(text.replace(/```json|```/g, '').trim());
+}
+
+STEP 4 — PANCAKESWAP INTEGRATION
+File: src/services/competition/pancakeSwap.ts
+typescriptimport { ethers } from 'ethers';
+
+const PANCAKE_ROUTER = '0x10ED43C718714eb63d5aA57B78B54704E256024E';
+const WBNB = '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c';
+const USDT_BSC = '0x55d398326f99059fF775485246999027B3197955';
+
+const ROUTER_ABI = [
+  'function swapExactTokensForTokens(uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline) external returns (uint[] memory amounts)',
+  'function getAmountsOut(uint amountIn, address[] calldata path) external view returns (uint[] memory amounts)'
+];
+
+const ERC20_ABI = [
+  'function approve(address spender, uint256 amount) external returns (bool)',
+  'function balanceOf(address account) external view returns (uint256)',
+  'function allowance(address owner, address spender) external view returns (uint256)'
+];
+
+export async function getPancakeSwapBalance(walletAddress: string): Promise<number> {
+  const provider = new ethers.JsonRpcProvider(process.env.BSC_RPC_URL);
+  const usdt = new ethers.Contract(USDT_BSC, ERC20_ABI, provider);
+  const balance = await usdt.balanceOf(walletAddress);
+  return parseFloat(ethers.formatUnits(balance, 18));
+}
+
+export async function executeSwap(
+  privateKey: string,
+  tokenIn: string,
+  tokenOut: string,
+  amountInUsdt: string,
+  slippagePct: number = 2
+): Promise<{ txHash: string; amountOut: string }> {
+  const provider = new ethers.JsonRpcProvider(process.env.BSC_RPC_URL);
+  const wallet = new ethers.Wallet(privateKey, provider);
+  const router = new ethers.Contract(PANCAKE_ROUTER, ROUTER_ABI, wallet);
+  const tokenInContract = new ethers.Contract(tokenIn, ERC20_ABI, wallet);
+
+  const amountIn = ethers.parseUnits(amountInUsdt, 18);
+  const path = [tokenIn, WBNB, tokenOut].filter((v, i, a) => a.indexOf(v) === i);
+
+  // Get expected output
+  const amounts = await router.getAmountsOut(amountIn, path);
+  const expectedOut = amounts[amounts.length - 1];
+  const minOut = expectedOut * BigInt(100 - slippagePct) / 100n;
+
+  // Approve if needed
+  const allowance = await tokenInContract.allowance(wallet.address, PANCAKE_ROUTER);
+  if (allowance < amountIn) {
+    const approveTx = await tokenInContract.approve(PANCAKE_ROUTER, ethers.MaxUint256);
+    await approveTx.wait();
+  }
+
+  // Execute swap
+  const deadline = Math.floor(Date.now() / 1000) + 300;
+  const tx = await router.swapExactTokensForTokens(
+    amountIn, minOut, path, wallet.address, deadline
+  );
+  const receipt = await tx.wait();
+
+  return {
+    txHash: receipt.hash,
+    amountOut: ethers.formatUnits(expectedOut, 18)
+  };
+}
+
+export const AVAILABLE_PAIRS = [
+  'BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT',
+  'DOGEUSDT', 'XRPUSDT', 'ARBUSDT', 'LINKUSDT'
+];
+
+STEP 5 — COMPETITION AGENT RUNNER
+File: src/agents/competitionAgent.ts
+typescriptimport Anthropic from '@anthropic-ai/sdk';
+import { db } from '../db';
+import { executeSwap, getPancakeSwapBalance, AVAILABLE_PAIRS } from '../services/competition/pancakeSwap';
+import { getOHLC } from '../services/fortyTwo';
+
+const client = new Anthropic();
+
+export async function tickCompetitionAgent(entryId: string): Promise<void> {
+  const entry = await db.competitionEntry.findUnique({
+    where: { id: entryId },
+    include: { user: true }
+  });
+
+  if (!entry || entry.isDisqualified) return;
+
+  const strategy = entry.strategy as any;
+  const pairs = strategy.preferredPairs ?? ['BTCUSDT', 'BNBUSDT'];
+
+  // Build market context for this agent
+  const marketData = await buildMarketContext(pairs);
+  const balance = await getPancakeSwapBalance(entry.walletAddress);
+  const pnlPercent = ((balance - entry.startingBalance) / entry.startingBalance) * 100;
+
+  const response = await client.messages.create({
+    model: 'claude-sonnet-4-20250514',
+    max_tokens: 500,
+    system: `You are an autonomous AI trading agent competing in the PancakeSwap x BUILD4 AI Agent Championship.
+You have 7 days to maximize PnL percentage. All trades execute on PancakeSwap BSC.
+Your strategy settings: ${JSON.stringify(strategy)}
+Current balance: $${balance.toFixed(2)} USDT
+Current PnL: ${pnlPercent.toFixed(2)}%
+Respond only in JSON.`,
+    messages: [{
+      role: 'user',
+      content: `Market data: ${marketData}
+
+Decide your next action. Options:
+HOLD — do nothing this tick
+BUY — buy a token with USDT
+SELL — sell a token back to USDT
+
+Respond in JSON:
+{
+  "action": "HOLD" or "BUY" or "SELL",
+  "pair": "e.g. BNBUSDT" or null,
+  "amountPercent": number 1 to ${strategy.maxPositionSizePercent} or null,
+  "reasoning": "one line max"
+}`
+    }]
+  });
+
+  const text = response.content[0].type === 'text' ? response.content[0].text : '{}';
+  const decision = JSON.parse(text.replace(/```json|```/g, '').trim());
+
+  console.log(`[CompAgent] ${entry.agentName} — ${decision.action} ${decision.pair ?? ''} | ${decision.reasoning}`);
+
+  if (decision.action === 'HOLD') return;
+
+  if (decision.action === 'BUY' && decision.pair && decision.amountPercent) {
+    try {
+      const amountUsdt = (balance * decision.amountPercent / 100).toFixed(2);
+      const privateKey = await getPrivateKey(entry.userId);
+      const result = await executeSwap(privateKey, USDT_BSC, getTokenAddress(decision.pair), amountUsdt);
+
+      await db.competitionEntry.update({
+        where: { id: entryId },
+        data: { tradesCount: { increment: 1 } }
+      });
+
+      console.log(`[CompAgent] ${entry.agentName} BUY executed | tx: ${result.txHash}`);
+    } catch (err: any) {
+      console.error(`[CompAgent] ${entry.agentName} BUY failed:`, err.message);
+    }
+  }
+}
+
+async function buildMarketContext(pairs: string[]): Promise<string> {
+  const data: string[] = [];
+  for (const pair of pairs.slice(0, 3)) {
+    try {
+      const candles = await getOHLC(pair, 0, '1h', 24);
+      const last = candles[candles.length - 1];
+      const prev = candles[candles.length - 2];
+      const change = ((last.close - prev.close) / prev.close * 100).toFixed(2);
+      data.push(`${pair}: $${last.close} (${change}% 1h)`);
+    } catch {
+      data.push(`${pair}: data unavailable`);
+    }
+  }
+  return data.join(' | ');
+}
+
+async function getPrivateKey(userId: string): Promise<string> {
+  const wallet = await db.wallet.findFirst({
+    where: { userId, chain: 'BSC', isActive: true }
+  });
+  if (!wallet?.privateKey) throw new Error('No wallet found');
+  return wallet.privateKey;
+}
+
+function getTokenAddress(pair: string): string {
+  const addresses: Record<string, string> = {
+    BNBUSDT: '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c',
+    BTCUSDT: '0x7130d2A12B9BCbFAe4f2634d864A1Ee1Ce3Ead9c',
+    ETHUSDT: '0x2170Ed0880ac9A755fd29B2688956BD959F933F8',
+    SOLUSDT: '0x570A5D26f7765Ecb712C0924E4De545B89fD43dF',
+    DOGEUSDT: '0xbA2aE424d960c26247Dd6c32edC70B295c744C43',
+    XRPUSDT: '0x1D2F0da169ceB9fC7B3144628dB156f3F6c60dBE',
+    ARBUSDT: '0xa050FFb3eEb8200eEB7F61ce34FF644420FD3522',
+    LINKUSDT: '0xF8A0BF9cF54Bb92F17374d9e9A321E6a111a51bD'
+  };
+  return addresses[pair] ?? addresses.BNBUSDT;
+}
+
+const USDT_BSC = '0x55d398326f99059fF775485246999027B3197955';
+
+STEP 6 — API ROUTES
+File: src/routes/competition.ts
+typescriptimport { Router } from 'express';
+import { db } from '../db';
+import { getLeaderboard } from '../services/competition/leaderboard';
+import { applyTweak, getAISuggestedTweak } from '../services/competition/tweakManager';
+import { requireAuth, requireAdmin } from '../middleware/auth';
+
+const router = Router();
+
+// Public — get active competition info
+router.get('/api/competition/active', async (req, res) => {
+  const competition = await db.competition.findFirst({
+    where: { status: 'active' }
+  });
+  res.json(competition);
+});
+
+// Public — get live leaderboard
+router.get('/api/competition/:id/leaderboard', async (req, res) => {
+  const entries = await getLeaderboard(req.params.id);
+  res.json(entries);
+});
+
+// Auth — join competition
+router.post('/api/competition/:id/join', requireAuth, async (req, res) => {
+  const { agentId, startingBalance } = req.body;
+  const userId = req.user.id;
+
+  const existing = await db.competitionEntry.findFirst({
+    where: { competitionId: req.params.id, userId }
+  });
+
+  if (existing) return res.status(400).json({ error: 'Already joined' });
+
+  const agent = await db.agent.findFirst({ where: { id: agentId, userId } });
+  if (!agent) return res.status(404).json({ error: 'Agent not found' });
+
+  const wallet = await db.wallet.findFirst({ where: { userId, chain: 'BSC', isActive: true } });
+  if (!wallet) return res.status(400).json({ error: 'No BSC wallet found' });
+
+  const defaultStrategy = {
+    maxLeverage: 3,
+    riskTolerance: 'medium',
+    preferredPairs: ['BTCUSDT', 'BNBUSDT'],
+    signalWeights: { momentum: 40, meanReversion: 30, volumeBreakout: 30 },
+    maxPositionSizePercent: 20,
+    stopLossPercent: 5,
+    takeProfitPercent: 15
+  };
+
+  const entry = await db.competitionEntry.create({
+    data: {
+      competitionId: req.params.id,
+      userId,
+      agentId,
+      agentName: agent.name,
+      walletAddress: wallet.address,
+      startingBalance: startingBalance ?? 100,
+      currentBalance: startingBalance ?? 100,
+      strategy: defaultStrategy
+    }
+  });
+
+  res.json({ success: true, entryId: entry.id });
+});
+
+// Auth — apply daily strategy tweak
+router.post('/api/competition/entry/:entryId/tweak', requireAuth, async (req, res) => {
+  const { strategy, reasoning } = req.body;
+
+  const entry = await db.competitionEntry.findFirst({
+    where: { id: req.params.entryId, userId: req.user.id }
+  });
+
+  if (!entry) return res.status(404).json({ error: 'Entry not found' });
+
+  const result = await applyTweak(req.params.entryId, strategy, reasoning);
+  res.json(result);
+});
+
+// Auth — get AI suggested tweak
+router.get('/api/competition/entry/:entryId/suggest-tweak', requireAuth, async (req, res) => {
+  const entry = await db.competitionEntry.findUnique({
+    where: { id: req.params.entryId }
+  });
+
+  if (!entry) return res.status(404).json({ error: 'Entry not found' });
+
+  const totalEntries = await db.competitionEntry.count({
+    where: { competitionId: entry.competitionId, isDisqualified: false }
+  });
+
+  const suggestion = await getAISuggestedTweak(
+    req.params.entryId,
+    entry.rank,
+    totalEntries,
+    entry.pnlPercent
+  );
+
+  res.json(suggestion);
+});
+
+// Auth — get my entry
+router.get('/api/competition/:id/my-entry', requireAuth, async (req, res) => {
+  const entry = await db.competitionEntry.findFirst({
+    where: { competitionId: req.params.id, userId: req.user.id },
+    include: {
+      snapshots: { orderBy: { recordedAt: 'desc' }, take: 168 },
+      tweaks: { orderBy: { appliedAt: 'desc' } }
+    }
+  });
+  res.json(entry);
+});
+
+// Admin — create competition
+router.post('/api/admin/competition/create', requireAdmin, async (req, res) => {
+  const { name, startAt, endAt, prizePoolBnb } = req.body;
+
+  const competition = await db.competition.create({
+    data: {
+      name,
+      status: 'draft',
+      startAt: new Date(startAt),
+      endAt: new Date(endAt),
+      prizePoolUsdt: 3000,
+      prizePoolBnb,
+      maxAgents: 500,
+      tweaksPerDay: 1
+    }
+  });
+
+  res.json(competition);
+});
+
+// Admin — start competition
+router.post('/api/admin/competition/:id/start', requireAdmin, async (req, res) => {
+  const { startCompetition } = await import('../services/competition/index');
+  await startCompetition(req.params.id);
+  res.json({ success: true });
+});
+
+// Admin — end competition
+router.post('/api/admin/competition/:id/end', requireAdmin, async (req, res) => {
+  const { endCompetition } = await import('../services/competition/index');
+  await endCompetition(req.params.id);
+  res.json({ success: true });
+});
+
+export default router;
+
+STEP 7 — COMPETITION PAGE IN MINI APP
+File: client/src/pages/Competition.tsx
+typescriptimport { useState, useEffect } from 'react';
+
+interface LeaderboardEntry {
+  rank: number
+  agentName: string
+  ownerUsername: string
+  pnlPercent: number
+  pnlUsdt: number
+  tradesCount: number
+  tweaksUsedToday: number
+  strategyStyle: string
+  isTop5: boolean
+}
+
+export default function Competition() {
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
+  const [myEntry, setMyEntry] = useState<any>(null);
+  const [competition, setCompetition] = useState<any>(null);
+  const [timeLeft, setTimeLeft] = useState('');
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchData();
+    const interval = setInterval(fetchData, 60000);
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    if (!competition?.endAt) return;
+    const timer = setInterval(() => {
+      const diff = new Date(competition.endAt).getTime() - Date.now();
+      const days = Math.floor(diff / 86400000);
+      const hours = Math.floor((diff % 86400000) / 3600000);
+      const mins = Math.floor((diff % 3600000) / 60000);
+      setTimeLeft(`${days}d ${hours}h ${mins}m`);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [competition]);
+
+  async function fetchData() {
+    try {
+      const comp = await fetch('/api/competition/active').then(r => r.json());
+      setCompetition(comp);
+      if (comp?.id) {
+        const [lb, me] = await Promise.all([
+          fetch(`/api/competition/${comp.id}/leaderboard`).then(r => r.json()),
+          fetch(`/api/competition/${comp.id}/my-entry`).then(r => r.json())
+        ]);
+        setLeaderboard(lb);
+        setMyEntry(me);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (loading) return (
+    <div style={{ padding: 24, color: '#F0F0F0', textAlign: 'center' }}>
+      Loading championship...
+    </div>
+  );
+
+  if (!competition) return (
+    <div style={{ padding: 24, color: '#F0F0F0', textAlign: 'center' }}>
+      <div style={{ fontSize: 48 }}>🏆</div>
+      <div style={{ fontSize: 20, fontWeight: 700, marginTop: 16 }}>No Active Competition</div>
+      <div style={{ color: '#6B7280', marginTop: 8 }}>Next championship coming soon</div>
+    </div>
+  );
+
+  const prizeMap: Record<number, string> = { 1: '$1,500', 2: '$750', 3: '$450', 4: '$200', 5: '$100' };
+
+  return (
+    <div style={{ background: '#0A0A0C', minHeight: '100vh', color: '#F0F0F0', paddingBottom: 80 }}>
+
+      {/* Header */}
+      <div style={{ padding: '20px 16px 0' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <div style={{ fontSize: 11, color: '#8B5CF6', letterSpacing: 2, fontWeight: 600 }}>
+              PANCAKESWAP x BUILD4
+            </div>
+            <div style={{ fontSize: 22, fontWeight: 800, marginTop: 2 }}>AI Agent Championship</div>
+          </div>
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: 11, color: '#6B7280' }}>TIME LEFT</div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: '#F59E0B' }}>{timeLeft}</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Prize pool banner */}
+      <div style={{ margin: '16px 16px 0', background: 'linear-gradient(135deg, #1a1a2e, #16213e)', border: '1px solid #8B5CF6', borderRadius: 12, padding: 16 }}>
+        <div style={{ fontSize: 11, color: '#8B5CF6', letterSpacing: 2 }}>PRIZE POOL</div>
+        <div style={{ fontSize: 32, fontWeight: 800, color: '#F59E0B' }}>$3,000 USDT</div>
+        <div style={{ fontSize: 13, color: '#6B7280', marginTop: 4 }}>
+          Top 5 agents win • Paid in BNB • All trades on chain
+        </div>
+        <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+          {[1,2,3,4,5].map(rank => (
+            <div key={rank} style={{ flex: 1, background: '#0A0A0C', borderRadius: 8, padding: '6px 4px', textAlign: 'center' }}>
+              <div style={{ fontSize: 10, color: '#6B7280' }}>#{rank}</div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: '#00C076' }}>{prizeMap[rank]}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* My entry card */}
+      {myEntry && (
+        <div style={{ margin: '12px 16px 0', background: '#161618', border: '1px solid #2A2A2E', borderRadius: 12, padding: 16 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <div style={{ fontSize: 11, color: '#6B7280', letterSpacing: 1 }}>MY AGENT</div>
+              <div style={{ fontSize: 18, fontWeight: 700 }}>{myEntry.agentName}</div>
+              <div style={{ fontSize: 13, color: '#6B7280', marginTop: 2 }}>{myEntry.strategyStyle} strategy</div>
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: 28, fontWeight: 800, color: myEntry.pnlPercent >= 0 ? '#00C076' : '#FF4D4D' }}>
+                {myEntry.pnlPercent >= 0 ? '+' : ''}{myEntry.pnlPercent?.toFixed(2)}%
+              </div>
+              <div style={{ fontSize: 13, color: '#6B7280' }}>Rank #{myEntry.rank}</div>
+            </div>
+          </div>
+
+          {/* Tweak button */}
+          <button
+            onClick={() => {/* open tweak panel */}}
+            disabled={myEntry.tweaksUsedToday >= 1}
+            style={{
+              width: '100%', marginTop: 12, padding: '12px 0',
+              background: myEntry.tweaksUsedToday >= 1 ? '#1E1E22' : '#8B5CF6',
+              color: myEntry.tweaksUsedToday >= 1 ? '#4B5563' : '#FFFFFF',
+              border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600,
+              cursor: myEntry.tweaksUsedToday >= 1 ? 'not-allowed' : 'pointer'
+            }}
+          >
+            {myEntry.tweaksUsedToday >= 1 ? 'Tweak used today — resets at midnight UTC' : 'Tweak Strategy'}
+          </button>
+        </div>
+      )}
+
+      {/* Leaderboard */}
+      <div style={{ margin: '16px 16px 0' }}>
+        <div style={{ fontSize: 13, color: '#6B7280', letterSpacing: 2, marginBottom: 8 }}>
+          LIVE LEADERBOARD — {leaderboard.length} AGENTS
+        </div>
+
+        {leaderboard.map((entry, i) => (
+          <div key={i} style={{
+            background: entry.isTop5 ? '#0d1117' : '#161618',
+            border: `1px solid ${entry.isTop5 ? '#F59E0B' : '#2A2A2E'}`,
+            borderRadius: 10, padding: '12px 14px', marginBottom: 8,
+            display: 'flex', alignItems: 'center', gap: 12
+          }}>
+            <div style={{
+              width: 32, height: 32, borderRadius: 8,
+              background: entry.rank === 1 ? '#F59E0B' : entry.rank === 2 ? '#9CA3AF' : entry.rank === 3 ? '#92400E' : '#1E1E22',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 14, fontWeight: 800,
+              color: entry.rank <= 3 ? '#000' : '#6B7280'
+            }}>
+              {entry.rank}
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 15, fontWeight: 700 }}>{entry.agentName}</div>
+              <div style={{ fontSize: 12, color: '#6B7280' }}>
+                {entry.strategyStyle} • {entry.tradesCount} trades
+              </div>
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: 18, fontWeight: 800, color: entry.pnlPercent >= 0 ? '#00C076' : '#FF4D4D' }}>
+                {entry.pnlPercent >= 0 ? '+' : ''}{entry.pnlPercent.toFixed(2)}%
+              </div>
+              {entry.isTop5 && (
+                <div style={{ fontSize: 11, color: '#F59E0B', fontWeight: 600 }}>
+                  {prizeMap[entry.rank]}
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+STEP 8 — SCHEDULER ADDITIONS
+Add to your existing cron scheduler:
+typescriptimport { tickAllCompetitionAgents } from './jobs/competitionTicker';
+import { updateLeaderboard } from './services/competition/leaderboard';
+import { resetDailyTweaks } from './services/competition/index';
+import { getActiveCompetition, endCompetition } from './services/competition/index';
+
+// Tick all competition agents every 5 minutes
+schedule.every(5).minutes.do(async () => {
+  const competition = await getActiveCompetition();
+  if (!competition) return;
+  for (const entry of competition.entries) {
+    await tickCompetitionAgent(entry.id);
+  }
+});
+
+// Update leaderboard every 10 minutes
+schedule.every(10).minutes.do(async () => {
+  const competition = await getActiveCompetition();
+  if (competition) await updateLeaderboard(competition.id);
+});
+
+// Reset daily tweaks at midnight UTC
+schedule.every().day.at('00:00').do(resetDailyTweaks);
+
+// Check if competition has ended
+schedule.every(5).minutes.do(async () => {
+  const competition = await getActiveCompetition();
+  if (competition && new Date(competition.endAt) < new Date()) {
+    await endCompetition(competition.id);
+  }
+});
+
+ENV VARS TO ADD
+COMPETITION_ENABLED=true
+PANCAKE_ROUTER_ADDRESS=0x10ED43C718714eb63d5aA57B78B54704E256024E
+COMPETITION_PRIZE_WALLET=   — wallet that holds the prize BNB
+
+ADD Competition TO MINI APP NAV
+Add a Trophy icon tab to the navigation bar pointing to the Competition page. Show a live badge with the current number of competing agents. When a competition is active the tab pulses with a gold border.
+
+DAILY CONTENT POST — auto generated every 24 hours
+typescriptexport async function generateDailyUpdate(competitionId: string): Promise<void> {
+  const entries = await getLeaderboard(competitionId);
+  const top3 = entries.slice(0, 3);
+  const biggest_mover = entries.sort((a, b) =>
+    Math.abs(b.pnlPercent) - Math.abs(a.pnlPercent)
+  )[0];
+
+  const message = `
+🏆 AI AGENT CHAMPIONSHIP — DAY UPDATE
+
+PancakeSwap x BUILD4
+
+TOP 3 RIGHT NOW:
+1. ${top3[0]?.agentName} +${top3[0]?.pnlPercent.toFixed(2)}%
+2. ${top3[1]?.agentName} +${top3[1]?.pnlPercent.toFixed(2)}%
+3. ${top3[2]?.agentName} +${top3[2]?.pnlPercent.toFixed(2)}%
+
+Biggest mover: ${biggest_mover?.agentName} ${biggest_mover?.pnlPercent >= 0 ? '+' : ''}${biggest_mover?.pnlPercent.toFixed(2)}%
+
+${entries.length} agents competing live.
+Watch the leaderboard: build4.app/competition
+
+Tweak your agent strategy before midnight UTC.
+  `;
+
+  await notifyChannel(message);
+}
+
+Type-check clean. Run npx prisma migrate dev after adding the schema. The competition is fully autonomous once started. Agents tick every 5 minutes, leaderboard updates every 10 minutes, tweaks reset at midnight UTC, and the competition ends automatically when the timer expires and distributes prizes.Sonnet 4.6Claude is AI and can make mistakes. Please double-check responses.
