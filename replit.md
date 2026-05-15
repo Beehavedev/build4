@@ -10,6 +10,7 @@ Ask before making major changes.
 Do not make changes to the `prisma` folder.
 Do not make changes to the `src/abHarness` folder.
 Do not make changes to the `scripts/runMarketCreator.ts` file.
+**Do NOT push `build4io-site/` or `web4/` changes to GitHub.** The website and web dApp live on Replit only — the user publishes them manually via Replit Publish. Only push to GitHub when the change touches bot files (`src/`, `prisma/`, root `package.json`, `render.yaml`) since GitHub→Render is the bot's deploy path. Pushing site changes upstream is wasted and confusing.
 
 ## System Architecture
 Build4 employs a broker model where a single master Aster DEX account executes trades on behalf of users. User balances are tracked internally. The system is built on Node.js with TypeScript, utilizing the grammY framework for Telegram bot interactions, Prisma ORM for PostgreSQL database management, and Express.js for the server. AI capabilities are powered by Anthropic's Claude AI. Wallet management uses ethers.js for BSC/EVM, with AES-256 encryption for private keys. The mini-app is developed with Vite and React 18.
