@@ -80,6 +80,10 @@ export function SEO({ title, description, path, type = "website", image }: SEOPr
     };
 
     setMeta("description", finalDescription);
+    // Lighthouse "Page is blocked from indexing" guards: assert index/follow
+    // on every route so an in-app navigation cannot inherit a stale noindex.
+    setMeta("robots", "index, follow, max-image-preview:large, max-snippet:-1");
+    setMeta("googlebot", "index, follow, max-image-preview:large, max-snippet:-1");
     setMeta("og:title", finalTitle, "property");
     setMeta("og:description", finalDescription, "property");
     setMeta("og:url", canonicalUrl, "property");

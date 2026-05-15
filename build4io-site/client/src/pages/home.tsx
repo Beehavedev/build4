@@ -388,7 +388,7 @@ export default function Home() {
                   </Link>
                 </Button>
                 <Button variant="outline" size="lg" asChild data-testid="button-docs">
-                  <a href="#features">
+                  <a href="#features" aria-label="Explore the BUILD4 platform features section">
                     {t("home.explore")}
                     <ChevronDown className="w-4 h-4 ml-1" />
                   </a>
@@ -795,7 +795,7 @@ export default function Home() {
                             <a href="https://www.asterdex.com" target="_blank" rel="noopener noreferrer" aria-label="Learn more about the BUILD4 trading competition on Aster DEX">
                               <Button variant="outline" size="lg" className="font-mono text-sm gap-2 w-full sm:w-auto backdrop-blur-sm" style={{ borderColor: "rgba(66, 207, 113, 0.25)", color: "#42CF71" }} data-testid="button-learn-competition">
                                 <BarChart3 className="w-4 h-4" />
-                                Learn More
+                                Learn more about Aster DEX
                               </Button>
                             </a>
                           </div>
@@ -1318,7 +1318,7 @@ export default function Home() {
                     </Link>
                   </Button>
                   <Button variant="outline" size="lg" asChild data-testid="button-docs-cta">
-                    <a href="#decentralized">
+                    <a href="#decentralized" aria-label="Learn more about BUILD4's decentralized AI inference">
                       {t("home.cta.learnMore")}
                       <ChevronDown className="w-4 h-4 ml-1" />
                     </a>
