@@ -57,6 +57,7 @@ import { LanguageSwitcher } from "@/components/language-switcher";
 import { WalletConnector } from "@/components/wallet-connector";
 import { useWallet } from "@/hooks/use-wallet";
 
+
 function OnboardingGuide({ defaultOpen = false }: { defaultOpen?: boolean }) {
   const [open, setOpen] = useState(defaultOpen);
   const [step, setStep] = useState(1);

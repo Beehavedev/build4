@@ -74,7 +74,13 @@ type AccountSummary = {
   totalEquity: number | null;
   pnl24h: number | null;
   pnl24hPct: number | null;
+  unrealizedPnl: number | null;
   agents: number | null;
+  agentName: string | null;
+  agentRunning: boolean;
+  agentTrades: number;
+  agentWins: number;
+  agentLosses: number;
   isLive: boolean;
 };
 
@@ -272,13 +278,14 @@ function DashboardPane({
         />
         <StatCard
           label="Unrealized"
-          value={loading ? "…" : "—"}
+          value={loading ? "…" : fmtUsd(summary.unrealizedPnl)}
           sub="open positions"
+          accent={pnlClass(summary.unrealizedPnl)}
         />
         <StatCard
           label="Active Agents"
           value={loading ? "…" : summary.agents == null ? "—" : String(summary.agents)}
-          sub={summary.agents == null ? "—" : "running"}
+          sub={summary.agents == null ? "—" : summary.agents > 0 ? "running" : "idle"}
         />
       </div>
 
@@ -306,9 +313,44 @@ function DashboardPane({
         </div>
         <div className="p-5 rounded-md border bg-card/60">
           <h3 className="font-mono text-sm tracking-widest uppercase text-muted-foreground mb-4">Active agents</h3>
-          <div className="font-mono text-xs text-muted-foreground py-12 text-center">
-            {ready ? "No agents yet. Spin one up from the venue panes." : "Connect wallet to see your agents."}
-          </div>
+          {!ready ? (
+            <div className="font-mono text-xs text-muted-foreground py-12 text-center">
+              Connect wallet to see your agents.
+            </div>
+          ) : !summary.agentName ? (
+            <div className="font-mono text-xs text-muted-foreground py-12 text-center">
+              No agent yet. Tap <span className="text-foreground">New Agent</span> to spin one up.
+            </div>
+          ) : (
+            <div className="space-y-3" data-testid="dashboard-active-agent">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className={`w-2 h-2 rounded-full ${summary.agentRunning ? "bg-primary animate-pulse" : "bg-muted-foreground/40"}`} />
+                  <span className="font-mono text-sm text-foreground truncate" data-testid="text-dashboard-agent-name">{summary.agentName}</span>
+                </div>
+                <Badge
+                  variant="outline"
+                  className={`text-[10px] tracking-widest uppercase ${summary.agentRunning ? "border-primary/40 text-primary" : "border-border text-muted-foreground"}`}
+                >
+                  {summary.agentRunning ? "Running" : "Idle"}
+                </Badge>
+              </div>
+              <div className="grid grid-cols-3 gap-2 text-center font-mono">
+                <div className="p-2 rounded bg-background/40">
+                  <div className="text-[10px] text-muted-foreground tracking-widest uppercase">Trades</div>
+                  <div className="text-sm text-foreground font-semibold">{summary.agentTrades}</div>
+                </div>
+                <div className="p-2 rounded bg-background/40">
+                  <div className="text-[10px] text-muted-foreground tracking-widest uppercase">Wins</div>
+                  <div className="text-sm text-primary font-semibold">{summary.agentWins}</div>
+                </div>
+                <div className="p-2 rounded bg-background/40">
+                  <div className="text-[10px] text-muted-foreground tracking-widest uppercase">Losses</div>
+                  <div className="text-sm text-destructive font-semibold">{summary.agentLosses}</div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
       <div className="mt-6 flex flex-wrap gap-3">
@@ -1741,6 +1783,7 @@ export default function TerminalPreview() {
   const session = useTerminalSession();
   const [asterAcct, setAsterAcct] = useState<any>(null);
   const [hlAcct, setHlAcct] = useState<any>(null);
+  const [agentInfo, setAgentInfo] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -1748,20 +1791,29 @@ export default function TerminalPreview() {
     if (!session.ready) {
       setAsterAcct(null);
       setHlAcct(null);
+      setAgentInfo(null);
       setErr(null);
       setLoading(false);
       return;
     }
     let cancelled = false;
+    let inFlight = false;
+    let seq = 0;
     const load = async () => {
+      // Drop overlapping ticks so a slow request can't clobber a fresh one.
+      if (inFlight) return;
+      inFlight = true;
+      const mySeq = ++seq;
       setLoading(true);
       setErr(null);
       const results = await Promise.allSettled([
         session.apiFetch<any>("/api/miniapp/account"),
         session.apiFetch<any>("/api/hl/account"),
+        session.apiFetch<any>("/api/miniapp/agent"),
       ]);
-      if (cancelled) return;
-      const [a, h] = results;
+      inFlight = false;
+      if (cancelled || mySeq !== seq) return;
+      const [a, h, ag] = results;
       const errs: string[] = [];
       if (a.status === "fulfilled") setAsterAcct(a.value);
       else {
@@ -1778,6 +1830,9 @@ export default function TerminalPreview() {
           errs.push(`HL: ${msg}`);
         }
       }
+      // Agent endpoint is also non-fatal — user may not have configured one yet.
+      if (ag.status === "fulfilled") setAgentInfo(ag.value);
+      else setAgentInfo(null);
       setErr(errs.length ? errs.join(" · ") : null);
       setLoading(false);
     };
@@ -1797,17 +1852,59 @@ export default function TerminalPreview() {
   })();
   const hlEquity = (() => {
     if (!hlAcct) return 0;
-    return Number(hlAcct.accountValue ?? hlAcct.equity ?? hlAcct.totalRawUsd ?? 0);
+    // Hyperliquid `getUserState` returns equity under marginSummary.accountValue.
+    // Fall back to crossMarginSummary / top-level fields just in case the SDK
+    // shape changes.
+    return (
+      Number(
+        hlAcct.marginSummary?.accountValue ??
+        hlAcct.crossMarginSummary?.accountValue ??
+        hlAcct.accountValue ??
+        hlAcct.equity ??
+        hlAcct.totalRawUsd ??
+        0,
+      ) || 0
+    );
   })();
   const totalEquity = session.ready ? asterEquity + hlEquity : null;
+  const asterUpnl = asterAcct ? Number(asterAcct.unrealizedPnl ?? 0) : 0;
+  // HL unrealized PnL = sum of per-position unrealizedPnl (positions live
+  // under assetPositions[].position.unrealizedPnl). The marginSummary fields
+  // are NOT unrealized PnL — using them would dramatically misreport.
+  const hlUpnl = (() => {
+    const ap = Array.isArray(hlAcct?.assetPositions) ? hlAcct.assetPositions : [];
+    let s = 0;
+    for (const item of ap) {
+      const v = Number(item?.position?.unrealizedPnl ?? 0);
+      if (Number.isFinite(v)) s += v;
+    }
+    return s;
+  })();
+  const unrealizedPnl = session.ready && (asterAcct || hlAcct) ? asterUpnl + hlUpnl : null;
   const pnl24h = asterAcct ? Number(asterAcct.realizedPnl ?? 0) + Number(asterAcct.unrealizedPnl ?? 0) : null;
   const pnl24hPct = totalEquity && totalEquity > 0 && pnl24h != null ? (pnl24h / totalEquity) * 100 : null;
+
+  const agentName = agentInfo?.config?.name ?? null;
+  const agentRunning = !!agentInfo?.running;
+  const agentTrades = Number(agentInfo?.stats?.tradeCount ?? 0) || 0;
+  const agentWins = Number(agentInfo?.stats?.winCount ?? 0) || 0;
+  const agentLosses = Number(agentInfo?.stats?.lossCount ?? 0) || 0;
+  // We surface "active" agents — i.e. running. If you have an idle agent
+  // configured, the right-side panel still shows it, but the headline counter
+  // only ticks up when the agent is actually firing decisions.
+  const agentsCount = session.ready && agentInfo ? (agentRunning ? 1 : 0) : null;
 
   const summary: AccountSummary = {
     totalEquity,
     pnl24h,
     pnl24hPct,
-    agents: null,
+    unrealizedPnl,
+    agents: agentsCount,
+    agentName,
+    agentRunning,
+    agentTrades,
+    agentWins,
+    agentLosses,
     isLive: session.ready && !err,
   };
 
