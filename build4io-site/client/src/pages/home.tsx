@@ -320,11 +320,7 @@ export default function Home() {
             <div className="hidden md:flex items-center gap-4">
               <a href="#lifecycle" className="text-xs text-muted-foreground font-mono tracking-wide transition-colors" data-testid="link-lifecycle">{t("nav.lifecycle")}</a>
               <Link href="/manifesto" className="text-xs text-muted-foreground font-mono tracking-wide transition-colors" data-testid="link-manifesto">{t("nav.manifesto")}</Link>
-              <Link href="/hire-agent" className="text-xs text-muted-foreground font-mono tracking-wide transition-colors" data-testid="link-hire-agent">Hire Agent</Link>
-              <Link href="/token" className="text-xs text-primary font-mono tracking-wide font-semibold transition-colors" data-testid="link-token">$B4</Link>
-              <Link href="/onchainos" className="text-xs text-violet-400 font-mono tracking-wide transition-colors hover:text-violet-300" data-testid="link-onchainos">OnchainOS</Link>
               <Link href="/build" className="text-xs text-emerald-400 font-mono tracking-wide transition-colors hover:text-emerald-300" data-testid="link-build">Build</Link>
-              <Link href="/futures" className="text-xs text-orange-400 font-mono tracking-wide transition-colors hover:text-orange-300 font-semibold" data-testid="link-futures">Futures</Link>
               <Link href="/agentic_bot" className="text-xs text-muted-foreground font-mono tracking-wide transition-colors hover:text-foreground" data-testid="link-pricing">Telegram Bot</Link>
               <LanguageSwitcher />
               <Button size="sm" asChild data-testid="button-connect">
@@ -351,11 +347,7 @@ export default function Home() {
             <div className="md:hidden border-t bg-background/95 backdrop-blur-xl px-4 py-3 space-y-1">
               <a href="#lifecycle" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-muted-foreground font-mono" data-testid="link-lifecycle-mobile">{t("nav.lifecycle")}</a>
               <Link href="/manifesto" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-muted-foreground font-mono" data-testid="link-manifesto-mobile">{t("nav.manifesto")}</Link>
-              <Link href="/hire-agent" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-muted-foreground font-mono" data-testid="link-hire-agent-mobile">Hire Agent</Link>
-              <Link href="/token" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-primary font-mono font-semibold" data-testid="link-token-mobile">$B4</Link>
-              <Link href="/onchainos" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-violet-400 font-mono" data-testid="link-onchainos-mobile">OnchainOS</Link>
               <Link href="/build" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-emerald-400 font-mono" data-testid="link-build-mobile">Build</Link>
-              <Link href="/futures" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-orange-400 font-mono font-semibold" data-testid="link-futures-mobile">Futures</Link>
               <Link href="/agentic_bot" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-muted-foreground font-mono" data-testid="link-pricing-mobile">Telegram Bot</Link>
             </div>
           )}
