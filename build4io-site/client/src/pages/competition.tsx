@@ -20,6 +20,7 @@ const PCS_GRADIENT_SOFT = "linear-gradient(135deg, rgba(31,199,212,0.18) 0%, rgb
 const B4_GREEN = "#42CF71";
 
 function PancakeLogo({ size = 28, className = "" }: { size?: number; className?: string }) {
+  // Stylized PancakeSwap bunny — pink-bodied, pancake stack with butter pat on head.
   return (
     <svg
       width={size}
@@ -31,39 +32,41 @@ function PancakeLogo({ size = 28, className = "" }: { size?: number; className?:
       role="img"
     >
       <defs>
-        <linearGradient id="pcsLogoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="#1FC7D4" />
-          <stop offset="55%" stopColor="#7645D9" />
-          <stop offset="100%" stopColor="#ED4B9E" />
+        <linearGradient id="pcsBunnyBody" x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stopColor="#F178B6" />
+          <stop offset="100%" stopColor="#D4378A" />
+        </linearGradient>
+        <linearGradient id="pcsBunnyInner" x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stopColor="#FFC2DE" />
+          <stop offset="100%" stopColor="#F289BB" />
         </linearGradient>
         <linearGradient id="pcsCakeGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-          <stop offset="0%" stopColor="#FFD37A" />
-          <stop offset="100%" stopColor="#FFB237" />
+          <stop offset="0%" stopColor="#E8B17A" />
+          <stop offset="100%" stopColor="#B26B3A" />
         </linearGradient>
       </defs>
-      {/* outer ring */}
-      <circle cx="32" cy="32" r="30" fill="url(#pcsLogoGrad)" />
-      {/* bunny ears */}
-      <ellipse cx="23" cy="14" rx="4" ry="9" fill="#280D5F" transform="rotate(-15 23 14)" />
-      <ellipse cx="41" cy="14" rx="4" ry="9" fill="#280D5F" transform="rotate(15 41 14)" />
-      <ellipse cx="23" cy="15" rx="2" ry="6" fill="#ED4B9E" transform="rotate(-15 23 15)" />
-      <ellipse cx="41" cy="15" rx="2" ry="6" fill="#ED4B9E" transform="rotate(15 41 15)" />
-      {/* head */}
-      <circle cx="32" cy="36" r="16" fill="#FFFAF0" />
-      {/* eyes */}
-      <circle cx="26" cy="34" r="2.2" fill="#280D5F" />
-      <circle cx="38" cy="34" r="2.2" fill="#280D5F" />
-      <circle cx="26.6" cy="33.4" r="0.7" fill="#ffffff" />
-      <circle cx="38.6" cy="33.4" r="0.7" fill="#ffffff" />
-      {/* cheeks */}
-      <circle cx="22" cy="40" r="2" fill="#ED4B9E" opacity="0.5" />
-      <circle cx="42" cy="40" r="2" fill="#ED4B9E" opacity="0.5" />
-      {/* nose */}
-      <ellipse cx="32" cy="39" rx="1.6" ry="1.2" fill="#ED4B9E" />
+      {/* ears (outer) */}
+      <ellipse cx="22" cy="17" rx="4.2" ry="10" fill="url(#pcsBunnyBody)" transform="rotate(-12 22 17)" />
+      <ellipse cx="42" cy="17" rx="4.2" ry="10" fill="url(#pcsBunnyBody)" transform="rotate(12 42 17)" />
+      {/* ears (inner) */}
+      <ellipse cx="22" cy="18" rx="2" ry="6.5" fill="url(#pcsBunnyInner)" transform="rotate(-12 22 18)" />
+      <ellipse cx="42" cy="18" rx="2" ry="6.5" fill="url(#pcsBunnyInner)" transform="rotate(12 42 18)" />
+      {/* head — solid pink, round and chunky */}
+      <ellipse cx="32" cy="38" rx="18" ry="16" fill="url(#pcsBunnyBody)" />
+      {/* cheek highlight */}
+      <ellipse cx="22" cy="42" rx="3.2" ry="2.4" fill="#FFC2DE" opacity="0.55" />
+      <ellipse cx="42" cy="42" rx="3.2" ry="2.4" fill="#FFC2DE" opacity="0.55" />
+      {/* eyes — happy closed crescents */}
+      <path d="M 24 35 Q 27 31 30 35" stroke="#2B0A3D" strokeWidth="2" strokeLinecap="round" fill="none" />
+      <path d="M 34 35 Q 37 31 40 35" stroke="#2B0A3D" strokeWidth="2" strokeLinecap="round" fill="none" />
+      {/* tiny smile */}
+      <path d="M 29 44 Q 32 47 35 44" stroke="#2B0A3D" strokeWidth="1.6" strokeLinecap="round" fill="none" />
       {/* pancake stack on head */}
-      <ellipse cx="32" cy="20" rx="11" ry="2.6" fill="url(#pcsCakeGrad)" stroke="#280D5F" strokeWidth="0.6" />
-      <ellipse cx="32" cy="17" rx="9" ry="2.4" fill="url(#pcsCakeGrad)" stroke="#280D5F" strokeWidth="0.6" />
-      <path d="M 26 19 Q 28 22 31 20" stroke="#7645D9" strokeWidth="0.8" fill="none" opacity="0.6" />
+      <ellipse cx="32" cy="20" rx="12" ry="3" fill="url(#pcsCakeGrad)" />
+      <ellipse cx="32" cy="16.5" rx="10" ry="2.6" fill="url(#pcsCakeGrad)" />
+      {/* butter pat on top */}
+      <rect x="28" y="12.5" width="8" height="3" rx="0.8" fill="#FFE27A" />
+      <rect x="28" y="12.5" width="8" height="1.2" rx="0.6" fill="#FFF1B0" />
     </svg>
   );
 }
@@ -216,9 +219,9 @@ export default function Competition() {
         description="The first AI agent trading championship on PancakeSwap. Deploy your BUILD4 agent, choose Auto, Co-pilot or Manual mode, and compete for $3,000 in BNB. 7 days. Real funds. Real glory."
         path="/competition"
       />
-      <div className="min-h-screen bg-[#0a0b0d] text-white" data-testid="page-competition">
+      <div className="min-h-screen bg-[#08060F] text-white" data-testid="page-competition">
         {/* Top nav */}
-        <nav className="sticky top-0 z-50 backdrop-blur-xl border-b border-zinc-900 bg-[#0a0b0d]/85">
+        <nav className="sticky top-0 z-50 backdrop-blur-xl border-b border-zinc-900/70 bg-[#08060F]/85">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between">
             <Link href="/" className="flex items-center gap-2.5 font-mono text-sm tracking-tight" data-testid="link-home">
               <span className="text-white font-semibold">BUILD4</span>
