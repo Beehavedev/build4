@@ -2,10 +2,7 @@ import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard,
-  Zap,
-  Hexagon,
   Rocket,
-  TrendingUp,
   Target,
   Activity,
   ArrowUpRight,
@@ -20,16 +17,29 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import asterLogo from "@assets/aster_logo.svg";
+import hyperliquidLogo from "@assets/hyperliquid-logo_1775737973029.png";
+import fourmemeLogo from "@assets/four_logo_1778389271440.jpg";
+import polymarketLogo from "@assets/polymarket_logo.png";
+import fortytwoLogo from "@assets/42space_logo.png";
 
 type Venue = "dashboard" | "aster" | "hyperliquid" | "fourmeme" | "polymarket" | "fortytwo";
 
-const VENUES: { id: Venue; label: string; icon: any; color: string }[] = [
+type VenueDef = {
+  id: Venue;
+  label: string;
+  color: string;
+  logo?: string;
+  icon?: any;
+};
+
+const VENUES: VenueDef[] = [
   { id: "dashboard", label: "Overview", icon: LayoutDashboard, color: "text-primary" },
-  { id: "aster", label: "Aster Perps", icon: Zap, color: "text-yellow-400" },
-  { id: "hyperliquid", label: "Hyperliquid", icon: Hexagon, color: "text-cyan-400" },
-  { id: "fourmeme", label: "fourmeme", icon: Rocket, color: "text-emerald-400" },
-  { id: "polymarket", label: "Polymarket", icon: TrendingUp, color: "text-blue-400" },
-  { id: "fortytwo", label: "42.space", icon: Target, color: "text-orange-400" },
+  { id: "aster", label: "Aster Perps", logo: asterLogo, color: "text-yellow-400" },
+  { id: "hyperliquid", label: "Hyperliquid", logo: hyperliquidLogo, color: "text-cyan-400" },
+  { id: "fourmeme", label: "fourmeme", logo: fourmemeLogo, color: "text-emerald-400" },
+  { id: "polymarket", label: "Polymarket", logo: polymarketLogo, color: "text-blue-400" },
+  { id: "fortytwo", label: "42.space", logo: fortytwoLogo, color: "text-orange-400" },
 ];
 
 const BRAIN_FEED = [
@@ -108,7 +118,18 @@ function IconRail({ active, setActive }: { active: Venue; setActive: (v: Venue) 
             }`}
             title={v.label}
           >
-            <Icon className={`w-4 h-4 ${isActive ? v.color : "text-muted-foreground group-hover:text-foreground"}`} />
+            {v.logo ? (
+              <img
+                src={v.logo}
+                alt={v.label}
+                className={`w-5 h-5 object-contain transition-all ${
+                  isActive ? "opacity-100" : "opacity-60 group-hover:opacity-100"
+                }`}
+                draggable={false}
+              />
+            ) : Icon ? (
+              <Icon className={`w-4 h-4 ${isActive ? v.color : "text-muted-foreground group-hover:text-foreground"}`} />
+            ) : null}
             {isActive && <div className="absolute left-0 top-2 bottom-2 w-0.5 rounded-r bg-primary" />}
             <span className="absolute left-full ml-2 px-2 py-1 rounded bg-popover border text-[10px] font-mono whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50">
               {v.label}
