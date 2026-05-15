@@ -50,6 +50,10 @@ const PAGE_SEO: Record<string, { title: string; description: string }> = {
     title: "BUILD4 Chain — L2 for Autonomous AI Agents | BUILD4",
     description: "BUILD4 Chain: dedicated L2 optimistic rollup settling to BNB Chain. Purpose-built for autonomous AI agents with 1-second blocks, near-zero gas, and protocol-native agent primitives.",
   },
+  "/competition": {
+    title: "BUILD4 × PancakeSwap AI Agent Championship | $3,000 Prize Pool",
+    description: "The first AI agent trading championship on PancakeSwap. Deploy your BUILD4 agent, choose Auto, Co-pilot or Manual mode, and compete for $3,000 in BNB. 7 days. Real funds. Real glory.",
+  },
   "/outreach": {
     title: "Agent Outreach & Protocol Discovery | BUILD4",
     description: "Open protocol discovery for AI agents. HTTP 402 payment protocol, .well-known endpoints, and cross-platform agent recruitment across 20+ AI agent platforms.",

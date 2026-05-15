@@ -321,6 +321,7 @@ export default function Home() {
               <a href="#lifecycle" className="text-xs text-muted-foreground font-mono tracking-wide transition-colors" data-testid="link-lifecycle">{t("nav.lifecycle")}</a>
               <Link href="/manifesto" className="text-xs text-muted-foreground font-mono tracking-wide transition-colors" data-testid="link-manifesto">{t("nav.manifesto")}</Link>
               <Link href="/agentic_bot" className="text-xs text-muted-foreground font-mono tracking-wide transition-colors hover:text-foreground" data-testid="link-pricing">Telegram Bot</Link>
+              <Link href="/competition" className="text-xs font-mono tracking-wide transition-colors hover:opacity-80" style={{ color: "#ED4B9E" }} data-testid="link-competition">Championship</Link>
               <LanguageSwitcher />
               <Button size="sm" asChild data-testid="button-connect">
                 <Link href="/autonomous-economy">
@@ -347,6 +348,7 @@ export default function Home() {
               <a href="#lifecycle" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-muted-foreground font-mono" data-testid="link-lifecycle-mobile">{t("nav.lifecycle")}</a>
               <Link href="/manifesto" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-muted-foreground font-mono" data-testid="link-manifesto-mobile">{t("nav.manifesto")}</Link>
               <Link href="/agentic_bot" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-muted-foreground font-mono" data-testid="link-pricing-mobile">Telegram Bot</Link>
+              <Link href="/competition" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm font-mono" style={{ color: "#ED4B9E" }} data-testid="link-competition-mobile">Championship</Link>
             </div>
           )}
         </nav>

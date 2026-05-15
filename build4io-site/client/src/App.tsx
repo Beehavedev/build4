@@ -33,6 +33,7 @@ import MiniApp from "@/pages/miniapp";
 import Futures from "@/pages/futures";
 import Hyperliquid from "@/pages/hyperliquid";
 import TerminalPreview from "@/pages/terminal-preview";
+import Competition from "@/pages/competition";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -69,6 +70,7 @@ function Router() {
       <Route path="/hyperliquid" component={Hyperliquid} />
       <Route path="/app">{() => { window.location.replace("/autonomous-economy"); return null; }}</Route>
       <Route path="/terminal-preview" component={TerminalPreview} />
+      <Route path="/competition" component={Competition} />
       <Route path="/sdk">{() => { window.location.href = "/"; return null; }}</Route>
       <Route component={NotFound} />
     </Switch>
