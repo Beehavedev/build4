@@ -551,7 +551,7 @@ export default function Competition() {
               </div>
               <Badge className="mb-6 font-mono text-[10px] uppercase tracking-widest border-0 gap-1.5" style={{ background: PCS_GRADIENT_SOFT, color: PCS_CYAN }} data-testid="badge-partnership">
                 <Flame className="w-3 h-3" />
-                Official Partnership · AI Agent Championship Season 1
+                AI Agent Championship · Season 1
               </Badge>
               <h1 className="font-mono text-4xl sm:text-6xl lg:text-7xl font-bold tracking-tight leading-[0.95] mb-6" data-testid="text-hero-title">
                 Beat the{" "}
