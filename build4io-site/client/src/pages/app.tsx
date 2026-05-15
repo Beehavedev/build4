@@ -776,7 +776,7 @@ export default function AppDashboard() {
                         other origins (e.g. preview links) the button stays
                         disabled — use Connect Wallet below with the same
                         wallet that's already linked to your
-                        @{tgConfig.botUsername} account.
+                        @BUILD4_BOT account.
                       </p>
                     )}
                 </div>
@@ -806,14 +806,10 @@ export default function AppDashboard() {
             <div className="border-t pt-4 text-xs text-muted-foreground text-center font-mono">
               No Build4 account yet?{" "}
               <a
-                href={
-                  tgConfig.botUsername
-                    ? `https://t.me/${tgConfig.botUsername}`
-                    : "https://t.me/BUILD4_BOT"
-                }
+                href="https://t.me/BUILD4_BOT"
                 target="_blank"
                 rel="noopener noreferrer"
-                aria-label={`Start a new Build4 account on the @${tgConfig.botUsername || "BUILD4_BOT"} Telegram bot`}
+                aria-label="Start a new Build4 account on the @BUILD4_BOT Telegram bot"
                 title="Open the Build4 Telegram bot"
                 className="underline inline-flex items-center gap-1"
                 data-testid="link-start-on-telegram"
@@ -872,14 +868,10 @@ export default function AppDashboard() {
             </div>
             <div className="flex gap-2 justify-center flex-wrap">
               <a
-                href={
-                  tgConfig.botUsername
-                    ? `https://t.me/${tgConfig.botUsername}`
-                    : "https://t.me/BUILD4_BOT"
-                }
+                href="https://t.me/BUILD4_BOT"
                 target="_blank"
                 rel="noopener noreferrer"
-                aria-label={`Open the Build4 Telegram bot (@${tgConfig.botUsername || "BUILD4_BOT"})`}
+                aria-label="Open the Build4 Telegram bot (@BUILD4_BOT)"
                 title="Open the Build4 Telegram bot"
                 data-testid="link-open-telegram-bot"
               >
@@ -1027,19 +1019,15 @@ export default function AppDashboard() {
               <p className="text-xs text-muted-foreground pt-2">
                 Use any feature today on Telegram:{" "}
                 <a
-                  href={
-                    tgConfig.botUsername
-                      ? `https://t.me/${tgConfig.botUsername}`
-                      : "https://t.me/BUILD4_BOT"
-                  }
+                  href="https://t.me/BUILD4_BOT"
                   target="_blank"
                   rel="noopener noreferrer"
-                  aria-label={`Open @${tgConfig.botUsername || "BUILD4_BOT"} on Telegram to use Build4 features`}
+                  aria-label="Open @BUILD4_BOT on Telegram to use Build4 features"
                   title="Open the Build4 Telegram bot"
                   className="underline inline-flex items-center gap-1"
                   data-testid="link-telegram-bot"
                 >
-                  @{tgConfig.botUsername || "BUILD4_BOT"} <ExternalLink className="w-3 h-3" />
+                  @BUILD4_BOT <ExternalLink className="w-3 h-3" />
                 </a>
               </p>
             </Card>
