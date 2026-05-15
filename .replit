@@ -118,13 +118,13 @@ outputType = "console"
 name = "Green site preview"
 author = "agent"
 
+[workflows.workflow.metadata]
+outputType = "webview"
+
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "cd build4io-site && (test -d node_modules || npm install --no-audit --no-fund) && PORT=5173 npm run dev"
-waitForPort = 5173
-
-[workflows.workflow.metadata]
-outputType = "console"
+args = "cd build4io-site && (test -d node_modules || npm install --no-audit --no-fund) && PORT=5000 npm run dev"
+waitForPort = 5000
 
 [userenv]
 
