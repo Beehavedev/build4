@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { Link } from "wouter";
+import pancakeLogoUrl from "@assets/pancakeswap-logo-transparent.png";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
@@ -20,54 +21,17 @@ const PCS_GRADIENT_SOFT = "linear-gradient(135deg, rgba(31,199,212,0.18) 0%, rgb
 const B4_GREEN = "#42CF71";
 
 function PancakeLogo({ size = 28, className = "" }: { size?: number; className?: string }) {
-  // Stylized PancakeSwap bunny — pink-bodied, pancake stack with butter pat on head.
   return (
-    <svg
+    <img
+      src={pancakeLogoUrl}
       width={size}
       height={size}
-      viewBox="0 0 64 64"
-      xmlns="http://www.w3.org/2000/svg"
-      className={className}
-      aria-label="PancakeSwap logo"
-      role="img"
-    >
-      <defs>
-        <linearGradient id="pcsBunnyBody" x1="0%" y1="0%" x2="0%" y2="100%">
-          <stop offset="0%" stopColor="#F178B6" />
-          <stop offset="100%" stopColor="#D4378A" />
-        </linearGradient>
-        <linearGradient id="pcsBunnyInner" x1="0%" y1="0%" x2="0%" y2="100%">
-          <stop offset="0%" stopColor="#FFC2DE" />
-          <stop offset="100%" stopColor="#F289BB" />
-        </linearGradient>
-        <linearGradient id="pcsCakeGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-          <stop offset="0%" stopColor="#E8B17A" />
-          <stop offset="100%" stopColor="#B26B3A" />
-        </linearGradient>
-      </defs>
-      {/* ears (outer) */}
-      <ellipse cx="22" cy="17" rx="4.2" ry="10" fill="url(#pcsBunnyBody)" transform="rotate(-12 22 17)" />
-      <ellipse cx="42" cy="17" rx="4.2" ry="10" fill="url(#pcsBunnyBody)" transform="rotate(12 42 17)" />
-      {/* ears (inner) */}
-      <ellipse cx="22" cy="18" rx="2" ry="6.5" fill="url(#pcsBunnyInner)" transform="rotate(-12 22 18)" />
-      <ellipse cx="42" cy="18" rx="2" ry="6.5" fill="url(#pcsBunnyInner)" transform="rotate(12 42 18)" />
-      {/* head — solid pink, round and chunky */}
-      <ellipse cx="32" cy="38" rx="18" ry="16" fill="url(#pcsBunnyBody)" />
-      {/* cheek highlight */}
-      <ellipse cx="22" cy="42" rx="3.2" ry="2.4" fill="#FFC2DE" opacity="0.55" />
-      <ellipse cx="42" cy="42" rx="3.2" ry="2.4" fill="#FFC2DE" opacity="0.55" />
-      {/* eyes — happy closed crescents */}
-      <path d="M 24 35 Q 27 31 30 35" stroke="#2B0A3D" strokeWidth="2" strokeLinecap="round" fill="none" />
-      <path d="M 34 35 Q 37 31 40 35" stroke="#2B0A3D" strokeWidth="2" strokeLinecap="round" fill="none" />
-      {/* tiny smile */}
-      <path d="M 29 44 Q 32 47 35 44" stroke="#2B0A3D" strokeWidth="1.6" strokeLinecap="round" fill="none" />
-      {/* pancake stack on head */}
-      <ellipse cx="32" cy="20" rx="12" ry="3" fill="url(#pcsCakeGrad)" />
-      <ellipse cx="32" cy="16.5" rx="10" ry="2.6" fill="url(#pcsCakeGrad)" />
-      {/* butter pat on top */}
-      <rect x="28" y="12.5" width="8" height="3" rx="0.8" fill="#FFE27A" />
-      <rect x="28" y="12.5" width="8" height="1.2" rx="0.6" fill="#FFF1B0" />
-    </svg>
+      alt="PancakeSwap"
+      className={`object-contain ${className}`}
+      style={{ width: size, height: size }}
+      draggable={false}
+      data-testid="img-pancake-logo"
+    />
   );
 }
 
