@@ -579,6 +579,10 @@ function useWalletInternal() {
     replicateOnChain,
     sendDirectTransfer,
     getExplorerUrl,
+    signMessage: async (message: string): Promise<string> => {
+      if (!state.signer) throw new Error("Wallet not connected");
+      return await state.signer.signMessage(message);
+    },
     hasContracts: !!contractAddresses.AgentEconomyHub,
     hasWalletConnect: !!wcProjectId,
     contractChains: CONTRACT_CHAINS,

@@ -23,6 +23,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { WalletConnector } from "@/components/wallet-connector";
+import { WalletPanel } from "@/components/wallet-panel";
+import { Wallet as WalletIcon } from "lucide-react";
 import { useTerminalSession } from "@/hooks/use-terminal-session";
 import asterLogo from "@assets/aster_logo.svg";
 import hyperliquidLogo from "@assets/hyperliquid-logo_1775737973029.png";
@@ -116,6 +118,17 @@ function StatusBar({ ready, summary }: { ready: boolean; summary: AccountSummary
         </div>
       </div>
       <div className="flex items-center gap-2">
+        {ready && (
+          <button
+            onClick={() => { (globalThis as any).__b4OpenWallet?.(); }}
+            className="px-2.5 py-1.5 rounded-md border border-border hover:border-primary/50 hover:bg-primary/5 text-xs font-mono tracking-widest uppercase inline-flex items-center gap-1.5 transition-colors"
+            title="Deposit / Withdraw / Backup key"
+            data-testid="button-open-wallet"
+          >
+            <WalletIcon className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Wallet</span>
+          </button>
+        )}
         <WalletConnector />
       </div>
     </div>
@@ -1716,6 +1729,8 @@ function Row({ k, v }: { k: string; v: string }) {
 }
 
 export default function TerminalPreview() {
+  const [walletPanelOpen, setWalletPanelOpen] = useState(false);
+  useEffect(() => { (globalThis as any).__b4OpenWallet = () => setWalletPanelOpen(true); return () => { delete (globalThis as any).__b4OpenWallet; }; }, []);
   const [venue, setVenue] = useState<Venue>("dashboard");
   const [drawer, setDrawer] = useState(false);
   const [wizardOpen, setWizardOpen] = useState(false);
@@ -1833,6 +1848,7 @@ export default function TerminalPreview() {
         </main>
         <BrainFeed session={session} refetchTick={refetchTick} />
       </div>
+      <WalletPanel open={walletPanelOpen} onClose={() => setWalletPanelOpen(false)} />
       <TradeDrawer
         open={drawer}
         onClose={() => setDrawer(false)}

@@ -24,6 +24,7 @@ import { registerMiniAppRoutes } from "./miniapp-routes";
 import { registerHyperliquidRoutes } from "./hyperliquid-routes";
 import { registerBotBridgeRoutes } from "./bot-bridge-routes";
 import { registerPancakeRoutes } from "./pancakeswap-routes";
+import { registerWalletRoutes } from "./wallet-routes";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -46,6 +47,7 @@ export async function registerRoutes(
   registerHyperliquidRoutes(app);
   registerBotBridgeRoutes(app);
   registerPancakeRoutes(app);
+  registerWalletRoutes(app);
 
   const walletExportLimiter = new Map<string, number[]>();
   function checkWalletExportRate(chatId: string): boolean {
