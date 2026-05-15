@@ -1,14 +1,17 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { Link } from "wouter";
 import pancakeLogoUrl from "@assets/pancakeswap-logo-transparent.png";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { SEO } from "@/components/seo";
+import { WalletConnector } from "@/components/wallet-connector";
+import { useTerminalSession } from "@/hooks/use-terminal-session";
 import {
   Trophy, Flame, Zap, Bot, Hand, Sparkles, Lock, ChevronRight, ExternalLink,
   TrendingUp, TrendingDown, Crown, Medal, Target, Brain, ShieldCheck,
   Twitter, MessageCircle, ArrowRight, Activity, Coins, Users, Clock,
+  Loader2, AlertCircle, CheckCircle2, ArrowDownUp,
 } from "lucide-react";
 
 const PCS_CYAN = "#1FC7D4";
@@ -162,6 +165,313 @@ function CountdownCell({ value, label }: { value: number; label: string }) {
       <span className="font-mono text-2xl sm:text-3xl font-bold tabular-nums" style={{ color: PCS_CYAN }}>{value.toString().padStart(2, "0")}</span>
       <span className="font-mono text-[10px] uppercase tracking-wider text-zinc-500 mt-1">{label}</span>
     </div>
+  );
+}
+
+type TokenInfo = { name: string; symbol: string; decimals: number; lastPriceWei: string };
+type WalletBal = { bnbBalance: string; tokenBalance: string; tokenDecimals: number; error: string | null };
+
+function PancakeTradePanel() {
+  const session = useTerminalSession();
+  const [tokenAddress, setTokenAddress] = useState("");
+  const [info, setInfo] = useState<TokenInfo | null>(null);
+  const [bal, setBal] = useState<WalletBal | null>(null);
+  const [loadingInfo, setLoadingInfo] = useState(false);
+  const [infoError, setInfoError] = useState<string | null>(null);
+  const [bnbIn, setBnbIn] = useState("");
+  const [tokensIn, setTokensIn] = useState("");
+  const [slippageBps, setSlippageBps] = useState(500);
+  const [busy, setBusy] = useState<"" | "buy" | "sell">("");
+  const [tradeError, setTradeError] = useState<string | null>(null);
+  const [lastTx, setLastTx] = useState<{ kind: "buy" | "sell"; hash: string; approvalHash?: string } | null>(null);
+
+  const validAddr = useMemo(() => /^0x[a-fA-F0-9]{40}$/.test(tokenAddress.trim()), [tokenAddress]);
+
+  const loadInfo = useCallback(async () => {
+    if (!validAddr) return;
+    setLoadingInfo(true);
+    setInfoError(null);
+    setInfo(null);
+    try {
+      const r = await fetch(`/api/pancake/token/${tokenAddress.trim()}`);
+      const j = await r.json();
+      if (!r.ok || !j.ok) throw new Error(j.error || `HTTP ${r.status}`);
+      setInfo(j.info);
+    } catch (e: any) {
+      setInfoError(e?.message || "Failed to load token");
+    } finally {
+      setLoadingInfo(false);
+    }
+  }, [tokenAddress, validAddr]);
+
+  const loadBalances = useCallback(async () => {
+    if (!validAddr || !session.ready) return;
+    try {
+      const j = await session.apiFetch<any>(`/api/pancake/wallet-balance/${tokenAddress.trim()}`);
+      if (j.ok) setBal({ bnbBalance: j.bnbBalance, tokenBalance: j.tokenBalance, tokenDecimals: j.tokenDecimals, error: j.error });
+    } catch (e: any) {
+      setBal({ bnbBalance: "0", tokenBalance: "0", tokenDecimals: 18, error: e?.message || "Balance load failed" });
+    }
+  }, [tokenAddress, validAddr, session.ready, session.apiFetch]);
+
+  useEffect(() => { if (info && session.ready) loadBalances(); }, [info, session.ready, loadBalances]);
+
+  const priceBnb = useMemo(() => {
+    if (!info) return 0;
+    try { return Number(BigInt(info.lastPriceWei)) / 1e18; } catch { return 0; }
+  }, [info]);
+
+  const onBuy = useCallback(async () => {
+    if (!info || !bnbIn || !session.ready) return;
+    setBusy("buy");
+    setTradeError(null);
+    setLastTx(null);
+    try {
+      const r = await session.apiFetch<any>("/api/pancake/buy", {
+        method: "POST",
+        body: JSON.stringify({ tokenAddress: tokenAddress.trim(), bnbAmount: bnbIn, slippageBps }),
+      });
+      if (!r.ok) throw new Error(r.error || "Buy failed");
+      setLastTx({ kind: "buy", hash: r.txHash });
+      setBnbIn("");
+      await loadBalances();
+    } catch (e: any) {
+      setTradeError(e?.message || "Buy failed");
+    } finally {
+      setBusy("");
+    }
+  }, [info, bnbIn, slippageBps, tokenAddress, session.ready, session.apiFetch, loadBalances]);
+
+  const onSell = useCallback(async () => {
+    if (!info || !tokensIn || !session.ready) return;
+    setBusy("sell");
+    setTradeError(null);
+    setLastTx(null);
+    try {
+      const r = await session.apiFetch<any>("/api/pancake/sell", {
+        method: "POST",
+        body: JSON.stringify({ tokenAddress: tokenAddress.trim(), tokenAmount: tokensIn, tokenDecimals: info.decimals, slippageBps }),
+      });
+      if (!r.ok) throw new Error(r.error || "Sell failed");
+      setLastTx({ kind: "sell", hash: r.txHash, approvalHash: r.approvalTxHash });
+      setTokensIn("");
+      await loadBalances();
+    } catch (e: any) {
+      setTradeError(e?.message || "Sell failed");
+    } finally {
+      setBusy("");
+    }
+  }, [info, tokensIn, slippageBps, tokenAddress, session.ready, session.apiFetch, loadBalances]);
+
+  return (
+    <Card className="p-5 sm:p-6 bg-zinc-950/60 border-zinc-800" data-testid="card-pancake-trade-panel">
+      <div className="flex items-center justify-between mb-4">
+        <div className="text-xs font-mono uppercase tracking-wider text-zinc-500">Step 1 · Connect</div>
+        {session.ready ? (
+          <Badge variant="outline" className="font-mono text-[10px] border-emerald-500/40 text-emerald-300 gap-1">
+            <CheckCircle2 className="w-3 h-3" /> Connected
+          </Badge>
+        ) : (
+          <Badge variant="outline" className="font-mono text-[10px] border-zinc-700 text-zinc-400">Not connected</Badge>
+        )}
+      </div>
+
+      {!session.wallet.connected ? (
+        <div className="mb-6">
+          <WalletConnector />
+          <p className="text-[11px] text-zinc-500 font-mono mt-2">First-time connect creates a BUILD4 custodial BSC wallet. Fund it with BNB to trade.</p>
+        </div>
+      ) : session.registerState === "registering" ? (
+        <div className="mb-6 flex items-center gap-2 text-sm text-zinc-400"><Loader2 className="w-4 h-4 animate-spin" /> Registering wallet…</div>
+      ) : session.registerState === "error" ? (
+        <div className="mb-6 p-3 rounded-lg border border-red-500/40 bg-red-500/10 text-xs text-red-300 font-mono flex items-start gap-2">
+          <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+          <div>Wallet registration failed: {session.registerError}. Refresh and try again.</div>
+        </div>
+      ) : (
+        <div className="mb-6 flex items-center justify-between p-3 rounded-lg bg-zinc-900/50 border border-zinc-800">
+          <div>
+            <div className="text-[10px] font-mono uppercase text-zinc-500">BUILD4 wallet</div>
+            <div className="font-mono text-xs text-zinc-200">{session.wallet.address?.slice(0, 10)}…{session.wallet.address?.slice(-8)}</div>
+          </div>
+          <Button size="sm" variant="outline" onClick={session.disconnect} className="font-mono text-[10px] border-zinc-700 text-zinc-400" data-testid="button-pancake-disconnect">Disconnect</Button>
+        </div>
+      )}
+
+      <div className="text-xs font-mono uppercase tracking-wider text-zinc-500 mb-2">Step 2 · Token</div>
+      <div className="flex gap-2 mb-3">
+        <input
+          type="text"
+          value={tokenAddress}
+          onChange={(e) => { setTokenAddress(e.target.value); setInfo(null); setBal(null); setInfoError(null); }}
+          placeholder="0x… BSC token address"
+          className="flex-1 px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-800 text-sm font-mono text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-600"
+          data-testid="input-pancake-token-address"
+        />
+        <Button
+          onClick={loadInfo}
+          disabled={!validAddr || loadingInfo}
+          className="font-mono text-xs border-0 text-white"
+          style={{ background: PCS_GRADIENT }}
+          data-testid="button-pancake-load-token"
+        >
+          {loadingInfo ? <Loader2 className="w-4 h-4 animate-spin" /> : "Load"}
+        </Button>
+      </div>
+      {infoError && (
+        <div className="mb-3 p-2 rounded border border-red-500/40 bg-red-500/10 text-xs text-red-300 font-mono flex items-start gap-2">
+          <AlertCircle className="w-3 h-3 flex-shrink-0 mt-0.5" />{infoError}
+        </div>
+      )}
+
+      {info && (
+        <>
+          <div className="mb-4 p-3 rounded-lg bg-zinc-900/50 border border-zinc-800 grid grid-cols-3 gap-3">
+            <div>
+              <div className="text-[10px] font-mono uppercase text-zinc-500">Token</div>
+              <div className="font-mono text-sm font-bold text-zinc-100" data-testid="text-pancake-token-name">{info.symbol}</div>
+              <div className="text-[10px] text-zinc-500 truncate">{info.name}</div>
+            </div>
+            <div>
+              <div className="text-[10px] font-mono uppercase text-zinc-500">Price</div>
+              <div className="font-mono text-sm text-zinc-100" data-testid="text-pancake-price">{priceBnb.toExponential(3)} BNB</div>
+            </div>
+            <div>
+              <div className="text-[10px] font-mono uppercase text-zinc-500">Decimals</div>
+              <div className="font-mono text-sm text-zinc-100">{info.decimals}</div>
+            </div>
+          </div>
+
+          {session.ready && bal && (
+            <div className="mb-4 grid grid-cols-2 gap-3 text-xs font-mono">
+              <div className="p-2 rounded bg-zinc-900/40 border border-zinc-800">
+                <div className="text-[10px] uppercase text-zinc-500">BNB balance</div>
+                <div className="text-zinc-100" data-testid="text-pancake-bnb-balance">{Number(bal.bnbBalance).toFixed(6)}</div>
+              </div>
+              <div className="p-2 rounded bg-zinc-900/40 border border-zinc-800">
+                <div className="text-[10px] uppercase text-zinc-500">{info.symbol} balance</div>
+                <div className="text-zinc-100" data-testid="text-pancake-token-balance">{Number(bal.tokenBalance).toFixed(4)}</div>
+              </div>
+            </div>
+          )}
+
+          <div className="text-xs font-mono uppercase tracking-wider text-zinc-500 mb-2">Step 3 · Trade</div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="p-3 rounded-lg border border-zinc-800 bg-zinc-900/30">
+              <div className="text-[10px] font-mono uppercase text-zinc-500 mb-1.5">Buy {info.symbol} with BNB</div>
+              <div className="flex gap-2 mb-2">
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  min="0"
+                  step="0.001"
+                  value={bnbIn}
+                  onChange={(e) => setBnbIn(e.target.value)}
+                  placeholder="0.0 BNB"
+                  className="flex-1 px-2 py-1.5 rounded bg-zinc-950 border border-zinc-800 text-sm font-mono text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-600"
+                  data-testid="input-pancake-bnb-in"
+                />
+                {bal && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const max = Math.max(0, Number(bal.bnbBalance) - 0.001);
+                      setBnbIn(max > 0 ? max.toFixed(6) : "0");
+                    }}
+                    className="text-[10px] font-mono px-2 rounded border border-zinc-800 text-zinc-400 hover:text-white hover:border-zinc-600"
+                    data-testid="button-pancake-bnb-max"
+                  >MAX</button>
+                )}
+              </div>
+              <Button
+                onClick={onBuy}
+                disabled={!session.ready || !bnbIn || Number(bnbIn) <= 0 || busy !== ""}
+                className="w-full font-mono text-xs border-0 text-white gap-2"
+                style={{ background: "linear-gradient(135deg, #1FC7D4 0%, #7645D9 100%)" }}
+                data-testid="button-pancake-buy"
+              >
+                {busy === "buy" ? <><Loader2 className="w-3 h-3 animate-spin" /> Sending…</> : <><TrendingUp className="w-3 h-3" /> Buy {info.symbol}</>}
+              </Button>
+            </div>
+
+            <div className="p-3 rounded-lg border border-zinc-800 bg-zinc-900/30">
+              <div className="text-[10px] font-mono uppercase text-zinc-500 mb-1.5">Sell {info.symbol} for BNB</div>
+              <div className="flex gap-2 mb-2">
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  min="0"
+                  step="0.0001"
+                  value={tokensIn}
+                  onChange={(e) => setTokensIn(e.target.value)}
+                  placeholder={`0.0 ${info.symbol}`}
+                  className="flex-1 px-2 py-1.5 rounded bg-zinc-950 border border-zinc-800 text-sm font-mono text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-600"
+                  data-testid="input-pancake-tokens-in"
+                />
+                {bal && (
+                  <button
+                    type="button"
+                    onClick={() => setTokensIn(bal.tokenBalance)}
+                    className="text-[10px] font-mono px-2 rounded border border-zinc-800 text-zinc-400 hover:text-white hover:border-zinc-600"
+                    data-testid="button-pancake-tokens-max"
+                  >MAX</button>
+                )}
+              </div>
+              <Button
+                onClick={onSell}
+                disabled={!session.ready || !tokensIn || Number(tokensIn) <= 0 || busy !== ""}
+                className="w-full font-mono text-xs border-0 text-white gap-2"
+                style={{ background: "linear-gradient(135deg, #7645D9 0%, #ED4B9E 100%)" }}
+                data-testid="button-pancake-sell"
+              >
+                {busy === "sell" ? <><Loader2 className="w-3 h-3 animate-spin" /> Sending…</> : <><TrendingDown className="w-3 h-3" /> Sell {info.symbol}</>}
+              </Button>
+            </div>
+          </div>
+
+          <div className="mt-3 flex items-center justify-between text-[11px] font-mono text-zinc-500">
+            <label className="flex items-center gap-2">
+              Slippage
+              <select
+                value={slippageBps}
+                onChange={(e) => setSlippageBps(Number(e.target.value))}
+                className="bg-zinc-900 border border-zinc-800 rounded px-1.5 py-0.5 text-zinc-200"
+                data-testid="select-pancake-slippage"
+              >
+                <option value={100}>1%</option>
+                <option value={300}>3%</option>
+                <option value={500}>5%</option>
+                <option value={1000}>10%</option>
+              </select>
+            </label>
+            <span>PancakeSwap V2 · BNB pair</span>
+          </div>
+
+          {tradeError && (
+            <div className="mt-3 p-2 rounded border border-red-500/40 bg-red-500/10 text-xs text-red-300 font-mono flex items-start gap-2">
+              <AlertCircle className="w-3 h-3 flex-shrink-0 mt-0.5" />{tradeError}
+            </div>
+          )}
+
+          {lastTx && (
+            <div className="mt-3 p-3 rounded-lg border border-emerald-500/40 bg-emerald-500/10 text-xs font-mono text-emerald-200" data-testid="text-pancake-last-tx">
+              <div className="flex items-center gap-2 mb-1">
+                <CheckCircle2 className="w-3 h-3" /> {lastTx.kind === "buy" ? "Buy" : "Sell"} broadcast
+              </div>
+              {lastTx.approvalHash && (
+                <a href={`https://bscscan.com/tx/${lastTx.approvalHash}`} target="_blank" rel="noopener noreferrer" className="block text-emerald-300 hover:underline truncate">
+                  Approval: {lastTx.approvalHash} <ExternalLink className="inline w-3 h-3" />
+                </a>
+              )}
+              <a href={`https://bscscan.com/tx/${lastTx.hash}`} target="_blank" rel="noopener noreferrer" className="block text-emerald-300 hover:underline truncate">
+                Tx: {lastTx.hash} <ExternalLink className="inline w-3 h-3" />
+              </a>
+            </div>
+          )}
+        </>
+      )}
+    </Card>
   );
 }
 
@@ -658,6 +968,21 @@ export default function Competition() {
                 </div>
               </div>
             </Card>
+          </div>
+        </section>
+
+        {/* Live PCS trade panel */}
+        <section className="border-b border-zinc-900">
+          <div className="max-w-3xl mx-auto px-4 sm:px-6 py-12">
+            <div className="flex items-center gap-3 mb-2">
+              <PancakeLogo size={24} />
+              <Badge variant="outline" className="font-mono text-[10px] border-pink-500/40 text-pink-300">LIVE · PANCAKESWAP V2</Badge>
+            </div>
+            <h2 className="font-mono text-2xl font-bold mb-2" data-testid="text-trade-title">Trade live, right here.</h2>
+            <p className="text-zinc-400 mb-6 text-sm leading-relaxed">
+              Connect your BUILD4 wallet and swap any BSC token through PancakeSwap V2. Same router the bot uses — same fees, same liquidity, your funds, your keys.
+            </p>
+            <PancakeTradePanel />
           </div>
         </section>
 

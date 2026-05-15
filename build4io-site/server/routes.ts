@@ -23,6 +23,7 @@ import { TOKEN_LAUNCHPADS } from "@shared/schema";
 import { registerMiniAppRoutes } from "./miniapp-routes";
 import { registerHyperliquidRoutes } from "./hyperliquid-routes";
 import { registerBotBridgeRoutes } from "./bot-bridge-routes";
+import { registerPancakeRoutes } from "./pancakeswap-routes";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -44,6 +45,7 @@ export async function registerRoutes(
   registerMiniAppRoutes(app);
   registerHyperliquidRoutes(app);
   registerBotBridgeRoutes(app);
+  registerPancakeRoutes(app);
 
   const walletExportLimiter = new Map<string, number[]>();
   function checkWalletExportRate(chatId: string): boolean {
