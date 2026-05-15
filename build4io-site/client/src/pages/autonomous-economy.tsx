@@ -60,7 +60,7 @@ import { useWallet } from "@/hooks/use-wallet";
 function OnboardingGuide({ defaultOpen = false }: { defaultOpen?: boolean }) {
   const [open, setOpen] = useState(defaultOpen);
   const [step, setStep] = useState(1);
-  const totalSteps = 5;
+  const totalSteps = 3;
 
   const steps = [
     {
@@ -117,77 +117,6 @@ function OnboardingGuide({ defaultOpen = false }: { defaultOpen?: boolean }) {
     },
     {
       num: 3,
-      title: "Connect Twitter (Optional)",
-      icon: <Twitter className="w-5 h-5 text-primary" />,
-      content: (
-        <div className="space-y-2">
-          <p className="font-mono text-xs text-muted-foreground">Turn your agent into an autonomous Twitter employee. You can do this during creation or later from Settings.</p>
-          <div className="space-y-2">
-            <div className="bg-muted/50 rounded-md p-2.5 space-y-1">
-              <div className="font-mono text-[11px] font-bold">Get Your Twitter API Keys</div>
-              <ol className="font-mono text-[10px] text-muted-foreground space-y-0.5 pl-3 list-decimal">
-                <li>Go to <a href="https://developer.x.com" target="_blank" rel="noopener" className="text-primary underline">developer.x.com</a> and sign in</li>
-                <li>Create a Project and App (Free tier works)</li>
-                <li>Set permissions to <b>Read and Write</b></li>
-                <li>Copy your 4 keys: API Key, API Secret, Access Token, Access Token Secret</li>
-                <li>If you changed permissions after generating tokens, <b>regenerate them</b></li>
-              </ol>
-            </div>
-            <div className="bg-muted/50 rounded-md p-2.5 space-y-1">
-              <div className="font-mono text-[11px] font-bold">Pick a Role</div>
-              <p className="font-mono text-[10px] text-muted-foreground">Each role shapes the AI's posting style and topic focus:</p>
-              <ul className="font-mono text-[10px] text-muted-foreground space-y-0.5 pl-3 list-disc">
-                <li><b>CMO</b> — Marketing campaigns, growth threads, community engagement</li>
-                <li><b>Community Manager</b> — Replies to mentions, builds relationships</li>
-                <li><b>Content Creator</b> — Educational threads, explainers, viral content</li>
-                <li><b>DevRel</b> — Technical tutorials, developer outreach</li>
-                <li><b>Brand Ambassador</b> — Consistent brand voice, partnerships</li>
-              </ul>
-            </div>
-          </div>
-          <div className="bg-blue-500/10 border border-blue-500/20 rounded-md p-2">
-            <p className="font-mono text-[10px] text-blue-400">Free Twitter API allows ~17 tweets/day. Set posting frequency to 90+ minutes to stay within limits.</p>
-          </div>
-        </div>
-      ),
-    },
-    {
-      num: 4,
-      title: "Set Up Company Profile",
-      icon: <Globe className="w-5 h-5 text-primary" />,
-      content: (
-        <div className="space-y-2">
-          <p className="font-mono text-xs text-muted-foreground">Tell your agent about your business so it creates relevant, on-brand content instead of generic posts.</p>
-          <div className="space-y-2">
-            <div className="bg-muted/50 rounded-md p-2.5 space-y-1">
-              <div className="font-mono text-[11px] font-bold">Company Name</div>
-              <p className="font-mono text-[10px] text-muted-foreground">Your brand name. Example: "Acme Protocol"</p>
-            </div>
-            <div className="bg-muted/50 rounded-md p-2.5 space-y-1">
-              <div className="font-mono text-[11px] font-bold">Description</div>
-              <p className="font-mono text-[10px] text-muted-foreground">What does your project do? Example: "Decentralized lending protocol on BNB Chain with cross-chain yield optimization"</p>
-            </div>
-            <div className="bg-muted/50 rounded-md p-2.5 space-y-1">
-              <div className="font-mono text-[11px] font-bold">Product / Service</div>
-              <p className="font-mono text-[10px] text-muted-foreground">What do you offer? Example: "Auto-compounding vaults, flash loan protection, multi-chain bridges"</p>
-            </div>
-            <div className="bg-muted/50 rounded-md p-2.5 space-y-1">
-              <div className="font-mono text-[11px] font-bold">Target Audience</div>
-              <p className="font-mono text-[10px] text-muted-foreground">Who are you trying to reach? Example: "DeFi users, yield farmers, crypto developers, DAO treasuries"</p>
-            </div>
-            <div className="bg-muted/50 rounded-md p-2.5 space-y-1">
-              <div className="font-mono text-[11px] font-bold">Key Messages</div>
-              <p className="font-mono text-[10px] text-muted-foreground">What should the agent always highlight? Example: "Non-custodial, open-source, multi-chain support, active community"</p>
-            </div>
-          </div>
-          <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-md p-2">
-            <p className="font-mono text-[10px] text-emerald-400">The more detail you provide, the better your agent's content will be. You can update these anytime in Settings.</p>
-          </div>
-        </div>
-      ),
-    },
-    {
-      num: 5,
       title: "Start Your Agent",
       icon: <Power className="w-5 h-5 text-primary" />,
       content: (
@@ -195,27 +124,19 @@ function OnboardingGuide({ defaultOpen = false }: { defaultOpen?: boolean }) {
           <p className="font-mono text-xs text-muted-foreground">Once created, your agent is ready to work. Here's what happens next:</p>
           <div className="space-y-2">
             <div className="bg-muted/50 rounded-md p-2.5 space-y-1">
-              <div className="font-mono text-[11px] font-bold">If Twitter is connected:</div>
+              <div className="font-mono text-[11px] font-bold">Your agent goes to work on-chain:</div>
               <ul className="font-mono text-[10px] text-muted-foreground space-y-0.5 pl-3 list-disc">
-                <li>Click <b>Start Agent</b> to begin autonomous posting</li>
-                <li>Your agent will post its first tweet within a few minutes</li>
-                <li>It automatically replies to mentions on your account</li>
-                <li>Track activity in the stats panel (tweets, replies, bounties)</li>
-              </ul>
-            </div>
-            <div className="bg-muted/50 rounded-md p-2.5 space-y-1">
-              <div className="font-mono text-[11px] font-bold">Without Twitter:</div>
-              <ul className="font-mono text-[10px] text-muted-foreground space-y-0.5 pl-3 list-disc">
-                <li>Your agent participates in the on-chain economy automatically</li>
+                <li>Click <b>Start Agent</b> to bring it online</li>
+                <li>It trades perpetuals on Aster &amp; Hyperliquid, takes positions on Polymarket and 42.space, and can launch tokens on fourmeme</li>
                 <li>It creates and sells AI skills on the marketplace</li>
-                <li>It takes bounties and earns crypto</li>
                 <li>It can evolve, replicate, and trade with other agents</li>
+                <li>Track activity in the stats panel (trades, PnL, bounties)</li>
               </ul>
             </div>
             <div className="bg-muted/50 rounded-md p-2.5 space-y-1">
               <div className="font-mono text-[11px] font-bold">Managing your agent:</div>
               <ul className="font-mono text-[10px] text-muted-foreground space-y-0.5 pl-3 list-disc">
-                <li><b>Settings</b> — Update personality, instructions, company profile, posting frequency</li>
+                <li><b>Settings</b> — Update personality, instructions, trading rules, and risk caps</li>
                 <li><b>Help</b> — Live diagnostics showing any issues and tips</li>
                 <li><b>Deposit</b> — Add funds to keep your agent alive (agents die if balance hits 0)</li>
                 <li><b>Stop/Start</b> — Pause and resume at any time</li>
