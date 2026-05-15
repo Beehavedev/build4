@@ -14,6 +14,11 @@ import {
   ChevronRight,
   Wifi,
   Lock,
+  RefreshCw,
+  Sparkles,
+  Settings2,
+  CheckCircle2,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -44,30 +49,24 @@ const VENUES: VenueDef[] = [
   { id: "fortytwo", label: "42.space", logo: fortytwoLogo, color: "text-orange-400" },
 ];
 
-const BRAIN_FEED = [
-  { ago: "2s", agent: "node_001", venue: "Aster", action: "OPEN LONG", asset: "BTC", size: "$420", conf: 87, color: "text-yellow-400" },
-  { ago: "14s", agent: "node_007", venue: "Polymarket", action: "BUY YES", asset: "Trump 2028", size: "$120", conf: 73, color: "text-blue-400" },
-  { ago: "31s", agent: "node_003", venue: "HL", action: "CLOSE", asset: "ETH", size: "+$18.40", conf: 91, color: "text-cyan-400" },
-  { ago: "47s", agent: "node_012", venue: "42.space", action: "ENTRY", asset: "BTC 8h $63k-65k", size: "$50", conf: 82, color: "text-orange-400" },
-  { ago: "1m", agent: "node_005", venue: "fourmeme", action: "LAUNCH", asset: "$PEPE2", size: "0.05 BNB", conf: 64, color: "text-emerald-400" },
-  { ago: "1m", agent: "node_001", venue: "Aster", action: "HOLD", asset: "SOL", size: "—", conf: 55, color: "text-muted-foreground" },
-  { ago: "2m", agent: "node_009", venue: "HL", action: "OPEN SHORT", asset: "DOGE", size: "$210", conf: 78, color: "text-cyan-400" },
-  { ago: "2m", agent: "node_002", venue: "Polymarket", action: "REDEEM", asset: "Fed Rate Mar", size: "+$84.20", conf: 100, color: "text-blue-400" },
-  { ago: "3m", agent: "node_007", venue: "Aster", action: "TP HIT", asset: "BTC", size: "+$42.10", conf: 88, color: "text-yellow-400" },
-  { ago: "4m", agent: "node_011", venue: "42.space", action: "REASSESS", asset: "BTC 8h", size: "DOUBLE", conf: 85, color: "text-orange-400" },
-];
+// All mock data removed — panes consume live wallet-scoped data.
 
-const ASTER_POSITIONS = [
-  { sym: "BTCUSDT", side: "LONG", size: "0.012", entry: "63,420", mark: "63,890", pnl: 5.64, pnlPct: 0.74, agent: "node_001" },
-  { sym: "SOLUSDT", side: "LONG", size: "1.84", entry: "143.20", mark: "146.10", pnl: 5.34, pnlPct: 2.03, agent: "node_001" },
-  { sym: "DOGEUSDT", side: "SHORT", size: "1240", entry: "0.1342", mark: "0.1318", pnl: 2.98, pnlPct: 1.79, agent: "node_009" },
-];
+const num = (v: any, d = 0): number => {
+  const n = typeof v === "string" ? parseFloat(v) : Number(v);
+  return Number.isFinite(n) ? n : d;
+};
+const fmtUsd = (n: number, decimals = 2) =>
+  `${n < 0 ? "-" : ""}$${Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}`;
+const timeAgo = (ms: number) => {
+  if (!ms) return "—";
+  const s = Math.max(0, Math.floor((Date.now() - ms) / 1000));
+  if (s < 60) return `${s}s`;
+  if (s < 3600) return `${Math.floor(s / 60)}m`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h`;
+  return `${Math.floor(s / 86400)}d`;
+};
 
-const POLY_POSITIONS = [
-  { market: "Will Bitcoin reach $80k by July?", side: "YES", shares: "142", avg: "0.62", mark: "0.71", pnl: 12.78, pnlPct: 14.5, status: "OPEN" },
-  { market: "Fed cuts rates in March", side: "NO", shares: "85", avg: "0.34", mark: "0.41", pnl: 5.95, pnlPct: 20.6, status: "OPEN" },
-  { market: "ETH ETF approved Q2", side: "YES", shares: "210", avg: "0.55", mark: "1.00", pnl: 94.50, pnlPct: 81.8, status: "RESOLVED — REDEEM" },
-];
+// (legacy mock arrays removed)
 
 type AccountSummary = {
   totalEquity: number | null;
@@ -205,6 +204,7 @@ type VenueBalance = { v: string; val: number; pct: number; color: string };
 
 function DashboardPane({
   onTrade,
+  onNewAgent,
   ready,
   loading,
   err,
@@ -212,6 +212,7 @@ function DashboardPane({
   venues,
 }: {
   onTrade: () => void;
+  onNewAgent: () => void;
   ready: boolean;
   loading: boolean;
   err: string | null;
@@ -297,7 +298,7 @@ function DashboardPane({
           </div>
         </div>
       </div>
-      <div className="mt-6">
+      <div className="mt-6 flex flex-wrap gap-3">
         <Button
           onClick={onTrade}
           disabled={!ready}
@@ -306,201 +307,823 @@ function DashboardPane({
         >
           New Trade Ticket <ChevronRight className="w-3.5 h-3.5 ml-1" />
         </Button>
+        <Button
+          onClick={onNewAgent}
+          disabled={!ready}
+          variant="outline"
+          className="font-mono tracking-widest text-xs uppercase"
+          data-testid="button-new-agent"
+        >
+          <Sparkles className="w-3.5 h-3.5 mr-1" /> New Agent
+        </Button>
       </div>
     </div>
   );
 }
 
-function PerpPane({ name, sub, accent, positions, onTrade }: any) {
+function EmptyPositions({ onTrade, label }: { onTrade: () => void; label: string }) {
+  return (
+    <div className="px-4 py-8 text-center">
+      <div className="font-mono text-xs text-muted-foreground mb-3">{label}</div>
+      <Button size="sm" onClick={onTrade} className="font-mono text-[10px] tracking-widest uppercase h-7" data-testid="button-empty-trade">
+        <Plus className="w-3 h-3 mr-1" /> Open First Trade
+      </Button>
+    </div>
+  );
+}
+
+function AsterPane({ session, asterAcct, onTrade, onRefetch }: { session: any; asterAcct: any; onTrade: () => void; onRefetch: () => void }) {
+  const [orders, setOrders] = useState<any[]>([]);
+  const [hist, setHist] = useState<any>(null);
+  const [closing, setClosing] = useState<string | null>(null);
+  const [cancelling, setCancelling] = useState<number | null>(null);
+  const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+
+  const load = async () => {
+    if (!session.ready) return;
+    try {
+      const [o, h] = await Promise.allSettled([
+        session.apiFetch<any>("/api/miniapp/orders"),
+        session.apiFetch<any>("/api/miniapp/history"),
+      ]);
+      if (o.status === "fulfilled") setOrders(Array.isArray(o.value?.openOrders) ? o.value.openOrders : []);
+      if (h.status === "fulfilled") setHist(h.value);
+    } catch {}
+  };
+  useEffect(() => {
+    load();
+    const id = setInterval(load, 12000);
+    return () => clearInterval(id);
+  }, [session.ready]);
+
+  const positions = useMemo(() => {
+    const raw = Array.isArray(asterAcct?.positions) ? asterAcct.positions : [];
+    return raw
+      .map((p: any) => {
+        const amt = num(p.positionAmt);
+        if (Math.abs(amt) < 1e-9) return null;
+        const entry = num(p.entryPrice);
+        const mark = num(p.markPrice ?? p.markPx ?? entry);
+        const upnl = num(p.unrealizedProfit ?? p.unrealizedPnl);
+        const side = amt > 0 ? "LONG" : "SHORT";
+        const pnlPct = entry > 0 && amt !== 0 ? ((mark - entry) / entry) * (amt > 0 ? 100 : -100) : 0;
+        return { sym: p.symbol, side, size: Math.abs(amt), entry, mark, pnl: upnl, pnlPct, leverage: num(p.leverage, 1) };
+      })
+      .filter(Boolean);
+  }, [asterAcct]);
+
+  const walletBalance = num(asterAcct?.walletBalance);
+  const unrealizedPnl = num(asterAcct?.unrealizedPnl);
+  const realizedPnl = num(asterAcct?.realizedPnl);
+  const day1 = hist?.pnlSummary?.day1;
+
+  const closePos = async (symbol: string) => {
+    setClosing(symbol);
+    setMsg(null);
+    try {
+      const r = await session.apiFetch<any>("/api/miniapp/close", { method: "POST", body: JSON.stringify({ symbol }) });
+      setMsg({ kind: "ok", text: `Closed ${symbol}${r?.executedQty ? ` @ ${r.executedQty}` : ""}` });
+      onRefetch();
+      load();
+    } catch (e: any) {
+      setMsg({ kind: "err", text: e?.message || "Close failed" });
+    } finally {
+      setClosing(null);
+    }
+  };
+  const cancelOrder = async (orderId: number, symbol: string) => {
+    setCancelling(orderId);
+    setMsg(null);
+    try {
+      await session.apiFetch("/api/miniapp/cancel-order", { method: "POST", body: JSON.stringify({ orderId, symbol }) });
+      setMsg({ kind: "ok", text: `Cancelled order ${orderId}` });
+      load();
+    } catch (e: any) {
+      setMsg({ kind: "err", text: e?.message || "Cancel failed" });
+    } finally {
+      setCancelling(null);
+    }
+  };
+
+  if (!session.ready) {
+    return (
+      <div>
+        <VenueHeader title="Aster Perps" sub="Custodial perpetual futures on Aster DEX. AI-routed, single-master account." accent="border-yellow-400/40 text-yellow-400" />
+        <div className="rounded-md border bg-card/60 p-12 text-center font-mono text-sm text-muted-foreground">
+          Connect wallet to see your Aster positions.
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div>
-      <VenueHeader title={name} sub={sub} accent={accent} />
+      <VenueHeader title="Aster Perps" sub="Custodial perpetual futures on Aster DEX. AI-routed, single-master account." accent="border-yellow-400/40 text-yellow-400" />
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-        <StatCard label="Margin Balance" value="$4,820.18" sub="USDT" />
-        <StatCard label="Unrealized PnL" value="+$13.96" sub="+0.29%" accent="text-primary" />
-        <StatCard label="Open Positions" value="3" />
-        <StatCard label="Today" value="+$58.10" sub="7 trades · 5W/2L" accent="text-primary" />
+        <StatCard label="Margin Balance" value={fmtUsd(walletBalance)} sub="USDT" />
+        <StatCard label="Unrealized PnL" value={`${unrealizedPnl >= 0 ? "+" : ""}${fmtUsd(unrealizedPnl)}`} accent={unrealizedPnl >= 0 ? "text-primary" : "text-destructive"} />
+        <StatCard label="Open Positions" value={String(positions.length)} />
+        <StatCard label="Today" value={day1 ? `${day1.pnl >= 0 ? "+" : ""}${fmtUsd(num(day1.pnl))}` : "—"} sub={day1 ? `${day1.total ?? 0} trades · ${day1.wins ?? 0}W/${day1.losses ?? 0}L` : undefined} accent={day1 && num(day1.pnl) >= 0 ? "text-primary" : "text-destructive"} />
       </div>
-      <div className="rounded-md border bg-card/60 overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-3 border-b">
-          <h3 className="font-mono text-sm tracking-widest uppercase text-muted-foreground">Positions</h3>
-          <Button size="sm" onClick={onTrade} className="font-mono text-[10px] tracking-widest uppercase h-7" data-testid="button-new-trade">
-            <Plus className="w-3 h-3 mr-1" /> New Trade
-          </Button>
+      {msg && (
+        <div className={`mb-3 px-3 py-2 rounded font-mono text-[11px] ${msg.kind === "ok" ? "bg-primary/10 text-primary border border-primary/30" : "bg-destructive/10 text-destructive border border-destructive/30"}`}>
+          {msg.text}
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full font-mono text-xs">
-            <thead className="text-muted-foreground tracking-widest uppercase text-[10px] border-b">
-              <tr>
-                <th className="text-left px-4 py-2">Symbol</th>
-                <th className="text-left px-4 py-2">Side</th>
-                <th className="text-right px-4 py-2">Size</th>
-                <th className="text-right px-4 py-2">Entry</th>
-                <th className="text-right px-4 py-2">Mark</th>
-                <th className="text-right px-4 py-2">PnL</th>
-                <th className="text-left px-4 py-2">Agent</th>
-                <th className="text-right px-4 py-2"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {positions.map((p: any) => (
-                <tr key={p.sym} className="border-b last:border-0 hover:bg-background/40 transition-colors">
-                  <td className="px-4 py-3 text-foreground font-semibold">{p.sym}</td>
-                  <td className="px-4 py-3"><span className={p.side === "LONG" ? "text-primary" : "text-destructive"}>{p.side}</span></td>
-                  <td className="px-4 py-3 text-right text-muted-foreground">{p.size}</td>
-                  <td className="px-4 py-3 text-right text-muted-foreground">{p.entry}</td>
-                  <td className="px-4 py-3 text-right text-foreground">{p.mark}</td>
-                  <td className={`px-4 py-3 text-right font-semibold ${p.pnl >= 0 ? "text-primary" : "text-destructive"}`}>
-                    {p.pnl >= 0 ? "+" : ""}${p.pnl.toFixed(2)} · {p.pnlPct >= 0 ? "+" : ""}{p.pnlPct.toFixed(2)}%
-                  </td>
-                  <td className="px-4 py-3 text-muted-foreground">{p.agent}</td>
-                  <td className="px-4 py-3 text-right">
-                    <button className="text-[10px] tracking-widest uppercase text-muted-foreground hover:text-destructive transition-colors">close</button>
-                  </td>
+      )}
+      <div className="rounded-md border bg-card/60 overflow-hidden mb-6">
+        <div className="flex items-center justify-between px-4 py-3 border-b">
+          <h3 className="font-mono text-sm tracking-widest uppercase text-muted-foreground">Positions · {positions.length}</h3>
+          <div className="flex items-center gap-2">
+            <button onClick={() => { load(); onRefetch(); }} className="text-muted-foreground hover:text-foreground" data-testid="button-aster-refresh"><RefreshCw className="w-3.5 h-3.5" /></button>
+            <Button size="sm" onClick={onTrade} className="font-mono text-[10px] tracking-widest uppercase h-7" data-testid="button-new-trade-aster">
+              <Plus className="w-3 h-3 mr-1" /> New Trade
+            </Button>
+          </div>
+        </div>
+        {positions.length === 0 ? (
+          <EmptyPositions onTrade={onTrade} label="No open Aster positions." />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full font-mono text-xs">
+              <thead className="text-muted-foreground tracking-widest uppercase text-[10px] border-b">
+                <tr>
+                  <th className="text-left px-4 py-2">Symbol</th>
+                  <th className="text-left px-4 py-2">Side</th>
+                  <th className="text-right px-4 py-2">Size</th>
+                  <th className="text-right px-4 py-2">Entry</th>
+                  <th className="text-right px-4 py-2">Mark</th>
+                  <th className="text-right px-4 py-2">PnL</th>
+                  <th className="text-right px-4 py-2">Lev</th>
+                  <th className="text-right px-4 py-2"></th>
                 </tr>
+              </thead>
+              <tbody>
+                {positions.map((p: any) => (
+                  <tr key={p.sym} className="border-b last:border-0 hover:bg-background/40 transition-colors" data-testid={`row-aster-${p.sym}`}>
+                    <td className="px-4 py-3 text-foreground font-semibold">{p.sym}</td>
+                    <td className="px-4 py-3"><span className={p.side === "LONG" ? "text-primary" : "text-destructive"}>{p.side}</span></td>
+                    <td className="px-4 py-3 text-right text-muted-foreground">{p.size.toLocaleString(undefined, { maximumFractionDigits: 6 })}</td>
+                    <td className="px-4 py-3 text-right text-muted-foreground">{p.entry.toLocaleString(undefined, { maximumFractionDigits: 6 })}</td>
+                    <td className="px-4 py-3 text-right text-foreground">{p.mark.toLocaleString(undefined, { maximumFractionDigits: 6 })}</td>
+                    <td className={`px-4 py-3 text-right font-semibold ${p.pnl >= 0 ? "text-primary" : "text-destructive"}`}>
+                      {p.pnl >= 0 ? "+" : ""}${p.pnl.toFixed(2)} · {p.pnlPct >= 0 ? "+" : ""}{p.pnlPct.toFixed(2)}%
+                    </td>
+                    <td className="px-4 py-3 text-right text-muted-foreground">{p.leverage}x</td>
+                    <td className="px-4 py-3 text-right">
+                      <button
+                        onClick={() => closePos(p.sym)}
+                        disabled={closing === p.sym}
+                        className="text-[10px] tracking-widest uppercase text-muted-foreground hover:text-destructive disabled:opacity-50 transition-colors"
+                        data-testid={`button-close-${p.sym}`}
+                      >
+                        {closing === p.sym ? "closing…" : "close"}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+      <div className="rounded-md border bg-card/60 overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-3 border-b">
+          <h3 className="font-mono text-sm tracking-widest uppercase text-muted-foreground">Open Orders · {orders.length}</h3>
+          <div className="font-mono text-[10px] tracking-widest uppercase text-muted-foreground">Realized 30d {realizedPnl >= 0 ? "+" : ""}{fmtUsd(realizedPnl)}</div>
+        </div>
+        {orders.length === 0 ? (
+          <div className="px-4 py-6 text-center font-mono text-[11px] text-muted-foreground">No open orders.</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full font-mono text-xs">
+              <thead className="text-muted-foreground tracking-widest uppercase text-[10px] border-b">
+                <tr>
+                  <th className="text-left px-4 py-2">Symbol</th>
+                  <th className="text-left px-4 py-2">Side</th>
+                  <th className="text-left px-4 py-2">Type</th>
+                  <th className="text-right px-4 py-2">Price</th>
+                  <th className="text-right px-4 py-2">Qty</th>
+                  <th className="text-right px-4 py-2">Filled</th>
+                  <th className="text-left px-4 py-2">Status</th>
+                  <th className="text-right px-4 py-2"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {orders.map((o) => (
+                  <tr key={o.orderId} className="border-b last:border-0 hover:bg-background/40">
+                    <td className="px-4 py-3 text-foreground font-semibold">{o.symbol}</td>
+                    <td className="px-4 py-3"><span className={o.side === "BUY" ? "text-primary" : "text-destructive"}>{o.side}</span></td>
+                    <td className="px-4 py-3 text-muted-foreground">{o.type}</td>
+                    <td className="px-4 py-3 text-right text-muted-foreground">{num(o.price).toLocaleString(undefined, { maximumFractionDigits: 6 })}</td>
+                    <td className="px-4 py-3 text-right text-muted-foreground">{num(o.origQty)}</td>
+                    <td className="px-4 py-3 text-right text-muted-foreground">{num(o.executedQty)}</td>
+                    <td className="px-4 py-3 text-muted-foreground">{o.status}</td>
+                    <td className="px-4 py-3 text-right">
+                      <button
+                        onClick={() => cancelOrder(o.orderId, o.symbol)}
+                        disabled={cancelling === o.orderId}
+                        className="text-[10px] tracking-widest uppercase text-muted-foreground hover:text-destructive disabled:opacity-50"
+                        data-testid={`button-cancel-${o.orderId}`}
+                      >
+                        {cancelling === o.orderId ? "…" : "cancel"}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function HlPane({ session, hlAcct, onTrade, onRefetch }: { session: any; hlAcct: any; onTrade: () => void; onRefetch: () => void }) {
+  const [positions, setPositions] = useState<any[]>([]);
+  const [orders, setOrders] = useState<any[]>([]);
+  const [fills, setFills] = useState<any[]>([]);
+  const [closing, setClosing] = useState<string | null>(null);
+  const [cancelling, setCancelling] = useState<number | null>(null);
+  const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+
+  const load = async () => {
+    if (!session.ready) return;
+    try {
+      const [p, o, f] = await Promise.allSettled([
+        session.apiFetch<any>("/api/hl/positions"),
+        session.apiFetch<any>("/api/hl/open-orders"),
+        session.apiFetch<any>("/api/hl/fills"),
+      ]);
+      if (p.status === "fulfilled") setPositions(Array.isArray(p.value) ? p.value : []);
+      if (o.status === "fulfilled") setOrders(Array.isArray(o.value) ? o.value : []);
+      if (f.status === "fulfilled") setFills(Array.isArray(f.value) ? f.value.slice(0, 25) : []);
+    } catch {}
+  };
+  useEffect(() => {
+    load();
+    const id = setInterval(load, 12000);
+    return () => clearInterval(id);
+  }, [session.ready]);
+
+  const closePos = async (coin: string, szi: number) => {
+    setClosing(coin);
+    setMsg(null);
+    try {
+      const isBuy = szi < 0;
+      const sz = Math.abs(szi);
+      await session.apiFetch("/api/hl/market-order", {
+        method: "POST",
+        body: JSON.stringify({ coin, isBuy, sz, slippage: 0.01 }),
+      });
+      setMsg({ kind: "ok", text: `Closed ${coin} (${sz})` });
+      onRefetch();
+      load();
+    } catch (e: any) {
+      setMsg({ kind: "err", text: e?.message || "Close failed" });
+    } finally {
+      setClosing(null);
+    }
+  };
+  const cancelOrder = async (oid: number, coin: string) => {
+    setCancelling(oid);
+    setMsg(null);
+    try {
+      await session.apiFetch("/api/hl/cancel-order", { method: "POST", body: JSON.stringify({ oid, coin }) });
+      setMsg({ kind: "ok", text: `Cancelled ${oid}` });
+      load();
+    } catch (e: any) {
+      setMsg({ kind: "err", text: e?.message || "Cancel failed" });
+    } finally {
+      setCancelling(null);
+    }
+  };
+
+  if (!session.ready) {
+    return (
+      <div>
+        <VenueHeader title="Hyperliquid" sub="L1 perps via agent wallet. Sub-second fills, on-chain orderbook." accent="border-cyan-400/40 text-cyan-400" />
+        <div className="rounded-md border bg-card/60 p-12 text-center font-mono text-sm text-muted-foreground">
+          Connect wallet to see your Hyperliquid positions.
+        </div>
+      </div>
+    );
+  }
+
+  const linked = hlAcct?.linked !== false;
+  const accountValue = num(hlAcct?.accountValue ?? hlAcct?.equity ?? hlAcct?.marginSummary?.accountValue);
+  const totalNtl = num(hlAcct?.marginSummary?.totalNtlPos);
+  const totalRaw = num(hlAcct?.marginSummary?.totalRawUsd);
+  const totalUpnl = positions.reduce((s, p) => s + num(p?.position?.unrealizedPnl), 0);
+
+  return (
+    <div>
+      <VenueHeader title="Hyperliquid" sub="L1 perps via agent wallet. Sub-second fills, on-chain orderbook." accent="border-cyan-400/40 text-cyan-400" />
+      {!linked && (
+        <div className="mb-4 px-3 py-2 rounded bg-yellow-500/10 text-yellow-500 border border-yellow-500/30 font-mono text-[11px]">
+          Hyperliquid not linked yet. Open the bot and run /hyperliquid to provision an agent wallet, then return here.
+        </div>
+      )}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+        <StatCard label="Account Value" value={fmtUsd(accountValue)} sub="USDC" />
+        <StatCard label="Unrealized PnL" value={`${totalUpnl >= 0 ? "+" : ""}${fmtUsd(totalUpnl)}`} accent={totalUpnl >= 0 ? "text-primary" : "text-destructive"} />
+        <StatCard label="Open Positions" value={String(positions.length)} sub={totalNtl ? `${fmtUsd(totalNtl)} notional` : undefined} />
+        <StatCard label="Margin Used" value={fmtUsd(num(hlAcct?.marginSummary?.totalMarginUsed))} sub={totalRaw ? `${fmtUsd(totalRaw)} raw` : undefined} />
+      </div>
+      {msg && (
+        <div className={`mb-3 px-3 py-2 rounded font-mono text-[11px] ${msg.kind === "ok" ? "bg-primary/10 text-primary border border-primary/30" : "bg-destructive/10 text-destructive border border-destructive/30"}`}>
+          {msg.text}
+        </div>
+      )}
+      <div className="rounded-md border bg-card/60 overflow-hidden mb-6">
+        <div className="flex items-center justify-between px-4 py-3 border-b">
+          <h3 className="font-mono text-sm tracking-widest uppercase text-muted-foreground">Positions · {positions.length}</h3>
+          <div className="flex items-center gap-2">
+            <button onClick={() => { load(); onRefetch(); }} className="text-muted-foreground hover:text-foreground" data-testid="button-hl-refresh"><RefreshCw className="w-3.5 h-3.5" /></button>
+            <Button size="sm" onClick={onTrade} className="font-mono text-[10px] tracking-widest uppercase h-7" data-testid="button-new-trade-hl">
+              <Plus className="w-3 h-3 mr-1" /> New Trade
+            </Button>
+          </div>
+        </div>
+        {positions.length === 0 ? (
+          <EmptyPositions onTrade={onTrade} label="No open Hyperliquid positions." />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full font-mono text-xs">
+              <thead className="text-muted-foreground tracking-widest uppercase text-[10px] border-b">
+                <tr>
+                  <th className="text-left px-4 py-2">Coin</th>
+                  <th className="text-left px-4 py-2">Side</th>
+                  <th className="text-right px-4 py-2">Size</th>
+                  <th className="text-right px-4 py-2">Entry</th>
+                  <th className="text-right px-4 py-2">PnL</th>
+                  <th className="text-right px-4 py-2">ROE</th>
+                  <th className="text-right px-4 py-2">Lev</th>
+                  <th className="text-right px-4 py-2"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {positions.map((row: any) => {
+                  const p = row?.position || row;
+                  const szi = num(p.szi);
+                  const side = szi >= 0 ? "LONG" : "SHORT";
+                  const entry = num(p.entryPx);
+                  const upnl = num(p.unrealizedPnl);
+                  const roe = num(p.returnOnEquity) * 100;
+                  const lev = p.leverage?.value ?? p.leverage ?? 1;
+                  return (
+                    <tr key={p.coin} className="border-b last:border-0 hover:bg-background/40" data-testid={`row-hl-${p.coin}`}>
+                      <td className="px-4 py-3 text-foreground font-semibold">{p.coin}</td>
+                      <td className="px-4 py-3"><span className={side === "LONG" ? "text-primary" : "text-destructive"}>{side}</span></td>
+                      <td className="px-4 py-3 text-right text-muted-foreground">{Math.abs(szi).toLocaleString(undefined, { maximumFractionDigits: 6 })}</td>
+                      <td className="px-4 py-3 text-right text-muted-foreground">{entry.toLocaleString(undefined, { maximumFractionDigits: 6 })}</td>
+                      <td className={`px-4 py-3 text-right font-semibold ${upnl >= 0 ? "text-primary" : "text-destructive"}`}>{upnl >= 0 ? "+" : ""}${upnl.toFixed(2)}</td>
+                      <td className={`px-4 py-3 text-right ${roe >= 0 ? "text-primary" : "text-destructive"}`}>{roe >= 0 ? "+" : ""}{roe.toFixed(2)}%</td>
+                      <td className="px-4 py-3 text-right text-muted-foreground">{lev}x</td>
+                      <td className="px-4 py-3 text-right">
+                        <button
+                          onClick={() => closePos(p.coin, szi)}
+                          disabled={closing === p.coin}
+                          className="text-[10px] tracking-widest uppercase text-muted-foreground hover:text-destructive disabled:opacity-50"
+                          data-testid={`button-close-hl-${p.coin}`}
+                        >
+                          {closing === p.coin ? "closing…" : "close"}
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="rounded-md border bg-card/60 overflow-hidden">
+          <div className="px-4 py-3 border-b font-mono text-sm tracking-widest uppercase text-muted-foreground">Open Orders · {orders.length}</div>
+          {orders.length === 0 ? (
+            <div className="px-4 py-6 text-center font-mono text-[11px] text-muted-foreground">No open orders.</div>
+          ) : (
+            <div className="divide-y">
+              {orders.slice(0, 8).map((o: any) => (
+                <div key={o.oid} className="px-4 py-2 font-mono text-[11px] flex items-center justify-between">
+                  <div>
+                    <span className="text-foreground font-semibold">{o.coin}</span>
+                    <span className={`ml-2 ${o.side === "B" ? "text-primary" : "text-destructive"}`}>{o.side === "B" ? "BUY" : "SELL"}</span>
+                    <span className="ml-2 text-muted-foreground">{num(o.sz)} @ {num(o.limitPx).toLocaleString(undefined, { maximumFractionDigits: 6 })}</span>
+                  </div>
+                  <button
+                    onClick={() => cancelOrder(o.oid, o.coin)}
+                    disabled={cancelling === o.oid}
+                    className="text-[10px] tracking-widest uppercase text-muted-foreground hover:text-destructive disabled:opacity-50"
+                  >
+                    {cancelling === o.oid ? "…" : "cancel"}
+                  </button>
+                </div>
               ))}
-            </tbody>
-          </table>
+            </div>
+          )}
+        </div>
+        <div className="rounded-md border bg-card/60 overflow-hidden">
+          <div className="px-4 py-3 border-b font-mono text-sm tracking-widest uppercase text-muted-foreground">Recent Fills</div>
+          {fills.length === 0 ? (
+            <div className="px-4 py-6 text-center font-mono text-[11px] text-muted-foreground">No fills yet.</div>
+          ) : (
+            <div className="divide-y max-h-72 overflow-y-auto">
+              {fills.slice(0, 12).map((f: any, i: number) => (
+                <div key={`${f.oid ?? i}-${f.time ?? i}`} className="px-4 py-2 font-mono text-[11px] flex items-center justify-between">
+                  <div>
+                    <span className="text-foreground font-semibold">{f.coin}</span>
+                    <span className={`ml-2 ${f.side === "B" ? "text-primary" : "text-destructive"}`}>{f.side === "B" ? "BUY" : "SELL"}</span>
+                    <span className="ml-2 text-muted-foreground">{num(f.sz)} @ {num(f.px).toLocaleString(undefined, { maximumFractionDigits: 6 })}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {f.closedPnl != null && (
+                      <span className={num(f.closedPnl) >= 0 ? "text-primary" : "text-destructive"}>
+                        {num(f.closedPnl) >= 0 ? "+" : ""}${num(f.closedPnl).toFixed(2)}
+                      </span>
+                    )}
+                    <span className="text-muted-foreground text-[10px]">{timeAgo(num(f.time))}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>
   );
 }
 
-function PolymarketPane({ onTrade }: { onTrade: () => void }) {
+function ComingSoonPane({ title, sub, accent, color, icon: Icon, lines }: { title: string; sub: string; accent: string; color: string; icon: any; lines: string[] }) {
   return (
     <div>
-      <VenueHeader title="Polymarket" sub="Gasless prediction markets — Safe-routed, USDC settled on Polygon." accent="border-blue-400/40 text-blue-400" />
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-        <StatCard label="Safe Balance" value="$2,104.32" sub="USDC.e (no MATIC needed)" />
-        <StatCard label="Open Positions" value="2" />
-        <StatCard label="Resolved · Claimable" value="$94.50" accent="text-primary" />
-        <StatCard label="30d ROI" value="+18.4%" accent="text-primary" />
-      </div>
-      <div className="rounded-md border bg-card/60 overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-3 border-b">
-          <h3 className="font-mono text-sm tracking-widest uppercase text-muted-foreground">Positions</h3>
-          <Button size="sm" onClick={onTrade} className="font-mono text-[10px] tracking-widest uppercase h-7">
-            <Plus className="w-3 h-3 mr-1" /> Browse Markets
-          </Button>
-        </div>
-        <div className="divide-y">
-          {POLY_POSITIONS.map((p) => (
-            <div key={p.market} className="px-4 py-3 hover:bg-background/40 transition-colors">
-              <div className="flex items-start justify-between gap-4 mb-2">
-                <div className="font-mono text-xs text-foreground flex-1">{p.market}</div>
-                <div className={`font-mono text-sm font-semibold ${p.pnl >= 0 ? "text-primary" : "text-destructive"}`}>
-                  +${p.pnl.toFixed(2)} · +{p.pnlPct.toFixed(1)}%
-                </div>
-              </div>
-              <div className="flex items-center gap-3 font-mono text-[10px] text-muted-foreground tracking-widest uppercase">
-                <span className={p.side === "YES" ? "text-primary" : "text-destructive"}>{p.side}</span>
-                <span>{p.shares} shares</span>
-                <span>avg {p.avg}</span>
-                <span>mark {p.mark}</span>
-                <div className="flex-1" />
-                {p.status === "OPEN" ? (
-                  <button className="text-destructive hover:underline">sell</button>
-                ) : (
-                  <button className="text-primary font-bold hover:underline">redeem →</button>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
+      <VenueHeader title={title} sub={sub} accent={accent} />
+      <div className="rounded-md border bg-card/60 p-10 text-center">
+        <Icon className={`w-10 h-10 mx-auto ${color} mb-3 opacity-50`} />
+        <div className="font-mono text-sm text-foreground mb-1">Coming soon to the web terminal.</div>
+        <div className="font-mono text-[11px] text-muted-foreground mb-4">Already live in the Telegram bot — porting to the web server next.</div>
+        <ul className="font-mono text-[11px] text-muted-foreground space-y-1 max-w-md mx-auto text-left">
+          {lines.map((l) => <li key={l}>· {l}</li>)}
+        </ul>
       </div>
     </div>
+  );
+}
+
+function PolymarketPane() {
+  return (
+    <ComingSoonPane
+      title="Polymarket"
+      sub="Gasless prediction markets — Safe-routed, USDC settled on Polygon."
+      accent="border-blue-400/40 text-blue-400"
+      color="text-blue-400"
+      icon={Target}
+      lines={[
+        "Per-user Gnosis Safe, deployed via Polymarket relayer (no MATIC required).",
+        "Manual buy/sell + autonomous polymarketAgent already live in the bot.",
+        "Web wiring pending: /api/polymarket/* endpoints need to be ported to this server.",
+      ]}
+    />
   );
 }
 
 function FourmemePane() {
   return (
-    <div>
-      <VenueHeader title="fourmeme" sub="Autonomous token launchpad on BSC. Agents launch, buy, and rotate." accent="border-emerald-400/40 text-emerald-400" />
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-        <StatCard label="BNB Balance" value="0.842" sub="≈ $510.20" />
-        <StatCard label="Tokens Held" value="4" />
-        <StatCard label="Launches (7d)" value="11" sub="3 graduated to v2" accent="text-primary" />
-        <StatCard label="7d PnL" value="+$214.80" accent="text-primary" />
-      </div>
-      <div className="rounded-md border bg-card/60 p-8 text-center">
-        <Rocket className="w-10 h-10 mx-auto text-emerald-400/40 mb-3" />
-        <div className="font-mono text-sm text-muted-foreground">Token launcher, holdings table and rotation queue render here.</div>
-      </div>
-    </div>
+    <ComingSoonPane
+      title="fourmeme"
+      sub="Autonomous token launchpad on BSC. Agents launch, buy, and rotate."
+      accent="border-emerald-400/40 text-emerald-400"
+      color="text-emerald-400"
+      icon={Rocket}
+      lines={[
+        "Token launcher with parameterised name / symbol / initial buy.",
+        "Live in the Telegram bot via /api/token-launcher/* and /api/four-meme/*.",
+        "Holdings table + rotation queue land in the web terminal next.",
+      ]}
+    />
   );
 }
 
 function FortyTwoPane() {
   return (
-    <div>
-      <VenueHeader title="42.space" sub="On-chain prediction markets on BSC. BTC 8h price campaigns + Campaign mode." accent="border-orange-400/40 text-orange-400" />
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-        <StatCard label="Position Value" value="$832.44" />
-        <StatCard label="Campaign Round" value="7 / 12" sub="next: 16:05 UTC" accent="text-orange-400" />
-        <StatCard label="Wins" value="4 / 6" sub="round-by-round" accent="text-primary" />
-        <StatCard label="Campaign PnL" value="+$118.60" accent="text-primary" />
-      </div>
-      <div className="rounded-md border bg-card/60 p-8 text-center">
-        <Target className="w-10 h-10 mx-auto text-orange-400/40 mb-3" />
-        <div className="font-mono text-sm text-muted-foreground">Live BTC bucket grid, round timer, and Agent-vs-Community recap render here.</div>
-      </div>
-    </div>
+    <ComingSoonPane
+      title="42.space"
+      sub="On-chain prediction markets on BSC. BTC 8h price campaigns + Campaign mode."
+      accent="border-orange-400/40 text-orange-400"
+      color="text-orange-400"
+      icon={Target}
+      lines={[
+        "Live BTC bucket grid, round timer, and Agent-vs-Community recap.",
+        "Campaign agent + idempotent ENTRY ticks already shipped in the bot.",
+        "Web pane will read campaign state from /api/admin/campaign/state once exposed publicly.",
+      ]}
+    />
   );
 }
 
-function BrainFeed() {
-  const [feed, setFeed] = useState(BRAIN_FEED);
+type FeedEntry = {
+  id: string;
+  t: number;
+  venue: "Aster" | "HL" | "Agent";
+  color: string;
+  action: string;
+  asset: string;
+  size: string;
+  pnl?: number;
+};
+
+function BrainFeed({ session, refetchTick }: { session: any; refetchTick: number }) {
+  const [feed, setFeed] = useState<FeedEntry[]>([]);
+  const [loading, setLoading] = useState(false);
+
   useEffect(() => {
-    const id = setInterval(() => {
-      const pick = BRAIN_FEED[Math.floor(Math.random() * BRAIN_FEED.length)];
-      setFeed((f) => [{ ...pick, ago: "now" }, ...f.slice(0, 11)]);
-    }, 3500);
-    return () => clearInterval(id);
-  }, []);
+    if (!session.ready) {
+      setFeed([]);
+      return;
+    }
+    let cancelled = false;
+    const load = async () => {
+      setLoading(true);
+      const merged: FeedEntry[] = [];
+      try {
+        const [hist, hlFills, agent] = await Promise.allSettled([
+          session.apiFetch<any>("/api/miniapp/history"),
+          session.apiFetch<any>("/api/hl/fills"),
+          session.apiFetch<any>("/api/miniapp/agent"),
+        ]);
+        if (hist.status === "fulfilled") {
+          const closed = Array.isArray(hist.value?.closedTrades) ? hist.value.closedTrades : [];
+          for (const t of closed.slice(0, 20)) {
+            const time = num(t.closedAt ?? t.time);
+            const pnl = num(t.pnl);
+            merged.push({
+              id: `aster-${t.symbol}-${time}`,
+              t: time,
+              venue: "Aster",
+              color: "text-yellow-400",
+              action: t.side === "BUY" ? "CLOSE LONG" : "CLOSE SHORT",
+              asset: t.symbol || "",
+              size: `${pnl >= 0 ? "+" : ""}$${pnl.toFixed(2)}`,
+              pnl,
+            });
+          }
+        }
+        if (hlFills.status === "fulfilled" && Array.isArray(hlFills.value)) {
+          for (const f of hlFills.value.slice(0, 25)) {
+            const pnl = f.closedPnl != null ? num(f.closedPnl) : undefined;
+            const sz = num(f.sz);
+            const px = num(f.px);
+            merged.push({
+              id: `hl-${f.oid ?? Math.random()}-${f.time}`,
+              t: num(f.time),
+              venue: "HL",
+              color: "text-cyan-400",
+              action: f.side === "B" ? "BUY" : "SELL",
+              asset: f.coin || "",
+              size: pnl != null ? `${pnl >= 0 ? "+" : ""}$${pnl.toFixed(2)}` : `${sz} @ ${px.toFixed(4)}`,
+              pnl,
+            });
+          }
+        }
+        if (agent.status === "fulfilled") {
+          const log = Array.isArray(agent.value?.stats?.reasoningLog) ? agent.value.stats.reasoningLog : [];
+          for (const r of log) {
+            const t = num(r.timestamp ?? r.t ?? Date.now());
+            const action = (r.action || r.decision || "DECISION").toString().toUpperCase().slice(0, 20);
+            const reason = (r.reason || r.reasoning || r.text || "").toString().slice(0, 60);
+            merged.push({
+              id: `agent-${t}-${action}`,
+              t,
+              venue: "Agent",
+              color: "text-primary",
+              action,
+              asset: reason,
+              size: r.symbol || "",
+            });
+          }
+        }
+      } catch {}
+      if (cancelled) return;
+      merged.sort((a, b) => b.t - a.t);
+      setFeed(merged.slice(0, 30));
+      setLoading(false);
+    };
+    load();
+    const id = setInterval(load, 10000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [session.ready, session.apiFetch, refetchTick]);
+
   return (
     <aside className="hidden lg:flex w-72 border-l bg-card/30 flex-col">
       <div className="px-4 py-3 border-b flex items-center gap-2">
         <Brain className="w-3.5 h-3.5 text-primary" />
         <span className="font-mono text-xs tracking-widest uppercase text-muted-foreground">Live Brain</span>
         <div className="flex-1" />
-        <div className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+        {loading ? <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" /> : <div className={`w-1.5 h-1.5 rounded-full ${session.ready ? "bg-primary animate-pulse" : "bg-muted-foreground/40"}`} />}
       </div>
       <div className="flex-1 overflow-y-auto p-2 space-y-1">
-        <AnimatePresence initial={false}>
-          {feed.map((e, i) => (
-            <motion.div
-              key={`${e.agent}-${e.ago}-${i}`}
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.3 }}
-              className="px-2 py-1.5 rounded hover:bg-background/50 font-mono text-[11px]"
-            >
-              <div className="flex items-center gap-1.5 text-[9px] text-muted-foreground tracking-widest uppercase mb-0.5">
-                <span>{e.ago}</span>
-                <span>·</span>
-                <span className={e.color}>{e.venue}</span>
-                <span>·</span>
-                <span>{e.agent}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-foreground">
-                  <span className={e.color}>{e.action}</span> {e.asset}
-                </span>
-                <span className="text-muted-foreground text-[10px]">{e.size}</span>
-              </div>
-              <div className="mt-1 h-0.5 rounded-full bg-border overflow-hidden">
-                <div className={`h-full ${e.conf >= 75 ? "bg-primary" : e.conf >= 60 ? "bg-yellow-500" : "bg-muted-foreground"}`} style={{ width: `${e.conf}%` }} />
-              </div>
-            </motion.div>
-          ))}
-        </AnimatePresence>
+        {!session.ready ? (
+          <div className="px-3 py-6 text-center font-mono text-[10px] text-muted-foreground tracking-widest uppercase">
+            Connect wallet<br />to stream your feed
+          </div>
+        ) : feed.length === 0 ? (
+          <div className="px-3 py-6 text-center font-mono text-[10px] text-muted-foreground tracking-widest uppercase">
+            No activity yet.<br />Place a trade or start an agent.
+          </div>
+        ) : (
+          <AnimatePresence initial={false}>
+            {feed.map((e) => (
+              <motion.div
+                key={e.id}
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.25 }}
+                className="px-2 py-1.5 rounded hover:bg-background/50 font-mono text-[11px]"
+                data-testid={`brain-row-${e.id}`}
+              >
+                <div className="flex items-center gap-1.5 text-[9px] text-muted-foreground tracking-widest uppercase mb-0.5">
+                  <span>{timeAgo(e.t)}</span>
+                  <span>·</span>
+                  <span className={e.color}>{e.venue}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-foreground truncate pr-2">
+                    <span className={e.color}>{e.action}</span> {e.asset}
+                  </span>
+                  <span className={`text-[10px] whitespace-nowrap ${e.pnl != null ? (e.pnl >= 0 ? "text-primary" : "text-destructive") : "text-muted-foreground"}`}>{e.size}</span>
+                </div>
+              </motion.div>
+            ))}
+          </AnimatePresence>
+        )}
       </div>
       <div className="px-4 py-2 border-t font-mono text-[10px] text-muted-foreground tracking-widest uppercase flex items-center gap-1">
-        <Activity className="w-3 h-3" /> {feed.length} decisions · last 5m
+        <Activity className="w-3 h-3" /> {feed.length} events
       </div>
     </aside>
+  );
+}
+
+type AgentPreset = "conservative" | "balanced" | "aggressive";
+
+function NewAgentWizard({ open, onClose, session, onSuccess }: { open: boolean; onClose: () => void; session: any; onSuccess: () => void }) {
+  const [step, setStep] = useState(1);
+  const [name, setName] = useState("My Agent");
+  const [preset, setPreset] = useState<AgentPreset>("balanced");
+  const [riskPercent, setRiskPercent] = useState(1.0);
+  const [maxLeverage, setMaxLeverage] = useState(10);
+  const [maxOpenPositions, setMaxOpenPositions] = useState(2);
+  const [dailyLossLimitPct, setDailyLossLimitPct] = useState(3.0);
+  const [submitting, setSubmitting] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (open) { setStep(1); setErr(null); }
+  }, [open]);
+
+  if (!open) return null;
+
+  const submit = async () => {
+    setSubmitting(true);
+    setErr(null);
+    try {
+      await session.apiFetch("/api/miniapp/agent/preset", { method: "POST", body: JSON.stringify({ preset }) });
+      await session.apiFetch("/api/miniapp/agent/config", {
+        method: "POST",
+        body: JSON.stringify({ name, riskPercent, maxLeverage, maxOpenPositions, dailyLossLimitPct }),
+      });
+      await session.apiFetch("/api/miniapp/agent/toggle", { method: "POST", body: JSON.stringify({ running: true }) });
+      onSuccess();
+      onClose();
+    } catch (e: any) {
+      setErr(e?.message || "Agent setup failed");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const presets: { id: AgentPreset; label: string; desc: string; risk: number; lev: number }[] = [
+    { id: "conservative", label: "Conservative", desc: "Tight risk, low leverage, slow scans.", risk: 0.5, lev: 3 },
+    { id: "balanced", label: "Balanced", desc: "Default. Moderate risk, moderate leverage.", risk: 1.0, lev: 10 },
+    { id: "aggressive", label: "Aggressive", desc: "Higher per-trade risk and leverage.", risk: 2.0, lev: 20 },
+  ];
+
+  const selectPreset = (id: AgentPreset) => {
+    setPreset(id);
+    const p = presets.find((x) => x.id === id);
+    if (p) { setRiskPercent(p.risk); setMaxLeverage(p.lev); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4" data-testid="agent-wizard">
+      <div className="w-full max-w-lg rounded-md border bg-card shadow-xl">
+        <div className="flex items-center justify-between px-5 py-3 border-b">
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-primary" />
+            <span className="font-mono text-sm tracking-widest uppercase">New Agent · Step {step}/3</span>
+          </div>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="w-4 h-4" /></button>
+        </div>
+        <div className="p-5 space-y-4">
+          {step === 1 && (
+            <div className="space-y-3">
+              <label className="block font-mono text-[11px] tracking-widest uppercase text-muted-foreground">Agent Name</label>
+              <input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                maxLength={40}
+                className="w-full px-3 py-2 rounded-md border bg-background font-mono text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                data-testid="input-agent-name"
+              />
+              <div className="font-mono text-[11px] text-muted-foreground">Used in logs + brain feed. Wallet stays under your control.</div>
+            </div>
+          )}
+          {step === 2 && (
+            <div className="space-y-3">
+              <div className="font-mono text-[11px] tracking-widest uppercase text-muted-foreground">Pick a preset</div>
+              {presets.map((p) => (
+                <button
+                  key={p.id}
+                  onClick={() => selectPreset(p.id)}
+                  className={`w-full text-left p-3 rounded-md border transition-colors ${preset === p.id ? "border-primary bg-primary/10" : "border-border hover:bg-background/40"}`}
+                  data-testid={`preset-${p.id}`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono text-sm font-semibold">{p.label}</span>
+                    {preset === p.id && <CheckCircle2 className="w-4 h-4 text-primary" />}
+                  </div>
+                  <div className="font-mono text-[11px] text-muted-foreground mt-1">{p.desc}</div>
+                  <div className="font-mono text-[10px] tracking-widest uppercase text-muted-foreground mt-2">
+                    risk {p.risk}% · lev {p.lev}x
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+          {step === 3 && (
+            <div className="space-y-3">
+              <div className="font-mono text-[11px] tracking-widest uppercase text-muted-foreground">Risk caps</div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="font-mono text-[10px] tracking-widest uppercase text-muted-foreground">Risk per trade %</label>
+                  <input type="number" step="0.1" min="0.1" max="10" value={riskPercent} onChange={(e) => setRiskPercent(num(e.target.value, 1))}
+                    className="w-full mt-1 px-3 py-2 rounded-md border bg-background font-mono text-sm" data-testid="input-risk-pct" />
+                </div>
+                <div>
+                  <label className="font-mono text-[10px] tracking-widest uppercase text-muted-foreground">Max leverage</label>
+                  <input type="number" step="1" min="1" max="50" value={maxLeverage} onChange={(e) => setMaxLeverage(Math.floor(num(e.target.value, 10)))}
+                    className="w-full mt-1 px-3 py-2 rounded-md border bg-background font-mono text-sm" data-testid="input-max-lev" />
+                </div>
+                <div>
+                  <label className="font-mono text-[10px] tracking-widest uppercase text-muted-foreground">Max open positions</label>
+                  <input type="number" step="1" min="1" max="10" value={maxOpenPositions} onChange={(e) => setMaxOpenPositions(Math.floor(num(e.target.value, 2)))}
+                    className="w-full mt-1 px-3 py-2 rounded-md border bg-background font-mono text-sm" data-testid="input-max-open" />
+                </div>
+                <div>
+                  <label className="font-mono text-[10px] tracking-widest uppercase text-muted-foreground">Daily loss limit %</label>
+                  <input type="number" step="0.5" min="0.5" max="50" value={dailyLossLimitPct} onChange={(e) => setDailyLossLimitPct(num(e.target.value, 3))}
+                    className="w-full mt-1 px-3 py-2 rounded-md border bg-background font-mono text-sm" data-testid="input-loss-pct" />
+                </div>
+              </div>
+              <div className="font-mono text-[11px] text-muted-foreground">
+                The agent starts paused — toggle it from the dashboard once you've reviewed the config.
+              </div>
+            </div>
+          )}
+          {err && <div className="px-3 py-2 rounded bg-destructive/10 text-destructive border border-destructive/30 font-mono text-[11px]">{err}</div>}
+        </div>
+        <div className="flex items-center justify-between px-5 py-3 border-t">
+          <button
+            onClick={() => step > 1 ? setStep(step - 1) : onClose()}
+            className="font-mono text-[11px] tracking-widest uppercase text-muted-foreground hover:text-foreground"
+            data-testid="button-wizard-back"
+          >
+            {step > 1 ? "Back" : "Cancel"}
+          </button>
+          {step < 3 ? (
+            <Button
+              onClick={() => setStep(step + 1)}
+              disabled={step === 1 && !name.trim()}
+              className="font-mono text-[10px] tracking-widest uppercase h-8"
+              data-testid="button-wizard-next"
+            >
+              Next <ChevronRight className="w-3 h-3 ml-1" />
+            </Button>
+          ) : (
+            <Button
+              onClick={submit}
+              disabled={submitting}
+              className="font-mono text-[10px] tracking-widest uppercase h-8"
+              data-testid="button-wizard-submit"
+            >
+              {submitting ? <><Loader2 className="w-3 h-3 mr-1 animate-spin" /> Starting…</> : <>Start Agent <Power className="w-3 h-3 ml-1" /></>}
+            </Button>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -899,8 +1522,10 @@ function Row({ k, v }: { k: string; v: string }) {
 export default function TerminalPreview() {
   const [venue, setVenue] = useState<Venue>("dashboard");
   const [drawer, setDrawer] = useState(false);
+  const [wizardOpen, setWizardOpen] = useState(false);
   const [refetchTick, setRefetchTick] = useState(0);
   const openTrade = () => setDrawer(true);
+  const openWizard = () => setWizardOpen(true);
 
   const session = useTerminalSession();
   const [asterAcct, setAsterAcct] = useState<any>(null);
@@ -996,6 +1621,7 @@ export default function TerminalPreview() {
           {venue === "dashboard" && (
             <DashboardPane
               onTrade={openTrade}
+              onNewAgent={openWizard}
               ready={session.ready}
               loading={loading}
               err={err}
@@ -1003,18 +1629,24 @@ export default function TerminalPreview() {
               venues={venues}
             />
           )}
-          {venue === "aster" && <PerpPane name="Aster Perps" sub="Custodial perpetual futures on Aster DEX. AI-routed, single-master account." accent="border-yellow-400/40 text-yellow-400" positions={ASTER_POSITIONS} onTrade={openTrade} />}
-          {venue === "hyperliquid" && <PerpPane name="Hyperliquid" sub="L1 perps via agent wallet. Sub-second fills, on-chain orderbook." accent="border-cyan-400/40 text-cyan-400" positions={ASTER_POSITIONS.slice(0, 2)} onTrade={openTrade} />}
+          {venue === "aster" && <AsterPane session={session} asterAcct={asterAcct} onTrade={openTrade} onRefetch={() => setRefetchTick((n) => n + 1)} />}
+          {venue === "hyperliquid" && <HlPane session={session} hlAcct={hlAcct} onTrade={openTrade} onRefetch={() => setRefetchTick((n) => n + 1)} />}
           {venue === "fourmeme" && <FourmemePane />}
-          {venue === "polymarket" && <PolymarketPane onTrade={openTrade} />}
+          {venue === "polymarket" && <PolymarketPane />}
           {venue === "fortytwo" && <FortyTwoPane />}
         </main>
-        <BrainFeed />
+        <BrainFeed session={session} refetchTick={refetchTick} />
       </div>
       <TradeDrawer
         open={drawer}
         onClose={() => setDrawer(false)}
         defaultVenue={venue === "hyperliquid" ? "hl" : "aster"}
+        session={session}
+        onSuccess={() => setRefetchTick((n) => n + 1)}
+      />
+      <NewAgentWizard
+        open={wizardOpen}
+        onClose={() => setWizardOpen(false)}
         session={session}
         onSuccess={() => setRefetchTick((n) => n + 1)}
       />
