@@ -1514,16 +1514,26 @@ function TradeDrawer({
                 >Hyperliquid</button>
               </div>
 
-              <div>
-                <label className="font-mono text-[10px] tracking-widest uppercase text-muted-foreground">Symbol</label>
+              <div className="rounded-md border border-primary/30 bg-primary/5 p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <label className="font-mono text-[10px] tracking-widest uppercase text-primary">
+                    Symbol · {selectedSym || "pick one"}
+                  </label>
+                  {symbolCount > 0 && (
+                    <span className="font-mono text-[10px] text-muted-foreground" data-testid="text-symbol-count">
+                      {symbolCount} pairs
+                    </span>
+                  )}
+                </div>
                 <input
                   value={symbolQuery}
                   onChange={(e) => setSymbolQuery(e.target.value)}
-                  placeholder={venue === "aster" ? "Search BTCUSDT, PEPE…" : "Search BTC, HYPE, kPEPE…"}
+                  placeholder={venue === "aster" ? `Search ${symbolCount || "all"} Aster pairs (BTC, PEPE, SOL…)` : `Search ${symbolCount || "all"} HL coins (BTC, HYPE, kPEPE…)`}
                   data-testid="input-symbol-search"
-                  className="mt-1 w-full bg-background border rounded-md px-3 py-2 font-mono text-sm uppercase focus:outline-none focus:ring-1 focus:ring-primary"
+                  autoFocus
+                  className="w-full bg-background border rounded-md px-3 py-2 font-mono text-sm uppercase focus:outline-none focus:ring-1 focus:ring-primary"
                 />
-                <div className="mt-2 max-h-44 overflow-y-auto rounded border bg-background/40">
+                <div className="mt-2 max-h-56 overflow-y-auto rounded border bg-background/40">
                   {symsLoading ? (
                     <div className="px-3 py-4 text-xs text-muted-foreground font-mono">Loading symbols…</div>
                   ) : symsError ? (
@@ -1550,11 +1560,6 @@ function TradeDrawer({
                     })
                   )}
                 </div>
-                {symbolCount > 0 && (
-                  <p className="mt-1 font-mono text-[10px] text-muted-foreground" data-testid="text-symbol-count">
-                    {symbolCount} symbols available on {venueLabel}
-                  </p>
-                )}
               </div>
 
               <div className="grid grid-cols-2 gap-2">
