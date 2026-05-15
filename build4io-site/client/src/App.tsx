@@ -32,7 +32,6 @@ import TelegramBotPage from "@/pages/pricing";
 import MiniApp from "@/pages/miniapp";
 import Futures from "@/pages/futures";
 import Hyperliquid from "@/pages/hyperliquid";
-import AppDashboard from "@/pages/app";
 import TerminalPreview from "@/pages/terminal-preview";
 import NotFound from "@/pages/not-found";
 
@@ -68,7 +67,7 @@ function Router() {
       <Route path="/miniapp" component={MiniApp} />
       <Route path="/futures" component={Futures} />
       <Route path="/hyperliquid" component={Hyperliquid} />
-      <Route path="/app" component={AppDashboard} />
+      <Route path="/app">{() => { window.location.replace("/autonomous-economy"); return null; }}</Route>
       <Route path="/terminal-preview" component={TerminalPreview} />
       <Route path="/sdk">{() => { window.location.href = "/"; return null; }}</Route>
       <Route component={NotFound} />
