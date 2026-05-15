@@ -1159,10 +1159,10 @@ function NewAgentWizard({ open, onClose, session, onSuccess }: { open: boolean; 
   const [step, setStep] = useState(1);
   const [name, setName] = useState("My Agent");
   const [preset, setPreset] = useState<AgentPreset>("balanced");
-  const [riskPercent, setRiskPercent] = useState(1.0);
-  const [maxLeverage, setMaxLeverage] = useState(10);
-  const [maxOpenPositions, setMaxOpenPositions] = useState(2);
-  const [dailyLossLimitPct, setDailyLossLimitPct] = useState(3.0);
+  const [riskPercent, setRiskPercent] = useState("1.0");
+  const [maxLeverage, setMaxLeverage] = useState("10");
+  const [maxOpenPositions, setMaxOpenPositions] = useState("2");
+  const [dailyLossLimitPct, setDailyLossLimitPct] = useState("3.0");
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -1176,10 +1176,14 @@ function NewAgentWizard({ open, onClose, session, onSuccess }: { open: boolean; 
     setSubmitting(true);
     setErr(null);
     try {
+      const risk = Math.min(10, Math.max(0.1, num(riskPercent, 1)));
+      const lev = Math.floor(Math.min(50, Math.max(1, num(maxLeverage, 10))));
+      const openPos = Math.floor(Math.min(10, Math.max(1, num(maxOpenPositions, 2))));
+      const dailyLoss = Math.min(50, Math.max(0.5, num(dailyLossLimitPct, 3)));
       await session.apiFetch("/api/miniapp/agent/preset", { method: "POST", body: JSON.stringify({ preset }) });
       await session.apiFetch("/api/miniapp/agent/config", {
         method: "POST",
-        body: JSON.stringify({ name, riskPercent, maxLeverage, maxOpenPositions, dailyLossLimitPct }),
+        body: JSON.stringify({ name, riskPercent: risk, maxLeverage: lev, maxOpenPositions: openPos, dailyLossLimitPct: dailyLoss }),
       });
       await session.apiFetch("/api/miniapp/agent/toggle", { method: "POST", body: JSON.stringify({ running: true }) });
       onSuccess();
@@ -1200,7 +1204,7 @@ function NewAgentWizard({ open, onClose, session, onSuccess }: { open: boolean; 
   const selectPreset = (id: AgentPreset) => {
     setPreset(id);
     const p = presets.find((x) => x.id === id);
-    if (p) { setRiskPercent(p.risk); setMaxLeverage(p.lev); }
+    if (p) { setRiskPercent(String(p.risk)); setMaxLeverage(String(p.lev)); }
   };
 
   return (
@@ -1255,22 +1259,22 @@ function NewAgentWizard({ open, onClose, session, onSuccess }: { open: boolean; 
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="font-mono text-[10px] tracking-widest uppercase text-muted-foreground">Risk per trade %</label>
-                  <input type="number" step="0.1" min="0.1" max="10" value={riskPercent} onChange={(e) => setRiskPercent(num(e.target.value, 1))}
+                  <input type="number" step="0.1" min="0.1" max="10" value={riskPercent} onChange={(e) => setRiskPercent(e.target.value)}
                     className="w-full mt-1 px-3 py-2 rounded-md border bg-background font-mono text-sm" data-testid="input-risk-pct" />
                 </div>
                 <div>
                   <label className="font-mono text-[10px] tracking-widest uppercase text-muted-foreground">Max leverage</label>
-                  <input type="number" step="1" min="1" max="50" value={maxLeverage} onChange={(e) => setMaxLeverage(Math.floor(num(e.target.value, 10)))}
+                  <input type="number" step="1" min="1" max="50" value={maxLeverage} onChange={(e) => setMaxLeverage(e.target.value)}
                     className="w-full mt-1 px-3 py-2 rounded-md border bg-background font-mono text-sm" data-testid="input-max-lev" />
                 </div>
                 <div>
                   <label className="font-mono text-[10px] tracking-widest uppercase text-muted-foreground">Max open positions</label>
-                  <input type="number" step="1" min="1" max="10" value={maxOpenPositions} onChange={(e) => setMaxOpenPositions(Math.floor(num(e.target.value, 2)))}
+                  <input type="number" step="1" min="1" max="10" value={maxOpenPositions} onChange={(e) => setMaxOpenPositions(e.target.value)}
                     className="w-full mt-1 px-3 py-2 rounded-md border bg-background font-mono text-sm" data-testid="input-max-open" />
                 </div>
                 <div>
                   <label className="font-mono text-[10px] tracking-widest uppercase text-muted-foreground">Daily loss limit %</label>
-                  <input type="number" step="0.5" min="0.5" max="50" value={dailyLossLimitPct} onChange={(e) => setDailyLossLimitPct(num(e.target.value, 3))}
+                  <input type="number" step="0.5" min="0.5" max="50" value={dailyLossLimitPct} onChange={(e) => setDailyLossLimitPct(e.target.value)}
                     className="w-full mt-1 px-3 py-2 rounded-md border bg-background font-mono text-sm" data-testid="input-loss-pct" />
                 </div>
               </div>
