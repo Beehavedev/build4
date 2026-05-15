@@ -211,7 +211,7 @@ function DepositTab({ connectedAddress, chain, setChain, ensureSiwe, siweBusy, s
   );
 }
 
-function LinkTelegramCard({ onLinked, variant }: { onLinked: () => void; variant: "link" | "setup" }) {
+export function LinkTelegramCard({ onLinked, variant }: { onLinked: () => void; variant: "link" | "setup" }) {
   const [phase, setPhase] = useState<"idle" | "starting" | "waiting" | "linked" | "error">("idle");
   const [url, setUrl] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);

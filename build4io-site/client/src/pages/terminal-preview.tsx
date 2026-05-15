@@ -26,6 +26,7 @@ import { WalletConnector } from "@/components/wallet-connector";
 import { WalletPanel } from "@/components/wallet-panel";
 import { Wallet as WalletIcon } from "lucide-react";
 import { useTerminalSession } from "@/hooks/use-terminal-session";
+import { LinkTelegramCard } from "@/components/wallet-panel";
 import asterLogo from "@assets/aster_logo.svg";
 import hyperliquidLogo from "@assets/hyperliquid-logo_1775737973029.png";
 import fourmemeLogo from "@assets/four_logo_1778389271440.jpg";
@@ -2390,6 +2391,13 @@ export default function TerminalPreview() {
       {session.registerState === "error" && (
         <div className="px-4 py-2 bg-destructive/10 border-b border-destructive/30 font-mono text-[11px] text-destructive">
           Wallet register failed: {session.registerError}
+        </div>
+      )}
+      {session.wallet.connected && session.linked === false && (
+        <div className="border-b border-emerald-500/30 bg-emerald-500/5 px-4 py-4 sm:px-6 lg:px-8" data-testid="banner-link-telegram">
+          <div className="max-w-2xl mx-auto">
+            <LinkTelegramCard variant="link" onLinked={() => session.refreshLink()} />
+          </div>
         </div>
       )}
       <div className="flex-1 flex overflow-hidden">

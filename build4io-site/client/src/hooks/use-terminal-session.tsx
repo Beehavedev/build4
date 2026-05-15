@@ -67,6 +67,46 @@ export function useTerminalSession() {
   const [registerState, setRegisterState] = useState<RegisterState>("idle");
   const [registerError, setRegisterError] = useState<string | null>(null);
   const [siweReady, setSiweReady] = useState(false);
+  const [linked, setLinked] = useState<boolean | null>(null);
+  const [linkBump, setLinkBump] = useState(0);
+
+  // Once SIWE is ready, poll /api/wallet/link-telegram/status to see whether
+  // this connected wallet is mapped to a Telegram user (i.e. shares a `User`
+  // row with the bot). When `linked === false`, the terminal surfaces a
+  // prominent "Link your Telegram account" card; when `linked === true`,
+  // the card auto-hides and venue panes start working.
+  useEffect(() => {
+    if (!siweReady || !wallet.address) {
+      setLinked(null);
+      return;
+    }
+    let cancelled = false;
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+    const check = async () => {
+      try {
+        const r = await fetch("/api/wallet/link-telegram/status", { credentials: "include" });
+        const j = await r.json().catch(() => ({}));
+        if (cancelled) return;
+        const isLinked = !!(j?.ok && j?.linked);
+        setLinked(isLinked);
+        // Once linked, stop polling — venue panes will refetch on their own.
+        if (isLinked && intervalId) {
+          clearInterval(intervalId);
+          intervalId = null;
+        }
+      } catch {
+        if (!cancelled) setLinked(null);
+      }
+    };
+    check();
+    intervalId = setInterval(check, 5000);
+    return () => {
+      cancelled = true;
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [siweReady, wallet.address, linkBump]);
+
+  const refreshLink = useCallback(() => setLinkBump((n) => n + 1), []);
 
   useEffect(() => {
     if (!wallet.connected || !wallet.address) {
@@ -233,7 +273,9 @@ export function useTerminalSession() {
       registerError,
       apiFetch,
       disconnect,
+      linked,
+      refreshLink,
     }),
-    [wallet, chatId, ready, registerState, registerError, apiFetch, disconnect],
+    [wallet, chatId, ready, registerState, registerError, apiFetch, disconnect, linked, refreshLink],
   );
 }
