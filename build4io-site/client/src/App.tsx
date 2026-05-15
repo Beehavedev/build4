@@ -55,13 +55,13 @@ function Router() {
       <Route path="/support-agent" component={SupportAgent} />
       <Route path="/chain" component={Chain} />
       <Route path="/standards" component={Standards} />
-      <Route path="/tasks">{() => { window.location.href = "/build"; return null; }}</Route>
+      <Route path="/tasks">{() => { window.location.href = "/"; return null; }}</Route>
       <Route path="/token-launcher" component={TokenLauncher} />
       <Route path="/hire-agent" component={HireAgent} />
       <Route path="/token" component={TokenPage} />
       <Route path="/onchainos" component={OnchainOS} />
       <Route path="/staking" component={Staking} />
-      <Route path="/build" component={AgentBuilder} />
+      <Route path="/build">{() => { window.location.href = "/"; return null; }}</Route>
       <Route path="/agentic_bot" component={TelegramBotPage} />
       <Route path="/pricing">{() => { window.location.href = "/agentic_bot"; return null; }}</Route>
       <Route path="/agent-store" component={AgentStore} />
@@ -70,7 +70,7 @@ function Router() {
       <Route path="/hyperliquid" component={Hyperliquid} />
       <Route path="/app" component={AppDashboard} />
       <Route path="/terminal-preview" component={TerminalPreview} />
-      <Route path="/sdk">{() => { window.location.href = "/build"; return null; }}</Route>
+      <Route path="/sdk">{() => { window.location.href = "/"; return null; }}</Route>
       <Route component={NotFound} />
     </Switch>
   );
