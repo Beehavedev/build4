@@ -17,6 +17,8 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { WalletConnector } from "@/components/wallet-connector";
+import { useTerminalSession } from "@/hooks/use-terminal-session";
 import asterLogo from "@assets/aster_logo.svg";
 import hyperliquidLogo from "@assets/hyperliquid-logo_1775737973029.png";
 import fourmemeLogo from "@assets/four_logo_1778389271440.jpg";
@@ -67,36 +69,55 @@ const POLY_POSITIONS = [
   { market: "ETH ETF approved Q2", side: "YES", shares: "210", avg: "0.55", mark: "1.00", pnl: 94.50, pnlPct: 81.8, status: "RESOLVED — REDEEM" },
 ];
 
-function StatusBar() {
+type AccountSummary = {
+  totalEquity: number | null;
+  pnl24h: number | null;
+  pnl24hPct: number | null;
+  agents: number | null;
+  isLive: boolean;
+};
+
+function StatusBar({ ready, summary }: { ready: boolean; summary: AccountSummary }) {
+  const fmt = (n: number | null, prefix = "$") =>
+    n == null ? "—" : `${n < 0 ? "-" : prefix}${Math.abs(n).toLocaleString(undefined, { maximumFractionDigits: 2, minimumFractionDigits: 2 })}`;
+  const pnlClass = summary.pnl24h == null ? "text-muted-foreground" : summary.pnl24h >= 0 ? "text-primary" : "text-destructive";
   return (
     <div className="flex items-center justify-between px-4 sm:px-6 py-2.5 border-b bg-card/60 backdrop-blur-xl font-mono text-xs">
       <div className="flex items-center gap-4 sm:gap-6">
         <div className="flex items-center gap-2">
-          <div className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+          <div className={`w-1.5 h-1.5 rounded-full ${summary.isLive ? "bg-primary animate-pulse" : "bg-muted-foreground/40"}`} />
           <span className="text-muted-foreground tracking-widest">BUILD<span className="text-primary">4</span> TERMINAL</span>
         </div>
-        <Badge variant="outline" className="border-yellow-500/30 text-yellow-500 text-[10px] tracking-widest uppercase">PREVIEW</Badge>
+        {!ready && (
+          <Badge variant="outline" className="border-yellow-500/30 text-yellow-500 text-[10px] tracking-widest uppercase">
+            Connect wallet
+          </Badge>
+        )}
       </div>
       <div className="hidden md:flex items-center gap-6">
         <div className="flex items-center gap-2">
           <span className="text-muted-foreground">EQUITY</span>
-          <span className="text-foreground font-semibold">$12,418.34</span>
+          <span className="text-foreground font-semibold" data-testid="status-equity">{fmt(summary.totalEquity)}</span>
         </div>
         <div className="flex items-center gap-2">
           <span className="text-muted-foreground">24h</span>
-          <span className="text-primary font-semibold flex items-center"><ArrowUpRight className="w-3 h-3" />+$284.12 · +2.34%</span>
+          <span className={`${pnlClass} font-semibold flex items-center`}>
+            {summary.pnl24h != null && (summary.pnl24h >= 0 ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />)}
+            {fmt(summary.pnl24h)}
+            {summary.pnl24hPct != null && ` · ${summary.pnl24hPct >= 0 ? "+" : ""}${summary.pnl24hPct.toFixed(2)}%`}
+          </span>
         </div>
         <div className="flex items-center gap-2">
           <span className="text-muted-foreground">AGENTS</span>
-          <span className="text-foreground font-semibold">6 live</span>
+          <span className="text-foreground font-semibold">{summary.agents == null ? "—" : `${summary.agents} live`}</span>
         </div>
-        <div className="flex items-center gap-2 text-primary">
+        <div className={`flex items-center gap-2 ${summary.isLive ? "text-primary" : "text-muted-foreground"}`}>
           <Wifi className="w-3 h-3" />
-          <span className="text-[10px] tracking-widest uppercase">WS LIVE</span>
+          <span className="text-[10px] tracking-widest uppercase">{summary.isLive ? "WS LIVE" : "OFFLINE"}</span>
         </div>
       </div>
       <div className="flex items-center gap-2">
-        <div className="w-6 h-6 rounded-full bg-primary/20 border border-primary/40 flex items-center justify-center text-[10px] font-bold text-primary">B4</div>
+        <WalletConnector />
       </div>
     </div>
   );
@@ -180,34 +201,90 @@ function StatCard({ label, value, sub, accent }: { label: string; value: string;
   );
 }
 
-function DashboardPane({ onTrade }: { onTrade: () => void }) {
+type VenueBalance = { v: string; val: number; pct: number; color: string };
+
+function DashboardPane({
+  onTrade,
+  ready,
+  loading,
+  err,
+  summary,
+  venues,
+}: {
+  onTrade: () => void;
+  ready: boolean;
+  loading: boolean;
+  err: string | null;
+  summary: AccountSummary;
+  venues: VenueBalance[];
+}) {
+  const fmtUsd = (n: number | null) =>
+    n == null ? "—" : `${n < 0 ? "-" : ""}$${Math.abs(n).toLocaleString(undefined, { maximumFractionDigits: 2, minimumFractionDigits: 2 })}`;
+  const fmtPct = (n: number | null) => (n == null ? "" : `${n >= 0 ? "+" : ""}${n.toFixed(2)}%`);
+  const pnlClass = (n: number | null) =>
+    n == null ? "text-foreground" : n >= 0 ? "text-primary" : "text-destructive";
+
   return (
     <div>
       <VenueHeader title="Overview" sub="All venues, one view. Equity, agents, and live brain across the swarm." accent="border-primary/40 text-primary" />
+
+      {!ready && (
+        <div className="mb-6 p-5 rounded-md border border-yellow-500/30 bg-yellow-500/5 flex items-center justify-between gap-4">
+          <div>
+            <div className="font-mono text-xs tracking-widest uppercase text-yellow-500 mb-1">Wallet required</div>
+            <div className="text-sm text-muted-foreground">Connect your wallet to load your real balances, positions, and agents.</div>
+          </div>
+          <WalletConnector />
+        </div>
+      )}
+
+      {err && ready && (
+        <div className="mb-4 p-3 rounded-md border border-destructive/40 bg-destructive/5 font-mono text-xs text-destructive" data-testid="text-account-error">
+          {err}
+        </div>
+      )}
+
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-        <StatCard label="Total Equity" value="$12,418.34" sub="across 5 venues" />
-        <StatCard label="24h PnL" value="+$284.12" sub="+2.34%" accent="text-primary" />
-        <StatCard label="7d PnL" value="+$1,842.07" sub="+17.4%" accent="text-primary" />
-        <StatCard label="Win Rate" value="68%" sub="last 50 trades" />
+        <StatCard
+          label="Total Equity"
+          value={loading ? "…" : fmtUsd(summary.totalEquity)}
+          sub={summary.totalEquity != null ? "Aster + HL" : "across all venues"}
+        />
+        <StatCard
+          label="24h PnL"
+          value={loading ? "…" : fmtUsd(summary.pnl24h)}
+          sub={fmtPct(summary.pnl24hPct)}
+          accent={pnlClass(summary.pnl24h)}
+        />
+        <StatCard
+          label="Unrealized"
+          value={loading ? "…" : "—"}
+          sub="open positions"
+        />
+        <StatCard
+          label="Active Agents"
+          value={loading ? "…" : summary.agents == null ? "—" : String(summary.agents)}
+          sub={summary.agents == null ? "—" : "running"}
+        />
       </div>
+
       <div className="grid lg:grid-cols-2 gap-4">
         <div className="p-5 rounded-md border bg-card/60">
           <h3 className="font-mono text-sm tracking-widest uppercase text-muted-foreground mb-4">Equity by venue</h3>
           <div className="space-y-3">
-            {[
-              { v: "Aster Perps", val: 4820.18, pct: 38.8, color: "bg-yellow-400" },
-              { v: "Hyperliquid", val: 3142.50, pct: 25.3, color: "bg-cyan-400" },
-              { v: "Polymarket", val: 2104.32, pct: 16.9, color: "bg-blue-400" },
-              { v: "fourmeme", val: 1518.90, pct: 12.2, color: "bg-emerald-400" },
-              { v: "42.space", val: 832.44, pct: 6.7, color: "bg-orange-400" },
-            ].map((r) => (
+            {venues.length === 0 && (
+              <div className="font-mono text-xs text-muted-foreground py-6 text-center">
+                {ready ? "No balances on any venue yet." : "Connect wallet to load."}
+              </div>
+            )}
+            {venues.map((r) => (
               <div key={r.v}>
                 <div className="flex justify-between text-xs font-mono mb-1">
                   <span className="text-foreground">{r.v}</span>
-                  <span className="text-muted-foreground">${r.val.toLocaleString()} · {r.pct}%</span>
+                  <span className="text-muted-foreground">${r.val.toLocaleString(undefined, { maximumFractionDigits: 2 })} · {r.pct.toFixed(1)}%</span>
                 </div>
                 <div className="h-1.5 rounded-full bg-border overflow-hidden">
-                  <div className={`h-full ${r.color}`} style={{ width: `${r.pct}%` }} />
+                  <div className={`h-full ${r.color}`} style={{ width: `${Math.min(100, r.pct)}%` }} />
                 </div>
               </div>
             ))}
@@ -215,28 +292,18 @@ function DashboardPane({ onTrade }: { onTrade: () => void }) {
         </div>
         <div className="p-5 rounded-md border bg-card/60">
           <h3 className="font-mono text-sm tracking-widest uppercase text-muted-foreground mb-4">Active agents</h3>
-          <div className="space-y-2">
-            {[
-              { id: "node_001", focus: "Aster · BTC/SOL", pnl: "+$142.10", up: true },
-              { id: "node_007", focus: "Polymarket · macro", pnl: "+$84.20", up: true },
-              { id: "node_003", focus: "HL · ETH momentum", pnl: "+$32.40", up: true },
-              { id: "node_009", focus: "HL · DOGE short", pnl: "+$18.40", up: true },
-              { id: "node_011", focus: "42.space · BTC 8h", pnl: "−$4.10", up: false },
-              { id: "node_005", focus: "fourmeme · launchpad", pnl: "+$11.10", up: true },
-            ].map((a) => (
-              <div key={a.id} className="flex items-center justify-between px-3 py-2 rounded border-l-2 border-primary/40 bg-background/50 hover:bg-background transition-colors">
-                <div>
-                  <div className="font-mono text-xs text-foreground">{a.id}</div>
-                  <div className="font-mono text-[10px] text-muted-foreground">{a.focus}</div>
-                </div>
-                <div className={`font-mono text-sm font-semibold ${a.up ? "text-primary" : "text-destructive"}`}>{a.pnl}</div>
-              </div>
-            ))}
+          <div className="font-mono text-xs text-muted-foreground py-12 text-center">
+            {ready ? "No agents yet. Spin one up from the venue panes." : "Connect wallet to see your agents."}
           </div>
         </div>
       </div>
       <div className="mt-6">
-        <Button onClick={onTrade} className="font-mono tracking-widest text-xs uppercase" data-testid="button-place-trade">
+        <Button
+          onClick={onTrade}
+          disabled={!ready}
+          className="font-mono tracking-widest text-xs uppercase"
+          data-testid="button-place-trade"
+        >
           New Trade Ticket <ChevronRight className="w-3.5 h-3.5 ml-1" />
         </Button>
       </div>
@@ -541,13 +608,108 @@ export default function TerminalPreview() {
   const [venue, setVenue] = useState<Venue>("dashboard");
   const [drawer, setDrawer] = useState(false);
   const openTrade = () => setDrawer(true);
+
+  const session = useTerminalSession();
+  const [asterAcct, setAsterAcct] = useState<any>(null);
+  const [hlAcct, setHlAcct] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!session.ready) {
+      setAsterAcct(null);
+      setHlAcct(null);
+      setErr(null);
+      setLoading(false);
+      return;
+    }
+    let cancelled = false;
+    const load = async () => {
+      setLoading(true);
+      setErr(null);
+      const results = await Promise.allSettled([
+        session.apiFetch<any>("/api/miniapp/account"),
+        session.apiFetch<any>("/api/hl/account"),
+      ]);
+      if (cancelled) return;
+      const [a, h] = results;
+      const errs: string[] = [];
+      if (a.status === "fulfilled") setAsterAcct(a.value);
+      else {
+        setAsterAcct(null);
+        errs.push(`Aster: ${a.reason?.message || "load failed"}`);
+      }
+      if (h.status === "fulfilled") setHlAcct(h.value);
+      else {
+        setHlAcct(null);
+        // HL failures are non-fatal (user may not have set up HL yet) but we still
+        // surface them so silent outages don't get hidden.
+        const msg = h.reason?.message || "load failed";
+        if (!/not.?registered|not.?setup|no.?agent|no.?wallet/i.test(msg)) {
+          errs.push(`HL: ${msg}`);
+        }
+      }
+      setErr(errs.length ? errs.join(" · ") : null);
+      setLoading(false);
+    };
+    load();
+    const id = setInterval(load, 15000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [session.ready, session.apiFetch]);
+
+  const asterEquity = (() => {
+    if (!asterAcct) return 0;
+    const wb = Number(asterAcct.walletBalance ?? 0);
+    const upnl = Number(asterAcct.unrealizedPnl ?? 0);
+    return wb + upnl;
+  })();
+  const hlEquity = (() => {
+    if (!hlAcct) return 0;
+    return Number(hlAcct.accountValue ?? hlAcct.equity ?? hlAcct.totalRawUsd ?? 0);
+  })();
+  const totalEquity = session.ready ? asterEquity + hlEquity : null;
+  const pnl24h = asterAcct ? Number(asterAcct.realizedPnl ?? 0) + Number(asterAcct.unrealizedPnl ?? 0) : null;
+  const pnl24hPct = totalEquity && totalEquity > 0 && pnl24h != null ? (pnl24h / totalEquity) * 100 : null;
+
+  const summary: AccountSummary = {
+    totalEquity,
+    pnl24h,
+    pnl24hPct,
+    agents: null,
+    isLive: session.ready && !err,
+  };
+
+  const venues: VenueBalance[] = [];
+  if (session.ready) {
+    const total = Math.max(0.0001, asterEquity + hlEquity);
+    if (asterEquity > 0) venues.push({ v: "Aster Perps", val: asterEquity, pct: (asterEquity / total) * 100, color: "bg-yellow-400" });
+    if (hlEquity > 0) venues.push({ v: "Hyperliquid", val: hlEquity, pct: (hlEquity / total) * 100, color: "bg-cyan-400" });
+  }
+
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col">
-      <StatusBar />
+      <StatusBar ready={session.ready} summary={summary} />
+      {session.registerState === "error" && (
+        <div className="px-4 py-2 bg-destructive/10 border-b border-destructive/30 font-mono text-[11px] text-destructive">
+          Wallet register failed: {session.registerError}
+        </div>
+      )}
       <div className="flex-1 flex overflow-hidden">
         <IconRail active={venue} setActive={setVenue} />
         <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
-          {venue === "dashboard" && <DashboardPane onTrade={openTrade} />}
+          {venue === "dashboard" && (
+            <DashboardPane
+              onTrade={openTrade}
+              ready={session.ready}
+              loading={loading}
+              err={err}
+              summary={summary}
+              venues={venues}
+            />
+          )}
           {venue === "aster" && <PerpPane name="Aster Perps" sub="Custodial perpetual futures on Aster DEX. AI-routed, single-master account." accent="border-yellow-400/40 text-yellow-400" positions={ASTER_POSITIONS} onTrade={openTrade} />}
           {venue === "hyperliquid" && <PerpPane name="Hyperliquid" sub="L1 perps via agent wallet. Sub-second fills, on-chain orderbook." accent="border-cyan-400/40 text-cyan-400" positions={ASTER_POSITIONS.slice(0, 2)} onTrade={openTrade} />}
           {venue === "fourmeme" && <FourmemePane />}
