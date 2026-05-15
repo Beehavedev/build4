@@ -812,4 +812,189 @@ export function registerBotBridgeRoutes(app: Express) {
       res.status(500).json({ ok: false, error: "positions_lookup_failed" });
     }
   });
+
+  // ── Markets list (live, sorted by volume) ──────────────────────────
+  // 60s cache shared across users to keep load on the 42.space API low.
+  const fortyTwoMarketsCache: { value: any[]; fetchedAt: number } = { value: [], fetchedAt: 0 };
+  app.get("/api/fortytwo/markets", walletAuth, async (_req: AuthedRequest, res) => {
+    try {
+      const age = Date.now() - fortyTwoMarketsCache.fetchedAt;
+      if (age > 60_000 || fortyTwoMarketsCache.value.length === 0) {
+        const { getAllMarkets } = await import("../../src/services/fortyTwo");
+        const markets = await getAllMarkets({ status: "live", limit: 30, order: "volume", ascending: false });
+        fortyTwoMarketsCache.value = markets.map((m: any) => ({
+          marketAddress: m.address,
+          marketTitle: m.question,
+          category: (m.categories ?? [])[0] ?? "uncategorized",
+          startDate: m.startDate,
+          endDate: m.endDate,
+          elapsedPct: m.elapsedPct,
+          volume: typeof m.volume === "number" ? m.volume : 0,
+          traders: typeof m.traders === "number" ? m.traders : 0,
+        }));
+        fortyTwoMarketsCache.fetchedAt = Date.now();
+      }
+      res.json({ ok: true, markets: fortyTwoMarketsCache.value });
+    } catch (err: any) {
+      console.error("[bot-bridge] /fortytwo/markets failed:", err?.message);
+      // Serve stale cache if we have one — better than failing the UI.
+      if (fortyTwoMarketsCache.value.length > 0) {
+        return res.json({ ok: true, markets: fortyTwoMarketsCache.value, stale: true });
+      }
+      res.status(503).json({ ok: false, error: "markets_lookup_failed" });
+    }
+  });
+
+  // ── On-chain outcomes for a single market (tokenIds + prices) ──────
+  // Used by the Buy modal to populate YES/NO buttons with live prices.
+  app.get("/api/fortytwo/market/:address", walletAuth, async (req: AuthedRequest, res) => {
+    const address = String(req.params.address || "");
+    if (!/^0x[0-9a-fA-F]{40}$/.test(address)) {
+      return res.status(400).json({ ok: false, error: "invalid_address" });
+    }
+    try {
+      const { getMarketByAddress } = await import("../../src/services/fortyTwo");
+      const { readMarketOnchain } = await import("../../src/services/fortyTwoOnchain");
+      const market = await getMarketByAddress(address);
+      const state = await readMarketOnchain(market);
+      res.json({
+        ok: true,
+        market: {
+          marketAddress: market.address,
+          marketTitle: market.question,
+          endDate: market.endDate,
+          status: market.status,
+          outcomes: state.outcomes.map((o: any) => ({
+            tokenId: o.tokenId,
+            label: o.label ?? `Outcome ${o.tokenId}`,
+            impliedProbability: o.impliedProbability,
+          })),
+        },
+      });
+    } catch (err: any) {
+      console.error("[bot-bridge] /fortytwo/market failed:", err?.message);
+      res.status(500).json({ ok: false, error: "market_lookup_failed", details: err?.message });
+    }
+  });
+
+  // ── Live-trade opt-in (per-user kill switch) ───────────────────────
+  // Both the Telegram bot's /predictions tab and this terminal share the
+  // SAME `User.fortyTwoLiveTrade` flag — flipping it here also enables
+  // autonomous agent trades for this user. That's intentional: it's the
+  // only kill switch the executor checks before any live tx.
+  app.get("/api/fortytwo/live-status", walletAuth, async (req: AuthedRequest, res) => {
+    const userId = req.botUserId!;
+    try {
+      const { isUserLiveOptedIn } = await import("../../src/services/fortyTwoExecutor");
+      const enabled = await isUserLiveOptedIn(userId);
+      res.json({ ok: true, enabled });
+    } catch (err: any) {
+      console.error("[bot-bridge] /fortytwo/live-status failed:", err?.message);
+      res.status(500).json({ ok: false, error: "status_lookup_failed" });
+    }
+  });
+
+  app.post("/api/fortytwo/live-status", walletAuth, async (req: AuthedRequest, res) => {
+    const userId = req.botUserId!;
+    const enabled = !!req.body?.enabled;
+    try {
+      const { setUserLiveOptIn } = await import("../../src/services/fortyTwoExecutor");
+      await setUserLiveOptIn(userId, enabled);
+      res.json({ ok: true, enabled });
+    } catch (err: any) {
+      console.error("[bot-bridge] /fortytwo/live-status set failed:", err?.message);
+      res.status(500).json({ ok: false, error: "status_update_failed" });
+    }
+  });
+
+  // ── Manual buy ─────────────────────────────────────────────────────
+  // Same code path the Telegram /predictions buy uses. Enforces the
+  // executor's per-user caps (min/max amount, simultaneous opens, daily
+  // open count) and the live opt-in. Returns 400 with the executor's
+  // human-readable reason on validation failures so the UI can show it.
+  app.post("/api/fortytwo/buy", walletAuth, async (req: AuthedRequest, res) => {
+    const userId = req.botUserId!;
+    const marketAddress = String(req.body?.marketAddress || "");
+    const tokenId = Number(req.body?.tokenId);
+    const usdtAmount = Number(req.body?.usdtAmount);
+
+    if (!/^0x[0-9a-fA-F]{40}$/.test(marketAddress)) {
+      return res.status(400).json({ ok: false, error: "invalid_market_address" });
+    }
+    if (!Number.isFinite(tokenId) || tokenId < 0) {
+      return res.status(400).json({ ok: false, error: "invalid_token_id" });
+    }
+    if (!Number.isFinite(usdtAmount) || usdtAmount <= 0) {
+      return res.status(400).json({ ok: false, error: "invalid_amount" });
+    }
+
+    try {
+      const { openManualPredictionPosition } = await import("../../src/services/fortyTwoExecutor");
+      const result = await openManualPredictionPosition({ userId, marketAddress, tokenId, usdtAmount });
+      if (!result.ok) return res.status(400).json(result);
+      res.json(result);
+    } catch (err: any) {
+      console.error("[bot-bridge] /fortytwo/buy failed:", err?.message);
+      res.status(500).json({ ok: false, error: humanizeRelayerError(err?.message || "", "Buy") });
+    }
+  });
+
+  // ── Manual sell (close one open position) ──────────────────────────
+  // Bypasses the live-trade kill switch by design — users must always
+  // be able to exit existing exposure.
+  app.post("/api/fortytwo/sell", walletAuth, async (req: AuthedRequest, res) => {
+    const userId = req.botUserId!;
+    const positionId = String(req.body?.positionId || "");
+    if (!positionId) return res.status(400).json({ ok: false, error: "invalid_position_id" });
+    try {
+      const { closeUserPredictionPosition } = await import("../../src/services/fortyTwoExecutor");
+      const result = await closeUserPredictionPosition(userId, positionId);
+      if (!result.ok) return res.status(400).json(result);
+      res.json(result);
+    } catch (err: any) {
+      console.error("[bot-bridge] /fortytwo/sell failed:", err?.message);
+      res.status(500).json({ ok: false, error: humanizeRelayerError(err?.message || "", "Sell") });
+    }
+  });
+
+  // ── Claim payout for one resolved-winning position ─────────────────
+  // Looks up the position's market and calls claimUserResolvedForMarket
+  // (claims every winning OT the wallet holds for that market — same
+  // batching the Telegram bot uses).
+  app.post("/api/fortytwo/claim", walletAuth, async (req: AuthedRequest, res) => {
+    const userId = req.botUserId!;
+    const positionId = String(req.body?.positionId || "");
+    if (!positionId) return res.status(400).json({ ok: false, error: "invalid_position_id" });
+    try {
+      const r = await pool.query(
+        `SELECT "marketAddress", status FROM "OutcomePosition"
+          WHERE id = $1 AND "userId" = $2 LIMIT 1`,
+        [positionId, userId],
+      );
+      if (!r.rows.length) return res.status(404).json({ ok: false, error: "position_not_found" });
+      if (r.rows[0].status !== "resolved_win") {
+        return res.status(400).json({ ok: false, error: `position not claimable (status=${r.rows[0].status})` });
+      }
+      const { claimUserResolvedForMarket } = await import("../../src/services/fortyTwoExecutor");
+      const result = await claimUserResolvedForMarket(userId, r.rows[0].marketAddress);
+      if (!result.ok) return res.status(400).json(result);
+      res.json(result);
+    } catch (err: any) {
+      console.error("[bot-bridge] /fortytwo/claim failed:", err?.message);
+      res.status(500).json({ ok: false, error: humanizeRelayerError(err?.message || "", "Claim") });
+    }
+  });
+
+  // ── Sweep every resolved-winning position the user holds ───────────
+  app.post("/api/fortytwo/claim-all", walletAuth, async (req: AuthedRequest, res) => {
+    const userId = req.botUserId!;
+    try {
+      const { claimAllUserResolved } = await import("../../src/services/fortyTwoExecutor");
+      const result = await claimAllUserResolved(userId);
+      res.json(result);
+    } catch (err: any) {
+      console.error("[bot-bridge] /fortytwo/claim-all failed:", err?.message);
+      res.status(500).json({ ok: false, error: humanizeRelayerError(err?.message || "", "Claim all") });
+    }
+  });
 }

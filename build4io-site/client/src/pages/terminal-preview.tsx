@@ -1111,37 +1111,171 @@ function FourmemePane({ session }: { session: any }) {
 
 function FortyTwoPane({ session }: { session: any }) {
   const [positions, setPositions] = useState<any[]>([]);
+  const [markets, setMarkets] = useState<any[]>([]);
+  const [liveEnabled, setLiveEnabled] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [actionMsg, setActionMsg] = useState<string | null>(null);
+  const [reloadTick, setReloadTick] = useState(0);
+  const [tradeModal, setTradeModal] = useState<{ marketAddress: string; marketTitle: string } | null>(null);
 
   useEffect(() => {
-    if (!session.ready) { setPositions([]); return; }
+    if (!session.ready) {
+      setPositions([]); setMarkets([]); setLiveEnabled(null);
+      return;
+    }
     let cancelled = false;
     setLoading(true);
     setErr(null);
-    session.apiFetch("/api/fortytwo/positions")
-      .then((j: any) => { if (!cancelled) setPositions(Array.isArray(j?.positions) ? j.positions : []); })
-      .catch((e: any) => { if (!cancelled) setErr(e?.message || "Failed to load"); })
+    Promise.all([
+      session.apiFetch("/api/fortytwo/positions").catch((e: any) => ({ ok: false, error: e?.message || "positions load failed" })),
+      session.apiFetch("/api/fortytwo/markets").catch((e: any) => ({ ok: false, error: e?.message || "markets load failed" })),
+      session.apiFetch("/api/fortytwo/live-status").catch((e: any) => ({ ok: false, error: e?.message || "status load failed" })),
+    ])
+      .then(([p, m, s]: any[]) => {
+        if (cancelled) return;
+        const errs: string[] = [];
+        if (p?.ok) setPositions(Array.isArray(p.positions) ? p.positions : []);
+        else { setPositions([]); errs.push(`positions: ${p?.error || "unknown"}`); }
+        if (m?.ok) setMarkets(Array.isArray(m.markets) ? m.markets : []);
+        else { setMarkets([]); errs.push(`markets: ${m?.error || "unknown"}`); }
+        if (s?.ok) setLiveEnabled(!!s.enabled);
+        else errs.push(`live-status: ${s?.error || "unknown"}`);
+        setErr(errs.length ? errs.join(" · ") : null);
+      })
       .finally(() => !cancelled && setLoading(false));
     return () => { cancelled = true; };
-  }, [session.ready]);
+  }, [session.ready, reloadTick]);
+
+  const toggleLive = async () => {
+    if (liveEnabled === null) return;
+    setBusy("live-toggle");
+    setActionMsg(null);
+    try {
+      const r: any = await session.apiFetch("/api/fortytwo/live-status", {
+        method: "POST",
+        body: { enabled: !liveEnabled } as any,
+      });
+      if (r?.ok) {
+        setLiveEnabled(!!r.enabled);
+        setActionMsg(r.enabled
+          ? "Live trading ENABLED — manual trades + autonomous agents can now place real on-chain orders."
+          : "Live trading DISABLED — new manual + agent trades are blocked. You can still close existing positions.");
+      } else {
+        setActionMsg(r?.error || "Toggle failed");
+      }
+    } catch (e: any) {
+      setActionMsg(e?.message || "Toggle failed");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const runSell = async (positionId: string) => {
+    setBusy(`sell-${positionId}`);
+    setActionMsg(null);
+    try {
+      const r: any = await session.apiFetch("/api/fortytwo/sell", { method: "POST", body: { positionId } as any });
+      if (r?.ok) {
+        const pnl = num(r.pnl);
+        setActionMsg(`Position closed · PnL ${pnl >= 0 ? "+" : ""}${fmtUsd(pnl)}${r.txHash ? ` · tx ${String(r.txHash).slice(0, 10)}…` : ""}`);
+        setReloadTick((t) => t + 1);
+      } else {
+        setActionMsg(r?.reason || r?.error || "Sell failed");
+      }
+    } catch (e: any) {
+      setActionMsg(e?.message || "Sell failed");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const runClaim = async (positionId: string) => {
+    setBusy(`claim-${positionId}`);
+    setActionMsg(null);
+    try {
+      const r: any = await session.apiFetch("/api/fortytwo/claim", { method: "POST", body: { positionId } as any });
+      if (r?.ok) {
+        setActionMsg(`Claimed ${r.claimedPositions ?? 1} position(s) · payout ${fmtUsd(num(r.payoutUsdt))}${r.txHash ? ` · tx ${String(r.txHash).slice(0, 10)}…` : ""}`);
+        setReloadTick((t) => t + 1);
+      } else {
+        setActionMsg(r?.reason || r?.error || "Claim failed");
+      }
+    } catch (e: any) {
+      setActionMsg(e?.message || "Claim failed");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const runClaimAll = async () => {
+    setBusy("claim-all");
+    setActionMsg(null);
+    try {
+      const r: any = await session.apiFetch("/api/fortytwo/claim-all", { method: "POST", body: {} as any });
+      if (r && (r.ok || r.claimedPositions != null)) {
+        setActionMsg(`Swept ${r.claimedPositions ?? 0} winning position(s) · total ${fmtUsd(num(r.payoutUsdt ?? 0))}${Array.isArray(r.errors) && r.errors.length ? ` · ${r.errors.length} partial errors` : ""}`);
+        setReloadTick((t) => t + 1);
+      } else {
+        setActionMsg(r?.reason || r?.error || "Claim all failed");
+      }
+    } catch (e: any) {
+      setActionMsg(e?.message || "Claim all failed");
+    } finally {
+      setBusy(null);
+    }
+  };
 
   if (!session.ready) {
     return <NotConnected title="42.space" sub="On-chain prediction markets on BSC. BTC 8h price campaigns + Campaign mode." accent="border-orange-400/40 text-orange-400" color="text-orange-400" icon={Target} />;
   }
 
   const open = positions.filter((p) => p.status === "open");
-  const closed = positions.filter((p) => p.status !== "open");
+  const closed = positions.filter((p) => p.status !== "open" && p.status !== "resolved_win");
+  const claimable = positions.filter((p) => p.status === "resolved_win");
   const totalPnl = closed.reduce((acc, p) => acc + num(p.pnl), 0);
 
   return (
     <div>
       <VenueHeader title="42.space" sub="On-chain prediction markets on BSC. BTC 8h price campaigns + Campaign mode." accent="border-orange-400/40 text-orange-400" />
       {err && <div className="rounded-md border border-red-500/40 bg-red-500/10 p-3 mb-4 font-mono text-[11px] text-red-400">{err}</div>}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+
+      {/* Live-trade toggle banner */}
+      <div className="rounded-md border bg-card/60 p-4 mb-4 flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <div className="font-mono text-[10px] text-muted-foreground uppercase mb-1">Live trading</div>
+          <div className="font-mono text-xs text-foreground">
+            {liveEnabled === null
+              ? <span className="text-muted-foreground">loading…</span>
+              : liveEnabled
+                ? <span className="text-emerald-400">✓ ENABLED — manual trades + autonomous agents can place real BSC orders</span>
+                : <span className="text-yellow-400">○ DISABLED — paper-only; new live trades blocked (closing always allowed)</span>}
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={toggleLive}
+          disabled={busy === "live-toggle" || liveEnabled === null}
+          data-testid="button-fortytwo-live-toggle"
+          className={`rounded border px-3 py-1.5 font-mono text-[10px] disabled:opacity-50 ${
+            liveEnabled
+              ? "border-yellow-400/40 bg-yellow-400/10 text-yellow-400 hover:bg-yellow-400/20"
+              : "border-emerald-400/40 bg-emerald-400/10 text-emerald-400 hover:bg-emerald-400/20"
+          }`}
+        >
+          {busy === "live-toggle" ? "…" : liveEnabled ? "Disable live" : "Enable live"}
+        </button>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
         <div className="rounded-md border bg-card/60 p-4">
-          <div className="font-mono text-[10px] text-muted-foreground uppercase mb-1">Open positions</div>
+          <div className="font-mono text-[10px] text-muted-foreground uppercase mb-1">Open</div>
           <div className="font-mono text-lg text-foreground" data-testid="text-fortytwo-open">{open.length}</div>
+        </div>
+        <div className="rounded-md border bg-card/60 p-4">
+          <div className="font-mono text-[10px] text-muted-foreground uppercase mb-1">Claimable</div>
+          <div className="font-mono text-lg text-foreground" data-testid="text-fortytwo-claimable">{claimable.length}</div>
         </div>
         <div className="rounded-md border bg-card/60 p-4">
           <div className="font-mono text-[10px] text-muted-foreground uppercase mb-1">Closed</div>
@@ -1154,30 +1288,245 @@ function FortyTwoPane({ session }: { session: any }) {
           </div>
         </div>
       </div>
-      <div className="rounded-md border bg-card/60 p-4">
+
+      {actionMsg && (
+        <div className="rounded-md border border-orange-400/40 bg-orange-400/10 p-3 mb-4 font-mono text-[11px] text-orange-300" data-testid="text-fortytwo-action-msg">
+          {actionMsg}
+        </div>
+      )}
+
+      {/* Markets — pickable for trading */}
+      <div className="rounded-md border bg-card/60 p-4 mb-4">
         <div className="flex items-center justify-between mb-3">
-          <div className="font-mono text-xs text-foreground">Positions ({positions.length})</div>
+          <div className="font-mono text-xs text-foreground">Live markets ({markets.length})</div>
           {loading && <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" />}
         </div>
-        {positions.length === 0 ? (
-          <div className="font-mono text-[11px] text-muted-foreground py-6 text-center">No 42.space positions yet. Trade from the Telegram bot.</div>
+        {markets.length === 0 ? (
+          <div className="font-mono text-[11px] text-muted-foreground py-4 text-center">No live markets right now.</div>
         ) : (
-          <div className="space-y-2">
-            {positions.slice(0, 30).map((p) => (
-              <div key={p.id} className="flex items-center justify-between border-b border-border/40 pb-2 last:border-b-0" data-testid={`row-fortytwo-${p.id}`}>
+          <div className="space-y-2 max-h-72 overflow-y-auto">
+            {markets.slice(0, 15).map((m) => (
+              <div key={m.marketAddress} className="flex items-center justify-between border-b border-border/40 pb-2 last:border-b-0 gap-3" data-testid={`row-fortytwo-market-${m.marketAddress}`}>
                 <div className="flex-1 min-w-0">
-                  <div className="font-mono text-xs text-foreground truncate">{p.marketTitle || p.marketAddress?.slice(0, 10)}</div>
+                  <div className="font-mono text-xs text-foreground truncate">{m.marketTitle}</div>
                   <div className="font-mono text-[10px] text-muted-foreground">
-                    {p.outcomeLabel} · {p.status} {p.paperTrade && <span className="text-yellow-400">PAPER</span>}
+                    {m.category} · vol {fmtUsd(num(m.volume))} · {num(m.traders)} traders
                   </div>
                 </div>
-                <div className="font-mono text-xs text-right tabular-nums ml-3">
-                  <div className="text-foreground">{fmtUsd(num(p.usdtIn))}</div>
-                  {p.pnl != null && <div className={num(p.pnl) >= 0 ? "text-emerald-400" : "text-red-400"}>{num(p.pnl) >= 0 ? "+" : ""}{fmtUsd(num(p.pnl))}</div>}
-                </div>
+                <button
+                  type="button"
+                  onClick={() => { setActionMsg(null); setTradeModal({ marketAddress: m.marketAddress, marketTitle: m.marketTitle }); }}
+                  data-testid={`button-fortytwo-trade-${m.marketAddress}`}
+                  className="rounded border border-orange-400/40 bg-orange-400/10 px-2 py-1 font-mono text-[10px] text-orange-400 hover:bg-orange-400/20"
+                >
+                  Trade
+                </button>
               </div>
             ))}
           </div>
+        )}
+      </div>
+
+      {/* Positions */}
+      <div className="rounded-md border bg-card/60 p-4">
+        <div className="flex items-center justify-between mb-3">
+          <div className="font-mono text-xs text-foreground">Positions ({positions.length})</div>
+          {claimable.length > 0 && (
+            <button
+              type="button"
+              onClick={runClaimAll}
+              disabled={busy === "claim-all"}
+              data-testid="button-fortytwo-claim-all"
+              className="rounded border border-emerald-400/40 bg-emerald-400/10 px-2 py-1 font-mono text-[10px] text-emerald-400 hover:bg-emerald-400/20 disabled:opacity-50"
+            >
+              {busy === "claim-all" ? "Sweeping…" : `Claim all (${claimable.length})`}
+            </button>
+          )}
+        </div>
+        {positions.length === 0 ? (
+          <div className="font-mono text-[11px] text-muted-foreground py-6 text-center">No 42.space positions yet. Pick a market above to trade.</div>
+        ) : (
+          <div className="space-y-2">
+            {positions.slice(0, 30).map((p) => {
+              const isOpen = p.status === "open";
+              const isWin = p.status === "resolved_win";
+              const sellBusy = busy === `sell-${p.id}`;
+              const claimBusy = busy === `claim-${p.id}`;
+              return (
+                <div key={p.id} className="flex items-center justify-between border-b border-border/40 pb-2 last:border-b-0 gap-3" data-testid={`row-fortytwo-${p.id}`}>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-mono text-xs text-foreground truncate">{p.marketTitle || p.marketAddress?.slice(0, 10)}</div>
+                    <div className="font-mono text-[10px] text-muted-foreground">
+                      {p.outcomeLabel} · {p.status}{p.paperTrade && <span className="text-yellow-400"> · PAPER</span>}{p.agentId && <span className="text-blue-400"> · agent</span>}
+                    </div>
+                  </div>
+                  <div className="font-mono text-xs text-right tabular-nums">
+                    <div className="text-foreground">{fmtUsd(num(p.usdtIn))}</div>
+                    {p.pnl != null && <div className={num(p.pnl) >= 0 ? "text-emerald-400" : "text-red-400"}>{num(p.pnl) >= 0 ? "+" : ""}{fmtUsd(num(p.pnl))}</div>}
+                  </div>
+                  {isOpen && (
+                    <button
+                      type="button"
+                      onClick={() => runSell(p.id)}
+                      disabled={sellBusy}
+                      data-testid={`button-fortytwo-sell-${p.id}`}
+                      className="rounded border border-red-400/40 bg-red-400/10 px-2 py-1 font-mono text-[10px] text-red-400 hover:bg-red-400/20 disabled:opacity-50"
+                    >
+                      {sellBusy ? "Selling…" : "Sell"}
+                    </button>
+                  )}
+                  {isWin && (
+                    <button
+                      type="button"
+                      onClick={() => runClaim(p.id)}
+                      disabled={claimBusy}
+                      data-testid={`button-fortytwo-claim-${p.id}`}
+                      className="rounded border border-emerald-400/40 bg-emerald-400/10 px-2 py-1 font-mono text-[10px] text-emerald-400 hover:bg-emerald-400/20 disabled:opacity-50"
+                    >
+                      {claimBusy ? "Claiming…" : "Claim"}
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {tradeModal && (
+        <FortyTwoTradeModal
+          session={session}
+          marketAddress={tradeModal.marketAddress}
+          marketTitle={tradeModal.marketTitle}
+          onClose={() => setTradeModal(null)}
+          onTraded={(msg) => { setActionMsg(msg); setTradeModal(null); setReloadTick((t) => t + 1); }}
+        />
+      )}
+    </div>
+  );
+}
+
+function FortyTwoTradeModal({
+  session, marketAddress, marketTitle, onClose, onTraded,
+}: {
+  session: any; marketAddress: string; marketTitle: string;
+  onClose: () => void; onTraded: (msg: string) => void;
+}) {
+  const [outcomes, setOutcomes] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
+  const [tokenId, setTokenId] = useState<number | null>(null);
+  const [amount, setAmount] = useState<string>("2");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setErr(null);
+    session.apiFetch(`/api/fortytwo/market/${marketAddress}`)
+      .then((r: any) => {
+        if (cancelled) return;
+        if (r?.ok && r.market) {
+          const outs = Array.isArray(r.market.outcomes) ? r.market.outcomes : [];
+          setOutcomes(outs);
+          if (outs.length > 0) setTokenId(outs[0].tokenId);
+        } else {
+          setErr(r?.error || "Failed to load outcomes");
+        }
+      })
+      .catch((e: any) => !cancelled && setErr(e?.message || "Failed to load outcomes"))
+      .finally(() => !cancelled && setLoading(false));
+    return () => { cancelled = true; };
+  }, [marketAddress]);
+
+  const submit = async () => {
+    if (tokenId === null) return;
+    const usdtAmount = Number(amount);
+    if (!Number.isFinite(usdtAmount) || usdtAmount <= 0) {
+      setErr("Enter a valid USDT amount");
+      return;
+    }
+    setBusy(true);
+    setErr(null);
+    try {
+      const r: any = await session.apiFetch("/api/fortytwo/buy", {
+        method: "POST",
+        body: { marketAddress, tokenId, usdtAmount } as any,
+      });
+      if (r?.ok) {
+        onTraded(`Buy filled${r.txHash ? ` · tx ${String(r.txHash).slice(0, 10)}…` : ""}`);
+      } else {
+        setErr(r?.reason || r?.error || "Buy failed");
+      }
+    } catch (e: any) {
+      setErr(e?.message || "Buy failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={onClose}>
+      <div className="w-full max-w-md rounded-lg border border-orange-400/40 bg-card p-5" onClick={(e) => e.stopPropagation()} data-testid="modal-fortytwo-trade">
+        <div className="flex items-center justify-between mb-3">
+          <div className="font-mono text-sm text-foreground">Buy outcome</div>
+          <button type="button" onClick={onClose} className="font-mono text-xs text-muted-foreground hover:text-foreground" data-testid="button-fortytwo-trade-close">✕</button>
+        </div>
+        <div className="font-mono text-[11px] text-muted-foreground mb-4 break-words">{marketTitle}</div>
+
+        {loading ? (
+          <div className="py-6 text-center"><Loader2 className="w-4 h-4 animate-spin text-muted-foreground inline" /></div>
+        ) : (
+          <>
+            <div className="font-mono text-[10px] text-muted-foreground uppercase mb-2">Outcome</div>
+            <div className="grid grid-cols-2 gap-2 mb-4">
+              {outcomes.map((o) => {
+                const selected = tokenId === o.tokenId;
+                return (
+                  <button
+                    key={o.tokenId}
+                    type="button"
+                    onClick={() => setTokenId(o.tokenId)}
+                    data-testid={`button-fortytwo-outcome-${o.tokenId}`}
+                    className={`rounded border px-3 py-2 font-mono text-xs ${
+                      selected
+                        ? "border-orange-400 bg-orange-400/20 text-orange-300"
+                        : "border-border bg-card/60 text-foreground hover:border-orange-400/40"
+                    }`}
+                  >
+                    <div>{o.label}</div>
+                    <div className="text-[10px] text-muted-foreground mt-1">@ {(num(o.impliedProbability) * 100).toFixed(1)}%</div>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="font-mono text-[10px] text-muted-foreground uppercase mb-2">USDT amount</div>
+            <input
+              type="number"
+              min="0"
+              step="0.1"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              data-testid="input-fortytwo-amount"
+              className="w-full rounded border border-border bg-background px-3 py-2 font-mono text-sm text-foreground mb-4"
+            />
+
+            {err && <div className="rounded border border-red-500/40 bg-red-500/10 p-2 mb-3 font-mono text-[11px] text-red-400">{err}</div>}
+
+            <button
+              type="button"
+              onClick={submit}
+              disabled={busy || tokenId === null}
+              data-testid="button-fortytwo-trade-submit"
+              className="w-full rounded border border-orange-400/40 bg-orange-400/10 px-3 py-2 font-mono text-xs text-orange-400 hover:bg-orange-400/20 disabled:opacity-50"
+            >
+              {busy ? "Submitting…" : "Buy outcome"}
+            </button>
+            <div className="font-mono text-[10px] text-muted-foreground mt-2 text-center">
+              Live trading must be enabled. Min/max + daily caps apply per the executor.
+            </div>
+          </>
         )}
       </div>
     </div>
