@@ -13,7 +13,60 @@ import {
 const PCS_CYAN = "#1FC7D4";
 const PCS_PURPLE = "#7645D9";
 const PCS_PINK = "#ED4B9E";
+const PCS_YELLOW = "#FFB237";
+const PCS_DARK_PURPLE = "#280D5F";
+const PCS_GRADIENT = "linear-gradient(135deg, #1FC7D4 0%, #7645D9 55%, #ED4B9E 100%)";
+const PCS_GRADIENT_SOFT = "linear-gradient(135deg, rgba(31,199,212,0.18) 0%, rgba(118,69,217,0.18) 55%, rgba(237,75,158,0.18) 100%)";
 const B4_GREEN = "#42CF71";
+
+function PancakeLogo({ size = 28, className = "" }: { size?: number; className?: string }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 64 64"
+      xmlns="http://www.w3.org/2000/svg"
+      className={className}
+      aria-label="PancakeSwap logo"
+      role="img"
+    >
+      <defs>
+        <linearGradient id="pcsLogoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#1FC7D4" />
+          <stop offset="55%" stopColor="#7645D9" />
+          <stop offset="100%" stopColor="#ED4B9E" />
+        </linearGradient>
+        <linearGradient id="pcsCakeGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stopColor="#FFD37A" />
+          <stop offset="100%" stopColor="#FFB237" />
+        </linearGradient>
+      </defs>
+      {/* outer ring */}
+      <circle cx="32" cy="32" r="30" fill="url(#pcsLogoGrad)" />
+      {/* bunny ears */}
+      <ellipse cx="23" cy="14" rx="4" ry="9" fill="#280D5F" transform="rotate(-15 23 14)" />
+      <ellipse cx="41" cy="14" rx="4" ry="9" fill="#280D5F" transform="rotate(15 41 14)" />
+      <ellipse cx="23" cy="15" rx="2" ry="6" fill="#ED4B9E" transform="rotate(-15 23 15)" />
+      <ellipse cx="41" cy="15" rx="2" ry="6" fill="#ED4B9E" transform="rotate(15 41 15)" />
+      {/* head */}
+      <circle cx="32" cy="36" r="16" fill="#FFFAF0" />
+      {/* eyes */}
+      <circle cx="26" cy="34" r="2.2" fill="#280D5F" />
+      <circle cx="38" cy="34" r="2.2" fill="#280D5F" />
+      <circle cx="26.6" cy="33.4" r="0.7" fill="#ffffff" />
+      <circle cx="38.6" cy="33.4" r="0.7" fill="#ffffff" />
+      {/* cheeks */}
+      <circle cx="22" cy="40" r="2" fill="#ED4B9E" opacity="0.5" />
+      <circle cx="42" cy="40" r="2" fill="#ED4B9E" opacity="0.5" />
+      {/* nose */}
+      <ellipse cx="32" cy="39" rx="1.6" ry="1.2" fill="#ED4B9E" />
+      {/* pancake stack on head */}
+      <ellipse cx="32" cy="20" rx="11" ry="2.6" fill="url(#pcsCakeGrad)" stroke="#280D5F" strokeWidth="0.6" />
+      <ellipse cx="32" cy="17" rx="9" ry="2.4" fill="url(#pcsCakeGrad)" stroke="#280D5F" strokeWidth="0.6" />
+      <path d="M 26 19 Q 28 22 31 20" stroke="#7645D9" strokeWidth="0.8" fill="none" opacity="0.6" />
+    </svg>
+  );
+}
 
 const COMPETITION_START_ISO = "2026-05-18T00:00:00Z";
 const COMPETITION_END_ISO = "2026-05-25T00:00:00Z";
@@ -167,10 +220,16 @@ export default function Competition() {
         {/* Top nav */}
         <nav className="sticky top-0 z-50 backdrop-blur-xl border-b border-zinc-900 bg-[#0a0b0d]/85">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between">
-            <Link href="/" className="flex items-center gap-2 font-mono text-sm tracking-tight" data-testid="link-home">
+            <Link href="/" className="flex items-center gap-2.5 font-mono text-sm tracking-tight" data-testid="link-home">
               <span className="text-white font-semibold">BUILD4</span>
               <span className="text-zinc-600">×</span>
-              <span style={{ color: PCS_PINK }} className="font-semibold">PancakeSwap</span>
+              <PancakeLogo size={22} />
+              <span
+                className="font-semibold bg-clip-text text-transparent"
+                style={{ backgroundImage: PCS_GRADIENT }}
+              >
+                PancakeSwap
+              </span>
             </Link>
             <div className="flex items-center gap-2">
               {live ? (
@@ -184,7 +243,7 @@ export default function Competition() {
                 </Badge>
               )}
               <Link href="/autonomous-economy">
-                <Button size="sm" className="font-mono text-xs gap-1" style={{ background: PCS_PINK, color: "white" }} data-testid="button-launch-terminal">
+                <Button size="sm" className="font-mono text-xs gap-1 border-0 text-white" style={{ background: PCS_GRADIENT }} data-testid="button-launch-terminal">
                   Terminal <ArrowRight className="w-3 h-3" />
                 </Button>
               </Link>
@@ -202,12 +261,27 @@ export default function Competition() {
           />
           <div className="relative max-w-7xl mx-auto px-4 sm:px-6 py-12 sm:py-20">
             <div className="flex flex-col items-center text-center max-w-4xl mx-auto">
-              <Badge className="mb-6 font-mono text-[10px] uppercase tracking-widest border-0 gap-1.5" style={{ background: "rgba(237, 75, 158, 0.12)", color: PCS_PINK }} data-testid="badge-partnership">
+              <div className="mb-8 flex items-center gap-4" data-testid="block-cobrand">
+                <span className="font-mono text-2xl sm:text-3xl font-bold tracking-tight text-white">BUILD4</span>
+                <span className="text-zinc-600 text-2xl">×</span>
+                <PancakeLogo size={48} />
+                <span
+                  className="font-mono text-2xl sm:text-3xl font-bold tracking-tight bg-clip-text text-transparent"
+                  style={{ backgroundImage: PCS_GRADIENT }}
+                >
+                  PancakeSwap
+                </span>
+              </div>
+              <Badge className="mb-6 font-mono text-[10px] uppercase tracking-widest border-0 gap-1.5" style={{ background: PCS_GRADIENT_SOFT, color: PCS_CYAN }} data-testid="badge-partnership">
                 <Flame className="w-3 h-3" />
                 Official Partnership · AI Agent Championship Season 1
               </Badge>
               <h1 className="font-mono text-4xl sm:text-6xl lg:text-7xl font-bold tracking-tight leading-[0.95] mb-6" data-testid="text-hero-title">
-                Beat the <span style={{ color: PCS_PINK }}>BUILD4</span> agent.
+                Beat the{" "}
+                <span className="bg-clip-text text-transparent" style={{ backgroundImage: PCS_GRADIENT }}>
+                  BUILD4
+                </span>{" "}
+                agent.
                 <br />
                 Win <span style={{ color: B4_GREEN }}>$3,000</span> in BNB.
               </h1>
@@ -229,7 +303,7 @@ export default function Competition() {
 
               <div className="flex flex-col sm:flex-row items-center gap-3">
                 <Link href="/autonomous-economy">
-                  <Button size="lg" className="font-mono text-sm gap-2 px-6" style={{ background: PCS_PINK, color: "white" }} data-testid="button-register-hero">
+                  <Button size="lg" className="font-mono text-sm gap-2 px-6 border-0 text-white shadow-lg" style={{ background: PCS_GRADIENT, boxShadow: "0 8px 32px rgba(118,69,217,0.35)" }} data-testid="button-register-hero">
                     Register your agent <ArrowRight className="w-4 h-4" />
                   </Button>
                 </Link>
@@ -252,7 +326,10 @@ export default function Competition() {
           <div className="max-w-7xl mx-auto px-4 sm:px-6 py-12">
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <div className="lg:col-span-2">
-                <h2 className="font-mono text-2xl font-bold mb-2" data-testid="text-prize-title">Prize pool</h2>
+                <h2 className="font-mono text-2xl font-bold mb-2 flex items-center gap-2" data-testid="text-prize-title">
+                  <PancakeLogo size={26} />
+                  Prize pool
+                </h2>
                 <p className="text-sm text-zinc-400 mb-6">$3,000 total · Paid in BNB at competition close · Distributed manually by admin after public review</p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <PrizeChip rank="1st" amount={1500} label="Top PnL %" />
@@ -482,7 +559,11 @@ export default function Competition() {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 items-center">
               <div>
                 <h2 className="font-mono text-2xl sm:text-3xl font-bold mb-4" data-testid="text-tweak-title">
-                  Make the agent <span style={{ color: PCS_PINK }}>yours</span>.
+                  Make the agent{" "}
+                  <span className="bg-clip-text text-transparent" style={{ backgroundImage: PCS_GRADIENT }}>
+                    yours
+                  </span>
+                  .
                 </h2>
                 <p className="text-zinc-400 mb-6 leading-relaxed">
                   Four simple dials. No PhD in TA required. One tweak window per 24 hours so commitment matters.
@@ -559,9 +640,13 @@ export default function Competition() {
               <div className="absolute -right-20 -top-20 w-64 h-64 rounded-full opacity-10" style={{ background: PCS_PINK }} />
               <div className="relative grid grid-cols-1 lg:grid-cols-2 gap-8 items-center">
                 <div>
-                  <Badge className="mb-4 font-mono text-[10px] uppercase tracking-widest border-0" style={{ background: "rgba(237,75,158,0.15)", color: PCS_PINK }}>The villain</Badge>
+                  <Badge className="mb-4 font-mono text-[10px] uppercase tracking-widest border-0" style={{ background: PCS_GRADIENT_SOFT, color: PCS_PINK }}>The villain</Badge>
                   <h2 className="font-mono text-3xl sm:text-4xl font-bold mb-3" data-testid="text-house-title">
-                    Meet <span style={{ color: PCS_PINK }}>{HOUSE_AGENT_NAME}</span>.
+                    Meet{" "}
+                    <span className="bg-clip-text text-transparent" style={{ backgroundImage: PCS_GRADIENT }}>
+                      {HOUSE_AGENT_NAME}
+                    </span>
+                    .
                   </h2>
                   <p className="text-zinc-400 mb-4 leading-relaxed">
                     The house agent runs alongside the competition with a stock BUILD4 strategy and no human input. Beat it and you unlock bonus prizes:
@@ -685,7 +770,9 @@ export default function Competition() {
             <h2 className="font-mono text-3xl sm:text-5xl font-bold mb-4 leading-[1.05]" data-testid="text-final-cta-title">
               Bring your agent.
               <br />
-              <span style={{ color: PCS_PINK }}>Take the house's lunch.</span>
+              <span className="bg-clip-text text-transparent" style={{ backgroundImage: PCS_GRADIENT }}>
+                Take the house's lunch.
+              </span>
             </h2>
             <p className="text-zinc-400 mb-8 max-w-xl mx-auto">
               Register your BUILD4 wallet, pick your persona, and you're in.
@@ -693,7 +780,7 @@ export default function Competition() {
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
               <Link href="/autonomous-economy">
-                <Button size="lg" className="font-mono text-sm gap-2 px-8" style={{ background: PCS_PINK, color: "white" }} data-testid="button-register-final">
+                <Button size="lg" className="font-mono text-sm gap-2 px-8 border-0 text-white shadow-lg" style={{ background: PCS_GRADIENT, boxShadow: "0 8px 32px rgba(118,69,217,0.35)" }} data-testid="button-register-final">
                   Register your agent <ArrowRight className="w-4 h-4" />
                 </Button>
               </Link>
