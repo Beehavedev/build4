@@ -16,6 +16,7 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import express from "express";
 import { pool } from "./db";
+import { verifySiweCookie } from "./wallet-routes";
 
 // Tiny inline copy of the bot's humanizeRelayerError — keeps user-facing
 // errors clear without importing from src/server.ts (which we never touch).
@@ -32,11 +33,47 @@ function humanizeRelayerError(rawMsg: string, stepLabel: string): string {
 
 type AuthedRequest = Request & { botUserId?: string; botUser?: any };
 
+// Authenticated by the HMAC-signed SIWE session cookie issued by
+// /api/auth/siwe (see wallet-routes.ts). The cookie pins the wallet
+// address that signed the EIP-4361 message — we never trust a
+// client-supplied `x-wallet-address` header here, since that was
+// trivially spoofable. The DB lookup that maps wallet → bot user
+// is unchanged; only the source of `wallet` is hardened.
+function bridgeAllowedHosts(req: Request): Set<string> {
+  const env = process.env.SITE_ALLOWED_HOSTS || process.env.DAPP_ALLOWED_HOSTS || "";
+  const list = env.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
+  if (list.length) return new Set(list);
+  const h = String(req.headers.host || "").toLowerCase();
+  return new Set(h ? [h] : []);
+}
+function originHostFromHeader(o: string | undefined | null): string {
+  if (!o) return "";
+  try { return new URL(o).host.toLowerCase(); } catch { return ""; }
+}
+
 async function walletAuth(req: AuthedRequest, res: Response, next: NextFunction) {
-  const raw = (req.headers["x-wallet-address"] as string | undefined) || "";
-  const wallet = raw.toLowerCase().trim();
+  // CSRF defense for cookie-authenticated mutations: any non-GET request
+  // must come from an allowed origin. b4_sess is HttpOnly+SameSite=Lax,
+  // which already blocks classic cross-site CSRF, but enforcing Origin
+  // server-side closes the gap for browsers that under-enforce SameSite
+  // and for any future SameSite=None misconfiguration.
+  if (req.method !== "GET" && req.method !== "HEAD" && req.method !== "OPTIONS") {
+    const hosts = bridgeAllowedHosts(req);
+    const origin = originHostFromHeader(req.headers.origin as string | undefined);
+    const referer = originHostFromHeader(req.headers.referer as string | undefined);
+    const seen = origin || referer;
+    if (hosts.size > 0 && seen && !hosts.has(seen)) {
+      console.warn(`[bot-bridge] CSRF reject: origin=${origin} referer=${referer} not in allowlist`);
+      return res.status(403).json({ ok: false, error: "origin_not_allowed" });
+    }
+  }
+  const sess = verifySiweCookie(req);
+  if (!sess) {
+    return res.status(401).json({ ok: false, error: "siwe_required", code: "NO_SESSION" });
+  }
+  const wallet = sess.wallet.toLowerCase().trim();
   if (!/^0x[a-f0-9]{40}$/.test(wallet)) {
-    return res.status(401).json({ ok: false, error: "wallet_required" });
+    return res.status(401).json({ ok: false, error: "siwe_required", code: "BAD_SESSION" });
   }
   try {
     const r = await pool.query(

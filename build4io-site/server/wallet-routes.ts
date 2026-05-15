@@ -81,6 +81,12 @@ function verifySession(token: string | undefined): { wallet: string } | null {
   return ok ? { wallet } : null;
 }
 
+export const SIWE_COOKIE_NAME = COOKIE_NAME;
+
+export function verifySiweCookie(req: Request): { wallet: string } | null {
+  return verifySession(readCookie(req, COOKIE_NAME));
+}
+
 function readCookie(req: Request, name: string): string | undefined {
   const raw = req.headers.cookie;
   if (!raw) return undefined;
