@@ -33,6 +33,7 @@ import MiniApp from "@/pages/miniapp";
 import Futures from "@/pages/futures";
 import Hyperliquid from "@/pages/hyperliquid";
 import AppDashboard from "@/pages/app";
+import TerminalPreview from "@/pages/terminal-preview";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -67,6 +68,7 @@ function Router() {
       <Route path="/futures" component={Futures} />
       <Route path="/hyperliquid" component={Hyperliquid} />
       <Route path="/app" component={AppDashboard} />
+      <Route path="/terminal-preview" component={TerminalPreview} />
       <Route path="/sdk">{() => { window.location.href = "/build"; return null; }}</Route>
       <Route component={NotFound} />
     </Switch>
