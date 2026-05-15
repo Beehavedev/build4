@@ -20,7 +20,7 @@ import { Badge } from "@/components/ui/badge";
 import asterLogo from "@assets/aster_logo.svg";
 import hyperliquidLogo from "@assets/hyperliquid-logo_1775737973029.png";
 import fourmemeLogo from "@assets/four_logo_1778389271440.jpg";
-import polymarketLogo from "@assets/polymarket_logo.png";
+import polymarketLogo from "@assets/bz2ZO_nU_400x400_1778831154050.jpg";
 import fortytwoLogo from "@assets/42space_logo.png";
 
 type Venue = "dashboard" | "aster" | "hyperliquid" | "fourmeme" | "polymarket" | "fortytwo";
