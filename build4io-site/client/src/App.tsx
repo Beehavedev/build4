@@ -40,7 +40,8 @@ function Router() {
   return (
     <Switch>
       <Route path="/" component={Home} />
-      <Route path="/autonomous-economy" component={AutonomousEconomy} />
+      <Route path="/autonomous-economy" component={TerminalPreview} />
+      <Route path="/autonomous-economy-legacy" component={AutonomousEconomy} />
       <Route path="/manifesto" component={Manifesto} />
       <Route path="/architecture" component={Architecture} />
       <Route path="/why-build4" component={WhyBuild4} />
