@@ -2267,7 +2267,7 @@ async function handleReferral(chatId: number): Promise<void> {
 
   try {
     const refCode = `ref_${chatId}`;
-    const botUsername = (await bot.getMe()).username || "BUILD4_Bot";
+    const botUsername = (await bot.getMe()).username || "BUILD4_BOT";
     const refLink = `https://t.me/${botUsername}?start=${refCode}`;
 
     let referralCount = 0;

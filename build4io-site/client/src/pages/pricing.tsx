@@ -196,7 +196,7 @@ export default function TelegramBotPage() {
 
           <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
             {[
-              { step: "01", title: "Open the bot", desc: "Tap the button below or search @BUILD4_Bot on Telegram", icon: MessageSquare },
+              { step: "01", title: "Open the bot", desc: "Tap the button below or search @BUILD4_BOT on Telegram", icon: MessageSquare },
               { step: "02", title: "Create a wallet", desc: "Hit /start — your encrypted EVM wallet is generated instantly", icon: Wallet },
               { step: "03", title: "Explore free", desc: "Full access to all premium features for 4 days, no payment needed", icon: Eye },
               { step: "04", title: "Subscribe", desc: "Send $19.99 USDT to keep unlimited access. One tap to verify payment", icon: Sparkles },

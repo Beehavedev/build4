@@ -835,7 +835,7 @@ function loadPnlPreview(posIdx){
     h+='<div style="flex:1;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:8px;padding:8px 10px"><div style="font-size:9px;color:#555;letter-spacing:1px">MARK</div><div style="font-family:monospace;font-size:14px;font-weight:700;color:#fff;margin-top:2px">$'+fP(mp)+'</div></div>';
     h+='</div>';
   }
-  h+='<div style="margin-top:12px;padding:8px 12px;background:rgba('+accentRgb+',0.05);border:1px solid rgba('+accentRgb+',0.15);border-radius:8px"><div style="font-size:8px;color:#555;letter-spacing:1px">JOIN</div><div style="font-family:monospace;font-size:12px;font-weight:700;color:rgba('+accentRgb+',0.9)">t.me/build4_bot?start='+ref+'</div></div>';
+  h+='<div style="margin-top:12px;padding:8px 12px;background:rgba('+accentRgb+',0.05);border:1px solid rgba('+accentRgb+',0.15);border-radius:8px"><div style="font-size:8px;color:#555;letter-spacing:1px">JOIN</div><div style="font-family:monospace;font-size:12px;font-weight:700;color:rgba('+accentRgb+',0.9)">t.me/BUILD4_BOT?start='+ref+'</div></div>';
   h+='<div style="margin-top:8px;font-size:10px;color:#444;border-top:1px solid rgba(255,255,255,0.04);padding-top:8px">'+name+' · Autonomous AI Futures Trading</div>';
   h+='</div></div>';
   el.innerHTML=h;

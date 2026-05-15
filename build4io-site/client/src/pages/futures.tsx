@@ -770,7 +770,7 @@ function TradeTicket({ symbol, wallet, price, availableMargin, onSuccess, acctDa
               <div className="space-y-1 text-[8px]">
                 <div className="flex items-center gap-1.5 text-cyan-400">
                   <span className="w-3.5 h-3.5 rounded-full bg-cyan-500/20 flex items-center justify-center text-[7px] font-bold">1</span>
-                  Open <span className="font-mono font-semibold">@build4bot</span> on Telegram
+                  Open <span className="font-mono font-semibold">@BUILD4_BOT</span> on Telegram
                 </div>
                 <div className="flex items-center gap-1.5 text-cyan-400">
                   <span className="w-3.5 h-3.5 rounded-full bg-cyan-500/20 flex items-center justify-center text-[7px] font-bold">2</span>

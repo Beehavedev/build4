@@ -809,11 +809,11 @@ export default function AppDashboard() {
                 href={
                   tgConfig.botUsername
                     ? `https://t.me/${tgConfig.botUsername}`
-                    : "https://t.me/Build4bot"
+                    : "https://t.me/BUILD4_BOT"
                 }
                 target="_blank"
                 rel="noopener noreferrer"
-                aria-label={`Start a new Build4 account on the @${tgConfig.botUsername || "Build4bot"} Telegram bot`}
+                aria-label={`Start a new Build4 account on the @${tgConfig.botUsername || "BUILD4_BOT"} Telegram bot`}
                 title="Open the Build4 Telegram bot"
                 className="underline inline-flex items-center gap-1"
                 data-testid="link-start-on-telegram"
@@ -875,11 +875,11 @@ export default function AppDashboard() {
                 href={
                   tgConfig.botUsername
                     ? `https://t.me/${tgConfig.botUsername}`
-                    : "https://t.me/Build4bot"
+                    : "https://t.me/BUILD4_BOT"
                 }
                 target="_blank"
                 rel="noopener noreferrer"
-                aria-label={`Open the Build4 Telegram bot (@${tgConfig.botUsername || "Build4bot"})`}
+                aria-label={`Open the Build4 Telegram bot (@${tgConfig.botUsername || "BUILD4_BOT"})`}
                 title="Open the Build4 Telegram bot"
                 data-testid="link-open-telegram-bot"
               >
@@ -1030,16 +1030,16 @@ export default function AppDashboard() {
                   href={
                     tgConfig.botUsername
                       ? `https://t.me/${tgConfig.botUsername}`
-                      : "https://t.me/Build4bot"
+                      : "https://t.me/BUILD4_BOT"
                   }
                   target="_blank"
                   rel="noopener noreferrer"
-                  aria-label={`Open @${tgConfig.botUsername || "Build4bot"} on Telegram to use Build4 features`}
+                  aria-label={`Open @${tgConfig.botUsername || "BUILD4_BOT"} on Telegram to use Build4 features`}
                   title="Open the Build4 Telegram bot"
                   className="underline inline-flex items-center gap-1"
                   data-testid="link-telegram-bot"
                 >
-                  @{tgConfig.botUsername || "Build4bot"} <ExternalLink className="w-3 h-3" />
+                  @{tgConfig.botUsername || "BUILD4_BOT"} <ExternalLink className="w-3 h-3" />
                 </a>
               </p>
             </Card>
