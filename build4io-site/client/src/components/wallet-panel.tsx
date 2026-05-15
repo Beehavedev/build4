@@ -129,8 +129,10 @@ function ChainPicker({ chain, setChain }: { chain: ChainKey; setChain: (c: Chain
 function DepositTab({ connectedAddress, chain, setChain, ensureSiwe, siweBusy, siweError }: { connectedAddress: string; chain: ChainKey; setChain: (c: ChainKey) => void; ensureSiwe: () => Promise<void>; siweBusy: boolean; siweError: string | null }) {
   const [copied, setCopied] = useState(false);
   const [depositAddr, setDepositAddr] = useState<string | null>(null);
+  const [linkState, setLinkState] = useState<"unknown" | "needs_link" | "linked" | "no_bot_wallet">("unknown");
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
   const meta = CHAIN_META[chain];
 
   useEffect(() => {
@@ -142,8 +144,10 @@ function DepositTab({ connectedAddress, chain, setChain, ensureSiwe, siweBusy, s
         const r = await fetch("/api/wallet/deposit-info", { credentials: "include" });
         const j = await r.json();
         if (cancelled) return;
-        if (!j.ok) throw new Error(j.error || "Failed to load deposit info");
-        setDepositAddr(j.address);
+        if (j.ok) { setDepositAddr(j.address); setLinkState("linked"); return; }
+        if (j.code === "NO_LINK" || j.code === "NO_REDEMPTION") setLinkState("needs_link");
+        else if (j.code === "NO_BOT_WALLET") setLinkState("no_bot_wallet");
+        else setErr(j.error || "Failed to load deposit info");
       } catch (e: any) {
         if (!cancelled) setErr(e?.message || "Failed to load deposit info");
       } finally {
@@ -151,7 +155,7 @@ function DepositTab({ connectedAddress, chain, setChain, ensureSiwe, siweBusy, s
       }
     })();
     return () => { cancelled = true; };
-  }, [ensureSiwe, connectedAddress]);
+  }, [ensureSiwe, connectedAddress, reloadKey]);
 
   const copy = useCallback(() => {
     if (!depositAddr) return;
@@ -159,12 +163,20 @@ function DepositTab({ connectedAddress, chain, setChain, ensureSiwe, siweBusy, s
   }, [depositAddr]);
   const qrUrl = useMemo(() => depositAddr ? `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(depositAddr)}&bgcolor=09090b&color=10b981&qzone=2` : "", [depositAddr]);
 
+  if (loading || siweBusy) {
+    return <div className="p-4 text-center font-mono text-xs text-zinc-400 inline-flex items-center justify-center gap-2 w-full"><Loader2 className="w-3 h-3 animate-spin" /> Loading custodial address…</div>;
+  }
+  if (linkState === "needs_link") {
+    return <LinkTelegramCard onLinked={() => setReloadKey((k) => k + 1)} variant="link" />;
+  }
+  if (linkState === "no_bot_wallet") {
+    return <LinkTelegramCard onLinked={() => setReloadKey((k) => k + 1)} variant="setup" />;
+  }
   return (
     <div>
       <ChainPicker chain={chain} setChain={setChain} />
-      {(loading || siweBusy) && <div className="p-4 text-center font-mono text-xs text-zinc-400 inline-flex items-center justify-center gap-2 w-full"><Loader2 className="w-3 h-3 animate-spin" /> Loading custodial address…</div>}
-      {(err || siweError) && !loading && <div className="p-2 rounded border border-red-500/40 bg-red-500/10 text-xs text-red-300 font-mono flex items-start gap-2"><AlertCircle className="w-3 h-3 mt-0.5 flex-shrink-0" />{err || siweError}</div>}
-      {depositAddr && !loading && (
+      {(err || siweError) && <div className="p-2 rounded border border-red-500/40 bg-red-500/10 text-xs text-red-300 font-mono flex items-start gap-2"><AlertCircle className="w-3 h-3 mt-0.5 flex-shrink-0" />{err || siweError}</div>}
+      {depositAddr && (
         <>
           <div className="rounded-md border border-zinc-800 bg-zinc-900/40 p-4 flex items-center gap-4">
             <img src={qrUrl} alt="address QR" width={120} height={120} className="rounded bg-zinc-950 p-1" data-testid="img-deposit-qr" />
@@ -182,10 +194,136 @@ function DepositTab({ connectedAddress, chain, setChain, ensureSiwe, siweBusy, s
           </div>
           <div className="mt-3 p-2 rounded border border-amber-500/30 bg-amber-500/5 text-[11px] font-mono text-amber-200 flex items-start gap-2">
             <AlertCircle className="w-3 h-3 mt-0.5 flex-shrink-0" />
-            <span>This is your BUILD4 trading wallet — different from your connected wallet ({connectedAddress.slice(0, 6)}…{connectedAddress.slice(-4)}). Send only on the selected chain.</span>
+            <div className="flex-1">
+              <div>This is your BUILD4 trading wallet — different from your connected wallet ({connectedAddress.slice(0, 6)}…{connectedAddress.slice(-4)}). Send only on the selected chain.</div>
+              <div className="mt-1.5">
+                Linked to{" "}
+                <a href="https://t.me/build4_bot" target="_blank" rel="noopener noreferrer" className="text-emerald-300 hover:underline inline-flex items-center gap-1" data-testid="link-build4-bot">
+                  @build4_bot <ExternalLink className="w-2.5 h-2.5" />
+                </a>{" "}
+                — manage from Telegram any time.
+              </div>
+            </div>
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+function LinkTelegramCard({ onLinked, variant }: { onLinked: () => void; variant: "link" | "setup" }) {
+  const [phase, setPhase] = useState<"idle" | "starting" | "waiting" | "linked" | "error">("idle");
+  const [url, setUrl] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  const startLink = useCallback(async () => {
+    setErr(null); setPhase("starting");
+    try {
+      const r = await fetch("/api/wallet/link-telegram/start", { method: "POST", credentials: "include" });
+      const j = await r.json();
+      if (!j.ok) throw new Error(j.error || "Failed to start link");
+      setUrl(j.url);
+      window.open(j.url, "_blank", "noopener,noreferrer");
+      setPhase("waiting");
+    } catch (e: any) {
+      setErr(e?.message || "Failed to start link"); setPhase("error");
+    }
+  }, []);
+
+  // Poll status every 3s while waiting (max ~5min).
+  useEffect(() => {
+    if (phase !== "waiting") return;
+    let cancelled = false;
+    let attempts = 0;
+    const poll = async () => {
+      if (cancelled) return;
+      attempts += 1;
+      try {
+        const r = await fetch("/api/wallet/link-telegram/status", { credentials: "include" });
+        const j = await r.json();
+        if (cancelled) return;
+        if (j.linked && j.custodialReady) { setPhase("linked"); setTimeout(onLinked, 800); return; }
+        if (j.linked && !j.custodialReady) {
+          // Telegram link complete but user hasn't run /setup yet.
+          setPhase("linked"); setTimeout(onLinked, 800); return;
+        }
+      } catch {}
+      if (attempts < 100) setTimeout(poll, 3000);
+    };
+    setTimeout(poll, 3000);
+    return () => { cancelled = true; };
+  }, [phase, onLinked]);
+
+  const isSetup = variant === "setup";
+  return (
+    <div className="space-y-4" data-testid="card-link-telegram">
+      <div className="rounded-md border border-emerald-500/40 bg-emerald-500/5 p-4">
+        <div className="flex items-start gap-3">
+          <Shield className="w-5 h-5 text-emerald-400 mt-0.5 flex-shrink-0" />
+          <div className="flex-1">
+            <div className="font-mono text-xs uppercase tracking-widest text-emerald-300 mb-1">
+              {isSetup ? "Finish wallet setup in Telegram" : "Link your Telegram account"}
+            </div>
+            <div className="font-mono text-[11px] text-zinc-300 leading-relaxed">
+              {isSetup
+                ? "Your Telegram account is linked, but you haven't created a custodial wallet yet. Open the bot and run /setup — it takes a few seconds."
+                : "BUILD4's custodial wallet lives inside the Telegram bot. Tap below to open @build4_bot — your web wallet will be matched automatically. Nothing to copy, nothing to type."}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {phase === "idle" && (
+        <button
+          onClick={startLink}
+          className="w-full px-4 py-3 rounded border border-emerald-500/60 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 font-mono text-xs uppercase tracking-widest inline-flex items-center justify-center gap-2"
+          data-testid="button-link-telegram"
+        >
+          <ExternalLink className="w-3.5 h-3.5" /> Open @build4_bot
+        </button>
+      )}
+
+      {phase === "starting" && (
+        <button disabled className="w-full px-4 py-3 rounded border border-zinc-700 text-zinc-400 font-mono text-xs uppercase tracking-widest inline-flex items-center justify-center gap-2">
+          <Loader2 className="w-3.5 h-3.5 animate-spin" /> Preparing link…
+        </button>
+      )}
+
+      {phase === "waiting" && (
+        <div className="space-y-2">
+          <div className="px-4 py-3 rounded border border-emerald-500/40 bg-emerald-500/5 text-emerald-300 font-mono text-xs flex items-center gap-2">
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            Waiting for you to tap <strong>Start</strong> in Telegram…
+          </div>
+          {url && (
+            <a href={url} target="_blank" rel="noopener noreferrer" className="block text-center font-mono text-[11px] text-zinc-400 hover:text-emerald-300 underline" data-testid="link-reopen-telegram">
+              Telegram didn't open? Tap here to retry
+            </a>
+          )}
+        </div>
+      )}
+
+      {phase === "linked" && (
+        <div className="px-4 py-3 rounded border border-emerald-500/60 bg-emerald-500/10 text-emerald-300 font-mono text-xs flex items-center gap-2">
+          <CheckCircle2 className="w-3.5 h-3.5" /> Linked! Loading your wallet…
+        </div>
+      )}
+
+      {phase === "error" && err && (
+        <div className="space-y-2">
+          <div className="p-2 rounded border border-red-500/40 bg-red-500/10 text-xs text-red-300 font-mono flex items-start gap-2">
+            <AlertCircle className="w-3 h-3 mt-0.5 flex-shrink-0" /> {err}
+          </div>
+          <button onClick={startLink} className="w-full px-4 py-2 rounded border border-zinc-700 text-zinc-300 hover:border-emerald-400 hover:text-emerald-300 font-mono text-xs">
+            Try again
+          </button>
+        </div>
+      )}
+
+      <div className="text-center font-mono text-[10px] text-zinc-500 leading-relaxed">
+        After linking, your deposits, balances, agents and positions sync in real time<br />between this terminal and {" "}
+        <a href="https://t.me/build4_bot" target="_blank" rel="noopener noreferrer" className="text-zinc-400 hover:text-emerald-300 underline">@build4_bot</a>.
+      </div>
     </div>
   );
 }

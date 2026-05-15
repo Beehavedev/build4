@@ -16,6 +16,46 @@ export function registerStart(bot: Bot) {
       return handleAsterConnect(ctx)
     }
 
+    // BUILD4 web terminal → Telegram link. The site (build4io-site) issues
+    // a one-time `link_<32hex>` token bound to a SIWE-authenticated EVM
+    // wallet, then sends the user here via t.me/build4_bot?start=link_<token>.
+    // We POST the token + this user's telegramId back to the site so it can
+    // store the (web_wallet ↔ telegram_id) mapping. From then on, the site
+    // can resolve the user's custodial BSC wallet (this Wallet table) and
+    // mirror balances / positions in real time. NO secrets touch Telegram.
+    if (payload && /^link_[a-f0-9]{32}$/.test(payload)) {
+      const token = payload.slice(5)
+      const siteUrl = process.env.BUILD4_SITE_URL
+      const secret = process.env.LINK_SHARED_SECRET
+      if (!siteUrl || !secret) {
+        await ctx.reply('⚠️ Web link is not configured on the bot. Please contact support.')
+        return
+      }
+      try {
+        const r = await fetch(`${siteUrl.replace(/\/$/, '')}/api/wallet/link-telegram/redeem`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', authorization: `Bearer ${secret}` },
+          body: JSON.stringify({ token, telegramId: String((ctx.from as any)?.id ?? user.telegramId) }),
+        })
+        const j: any = await r.json().catch(() => ({}))
+        if (!r.ok || !j?.ok) {
+          const reason = String(j?.error || `http_${r.status}`)
+          await ctx.reply(`⚠️ Link failed: ${reason === 'expired' ? 'this link expired. Open the BUILD4 terminal and tap Link again.' : reason === 'unknown_token' ? 'unknown link token. Try again from the terminal.' : 'unexpected error. Try again.'}`)
+          return
+        }
+        const webWallet: string = j.webWallet
+        await ctx.reply(
+          `✅ *Web terminal linked!*\n\nYour MetaMask \`${webWallet.slice(0, 6)}…${webWallet.slice(-4)}\` is now connected to this Telegram account.\n\nDeposits, balances, agents and positions will mirror in real time across both surfaces. Return to the BUILD4 terminal — your custodial wallet is now available there.`,
+          { parse_mode: 'Markdown' }
+        )
+        return
+      } catch (e: any) {
+        console.error('[start] link redeem failed:', e?.message)
+        await ctx.reply('⚠️ Could not reach BUILD4 site to complete link. Please try again.')
+        return
+      }
+    }
+
     // Wallet provisioning is silent. The private key is encrypted server-
     // side and recoverable any time via /wallet → 🔑 Export Private Key
     // (PIN-gated). We deliberately do NOT dump the PK on screen 1 here —
