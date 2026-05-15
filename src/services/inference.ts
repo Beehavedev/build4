@@ -212,7 +212,11 @@ export function getCircuitState(): Partial<Record<Provider, number>> {
 
 export const SCAN_PROVIDER_PRIMARY: Provider = 'xai'
 export const NEWS_PROVIDER_PRIMARY: Provider = 'akash'
-export const NEWS_PROVIDER_PRIMARY_MODEL = 'meta-llama/Meta-Llama-3-70B-Instruct'
+// Akash retired the original `Meta-Llama-3-70B-Instruct` slug — production
+// logs showed `404 model_not_found` on every news-analysis call until this
+// was bumped to the currently-served Llama 3.3 70B Instruct. Verified live
+// against /v1/models on api.akashml.com (May 2026).
+export const NEWS_PROVIDER_PRIMARY_MODEL = 'meta-llama/Llama-3.3-70B-Instruct'
 export const FALLBACK_PROVIDER: Provider = 'anthropic'
 
 function shouldFailoverToSonnet(err: unknown): boolean {
