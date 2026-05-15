@@ -136,6 +136,61 @@ async function miniAppAuth(req: Request, res: Response, next: NextFunction) {
 
 let tickerPriceCache: { prices: Record<string, number> | null; ts: number } = { prices: null, ts: 0 };
 
+// Cache of Aster's full perpetual universe with proper step/tick/precision metadata.
+// Refreshed every 5 minutes; used by both the public symbols endpoint and the trade
+// route to size orders for ANY tradable pair (replaces the old 12-symbol hardcoded map).
+type AsterSymbolInfo = {
+  symbol: string;
+  baseAsset: string;
+  quoteAsset: string;
+  status: string;
+  pricePrecision: number;
+  quantityPrecision: number;
+  stepSize: number;
+  tickSize: number;
+  minNotional: number;
+};
+let asterSymbolsCache: { byKey: Record<string, AsterSymbolInfo>; list: AsterSymbolInfo[]; ts: number } | null = null;
+
+async function getAsterSymbols(): Promise<{ byKey: Record<string, AsterSymbolInfo>; list: AsterSymbolInfo[] }> {
+  const now = Date.now();
+  if (asterSymbolsCache && now - asterSymbolsCache.ts < 300_000) {
+    return { byKey: asterSymbolsCache.byKey, list: asterSymbolsCache.list };
+  }
+  const resp = await fetch("https://fapi.asterdex.com/fapi/v1/exchangeInfo");
+  if (!resp.ok) throw new Error(`Aster exchangeInfo HTTP ${resp.status}`);
+  const data: any = await resp.json();
+  const list: AsterSymbolInfo[] = [];
+  const byKey: Record<string, AsterSymbolInfo> = {};
+  for (const s of data?.symbols || []) {
+    if (s.contractType && s.contractType !== "PERPETUAL") continue;
+    if (s.status && s.status !== "TRADING") continue;
+    const filters = s.filters || [];
+    const lot = filters.find((f: any) => f.filterType === "LOT_SIZE");
+    const pricef = filters.find((f: any) => f.filterType === "PRICE_FILTER");
+    const minN = filters.find((f: any) => f.filterType === "MIN_NOTIONAL");
+    const qp = typeof s.quantityPrecision === "number" ? s.quantityPrecision : 3;
+    const pp = typeof s.pricePrecision === "number" ? s.pricePrecision : 2;
+    const info: AsterSymbolInfo = {
+      symbol: s.symbol,
+      baseAsset: s.baseAsset || "",
+      quoteAsset: s.quoteAsset || "USDT",
+      status: s.status || "TRADING",
+      pricePrecision: pp,
+      quantityPrecision: qp,
+      stepSize: lot?.stepSize ? parseFloat(lot.stepSize) : Math.pow(10, -qp),
+      tickSize: pricef?.tickSize ? parseFloat(pricef.tickSize) : Math.pow(10, -pp),
+      minNotional: minN?.notional ? parseFloat(minN.notional) : 5,
+    };
+    list.push(info);
+    byKey[s.symbol] = info;
+  }
+  list.sort((a, b) => a.symbol.localeCompare(b.symbol));
+  asterSymbolsCache = { byKey, list, ts: now };
+  console.log(`[AsterSymbols] Cached ${list.length} tradable perpetual symbols`);
+  return { byKey, list };
+}
+
 export function registerMiniAppRoutes(app: Express) {
   app.get("/api/miniapp/server-ip", async (_req: Request, res: Response) => {
     try {
@@ -435,6 +490,18 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
       res.set("Cache-Control", "public, max-age=3").json(await resp.json());
     } catch (e: any) {
       res.status(500).json({ error: "Failed to fetch ticker" });
+    }
+  });
+
+  // Exposes Aster's FULL perpetual universe with proper step/tick/precision metadata.
+  // Used by the web terminal's TradeDrawer symbol picker so users can trade ANY pair
+  // Aster lists, not just a hardcoded subset. Cached 5 minutes server-side.
+  app.get("/api/public/aster/symbols", async (_req: Request, res: Response) => {
+    try {
+      const { list } = await getAsterSymbols();
+      res.set("Cache-Control", "public, max-age=120").json({ symbols: list, count: list.length });
+    } catch (e: any) {
+      res.status(502).json({ error: e.message || "Failed to fetch symbols" });
     }
   });
 
@@ -2243,18 +2310,36 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
 
       const lev = leverage || 10;
       const notional = amount * lev;
-      let qty: number;
 
-      const stepSizes: Record<string, number> = {
-        BTCUSDT: 0.001, ETHUSDT: 0.01, SOLUSDT: 0.1, BNBUSDT: 0.01,
-        DOGEUSDT: 1, XRPUSDT: 0.1, ADAUSDT: 1, AVAXUSDT: 0.1,
-        DOTUSDT: 0.1, MATICUSDT: 1, LINKUSDT: 0.01, LTCUSDT: 0.001,
-      };
-      const step = stepSizes[symbol] || 0.001;
-      qty = Math.floor((notional / price) / step) * step;
+      // Look up step/precision dynamically from Aster's exchangeInfo so ANY listed
+      // perpetual sizes correctly — not just the historical 12-symbol shortlist.
+      let step: number;
+      let precision: number;
+      let minNotional = 5;
+      try {
+        const { byKey } = await getAsterSymbols();
+        const info = byKey[symbol];
+        if (info) {
+          step = info.stepSize;
+          precision = info.quantityPrecision;
+          minNotional = info.minNotional || 5;
+        } else {
+          // Symbol not in cached universe — fall back to a price-bucketed heuristic.
+          step = price > 1000 ? 0.001 : price > 100 ? 0.01 : price > 1 ? 0.1 : 1;
+          precision = step < 1 ? Math.ceil(-Math.log10(step)) : 0;
+          console.log(`[MiniApp] Trade: symbol ${symbol} not in exchangeInfo cache, using heuristic step=${step}`);
+        }
+      } catch (e: any) {
+        console.log(`[MiniApp] exchangeInfo lookup failed (${e.message}), using heuristic`);
+        step = price > 1000 ? 0.001 : price > 100 ? 0.01 : price > 1 ? 0.1 : 1;
+        precision = step < 1 ? Math.ceil(-Math.log10(step)) : 0;
+      }
+
+      if (notional < minNotional) {
+        return res.status(400).json({ error: `Minimum notional for ${symbol} is $${minNotional}. Increase margin or leverage.` });
+      }
+      const qty = Math.floor((notional / price) / step) * step;
       if (qty <= 0) return res.status(400).json({ error: "Amount too small for this pair" });
-
-      const precision = step < 1 ? Math.ceil(-Math.log10(step)) : 0;
       const qtyStr = qty.toFixed(precision);
 
       console.log(`[MiniApp] Trade: ${side} ${qtyStr} ${symbol} @ ~$${price} (margin=$${amount}, lev=${lev}x)`);

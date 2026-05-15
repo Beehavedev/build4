@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard,
@@ -504,9 +504,162 @@ function BrainFeed() {
   );
 }
 
-function TradeDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const [side, setSide] = useState<"long" | "short">("long");
-  const [size, setSize] = useState("100");
+type TradeVenue = "aster" | "hl";
+type AsterSymbol = {
+  symbol: string;
+  baseAsset: string;
+  quoteAsset: string;
+  pricePrecision: number;
+  quantityPrecision: number;
+  stepSize: number;
+  tickSize: number;
+  minNotional: number;
+};
+type HlSymbol = { name: string; szDecimals: number; maxLeverage: number };
+
+function TradeDrawer({
+  open,
+  onClose,
+  defaultVenue,
+  session,
+  onSuccess,
+}: {
+  open: boolean;
+  onClose: () => void;
+  defaultVenue: TradeVenue;
+  session: ReturnType<typeof useTerminalSession>;
+  onSuccess: () => void;
+}) {
+  const [venue, setVenue] = useState<TradeVenue>(defaultVenue);
+  const [side, setSide] = useState<"BUY" | "SELL">("BUY");
+  const [symbolQuery, setSymbolQuery] = useState("");
+  const [selectedSym, setSelectedSym] = useState<string>("");
+  const [margin, setMargin] = useState("50");
+  const [leverage, setLeverage] = useState(5);
+  const [hlSize, setHlSize] = useState("");
+  const [slippage, setSlippage] = useState(0.5);
+
+  const [asterSyms, setAsterSyms] = useState<AsterSymbol[]>([]);
+  const [hlSyms, setHlSyms] = useState<HlSymbol[]>([]);
+  const [symsLoading, setSymsLoading] = useState(false);
+  const [symsError, setSymsError] = useState<string | null>(null);
+
+  const [submitting, setSubmitting] = useState(false);
+  const [submitErr, setSubmitErr] = useState<string | null>(null);
+  const [submitOk, setSubmitOk] = useState<string | null>(null);
+
+  // Sync drawer venue with caller-provided default whenever it (re)opens.
+  useEffect(() => {
+    if (open) setVenue(defaultVenue);
+  }, [open, defaultVenue]);
+
+  // Clear ephemeral form state when the drawer is closed so the next open starts clean.
+  useEffect(() => {
+    if (!open) {
+      setSubmitErr(null);
+      setSubmitOk(null);
+    }
+  }, [open]);
+
+  // Load the relevant symbol universe lazily — once per venue per session.
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    setSymsError(null);
+    if (venue === "aster" && asterSyms.length === 0) {
+      setSymsLoading(true);
+      fetch("/api/public/aster/symbols")
+        .then((r) => r.json())
+        .then((d) => {
+          if (cancelled) return;
+          if (!d?.symbols) throw new Error(d?.error || "Empty symbol list");
+          setAsterSyms(d.symbols as AsterSymbol[]);
+        })
+        .catch((e: any) => {
+          if (!cancelled) setSymsError(e?.message || "Failed to load Aster symbols");
+        })
+        .finally(() => !cancelled && setSymsLoading(false));
+    } else if (venue === "hl" && hlSyms.length === 0) {
+      setSymsLoading(true);
+      // /api/hl/meta requires auth — fall back gracefully when wallet isn't ready
+      const fetcher = session.ready ? session.apiFetch<any>("/api/hl/meta") : fetch("/api/hl/meta").then((r) => r.json());
+      Promise.resolve(fetcher)
+        .then((d: any) => {
+          if (cancelled) return;
+          if (!d?.universe) throw new Error(d?.error || "Empty universe");
+          setHlSyms(d.universe as HlSymbol[]);
+        })
+        .catch((e: any) => {
+          if (!cancelled) setSymsError(e?.message || "Failed to load HL symbols");
+        })
+        .finally(() => !cancelled && setSymsLoading(false));
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [open, venue, asterSyms.length, hlSyms.length, session.ready, session.apiFetch]);
+
+  // Reset selection + status when venue changes
+  useEffect(() => {
+    setSelectedSym("");
+    setSymbolQuery("");
+    setSubmitErr(null);
+    setSubmitOk(null);
+  }, [venue]);
+
+  const filtered = useMemo(() => {
+    const q = symbolQuery.toUpperCase().trim();
+    if (venue === "aster") {
+      const matches = !q ? asterSyms : asterSyms.filter((s) => s.symbol.includes(q) || s.baseAsset.toUpperCase().includes(q));
+      return matches.slice(0, 80);
+    }
+    const matches = !q ? hlSyms : hlSyms.filter((s) => s.name.toUpperCase().includes(q));
+    return matches.slice(0, 80);
+  }, [venue, symbolQuery, asterSyms, hlSyms]);
+
+  const submit = async () => {
+    if (!session.ready) {
+      setSubmitErr("Connect wallet first");
+      return;
+    }
+    if (!selectedSym) {
+      setSubmitErr("Pick a symbol from the list");
+      return;
+    }
+    setSubmitting(true);
+    setSubmitErr(null);
+    setSubmitOk(null);
+    try {
+      if (venue === "aster") {
+        const amount = parseFloat(margin);
+        if (!isFinite(amount) || amount <= 0) throw new Error("Margin must be a positive number");
+        const result = await session.apiFetch<any>("/api/miniapp/trade", {
+          method: "POST",
+          body: { symbol: selectedSym, side, amount, leverage } as any,
+        });
+        const px = typeof result?.price === "number" ? result.price.toFixed(4) : result?.price ?? "—";
+        setSubmitOk(`Filled ${result?.quantity ?? "?"} ${result?.symbol ?? selectedSym} @ $${px}`);
+      } else {
+        const sz = parseFloat(hlSize);
+        if (!isFinite(sz) || sz <= 0) throw new Error("Size must be a positive number");
+        await session.apiFetch<any>("/api/hl/market-order", {
+          method: "POST",
+          body: { coin: selectedSym, isBuy: side === "BUY", sz, slippage: slippage / 100 } as any,
+        });
+        setSubmitOk(`Hyperliquid ${side} ${sz} ${selectedSym} submitted`);
+      }
+      onSuccess();
+    } catch (e: any) {
+      setSubmitErr(e?.message || "Trade failed");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const symbolCount = venue === "aster" ? asterSyms.length : hlSyms.length;
+  const sideLabel = side === "BUY" ? "Long" : "Short";
+  const venueLabel = venue === "aster" ? "Aster Perps" : "Hyperliquid";
+
   return (
     <AnimatePresence>
       {open && (
@@ -523,69 +676,208 @@ function TradeDrawer({ open, onClose }: { open: boolean; onClose: () => void }) 
             animate={{ x: 0 }}
             exit={{ x: "100%" }}
             transition={{ type: "spring", damping: 28, stiffness: 260 }}
-            className="fixed right-0 top-0 bottom-0 w-full sm:w-96 bg-card border-l z-50 flex flex-col"
+            className="fixed right-0 top-0 bottom-0 w-full sm:w-[420px] bg-card border-l z-50 flex flex-col"
           >
             <div className="px-5 py-4 border-b flex items-center justify-between">
               <div>
                 <h3 className="font-mono text-sm tracking-widest uppercase">Trade Ticket</h3>
-                <p className="text-xs text-muted-foreground mt-1">Aster Perps · BTCUSDT</p>
+                <p className="text-xs text-muted-foreground mt-1">{venueLabel} · {selectedSym || "select symbol"}</p>
               </div>
-              <button onClick={onClose}><X className="w-4 h-4 text-muted-foreground hover:text-foreground" /></button>
+              <button onClick={onClose} data-testid="button-close-drawer"><X className="w-4 h-4 text-muted-foreground hover:text-foreground" /></button>
             </div>
-            <div className="flex-1 p-5 space-y-5">
+
+            <div className="flex-1 overflow-y-auto p-5 space-y-4">
               <div className="grid grid-cols-2 gap-2">
                 <button
-                  onClick={() => setSide("long")}
-                  className={`py-3 rounded-md font-mono text-xs tracking-widest uppercase border transition-all ${
-                    side === "long" ? "bg-primary/15 border-primary/50 text-primary" : "border-border text-muted-foreground"
+                  onClick={() => setVenue("aster")}
+                  data-testid="button-venue-aster"
+                  className={`py-2 rounded-md font-mono text-[11px] tracking-widest uppercase border transition-all ${
+                    venue === "aster" ? "bg-yellow-400/15 border-yellow-400/50 text-yellow-400" : "border-border text-muted-foreground"
                   }`}
-                >Long</button>
+                >Aster Perps</button>
                 <button
-                  onClick={() => setSide("short")}
-                  className={`py-3 rounded-md font-mono text-xs tracking-widest uppercase border transition-all ${
-                    side === "short" ? "bg-destructive/15 border-destructive/50 text-destructive" : "border-border text-muted-foreground"
+                  onClick={() => setVenue("hl")}
+                  data-testid="button-venue-hl"
+                  className={`py-2 rounded-md font-mono text-[11px] tracking-widest uppercase border transition-all ${
+                    venue === "hl" ? "bg-cyan-400/15 border-cyan-400/50 text-cyan-400" : "border-border text-muted-foreground"
                   }`}
-                >Short</button>
+                >Hyperliquid</button>
               </div>
+
               <div>
-                <label className="font-mono text-[10px] tracking-widest uppercase text-muted-foreground">Size (USDT)</label>
+                <label className="font-mono text-[10px] tracking-widest uppercase text-muted-foreground">Symbol</label>
                 <input
-                  value={size}
-                  onChange={(e) => setSize(e.target.value)}
-                  className="mt-1 w-full bg-background border rounded-md px-3 py-3 font-mono text-lg focus:outline-none focus:ring-1 focus:ring-primary"
+                  value={symbolQuery}
+                  onChange={(e) => setSymbolQuery(e.target.value)}
+                  placeholder={venue === "aster" ? "Search BTCUSDT, PEPE…" : "Search BTC, HYPE, kPEPE…"}
+                  data-testid="input-symbol-search"
+                  className="mt-1 w-full bg-background border rounded-md px-3 py-2 font-mono text-sm uppercase focus:outline-none focus:ring-1 focus:ring-primary"
                 />
-                <div className="flex gap-2 mt-2">
-                  {["50", "100", "250", "MAX"].map((q) => (
-                    <button key={q} onClick={() => setSize(q === "MAX" ? "4820" : q)}
-                      className="flex-1 py-1.5 rounded border font-mono text-[10px] tracking-widest text-muted-foreground hover:text-foreground hover:bg-background transition-all">
-                      {q}
-                    </button>
-                  ))}
+                <div className="mt-2 max-h-44 overflow-y-auto rounded border bg-background/40">
+                  {symsLoading ? (
+                    <div className="px-3 py-4 text-xs text-muted-foreground font-mono">Loading symbols…</div>
+                  ) : symsError ? (
+                    <div className="px-3 py-4 text-xs text-destructive font-mono">{symsError}</div>
+                  ) : filtered.length === 0 ? (
+                    <div className="px-3 py-4 text-xs text-muted-foreground font-mono">No matches</div>
+                  ) : (
+                    filtered.map((s: any) => {
+                      const sym = venue === "aster" ? s.symbol : s.name;
+                      const sub = venue === "aster" ? s.baseAsset : `${s.maxLeverage}x max`;
+                      return (
+                        <button
+                          key={sym}
+                          onClick={() => { setSelectedSym(sym); setSymbolQuery(sym); }}
+                          data-testid={`row-symbol-${sym}`}
+                          className={`w-full text-left px-3 py-1.5 font-mono text-xs flex justify-between hover:bg-primary/10 ${
+                            selectedSym === sym ? "bg-primary/15 text-primary" : "text-foreground"
+                          }`}
+                        >
+                          <span>{sym}</span>
+                          <span className="text-muted-foreground">{sub}</span>
+                        </button>
+                      );
+                    })
+                  )}
                 </div>
+                {symbolCount > 0 && (
+                  <p className="mt-1 font-mono text-[10px] text-muted-foreground" data-testid="text-symbol-count">
+                    {symbolCount} symbols available on {venueLabel}
+                  </p>
+                )}
               </div>
-              <div>
-                <label className="font-mono text-[10px] tracking-widest uppercase text-muted-foreground">Leverage</label>
-                <div className="grid grid-cols-5 gap-1.5 mt-1">
-                  {["1x", "2x", "5x", "10x", "20x"].map((l) => (
-                    <button key={l} className={`py-2 rounded font-mono text-xs border transition-all ${
-                      l === "5x" ? "bg-primary/15 border-primary/50 text-primary" : "border-border text-muted-foreground hover:text-foreground"
-                    }`}>{l}</button>
-                  ))}
+
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => setSide("BUY")}
+                  data-testid="button-side-buy"
+                  className={`py-3 rounded-md font-mono text-xs tracking-widest uppercase border transition-all ${
+                    side === "BUY" ? "bg-primary/15 border-primary/50 text-primary" : "border-border text-muted-foreground"
+                  }`}
+                >Long / Buy</button>
+                <button
+                  onClick={() => setSide("SELL")}
+                  data-testid="button-side-sell"
+                  className={`py-3 rounded-md font-mono text-xs tracking-widest uppercase border transition-all ${
+                    side === "SELL" ? "bg-destructive/15 border-destructive/50 text-destructive" : "border-border text-muted-foreground"
+                  }`}
+                >Short / Sell</button>
+              </div>
+
+              {venue === "aster" ? (
+                <>
+                  <div>
+                    <label className="font-mono text-[10px] tracking-widest uppercase text-muted-foreground">Margin (USDT)</label>
+                    <input
+                      value={margin}
+                      onChange={(e) => setMargin(e.target.value)}
+                      inputMode="decimal"
+                      data-testid="input-margin"
+                      className="mt-1 w-full bg-background border rounded-md px-3 py-3 font-mono text-lg focus:outline-none focus:ring-1 focus:ring-primary"
+                    />
+                    <div className="flex gap-2 mt-2">
+                      {["10", "50", "100", "250"].map((q) => (
+                        <button
+                          key={q}
+                          onClick={() => setMargin(q)}
+                          data-testid={`button-margin-${q}`}
+                          className="flex-1 py-1.5 rounded border font-mono text-[10px] tracking-widest text-muted-foreground hover:text-foreground"
+                        >{q}</button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="font-mono text-[10px] tracking-widest uppercase text-muted-foreground">Leverage · {leverage}x</label>
+                    <input
+                      type="range"
+                      min={1}
+                      max={50}
+                      value={leverage}
+                      onChange={(e) => setLeverage(parseInt(e.target.value))}
+                      data-testid="input-leverage"
+                      className="mt-2 w-full accent-primary"
+                    />
+                    <div className="grid grid-cols-5 gap-1.5 mt-2">
+                      {[1, 2, 5, 10, 20].map((l) => (
+                        <button
+                          key={l}
+                          onClick={() => setLeverage(l)}
+                          data-testid={`button-leverage-${l}`}
+                          className={`py-1.5 rounded font-mono text-xs border transition-all ${
+                            leverage === l ? "bg-primary/15 border-primary/50 text-primary" : "border-border text-muted-foreground"
+                          }`}
+                        >{l}x</button>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div>
+                    <label className="font-mono text-[10px] tracking-widest uppercase text-muted-foreground">Size (base coin)</label>
+                    <input
+                      value={hlSize}
+                      onChange={(e) => setHlSize(e.target.value)}
+                      inputMode="decimal"
+                      placeholder="e.g. 0.1"
+                      data-testid="input-hl-size"
+                      className="mt-1 w-full bg-background border rounded-md px-3 py-3 font-mono text-lg focus:outline-none focus:ring-1 focus:ring-primary"
+                    />
+                    <p className="mt-1 font-mono text-[10px] text-muted-foreground">
+                      Quantity in {selectedSym || "base asset"}, not USD. Hyperliquid sizes are in coins.
+                    </p>
+                  </div>
+                  <div>
+                    <label className="font-mono text-[10px] tracking-widest uppercase text-muted-foreground">
+                      Slippage cap · {slippage.toFixed(2)}%
+                    </label>
+                    <input
+                      type="range"
+                      min={0.1}
+                      max={5}
+                      step={0.1}
+                      value={slippage}
+                      onChange={(e) => setSlippage(parseFloat(e.target.value))}
+                      data-testid="input-slippage"
+                      className="mt-2 w-full accent-primary"
+                    />
+                  </div>
+                </>
+              )}
+
+              {submitErr && (
+                <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 font-mono text-[11px] text-destructive" data-testid="text-trade-error">
+                  {submitErr}
                 </div>
-              </div>
-              <div className="rounded-md border bg-background/60 p-3 space-y-1.5 font-mono text-[11px]">
-                <Row k="Entry (est)" v="$63,890" />
-                <Row k="Liquidation (est)" v="$58,420" />
-                <Row k="Fee" v="$0.20" />
-                <Row k="Slippage cap" v="0.5%" />
-              </div>
+              )}
+              {submitOk && (
+                <div className="rounded-md border border-primary/40 bg-primary/10 p-3 font-mono text-[11px] text-primary" data-testid="text-trade-success">
+                  {submitOk}
+                </div>
+              )}
+
               <div className="flex items-center gap-2 text-[10px] text-muted-foreground font-mono">
-                <Lock className="w-3 h-3" /> Custodial — bot signs from your master account
+                <Lock className="w-3 h-3" />
+                {venue === "aster"
+                  ? "Custodial — bot signs from your master Aster account"
+                  : "On-chain — signed by your Hyperliquid agent wallet"}
               </div>
             </div>
+
             <div className="p-5 border-t">
-              <Button className="w-full font-mono tracking-widest text-xs uppercase h-11" data-testid="button-confirm-trade">
-                Confirm {side === "long" ? "Long" : "Short"} · ${size}
+              <Button
+                disabled={!session.ready || !selectedSym || submitting}
+                onClick={submit}
+                className="w-full font-mono tracking-widest text-xs uppercase h-11"
+                data-testid="button-confirm-trade"
+              >
+                {submitting
+                  ? "Submitting…"
+                  : !session.ready
+                  ? "Connect wallet to trade"
+                  : !selectedSym
+                  ? "Pick a symbol"
+                  : `Confirm ${sideLabel} · ${venue === "aster" ? `$${margin}` : `${hlSize || "—"} ${selectedSym}`}`}
               </Button>
             </div>
           </motion.div>
@@ -607,6 +899,7 @@ function Row({ k, v }: { k: string; v: string }) {
 export default function TerminalPreview() {
   const [venue, setVenue] = useState<Venue>("dashboard");
   const [drawer, setDrawer] = useState(false);
+  const [refetchTick, setRefetchTick] = useState(0);
   const openTrade = () => setDrawer(true);
 
   const session = useTerminalSession();
@@ -658,7 +951,7 @@ export default function TerminalPreview() {
       cancelled = true;
       clearInterval(id);
     };
-  }, [session.ready, session.apiFetch]);
+  }, [session.ready, session.apiFetch, refetchTick]);
 
   const asterEquity = (() => {
     if (!asterAcct) return 0;
@@ -718,7 +1011,13 @@ export default function TerminalPreview() {
         </main>
         <BrainFeed />
       </div>
-      <TradeDrawer open={drawer} onClose={() => setDrawer(false)} />
+      <TradeDrawer
+        open={drawer}
+        onClose={() => setDrawer(false)}
+        defaultVenue={venue === "hyperliquid" ? "hl" : "aster"}
+        session={session}
+        onSuccess={() => setRefetchTick((n) => n + 1)}
+      />
     </div>
   );
 }
