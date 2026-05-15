@@ -771,54 +771,241 @@ function ComingSoonPane({ title, sub, accent, color, icon: Icon, lines }: { titl
   );
 }
 
-function PolymarketPane() {
+function NotConnected({ title, sub, accent, color, icon: Icon }: { title: string; sub: string; accent: string; color: string; icon: any }) {
   return (
-    <ComingSoonPane
-      title="Polymarket"
-      sub="Gasless prediction markets — Safe-routed, USDC settled on Polygon."
-      accent="border-blue-400/40 text-blue-400"
-      color="text-blue-400"
-      icon={Target}
-      lines={[
-        "Per-user Gnosis Safe, deployed via Polymarket relayer (no MATIC required).",
-        "Manual buy/sell + autonomous polymarketAgent already live in the bot.",
-        "Web wiring pending: /api/polymarket/* endpoints need to be ported to this server.",
-      ]}
-    />
+    <div>
+      <VenueHeader title={title} sub={sub} accent={accent} />
+      <div className="rounded-md border bg-card/60 p-10 text-center">
+        <Icon className={`w-10 h-10 mx-auto ${color} mb-3 opacity-50`} />
+        <div className="font-mono text-sm text-foreground">Connect a wallet to view positions.</div>
+      </div>
+    </div>
   );
 }
 
-function FourmemePane() {
+function PolymarketPane({ session }: { session: any }) {
+  const [wallet, setWallet] = useState<any>(null);
+  const [positions, setPositions] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!session.ready) {
+      setWallet(null);
+      setPositions([]);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    setErr(null);
+    Promise.all([
+      session.apiFetch("/api/polymarket/wallet").catch((e: any) => ({ ok: false, error: e?.message || "wallet load failed" })),
+      session.apiFetch("/api/polymarket/positions").catch((e: any) => ({ ok: false, error: e?.message || "positions load failed" })),
+    ])
+      .then(([w, p]: any[]) => {
+        if (cancelled) return;
+        const errs: string[] = [];
+        if (w?.ok) setWallet(w);
+        else errs.push(`wallet: ${w?.error || "unknown"}`);
+        if (p?.ok) setPositions(Array.isArray(p.positions) ? p.positions : []);
+        else { setPositions([]); errs.push(`positions: ${p?.error || "unknown"}`); }
+        setErr(errs.length ? errs.join(" · ") : null);
+      })
+      .finally(() => !cancelled && setLoading(false));
+    return () => { cancelled = true; };
+  }, [session.ready]);
+
+  if (!session.ready) {
+    return <NotConnected title="Polymarket" sub="Gasless prediction markets — Safe-routed, USDC settled on Polygon." accent="border-blue-400/40 text-blue-400" color="text-blue-400" icon={Target} />;
+  }
+
+  const open = positions.filter((p) => ["placed", "matched", "filled"].includes(String(p.status)));
+  const resolved = positions.filter((p) => String(p.status).startsWith("resolved"));
+
   return (
-    <ComingSoonPane
-      title="fourmeme"
-      sub="Autonomous token launchpad on BSC. Agents launch, buy, and rotate."
-      accent="border-emerald-400/40 text-emerald-400"
-      color="text-emerald-400"
-      icon={Rocket}
-      lines={[
-        "Token launcher with parameterised name / symbol / initial buy.",
-        "Live in the Telegram bot via /api/token-launcher/* and /api/four-meme/*.",
-        "Holdings table + rotation queue land in the web terminal next.",
-      ]}
-    />
+    <div>
+      <VenueHeader title="Polymarket" sub="Gasless prediction markets — Safe-routed, USDC settled on Polygon." accent="border-blue-400/40 text-blue-400" />
+      {err && <div className="rounded-md border border-red-500/40 bg-red-500/10 p-3 mb-4 font-mono text-[11px] text-red-400">{err}</div>}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+        <div className="rounded-md border bg-card/60 p-4">
+          <div className="font-mono text-[10px] text-muted-foreground uppercase mb-1">Safe (deposit)</div>
+          <div className="font-mono text-xs text-foreground break-all" data-testid="text-polymarket-safe">
+            {wallet?.safeAddress ? `${wallet.safeAddress.slice(0, 8)}…${wallet.safeAddress.slice(-6)}` : "— not deployed"}
+          </div>
+          <div className="font-mono text-[10px] text-muted-foreground mt-1">No MATIC needed</div>
+        </div>
+        <div className="rounded-md border bg-card/60 p-4">
+          <div className="font-mono text-[10px] text-muted-foreground uppercase mb-1">USDC.e in Safe</div>
+          <div className="font-mono text-lg text-foreground" data-testid="text-polymarket-usdc">
+            {wallet?.balances ? fmtUsd(num(wallet.balances.usdc)) : "—"}
+          </div>
+        </div>
+        <div className="rounded-md border bg-card/60 p-4">
+          <div className="font-mono text-[10px] text-muted-foreground uppercase mb-1">Status</div>
+          <div className="font-mono text-xs text-foreground">
+            {wallet?.ready ? <span className="text-emerald-400">✓ ready to trade</span> : wallet?.safeDeployed ? <span className="text-yellow-400">approvals pending</span> : <span className="text-muted-foreground">not set up</span>}
+          </div>
+          <div className="font-mono text-[10px] text-muted-foreground mt-1">Setup via Telegram bot</div>
+        </div>
+      </div>
+      <div className="rounded-md border bg-card/60 p-4">
+        <div className="flex items-center justify-between mb-3">
+          <div className="font-mono text-xs text-foreground">Positions ({open.length} open · {resolved.length} resolved)</div>
+          {loading && <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" />}
+        </div>
+        {positions.length === 0 ? (
+          <div className="font-mono text-[11px] text-muted-foreground py-6 text-center">No Polymarket positions yet. Place trades from the Telegram bot.</div>
+        ) : (
+          <div className="space-y-2">
+            {positions.slice(0, 20).map((p) => (
+              <div key={p.id} className="flex items-center justify-between border-b border-border/40 pb-2 last:border-b-0" data-testid={`row-polymarket-${p.id}`}>
+                <div className="flex-1 min-w-0">
+                  <div className="font-mono text-xs text-foreground truncate">{p.marketTitle || p.marketSlug || p.conditionId?.slice(0, 12)}</div>
+                  <div className="font-mono text-[10px] text-muted-foreground">{p.outcome || "—"} · {p.status} · {p.size ? `${num(p.size).toFixed(2)} sh` : "—"}</div>
+                </div>
+                <div className="font-mono text-xs text-right tabular-nums ml-3">
+                  {p.fillPrice ? `@ $${num(p.fillPrice).toFixed(3)}` : p.price ? `@ $${num(p.price).toFixed(3)}` : "—"}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
-function FortyTwoPane() {
+function FourmemePane({ session }: { session: any }) {
+  const [positions, setPositions] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!session.ready) { setPositions([]); return; }
+    let cancelled = false;
+    setLoading(true);
+    setErr(null);
+    session.apiFetch("/api/fourmeme/positions")
+      .then((j: any) => { if (!cancelled) setPositions(Array.isArray(j?.positions) ? j.positions : []); })
+      .catch((e: any) => { if (!cancelled) setErr(e?.message || "Failed to load"); })
+      .finally(() => !cancelled && setLoading(false));
+    return () => { cancelled = true; };
+  }, [session.ready]);
+
+  if (!session.ready) {
+    return <NotConnected title="fourmeme" sub="Autonomous token launchpad on BSC. Agents launch, buy, and rotate." accent="border-emerald-400/40 text-emerald-400" color="text-emerald-400" icon={Rocket} />;
+  }
+
   return (
-    <ComingSoonPane
-      title="42.space"
-      sub="On-chain prediction markets on BSC. BTC 8h price campaigns + Campaign mode."
-      accent="border-orange-400/40 text-orange-400"
-      color="text-orange-400"
-      icon={Target}
-      lines={[
-        "Live BTC bucket grid, round timer, and Agent-vs-Community recap.",
-        "Campaign agent + idempotent ENTRY ticks already shipped in the bot.",
-        "Web pane will read campaign state from /api/admin/campaign/state once exposed publicly.",
-      ]}
-    />
+    <div>
+      <VenueHeader title="fourmeme" sub="Autonomous token launchpad on BSC. Agents launch, buy, and rotate." accent="border-emerald-400/40 text-emerald-400" />
+      {err && <div className="rounded-md border border-red-500/40 bg-red-500/10 p-3 mb-4 font-mono text-[11px] text-red-400">{err}</div>}
+      <div className="rounded-md border bg-card/60 p-4">
+        <div className="flex items-center justify-between mb-3">
+          <div className="font-mono text-xs text-foreground">Holdings + Launches ({positions.length})</div>
+          {loading && <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" />}
+        </div>
+        {positions.length === 0 ? (
+          <div className="font-mono text-[11px] text-muted-foreground py-6 text-center">No tokens held. Launch or buy from the Telegram bot.</div>
+        ) : (
+          <div className="space-y-2">
+            {positions.slice(0, 30).map((p) => {
+              const pnl = p.bnbOut - p.bnbIn;
+              return (
+                <div key={p.id} className="flex items-center justify-between border-b border-border/40 pb-2 last:border-b-0" data-testid={`row-fourmeme-${p.id}`}>
+                  <div className="flex items-center gap-3 flex-1 min-w-0">
+                    {p.imageUrl && <img src={p.imageUrl} alt="" className="w-8 h-8 rounded object-cover flex-shrink-0" />}
+                    <div className="min-w-0">
+                      <div className="font-mono text-xs text-foreground truncate">{p.tokenName || p.tokenSymbol || "—"} {p.tokenSymbol && p.tokenName && <span className="text-muted-foreground">({p.tokenSymbol})</span>}</div>
+                      <div className="font-mono text-[10px] text-muted-foreground">{p.kind === "launch" ? "Launched" : "Bought"} · {p.status} · {p.tokenAddress?.slice(0, 8)}…</div>
+                    </div>
+                  </div>
+                  <div className="font-mono text-xs text-right tabular-nums ml-3">
+                    <div className="text-foreground">{num(p.bnbIn).toFixed(4)} BNB in</div>
+                    {p.sold && <div className={pnl >= 0 ? "text-emerald-400" : "text-red-400"}>{pnl >= 0 ? "+" : ""}{pnl.toFixed(4)} BNB</div>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function FortyTwoPane({ session }: { session: any }) {
+  const [positions, setPositions] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!session.ready) { setPositions([]); return; }
+    let cancelled = false;
+    setLoading(true);
+    setErr(null);
+    session.apiFetch("/api/fortytwo/positions")
+      .then((j: any) => { if (!cancelled) setPositions(Array.isArray(j?.positions) ? j.positions : []); })
+      .catch((e: any) => { if (!cancelled) setErr(e?.message || "Failed to load"); })
+      .finally(() => !cancelled && setLoading(false));
+    return () => { cancelled = true; };
+  }, [session.ready]);
+
+  if (!session.ready) {
+    return <NotConnected title="42.space" sub="On-chain prediction markets on BSC. BTC 8h price campaigns + Campaign mode." accent="border-orange-400/40 text-orange-400" color="text-orange-400" icon={Target} />;
+  }
+
+  const open = positions.filter((p) => p.status === "open");
+  const closed = positions.filter((p) => p.status !== "open");
+  const totalPnl = closed.reduce((acc, p) => acc + num(p.pnl), 0);
+
+  return (
+    <div>
+      <VenueHeader title="42.space" sub="On-chain prediction markets on BSC. BTC 8h price campaigns + Campaign mode." accent="border-orange-400/40 text-orange-400" />
+      {err && <div className="rounded-md border border-red-500/40 bg-red-500/10 p-3 mb-4 font-mono text-[11px] text-red-400">{err}</div>}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+        <div className="rounded-md border bg-card/60 p-4">
+          <div className="font-mono text-[10px] text-muted-foreground uppercase mb-1">Open positions</div>
+          <div className="font-mono text-lg text-foreground" data-testid="text-fortytwo-open">{open.length}</div>
+        </div>
+        <div className="rounded-md border bg-card/60 p-4">
+          <div className="font-mono text-[10px] text-muted-foreground uppercase mb-1">Closed</div>
+          <div className="font-mono text-lg text-foreground" data-testid="text-fortytwo-closed">{closed.length}</div>
+        </div>
+        <div className="rounded-md border bg-card/60 p-4">
+          <div className="font-mono text-[10px] text-muted-foreground uppercase mb-1">Realised PnL</div>
+          <div className={`font-mono text-lg tabular-nums ${totalPnl >= 0 ? "text-emerald-400" : "text-red-400"}`} data-testid="text-fortytwo-pnl">
+            {totalPnl >= 0 ? "+" : ""}{fmtUsd(totalPnl)}
+          </div>
+        </div>
+      </div>
+      <div className="rounded-md border bg-card/60 p-4">
+        <div className="flex items-center justify-between mb-3">
+          <div className="font-mono text-xs text-foreground">Positions ({positions.length})</div>
+          {loading && <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" />}
+        </div>
+        {positions.length === 0 ? (
+          <div className="font-mono text-[11px] text-muted-foreground py-6 text-center">No 42.space positions yet. Trade from the Telegram bot.</div>
+        ) : (
+          <div className="space-y-2">
+            {positions.slice(0, 30).map((p) => (
+              <div key={p.id} className="flex items-center justify-between border-b border-border/40 pb-2 last:border-b-0" data-testid={`row-fortytwo-${p.id}`}>
+                <div className="flex-1 min-w-0">
+                  <div className="font-mono text-xs text-foreground truncate">{p.marketTitle || p.marketAddress?.slice(0, 10)}</div>
+                  <div className="font-mono text-[10px] text-muted-foreground">
+                    {p.outcomeLabel} · {p.status} {p.paperTrade && <span className="text-yellow-400">PAPER</span>}
+                  </div>
+                </div>
+                <div className="font-mono text-xs text-right tabular-nums ml-3">
+                  <div className="text-foreground">{fmtUsd(num(p.usdtIn))}</div>
+                  {p.pnl != null && <div className={num(p.pnl) >= 0 ? "text-emerald-400" : "text-red-400"}>{num(p.pnl) >= 0 ? "+" : ""}{fmtUsd(num(p.pnl))}</div>}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -1631,9 +1818,9 @@ export default function TerminalPreview() {
           )}
           {venue === "aster" && <AsterPane session={session} asterAcct={asterAcct} onTrade={openTrade} onRefetch={() => setRefetchTick((n) => n + 1)} />}
           {venue === "hyperliquid" && <HlPane session={session} hlAcct={hlAcct} onTrade={openTrade} onRefetch={() => setRefetchTick((n) => n + 1)} />}
-          {venue === "fourmeme" && <FourmemePane />}
-          {venue === "polymarket" && <PolymarketPane />}
-          {venue === "fortytwo" && <FortyTwoPane />}
+          {venue === "fourmeme" && <FourmemePane session={session} />}
+          {venue === "polymarket" && <PolymarketPane session={session} />}
+          {venue === "fortytwo" && <FortyTwoPane session={session} />}
         </main>
         <BrainFeed session={session} refetchTick={refetchTick} />
       </div>

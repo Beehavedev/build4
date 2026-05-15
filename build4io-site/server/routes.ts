@@ -22,6 +22,7 @@ import { launchToken, getTokenLaunches, getTokenLaunch, fourMemeGetTokenInfo, fo
 import { TOKEN_LAUNCHPADS } from "@shared/schema";
 import { registerMiniAppRoutes } from "./miniapp-routes";
 import { registerHyperliquidRoutes } from "./hyperliquid-routes";
+import { registerBotBridgeRoutes } from "./bot-bridge-routes";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -42,6 +43,7 @@ export async function registerRoutes(
   registerSeoPrerender(app);
   registerMiniAppRoutes(app);
   registerHyperliquidRoutes(app);
+  registerBotBridgeRoutes(app);
 
   const walletExportLimiter = new Map<string, number[]>();
   function checkWalletExportRate(chatId: string): boolean {
