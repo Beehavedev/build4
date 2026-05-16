@@ -2077,10 +2077,27 @@ app.post('/api/aster/order', requireTgUser, async (req, res) => {
     //    a 7-decimal qty but the symbol only allows stepSize=0.001.
     const filters = await aster.getSymbolFilters(sym)
     const rawQty = notional / refPrice
-    const qtyStr = filters
+    let qtyStr = filters
       ? aster.roundDownToStep(rawQty, filters.stepSize, filters.quantityPrecision)
       : rawQty.toFixed(6)
-    const qty = parseFloat(qtyStr)
+    let qty = parseFloat(qtyStr)
+    // ── If rounding DOWN strips notional below Aster's min (typical when the
+    //    user types a $ amount that sits right at the $5 minimum and stepSize
+    //    eats the fraction — e.g. $5 SOL at $170 → 0.0294 SOL → rounds to
+    //    0.025 → effective notional $4.31), bump UP by one step. The
+    //    downstream margin pre-check at /api/aster/order:2123 will still
+    //    catch the case where the bumped qty exceeds the user's wallet, so
+    //    no risk of silent overspend.
+    if (filters && filters.stepSize > 0 && filters.minNotional > 0
+        && qty * refPrice < filters.minNotional && qty * refPrice > 0) {
+      const bumpedQty = qty + filters.stepSize
+      const bumpedStr = aster.roundDownToStep(bumpedQty, filters.stepSize, filters.quantityPrecision)
+      const bumped = parseFloat(bumpedStr)
+      if (bumped * refPrice >= filters.minNotional) {
+        qtyStr = bumpedStr
+        qty    = bumped
+      }
+    }
     if (qty <= 0) {
       // Compute the equivalent USDT minimum so users don't have to do
       // mental math (e.g. for BTC at $78k, stepSize=0.001 → $78 USDT min).
@@ -2106,8 +2123,15 @@ app.post('/api/aster/order', requireTgUser, async (req, res) => {
       })
     }
     if (filters && filters.minNotional > 0 && qty * refPrice < filters.minNotional) {
+      // Bump-up above already failed (must have been clipped by budget), so
+      // suggest a clean USDT amount the user can re-enter. Add 10% headroom
+      // over the minimum so step-rounding doesn't bite them a second time.
+      const suggestUsdt = Math.ceil(filters.minNotional * 1.1)
       return res.status(400).json({
-        error: `Below minimum notional: need ≥ ${filters.minNotional} USDT, got ${(qty * refPrice).toFixed(2)}`,
+        error:
+          `Order too small for ${sym} — Aster needs ≥ $${filters.minNotional} USDT notional, ` +
+          `your $${notional} rounds down to $${(qty * refPrice).toFixed(2)} after step size. ` +
+          `Try $${suggestUsdt} instead.`,
       })
     }
     let limitRounded = limit
