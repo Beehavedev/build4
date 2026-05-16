@@ -87,9 +87,31 @@ export default function Wallet() {
 
   return (
     <div style={{ paddingTop: 20 }} data-testid={`wallet-state-${state}`}>
-      <div style={{ marginBottom: 14 }}>
-        <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.5px' }}>💳 Wallet</div>
-        <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 2 }}>{w.label}</div>
+      <div style={{ marginBottom: 14, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.5px' }}>💳 Wallet</div>
+          <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 2 }}>{w.label}</div>
+        </div>
+        <button
+          onClick={load}
+          disabled={loading}
+          data-testid="button-wallet-refresh"
+          title="Refresh balances — re-reads BSC, Aster, HL, Arbitrum, Polygon."
+          style={{
+            background: 'var(--b4-surface, #1a1a2e)',
+            color: 'var(--text-primary)',
+            border: '1px solid var(--b4-border, #2a2a3e)',
+            borderRadius: 8,
+            padding: '6px 12px',
+            fontSize: 12, fontWeight: 600,
+            cursor: loading ? 'wait' : 'pointer',
+            opacity: loading ? 0.6 : 1,
+            whiteSpace: 'nowrap',
+            marginTop: 2,
+          }}
+        >
+          {loading ? '…' : '↻ Refresh'}
+        </button>
       </div>
 
       {/* Address strip — always visible at the top so users can fund from
@@ -557,6 +579,31 @@ function BscPrimaryCard({ w, onChange, copy, copied }: { w: WalletInfo; onChange
             </div>
           </div>
         </div>
+        {w.balances.error && (
+          <div
+            data-testid="text-bsc-error"
+            style={{
+              marginTop: 8,
+              padding: '8px 10px',
+              borderRadius: 6,
+              background: 'rgba(239, 68, 68, 0.08)',
+              border: '1px solid rgba(239, 68, 68, 0.25)',
+              fontSize: 11,
+              color: 'var(--b4-red, #ef4444)',
+              lineHeight: 1.4,
+            }}
+          >
+            ⚠️ Couldn't read BSC balance: {w.balances.error}.{' '}
+            <a
+              href={`https://bscscan.com/address/${w.address}`}
+              target="_blank" rel="noopener noreferrer"
+              style={{ color: 'inherit', textDecoration: 'underline' }}
+            >
+              Verify on BscScan
+            </a>{' '}
+            or tap ↻ Refresh.
+          </div>
+        )}
         {/* Funding-model footnote — this BSC USDT is the SAME pool that
             funds 42.space prediction buys (42 has no separate
             clearinghouse, the trader signs directly from this wallet's
@@ -586,6 +633,21 @@ function BscSecondaryCard({ w, onChange, copy, copied }: { w: WalletInfo; onChan
           <span data-testid="text-balance-usdt">USDT {w.balances.usdt.toFixed(2)}</span>
           <span data-testid="text-balance-bnb">BNB {w.balances.bnb.toFixed(5)}</span>
         </div>
+        {w.balances.error && (
+          <div
+            data-testid="text-bsc-error"
+            style={{ marginTop: 6, fontSize: 11, color: 'var(--b4-red, #ef4444)', lineHeight: 1.4 }}
+          >
+            ⚠️ {w.balances.error} —{' '}
+            <a
+              href={`https://bscscan.com/address/${w.address}`}
+              target="_blank" rel="noopener noreferrer"
+              style={{ color: 'inherit', textDecoration: 'underline' }}
+            >
+              verify on BscScan
+            </a>
+          </div>
+        )}
       </div>
       <ArbitrumCard w={w} compact />
       <PolygonCard w={w} compact onChange={onChange} copy={copy} copied={copied} />
