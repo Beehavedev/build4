@@ -61,11 +61,18 @@ export function buildBscProvider(primaryRpcUrl?: string): ethers.AbstractProvide
     return new ethers.JsonRpcProvider(urls[0], network, { staticNetwork: network });
   }
 
+  // stallTimeout=800ms (was 2000). FallbackProvider only opens the NEXT
+  // provider in line after the current one has stalled for this long. With
+  // a 7-endpoint list under a ~12s section budget, 800ms means up to ~10
+  // endpoints get a real shot before the caller times out — vs the prior
+  // 2000ms which only let us reach ~2 endpoints inside a 5s budget. The
+  // previous setup was responsible for the production "bsc_bnb_timeout_5000ms"
+  // banners users were seeing even though their deposit was on-chain.
   const configs = urls.map((url, i) => ({
     provider: new ethers.JsonRpcProvider(url, network, { staticNetwork: network }),
     priority: i + 1,
     weight: 1,
-    stallTimeout: 2000,
+    stallTimeout: 800,
   }));
   return new ethers.FallbackProvider(configs, network, { quorum: 1 });
 }

@@ -973,15 +973,20 @@ app.get('/api/me/wallet', requireTgUser, async (req, res) => {
     // can't answer in 5s the user sees a per-card error string rather than
     // a blank loading screen.
     const SECTION_TIMEOUT_MS = 5000
-    const withTimeout = async <T>(p: Promise<T>, label: string): Promise<T> => {
+    const withTimeout = async <T>(
+      p: Promise<T>,
+      label: string,
+      overrideMs?: number,
+    ): Promise<T> => {
+      const ms = overrideMs ?? SECTION_TIMEOUT_MS
       let timer: NodeJS.Timeout | undefined
       try {
         return await Promise.race([
           p,
           new Promise<T>((_, reject) => {
             timer = setTimeout(
-              () => reject(new Error(`${label}_timeout_${SECTION_TIMEOUT_MS}ms`)),
-              SECTION_TIMEOUT_MS,
+              () => reject(new Error(`${label}_timeout_${ms}ms`)),
+              ms,
             )
           }),
         ])
@@ -1008,6 +1013,54 @@ app.get('/api/me/wallet', requireTgUser, async (req, res) => {
     // provider transparently retries against three other public
     // dataseeds, eliminating that whole class of "I funded my wallet
     // but the app says zero" reports.
+    // BscScan REST fallback. Used ONLY when the JSON-RPC FallbackProvider
+    // path has already failed (every dataseed timed out). BscScan's read
+    // API is a different network path (Cloudflare-fronted REST vs raw RPC
+    // dataseed), so it survives the exact failure mode where every public
+    // dataseed is rate-limiting or hanging from our egress IPs. Anonymous
+    // calls work but are throttled to 1 req / 5s — set BSCSCAN_API_KEY in
+    // Render env to lift that to 5 req/s (free tier).
+    const readBscViaBscScan = async (
+      addr: string,
+    ): Promise<{ usdt: number; bnb: number } | null> => {
+      const key = process.env.BSCSCAN_API_KEY ?? ''
+      const keyParam = key ? `&apikey=${encodeURIComponent(key)}` : ''
+      const bnbUrl =
+        `https://api.bscscan.com/api?module=account&action=balance` +
+        `&address=${addr}&tag=latest${keyParam}`
+      const usdtUrl =
+        `https://api.bscscan.com/api?module=account&action=tokenbalance` +
+        `&contractaddress=${USDT_BSC}&address=${addr}&tag=latest${keyParam}`
+      try {
+        const ctrl = new AbortController()
+        const t = setTimeout(() => ctrl.abort(), 6000)
+        const [bnbResp, usdtResp] = await Promise.all([
+          fetch(bnbUrl, { signal: ctrl.signal }),
+          fetch(usdtUrl, { signal: ctrl.signal }),
+        ])
+        clearTimeout(t)
+        if (!bnbResp.ok || !usdtResp.ok) return null
+        const bnbJson: any = await bnbResp.json()
+        const usdtJson: any = await usdtResp.json()
+        // BscScan returns { status:"1", result:"<wei-as-string>" } on success;
+        // status:"0" + result:"NOTOK..." on rate-limit / invalid-key.
+        if (bnbJson?.status !== '1' || usdtJson?.status !== '1') return null
+        const bnb = parseFloat(ethers.formatEther(BigInt(bnbJson.result)))
+        const usdt = parseFloat(ethers.formatUnits(BigInt(usdtJson.result), 18))
+        return { bnb, usdt }
+      } catch {
+        return null
+      }
+    }
+
+    // BSC gets a wider section budget (12s vs the default 5s). The seven-
+    // endpoint FallbackProvider needs ~800ms per stalled endpoint to advance,
+    // so a 5s ceiling only let it reach ~2 endpoints — that's why users hit
+    // "bsc_*_timeout_5000ms" banners even though their deposits were on-chain.
+    // 12s is still well under any reasonable HTTP idle, so the wallet card
+    // never freezes the response — Promise.allSettled keeps the other cards
+    // rendering at their own faster budgets in parallel.
+    const BSC_SECTION_TIMEOUT_MS = 12000
     const readBsc = async () => {
       const { buildBscProvider } = await import('./services/bscProvider')
       const provider = buildBscProvider(process.env.BSC_RPC_URL)
@@ -1015,7 +1068,7 @@ app.get('/api/me/wallet', requireTgUser, async (req, res) => {
       // BNB and USDT calls run in parallel under the section budget so a
       // slow USDT contract call can't take BNB down with it.
       const [bnbRes, usdtRes] = await Promise.allSettled([
-        withTimeout(provider.getBalance(wallet.address), 'bsc_bnb'),
+        withTimeout(provider.getBalance(wallet.address), 'bsc_bnb', BSC_SECTION_TIMEOUT_MS),
         withTimeout(
           new ethers.Contract(
             USDT_BSC,
@@ -1023,6 +1076,7 @@ app.get('/api/me/wallet', requireTgUser, async (req, res) => {
             provider,
           ).balanceOf(wallet.address) as Promise<bigint>,
           'bsc_usdt',
+          BSC_SECTION_TIMEOUT_MS,
         ),
       ])
       if (bnbRes.status === 'fulfilled') {
@@ -1035,6 +1089,24 @@ app.get('/api/me/wallet', requireTgUser, async (req, res) => {
       } else {
         const usdtErr = `usdt: ${usdtRes.reason?.shortMessage ?? usdtRes.reason?.message ?? 'rpc_failed'}`
         balanceError = balanceError ? `${balanceError}; ${usdtErr}` : usdtErr
+      }
+      // Belt-and-suspenders: if EITHER value failed (RPC stall), try the
+      // BscScan REST API. We only override values that actually failed —
+      // never overwrite a successful RPC read with a (potentially staler)
+      // BscScan value. If BscScan also fails we keep the original RPC
+      // error string so the UI banner still tells the user what happened.
+      const rpcFailed = bnbRes.status !== 'fulfilled' || usdtRes.status !== 'fulfilled'
+      if (rpcFailed) {
+        const scan = await readBscViaBscScan(wallet.address)
+        if (scan) {
+          if (bnbRes.status !== 'fulfilled') bnb = scan.bnb
+          if (usdtRes.status !== 'fulfilled') usdt = scan.usdt
+          // Clear the error banner — we got the numbers. Surface the source
+          // so support can tell at a glance that RPC failed but BscScan saved
+          // the read.
+          balanceError = null
+          return { usdt, bnb, error: null as string | null, source: 'bscscan' as const }
+        }
       }
       return { usdt, bnb, error: balanceError }
     }
