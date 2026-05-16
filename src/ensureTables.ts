@@ -459,6 +459,18 @@ export async function ensureNewTables() {
   // spot↔perps move CTAs (which always 502 in unified mode) and to show
   // the unified equity (spot + perps) as the trading balance.
   await run(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "hyperliquidUnified" BOOLEAN NOT NULL DEFAULT false`)
+  // Whether this user has successfully signed `approveBuilder` to authorize
+  // BUILD4 as their fee-collecting builder on Aster. Set to TRUE only after
+  // Aster returns success on the EIP-712 call; persists across sessions.
+  // Reads:
+  //   - /api/aster/order — when FALSE, the bot drops `builder`+`feeRate`
+  //     from the order body so Aster doesn't reject with "Cannot found
+  //     builder config". The trade succeeds without fee attribution; a
+  //     background retry path can re-attempt approveBuilder later.
+  //   - asterReapprove daily cron — same skip behavior on auto-trades.
+  // The flag is also used by the activation endpoint to decide whether to
+  // surface a "builder enrollment failed, retry" hint in the UI response.
+  await run(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "asterBuilderEnrolled" BOOLEAN NOT NULL DEFAULT false`)
   await run(`ALTER TABLE "AgentLog" ADD COLUMN IF NOT EXISTS "providers" JSONB`)
   await run(`CREATE TABLE IF NOT EXISTS "OutcomePosition" (
     "id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,

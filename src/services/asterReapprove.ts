@@ -139,21 +139,40 @@ async function _runReapprove(user: {
       } as any,
     })
 
+    // Same retry policy as /api/aster/approve: 3 attempts with linear
+    // backoff. Same DB flag persistence so the order path can decide
+    // whether to attach builder+feeRate. See activation handler for the
+    // full rationale on why this matters for "Cannot found builder
+    // config" rejections.
     let builderEnrolled = false
-    try {
-      const br = await approveBuilder({
-        userAddress:    wallet.address,
-        userPrivateKey: userPk,
-        builderAddress,
-        maxFeeRate:     feeRate,
-        builderName:    'BUILD4',
-      })
-      builderEnrolled = br.success
-      if (!br.success) {
-        console.warn('[asterReapprove] approveBuilder failed (non-fatal):', br.error)
+    for (let attempt = 1; attempt <= 3 && !builderEnrolled; attempt++) {
+      try {
+        const br = await approveBuilder({
+          userAddress:    wallet.address,
+          userPrivateKey: userPk,
+          builderAddress,
+          maxFeeRate:     feeRate,
+          builderName:    'BUILD4',
+        })
+        if (br.success) {
+          builderEnrolled = true
+          break
+        }
+        console.warn(`[asterReapprove] approveBuilder attempt ${attempt}/3 failed:`, br.error)
+      } catch (e: any) {
+        console.warn(`[asterReapprove] approveBuilder attempt ${attempt}/3 threw:`, e?.message)
       }
+      if (attempt < 3) {
+        await new Promise(r => setTimeout(r, attempt * 1000))
+      }
+    }
+    try {
+      await db.user.update({
+        where: { id: user.id },
+        data:  { asterBuilderEnrolled: builderEnrolled } as any,
+      })
     } catch (e: any) {
-      console.warn('[asterReapprove] approveBuilder threw (non-fatal):', e?.message)
+      console.warn('[asterReapprove] failed to persist asterBuilderEnrolled:', e?.message)
     }
 
     return { success: true, agentAddress: agentWallet.address, builderEnrolled }

@@ -1747,21 +1747,53 @@ app.post('/api/aster/approve', requireTgUser, async (req, res) => {
     // Best-effort: enroll our broker so trades carry the BUILD4 fee. If this
     // fails we still mark the user as onboarded — they can trade without a
     // builder fee, and we can retry later. We don't block activation on it.
+    //
+    // Retry up to 3 times with linear backoff (1s, 3s) before giving up.
+    // Production observation: a single transient Aster API blip during
+    // activation used to leave users in a state where every subsequent
+    // order failed with "Cannot found builder config" — because the order
+    // path attributes to the builder unconditionally, but Aster has no
+    // record of this user authorizing it. Retrying inline fixes that root
+    // cause for the common transient case. The DB flag below records the
+    // outcome so the order path can skip builder attribution for the rare
+    // user where every retry fails.
     let builderEnrolled = false
-    try {
-      const br = await approveBuilder({
-        userAddress:    wallet.address,
-        userPrivateKey: userPk || decryptPrivateKey(wallet.encryptedPK, user.id),
-        builderAddress,
-        maxFeeRate:     feeRate,
-        builderName:    'BUILD4'
-      })
-      builderEnrolled = br.success
-      if (!br.success) {
-        console.warn('[/aster/approve] approveBuilder failed (non-fatal):', br.error)
+    let lastBuilderErr: string | null = null
+    const userPkForBuilder = userPk || decryptPrivateKey(wallet.encryptedPK, user.id)
+    for (let attempt = 1; attempt <= 3 && !builderEnrolled; attempt++) {
+      try {
+        const br = await approveBuilder({
+          userAddress:    wallet.address,
+          userPrivateKey: userPkForBuilder,
+          builderAddress,
+          maxFeeRate:     feeRate,
+          builderName:    'BUILD4'
+        })
+        if (br.success) {
+          builderEnrolled = true
+          break
+        }
+        lastBuilderErr = br.error ?? 'unknown'
+        console.warn(`[/aster/approve] approveBuilder attempt ${attempt}/3 failed:`, br.error)
+      } catch (e: any) {
+        lastBuilderErr = e?.message ?? 'threw'
+        console.warn(`[/aster/approve] approveBuilder attempt ${attempt}/3 threw:`, e?.message)
       }
+      if (attempt < 3) {
+        await new Promise(r => setTimeout(r, attempt * 1000))
+      }
+    }
+    // Persist the outcome so /api/aster/order can decide whether to attach
+    // builder+feeRate. Idempotent column (see ensureTables.ts). We update
+    // even on failure (DEFAULT false already covers it, but explicit beats
+    // implicit when an activation retry transitions true→false).
+    try {
+      await db.user.update({
+        where: { id: user.id },
+        data:  { asterBuilderEnrolled: builderEnrolled } as any,
+      })
     } catch (e: any) {
-      console.warn('[/aster/approve] approveBuilder threw (non-fatal):', e?.message)
+      console.warn('[/aster/approve] failed to persist asterBuilderEnrolled:', e?.message)
     }
 
     userPk = ''
@@ -2236,14 +2268,23 @@ app.post('/api/aster/order', requireTgUser, async (req, res) => {
     const feeRate        = process.env.ASTER_BUILDER_FEE_RATE ?? '0.0001'
     const buySell        = side === 'LONG' ? 'BUY' : 'SELL'
 
+    // Only attribute to the builder if THIS user has actually signed
+    // approveBuilder. Without their signed authorization on file, Aster
+    // rejects the order with "Cannot found builder config" — which is
+    // exactly the production bug this column was added to fix. When the
+    // user isn't enrolled we route through the plain `placeOrder` path
+    // (no builder/feeRate), the trade succeeds without us collecting the
+    // kickback. A background reapprove path will retry enrollment.
+    const builderActive = Boolean(builderAddress) && Boolean((user as any).asterBuilderEnrolled)
+
     let result
-    if (builderAddress && type === 'MARKET') {
+    if (builderActive && type === 'MARKET') {
       // Builder route only supports the params we wire; LIMIT routes still go
       // through the standard endpoint so timeInForce is honored.
       if (lev > 1) await aster.setLeverage(sym, lev, creds)
       result = await aster.placeOrderWithBuilderCode({
         symbol: sym, side: buySell, type: 'MARKET', quantity: qty,
-        builderAddress, feeRate, creds
+        builderAddress: builderAddress!, feeRate, creds
       })
     } else {
       result = await aster.placeOrder({
@@ -2285,7 +2326,9 @@ app.post('/api/aster/order', requireTgUser, async (req, res) => {
             // Even though closePosition='true' fills are flat-the-book,
             // route through the builder so BUILD4 earns the broker
             // kickback on the SL fill the same way we do on the entry.
-            ...(builderAddress ? { builderAddress, feeRate } : {}),
+            // Gated on `builderActive` (env set AND user enrolled) — see
+            // the entry-leg comment above for why.
+            ...(builderActive ? { builderAddress: builderAddress!, feeRate } : {}),
           })
           slStatus = 'placed'
         } catch (slErr: any) {
