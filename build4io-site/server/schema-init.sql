@@ -107,3 +107,6 @@ CREATE TABLE IF NOT EXISTS "pool_snapshots" (id SERIAL PRIMARY KEY, total_pool_b
 CREATE TABLE IF NOT EXISTS "aster_agent_trades" (id SERIAL PRIMARY KEY, chat_id TEXT NOT NULL, symbol TEXT NOT NULL, side TEXT NOT NULL, entry_price DOUBLE PRECISION, exit_price DOUBLE PRECISION, quantity DOUBLE PRECISION, leverage DOUBLE PRECISION DEFAULT 1, pnl DOUBLE PRECISION, pnl_pct DOUBLE PRECISION, status TEXT DEFAULT 'OPEN', order_id TEXT, close_order_id TEXT, reason TEXT, opened_at TIMESTAMP DEFAULT now(), closed_at TIMESTAMP);
 CREATE INDEX IF NOT EXISTS idx_aster_agent_trades_chat ON aster_agent_trades(chat_id);
 CREATE INDEX IF NOT EXISTS idx_aster_agent_trades_status ON aster_agent_trades(chat_id, status);
+CREATE TABLE IF NOT EXISTS "web_telegram_links" (web_wallet TEXT PRIMARY KEY, telegram_id TEXT, link_token TEXT UNIQUE, token_expires_at BIGINT, linked_at BIGINT, created_at BIGINT NOT NULL);
+CREATE INDEX IF NOT EXISTS web_telegram_links_token_idx ON web_telegram_links(link_token);
+CREATE INDEX IF NOT EXISTS web_telegram_links_telegram_id_idx ON web_telegram_links(telegram_id);
