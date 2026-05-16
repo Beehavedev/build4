@@ -1313,7 +1313,17 @@ export async function approveAgent(params: {
   maxFeeRate?:       string  // e.g. '0.0001' = 0.01%
   builderName?:      string
 }): Promise<{ success: boolean; error?: string }> {
-  const expired      = Date.now() + (params.expiredDays ?? 365) * 86_400_000
+  // SECURITY TRIPWIRE: canWithdraw=true is forbidden by policy. The agent key
+  // is hot (always-online, lives in Render env) and only needs trade scope.
+  // Withdrawals are signed directly by the user's main PK via a separate
+  // endpoint (see /api/aster/withdraw), so the agent never needs this scope.
+  // If this throw ever fires in production it means someone tried to expand
+  // the agent's blast radius — refuse, loud-fail, investigate.
+  if (params.canWithdraw === true) {
+    throw new Error('[Aster] approveAgent: canWithdraw=true is forbidden by security policy')
+  }
+
+  const expired      = Date.now() + (params.expiredDays ?? 90) * 86_400_000
   const ipWhitelist  = params.ipWhitelist ?? ''
   const canSpotTrade = params.canSpotTrade ?? false
   const canPerpTrade = params.canPerpTrade ?? true
