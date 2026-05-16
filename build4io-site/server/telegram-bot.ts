@@ -13386,14 +13386,15 @@ async function initOwnerAsterClient(): Promise<any> {
   if (ownerClientInitAttempted) return null;
   ownerClientInitAttempted = true;
 
-  const HARDCODED_USER = "0xeb0616e044c55c1ca214ed3629fee3354bbf9826";
-  const HARDCODED_SIGNER = "0xaac5f84303ee5cdbd19c265cee295cd5a36a26ee";
-
   const privateKey = process.env.ASTER_PRIVATE_KEY || process.env.ASTER_API_WALLET_KEY;
-  const userAddress = process.env.ASTER_USER_ADDRESS || HARDCODED_USER;
-  const signerAddress = process.env.ASTER_SIGNER_ADDRESS || HARDCODED_SIGNER;
+  const userAddress = process.env.ASTER_USER_ADDRESS;
+  const signerAddress = process.env.ASTER_SIGNER_ADDRESS;
 
   if (privateKey) {
+    if (!userAddress || !signerAddress) {
+      console.error("[Aster] FAIL-CLOSED: ASTER_PRIVATE_KEY set but ASTER_USER_ADDRESS / ASTER_SIGNER_ADDRESS missing. Refusing to init owner client.");
+      return null;
+    }
     const { createAsterV3FuturesClient } = await import("./aster-client");
     const { Wallet } = await import("ethers");
     const wallet = new Wallet(privateKey);
@@ -13402,9 +13403,9 @@ async function initOwnerAsterClient(): Promise<any> {
     const user = userAddress;
     const signer = derivedSigner.toLowerCase();
 
-    console.log(`[Aster] Init V3: user=${user} signer=${signer} derived=${derivedSigner}`);
+    console.log(`[Aster] Init V3: user=${user.substring(0, 10)}... signer=${signer.substring(0, 10)}... derived=${derivedSigner.substring(0, 10)}...`);
     if (derivedSigner.toLowerCase() !== signerAddress.toLowerCase()) {
-      console.warn(`[Aster] NOTE: ASTER_SIGNER_ADDRESS=${signerAddress} overridden by derived=${derivedSigner} from private key`);
+      console.warn(`[Aster] NOTE: ASTER_SIGNER_ADDRESS=${signerAddress.substring(0, 10)}... overridden by derived signer from private key`);
     }
 
     const futures = createAsterV3FuturesClient({
@@ -13497,14 +13498,14 @@ export async function getAsterClient(chatId: number): Promise<any> {
       const isAsterCode = parentAddress?.startsWith("astercode:");
       if (isAsterCode) {
         const realParent = parentAddress!.replace("astercode:", "");
-        console.log(`[AsterClient] Aster Code: user(parent)=${realParent}, signer=${creds.apiKey}`);
+        console.log(`[AsterClient] Aster Code: user(parent)=${realParent?.substring(0, 10)}..., signer=${creds.apiKey?.substring(0, 10)}...`);
         const { createAsterCodeFuturesClient, getDefaultAsterCodeConfig } = await import("./aster-code");
         const codeConfig = getDefaultAsterCodeConfig();
         const codeFutures = createAsterCodeFuturesClient(realParent, creds.apiKey, creds.apiSecret, codeConfig);
         return { futures: codeFutures, spot: null, mode: "user-astercode" };
       }
 
-      console.log(`[AsterClient] V3 API Wallet: user(parent)=${parentAddress}, signer=${creds.apiKey}`);
+      console.log(`[AsterClient] V3 API Wallet: user(parent)=${parentAddress?.substring(0, 10)}..., signer=${creds.apiKey?.substring(0, 10)}...`);
       const { createAsterV3FuturesClient } = await import("./aster-client");
       const v3Futures = createAsterV3FuturesClient({
         user: parentAddress,

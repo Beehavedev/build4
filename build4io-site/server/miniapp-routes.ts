@@ -908,10 +908,8 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
         }
 
         const apiWalletAddress = apiWallet.address.toLowerCase();
-        const userParentAddress = (req.body.parentAddress || "").trim().toLowerCase();
-        const effectiveParent = (userParentAddress && userParentAddress.startsWith("0x") && userParentAddress.length === 42)
-          ? userParentAddress : parentAddress;
-        console.log(`[MiniApp] Manual link: signer=${apiWalletAddress}, parent=${effectiveParent}, chatId=${chatId}`);
+        const effectiveParent = parentAddress;
+        console.log(`[MiniApp] Manual link: signer=${apiWalletAddress.substring(0, 10)}..., parent=${effectiveParent.substring(0, 10)}..., chatId=${chatId}`);
         await storage.saveAsterCredentials(chatId, apiWalletAddress, apiWalletPrivateKey, effectiveParent);
         res.json({ success: true, apiWalletAddress, parentAddress: effectiveParent });
         return;
@@ -1464,20 +1462,20 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
             error: `Wallet key recovered. New wallet: ${newWallet.address}\n\nSend your USDT from your old wallet (${walletAddr}) to this new address, then try deposit again.`,
           });
         }
-        return res.status(400).json({ error: "Wallet key unavailable. Send USDT manually to pool wallet: 0xaac5f84303ee5cdbd19c265cee295cd5a36a26ee" });
+        return res.status(400).json({ error: "Wallet key unavailable. Please contact support — do not send funds to any address until support confirms it." });
       }
 
       const ethers = await import("ethers");
       const pkWallet = new ethers.Wallet(rawPk);
       const derivedAddr = pkWallet.address.toLowerCase();
       const storedAddr = walletAddr.toLowerCase();
-      console.log(`[MiniApp] deposit: stored wallet=${storedAddr}, key derives to=${derivedAddr}`);
+      console.log(`[MiniApp] deposit: stored wallet=${storedAddr.substring(0, 10)}..., key derives to=${derivedAddr.substring(0, 10)}...`);
 
       if (derivedAddr !== storedAddr) {
-        console.log(`[MiniApp] KEY MISMATCH: key belongs to ${derivedAddr}, not ${storedAddr}. Cannot auto-deposit.`);
+        console.log(`[MiniApp] KEY MISMATCH: key belongs to ${derivedAddr.substring(0, 10)}..., not ${storedAddr.substring(0, 10)}.... Cannot auto-deposit.`);
         return res.json({
           success: false,
-          error: `Auto-deposit unavailable — wallet key mismatch. Please deposit manually:\n\n1. Open your external wallet app\n2. Send $${amount} USDT (BEP-20) on BSC to:\n0xaac5f84303ee5cdbd19c265cee295cd5a36a26ee\n3. Paste the TX hash below to verify`,
+          error: `Auto-deposit unavailable — wallet key mismatch. Please contact support before sending any funds. Do not deposit to any address you have not verified with the team.`,
         });
       }
 
@@ -2788,8 +2786,8 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
       if (verified && deposit) {
         try {
           const pk = process.env.ASTER_PRIVATE_KEY;
-          const ownerAddr = process.env.ASTER_USER_ADDRESS || "0xeb0616e044c55c1ca214ed3629fee3354bbf9826";
-          if (pk) {
+          const ownerAddr = process.env.ASTER_USER_ADDRESS;
+          if (pk && ownerAddr) {
             const { asterV3Deposit } = await import("./aster-client");
             console.log(`[Pool] Auto-bridge: forwarding $${amount} USDT from holding wallet to Aster for owner ${ownerAddr.substring(0, 10)}...`);
             bridgeResult = await asterV3Deposit(pk, amount, 0, ownerAddr);
@@ -2870,8 +2868,9 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
   app.post("/api/miniapp/pool/bridge-now", async (req: Request, res: Response) => {
     try {
       const pk = process.env.ASTER_PRIVATE_KEY;
-      const ownerAddr = process.env.ASTER_USER_ADDRESS || "0xeb0616e044c55c1ca214ed3629fee3354bbf9826";
+      const ownerAddr = process.env.ASTER_USER_ADDRESS;
       if (!pk) return res.status(400).json({ error: "No ASTER_PRIVATE_KEY" });
+      if (!ownerAddr) return res.status(400).json({ error: "No ASTER_USER_ADDRESS configured — refusing to bridge to an unspecified destination." });
 
       const { JsonRpcProvider, Wallet, Contract, formatUnits } = await import("ethers");
       const provider = new JsonRpcProvider("https://bsc-dataseed1.binance.org");

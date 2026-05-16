@@ -198,6 +198,19 @@ const webhookLimiter = rateLimit({
 });
 app.use("/api/telegram/webhook", webhookLimiter);
 
+// Cloudflare WAF is intentionally bypassed for /api/miniapp/* (see line 66) so the
+// /autonomous-economy web terminal — hosted on Replit, not behind Cloudflare —
+// can call these endpoints. Apply a strict per-route limiter as the mitigation
+// for that bypass (audit finding NEW-01).
+const miniappLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many miniapp API requests, please slow down." },
+});
+app.use("/api/miniapp", miniappLimiter);
+
 app.use((req: Request, res: Response, next: NextFunction) => {
   const isMiniApp = req.path === "/miniapp" || req.path === "/miniapp-old";
   res.removeHeader("X-Powered-By");

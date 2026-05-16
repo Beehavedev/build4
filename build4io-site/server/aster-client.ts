@@ -692,7 +692,7 @@ export async function asterBrokerOnboard(walletPrivateKey: string, agentCode?: s
     });
     const createData = await createRes.json();
     const createDataStr = JSON.stringify(createData).substring(0, 500);
-    console.log(`[Aster] API key create response status=${createRes.status} code=${createData?.code}:`, createDataStr);
+    console.log(`[Aster] API key create response status=${createRes.status} code=${createData?.code} hasApiKey=${!!createData?.data?.apiKey}`);
     if (createData?.code !== "000000" || !createData?.data?.apiKey) {
       const akFromData = createData?.data?.apiKey || createData?.data?.key || createData?.data?.accessKey;
       const asFromData = createData?.data?.apiSecret || createData?.data?.secret || createData?.data?.secretKey;

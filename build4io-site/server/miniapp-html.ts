@@ -1,4 +1,5 @@
 export function getMiniAppHTML(): string {
+  const VAULT_ADDR = (process.env.POOL_DEPOSIT_ADDRESS || "").toLowerCase();
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -129,6 +130,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',sans-
 <script>
 const TG=window.Telegram?.WebApp;
 if(TG){TG.ready();TG.expand();try{TG.setHeaderColor('#0b0e11');TG.setBackgroundColor('#0b0e11')}catch(e){}}
+const VAULT=${JSON.stringify(VAULT_ADDR)};
 const chatId=new URLSearchParams(location.search).get('chatId')||TG?.initDataUnsafe?.user?.id||'';
 const MINIAPP_VERSION='v59-apr14-bulletproof-activate';
 console.log('[MiniApp] version='+MINIAPP_VERSION+' chatId='+chatId);
@@ -1200,8 +1202,8 @@ async function verifyDeposit(){
     const d=await r.json();
     if(d.result&&d.result.to){
       const to=d.result.to.toLowerCase();
-      const vault=VAULT.toLowerCase();
-      if(to===vault||d.result.input?.toLowerCase().includes(vault.slice(2))){
+      const vault=(VAULT||'').toLowerCase();
+      if(vault&&(to===vault||d.result.input?.toLowerCase().includes(vault.slice(2)))){
         st.innerHTML='<div class="alert alert-ok mt-3"><span>✅</span><div><strong>Transaction verified!</strong><br><span class="text-xs">TX sent to Aster vault. Funds should appear in your Spot account within 1-5 minutes.</span><br><a href="https://bscscan.com/tx/'+tx+'" target="_blank" style="color:var(--green);text-decoration:underline;font-size:11px">View on BscScan ↗</a></div></div>';
         toast('✅ Deposit TX verified!','ok');
         setTimeout(()=>fetchAll().then(()=>{renderDash()}),10000);
