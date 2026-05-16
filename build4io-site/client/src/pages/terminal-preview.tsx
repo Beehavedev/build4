@@ -69,6 +69,29 @@ const timeAgo = (ms: number) => {
   return `${Math.floor(s / 86400)}d`;
 };
 
+// Polymarket helpers
+function parsePolyArray(v: any): any[] {
+  if (Array.isArray(v)) return v;
+  if (typeof v === "string") { try { const j = JSON.parse(v); return Array.isArray(j) ? j : []; } catch { return []; } }
+  return [];
+}
+function pickTradablePolyMarket(ev: any): { market: any | null; reason: string | null } {
+  const markets = Array.isArray(ev?.markets) ? ev.markets : [];
+  if (markets.length === 0) return { market: null, reason: "no markets" };
+  let lastReason = "no live price";
+  for (const m of markets) {
+    if (m?.closed || m?.archived) { lastReason = "market closed"; continue; }
+    if (!m?.conditionId) { lastReason = "no conditionId"; continue; }
+    const ids = parsePolyArray(m.clobTokenIds);
+    if (ids.length < 2 || !ids[0] || !ids[1]) { lastReason = "no token IDs"; continue; }
+    const prices = parsePolyArray(m.outcomePrices).map((p: any) => num(p));
+    const hasLive = prices.some((p) => p > 0 && p < 1);
+    if (!hasLive) { lastReason = "no live price"; continue; }
+    return { market: m, reason: null };
+  }
+  return { market: null, reason: lastReason };
+}
+
 // (legacy mock arrays removed)
 
 type AccountSummary = {
@@ -826,16 +849,19 @@ function NotConnected({ title, sub, accent, color, icon: Icon }: { title: string
 function PolymarketPane({ session }: { session: any }) {
   const [wallet, setWallet] = useState<any>(null);
   const [positions, setPositions] = useState<any[]>([]);
+  const [events, setEvents] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null); // "setup" | `redeem-${conditionId}`
   const [actionMsg, setActionMsg] = useState<string | null>(null);
   const [reloadTick, setReloadTick] = useState(0);
+  const [tradeIntent, setTradeIntent] = useState<{ market: any; event: any } | null>(null);
 
   useEffect(() => {
     if (!session.ready) {
       setWallet(null);
       setPositions([]);
+      setEvents([]);
       return;
     }
     let cancelled = false;
@@ -844,14 +870,20 @@ function PolymarketPane({ session }: { session: any }) {
     Promise.all([
       session.apiFetch("/api/polymarket/wallet").catch((e: any) => ({ ok: false, error: e?.message || "wallet load failed" })),
       session.apiFetch("/api/polymarket/positions").catch((e: any) => ({ ok: false, error: e?.message || "positions load failed" })),
+      session.apiFetch("/api/polymarket/events?limit=20").catch((e: any) => ({ ok: false, error: e?.message || "events load failed" })),
     ])
-      .then(([w, p]: any[]) => {
+      .then(([w, p, ev]: any[]) => {
         if (cancelled) return;
         const errs: string[] = [];
         if (w?.ok) setWallet(w);
         else errs.push(`wallet: ${w?.error || "unknown"}`);
         if (p?.ok) setPositions(Array.isArray(p.positions) ? p.positions : []);
         else { setPositions([]); errs.push(`positions: ${p?.error || "unknown"}`); }
+        // events endpoint returns { ok, events: gamma-array }. Tolerate either array or { events }.
+        if (ev?.ok) {
+          const raw = Array.isArray(ev.events) ? ev.events : Array.isArray(ev.events?.events) ? ev.events.events : [];
+          setEvents(raw);
+        } else { setEvents([]); }
         setErr(errs.length ? errs.join(" · ") : null);
       })
       .finally(() => !cancelled && setLoading(false));
@@ -947,6 +979,46 @@ function PolymarketPane({ session }: { session: any }) {
           {actionMsg}
         </div>
       )}
+      {/* Trending events — pickable for trading */}
+      <div className="rounded-md border bg-card/60 p-4 mb-4">
+        <div className="flex items-center justify-between mb-3">
+          <div className="font-mono text-xs text-foreground">Trending events ({events.length})</div>
+          {loading && <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" />}
+        </div>
+        {events.length === 0 ? (
+          <div className="font-mono text-[11px] text-muted-foreground py-4 text-center">No live events right now.</div>
+        ) : (
+          <div className="space-y-2 max-h-72 overflow-y-auto">
+            {events.slice(0, 12).map((ev: any) => {
+              const picked = pickTradablePolyMarket(ev);
+              const reason = !wallet?.ready ? "Set up Safe first" : picked.reason;
+              const canTrade = !!picked.market && !reason;
+              return (
+                <div key={ev.id ?? ev.slug} className="flex items-center justify-between border-b border-border/40 pb-2 last:border-b-0 gap-3" data-testid={`row-polymarket-event-${ev.id ?? ev.slug}`}>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-mono text-xs text-foreground truncate">{ev.title || ev.slug || "—"}</div>
+                    <div className="font-mono text-[10px] text-muted-foreground">
+                      {(ev.category || "—")} · vol {fmtUsd(num(ev.volume24hr ?? ev.volume))} · ends {ev.endDate ? new Date(ev.endDate).toLocaleDateString() : "—"}
+                      {reason && <span className="text-yellow-400/80"> · {reason}</span>}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => { if (!picked.market) return; setActionMsg(null); setTradeIntent({ market: picked.market, event: ev }); }}
+                    disabled={!canTrade}
+                    title={canTrade ? "Buy YES/NO" : (reason ?? "Not tradable")}
+                    data-testid={`button-polymarket-trade-${ev.id ?? ev.slug}`}
+                    className="rounded border border-blue-400/40 bg-blue-400/10 px-2 py-1 font-mono text-[10px] text-blue-400 hover:bg-blue-400/20 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    Trade
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
       <div className="rounded-md border bg-card/60 p-4">
         <div className="flex items-center justify-between mb-3">
           <div className="font-mono text-xs text-foreground">Positions ({open.length} open · {resolved.length} resolved)</div>
@@ -954,7 +1026,7 @@ function PolymarketPane({ session }: { session: any }) {
         </div>
         {positions.length === 0 ? (
           <div className="font-mono text-[11px] text-muted-foreground py-6 text-center">
-            No Polymarket positions yet. {wallet?.ready ? "Buy YES/NO from the Telegram bot or the mini-app — they all settle to this Safe." : "Set up your Safe above to start trading."}
+            No Polymarket positions yet. {wallet?.ready ? "Pick a trending event above to buy YES/NO." : "Set up your Safe above to start trading."}
           </div>
         ) : (
           <div className="space-y-2">
@@ -988,6 +1060,15 @@ function PolymarketPane({ session }: { session: any }) {
           </div>
         )}
       </div>
+      {tradeIntent && (
+        <PolymarketTradeModal
+          session={session}
+          market={tradeIntent.market}
+          event={tradeIntent.event}
+          onClose={() => setTradeIntent(null)}
+          onTraded={(msg) => { setActionMsg(msg); setTradeIntent(null); setReloadTick((t) => t + 1); }}
+        />
+      )}
     </div>
   );
 }
@@ -999,6 +1080,7 @@ function FourmemePane({ session }: { session: any }) {
   const [busy, setBusy] = useState<string | null>(null); // `sell-${id}`
   const [actionMsg, setActionMsg] = useState<string | null>(null);
   const [reloadTick, setReloadTick] = useState(0);
+  const [buyOpen, setBuyOpen] = useState(false);
 
   useEffect(() => {
     if (!session.ready) { setPositions([]); return; }
@@ -1066,10 +1148,20 @@ function FourmemePane({ session }: { session: any }) {
       <div className="rounded-md border bg-card/60 p-4">
         <div className="flex items-center justify-between mb-3">
           <div className="font-mono text-xs text-foreground">Holdings + Launches ({positions.length})</div>
-          {loading && <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" />}
+          <div className="flex items-center gap-2">
+            {loading && <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" />}
+            <button
+              type="button"
+              onClick={() => { setActionMsg(null); setBuyOpen(true); }}
+              data-testid="button-fourmeme-buy-open"
+              className="rounded border border-emerald-400/40 bg-emerald-400/10 px-2 py-1 font-mono text-[10px] text-emerald-400 hover:bg-emerald-400/20"
+            >
+              Buy token
+            </button>
+          </div>
         </div>
         {positions.length === 0 ? (
-          <div className="font-mono text-[11px] text-muted-foreground py-6 text-center">No tokens held. Launch or buy from the Telegram bot.</div>
+          <div className="font-mono text-[11px] text-muted-foreground py-6 text-center">No tokens held. Click "Buy token" above or launch one from the Telegram bot.</div>
         ) : (
           <div className="space-y-2">
             {positions.slice(0, 30).map((p) => {
@@ -1106,6 +1198,13 @@ function FourmemePane({ session }: { session: any }) {
           </div>
         )}
       </div>
+      {buyOpen && (
+        <FourmemeBuyModal
+          session={session}
+          onClose={() => setBuyOpen(false)}
+          onTraded={(msg) => { setActionMsg(msg); setBuyOpen(false); setReloadTick((t) => t + 1); }}
+        />
+      )}
     </div>
   );
 }
@@ -1534,10 +1633,234 @@ function FortyTwoTradeModal({
   );
 }
 
+function PolymarketTradeModal({
+  session, market, event, onClose, onTraded,
+}: {
+  session: any; market: any; event: any;
+  onClose: () => void; onTraded: (msg: string) => void;
+}) {
+  const clobTokenIds: string[] = Array.isArray(market?.clobTokenIds)
+    ? market.clobTokenIds
+    : (() => { try { return JSON.parse(market?.clobTokenIds ?? "[]"); } catch { return []; } })();
+  const outcomes: string[] = Array.isArray(market?.outcomes)
+    ? market.outcomes
+    : (() => { try { return JSON.parse(market?.outcomes ?? "[]"); } catch { return []; } })();
+  const outcomePrices: string[] = Array.isArray(market?.outcomePrices)
+    ? market.outcomePrices
+    : (() => { try { return JSON.parse(market?.outcomePrices ?? "[]"); } catch { return []; } })();
+
+  const yesLabel = outcomes[0] ?? "YES";
+  const noLabel = outcomes[1] ?? "NO";
+  const yesPrice = num(outcomePrices[0]);
+  const noPrice = num(outcomePrices[1]);
+
+  const [outcomeIdx, setOutcomeIdx] = useState<0 | 1>(0);
+  const [amount, setAmount] = useState<string>("5");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const submit = async () => {
+    const tokenId = clobTokenIds[outcomeIdx];
+    const conditionId = market?.conditionId;
+    const outcomeLabel = outcomeIdx === 0 ? yesLabel : noLabel;
+    const price = outcomeIdx === 0 ? yesPrice : noPrice;
+    if (!tokenId || !conditionId) { setErr("Market is missing conditionId / tokenId"); return; }
+    const sizeUsdc = Number(amount);
+    if (!Number.isFinite(sizeUsdc) || sizeUsdc <= 0) { setErr("Enter a valid USDC amount"); return; }
+    if (!(price > 0 && price < 1)) { setErr("No live price for this outcome"); return; }
+    setBusy(true);
+    setErr(null);
+    try {
+      const r: any = await session.apiFetch("/api/polymarket/order", {
+        method: "POST",
+        body: {
+          tokenId,
+          side: "BUY",
+          sizeUsdc,
+          price,
+          conditionId,
+          marketTitle: event?.title || market?.question || "—",
+          outcomeLabel,
+        } as any,
+      });
+      if (r?.ok) {
+        onTraded(`Buy ${outcomeLabel} submitted${r.orderID ? ` · ${String(r.orderID).slice(0, 10)}…` : ""}`);
+      } else {
+        setErr(r?.error || r?.reason || "Order failed");
+      }
+    } catch (e: any) {
+      setErr(e?.message || "Order failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={onClose}>
+      <div className="w-full max-w-md rounded-lg border border-blue-400/40 bg-card p-5" onClick={(e) => e.stopPropagation()} data-testid="modal-polymarket-trade">
+        <div className="flex items-center justify-between mb-3">
+          <div className="font-mono text-sm text-foreground">Buy outcome</div>
+          <button type="button" onClick={onClose} className="font-mono text-xs text-muted-foreground hover:text-foreground" data-testid="button-polymarket-trade-close">✕</button>
+        </div>
+        <div className="font-mono text-[11px] text-muted-foreground mb-4 break-words">{event?.title || market?.question || "—"}</div>
+
+        <div className="font-mono text-[10px] text-muted-foreground uppercase mb-2">Outcome</div>
+        <div className="grid grid-cols-2 gap-2 mb-4">
+          {[0, 1].map((idx) => {
+            const label = idx === 0 ? yesLabel : noLabel;
+            const price = idx === 0 ? yesPrice : noPrice;
+            const selected = outcomeIdx === idx;
+            return (
+              <button
+                key={idx}
+                type="button"
+                onClick={() => setOutcomeIdx(idx as 0 | 1)}
+                data-testid={`button-polymarket-outcome-${idx}`}
+                className={`rounded border px-3 py-2 font-mono text-xs ${
+                  selected
+                    ? "border-blue-400 bg-blue-400/20 text-blue-300"
+                    : "border-border bg-card/60 text-foreground hover:border-blue-400/40"
+                }`}
+              >
+                <div>{label}</div>
+                <div className="text-[10px] text-muted-foreground mt-1">@ {(price * 100).toFixed(1)}¢</div>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="font-mono text-[10px] text-muted-foreground uppercase mb-2">USDC amount</div>
+        <input
+          type="number"
+          min="0"
+          step="0.1"
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+          data-testid="input-polymarket-amount"
+          className="w-full rounded border border-border bg-background px-3 py-2 font-mono text-sm text-foreground mb-4"
+        />
+
+        {err && <div className="rounded border border-red-500/40 bg-red-500/10 p-2 mb-3 font-mono text-[11px] text-red-400">{err}</div>}
+
+        <button
+          type="button"
+          onClick={submit}
+          disabled={busy}
+          data-testid="button-polymarket-trade-submit"
+          className="w-full rounded border border-blue-400/40 bg-blue-400/10 px-3 py-2 font-mono text-xs text-blue-400 hover:bg-blue-400/20 disabled:opacity-50"
+        >
+          {busy ? "Submitting…" : `Buy ${outcomeIdx === 0 ? yesLabel : noLabel}`}
+        </button>
+        <div className="font-mono text-[10px] text-muted-foreground mt-2 text-center">
+          Order settles to your Polygon Safe. Gas paid by builder relayer — no MATIC needed.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FourmemeBuyModal({
+  session, onClose, onTraded,
+}: {
+  session: any;
+  onClose: () => void; onTraded: (msg: string) => void;
+}) {
+  const [tokenAddress, setTokenAddress] = useState("");
+  const [bnbAmount, setBnbAmount] = useState("0.01");
+  const [slippageBps, setSlippageBps] = useState("500");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const submit = async () => {
+    const addr = tokenAddress.trim();
+    if (!/^0x[0-9a-fA-F]{40}$/.test(addr)) { setErr("Enter a valid BSC token address (0x…)"); return; }
+    const bnb = Number(bnbAmount);
+    if (!Number.isFinite(bnb) || bnb <= 0) { setErr("Enter a valid BNB amount"); return; }
+    const slip = Number(slippageBps);
+    if (!Number.isFinite(slip) || slip < 0 || slip > 5000) { setErr("Slippage must be 0–5000 bps"); return; }
+    setBusy(true);
+    setErr(null);
+    try {
+      const r: any = await session.apiFetch("/api/fourmeme/buy", {
+        method: "POST",
+        body: { tokenAddress: addr, bnbAmount: bnb, slippageBps: slip } as any,
+      });
+      if (r?.ok) {
+        onTraded(`Buy filled${r.txHash ? ` · tx ${String(r.txHash).slice(0, 10)}…` : ""}`);
+      } else {
+        setErr(r?.error || r?.reason || "Buy failed");
+      }
+    } catch (e: any) {
+      setErr(e?.message || "Buy failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={onClose}>
+      <div className="w-full max-w-md rounded-lg border border-emerald-400/40 bg-card p-5" onClick={(e) => e.stopPropagation()} data-testid="modal-fourmeme-buy">
+        <div className="flex items-center justify-between mb-3">
+          <div className="font-mono text-sm text-foreground">Buy fourmeme token</div>
+          <button type="button" onClick={onClose} className="font-mono text-xs text-muted-foreground hover:text-foreground" data-testid="button-fourmeme-buy-close">✕</button>
+        </div>
+
+        <div className="font-mono text-[10px] text-muted-foreground uppercase mb-2">Token address (BSC)</div>
+        <input
+          type="text"
+          value={tokenAddress}
+          onChange={(e) => setTokenAddress(e.target.value)}
+          placeholder="0x…"
+          data-testid="input-fourmeme-token"
+          className="w-full rounded border border-border bg-background px-3 py-2 font-mono text-xs text-foreground mb-4"
+        />
+
+        <div className="font-mono text-[10px] text-muted-foreground uppercase mb-2">BNB amount</div>
+        <input
+          type="number"
+          min="0"
+          step="0.001"
+          value={bnbAmount}
+          onChange={(e) => setBnbAmount(e.target.value)}
+          data-testid="input-fourmeme-bnb"
+          className="w-full rounded border border-border bg-background px-3 py-2 font-mono text-sm text-foreground mb-4"
+        />
+
+        <div className="font-mono text-[10px] text-muted-foreground uppercase mb-2">Slippage (bps, 100 = 1%)</div>
+        <input
+          type="number"
+          min="0"
+          max="5000"
+          step="50"
+          value={slippageBps}
+          onChange={(e) => setSlippageBps(e.target.value)}
+          data-testid="input-fourmeme-slippage"
+          className="w-full rounded border border-border bg-background px-3 py-2 font-mono text-sm text-foreground mb-4"
+        />
+
+        {err && <div className="rounded border border-red-500/40 bg-red-500/10 p-2 mb-3 font-mono text-[11px] text-red-400">{err}</div>}
+
+        <button
+          type="button"
+          onClick={submit}
+          disabled={busy}
+          data-testid="button-fourmeme-buy-submit"
+          className="w-full rounded border border-emerald-400/40 bg-emerald-400/10 px-3 py-2 font-mono text-xs text-emerald-400 hover:bg-emerald-400/20 disabled:opacity-50"
+        >
+          {busy ? "Submitting…" : "Buy token"}
+        </button>
+        <div className="font-mono text-[10px] text-muted-foreground mt-2 text-center">
+          Trade is funded from your BSC custodial wallet. Routes via the official fourmeme TokenManager.
+        </div>
+      </div>
+    </div>
+  );
+}
+
 type FeedEntry = {
   id: string;
   t: number;
-  venue: "Aster" | "HL" | "Agent";
+  venue: "Aster" | "HL" | "Agent" | "Poly" | "4M" | "42";
   color: string;
   action: string;
   asset: string;
@@ -1559,11 +1882,72 @@ function BrainFeed({ session, refetchTick }: { session: any; refetchTick: number
       setLoading(true);
       const merged: FeedEntry[] = [];
       try {
-        const [hist, hlFills, agent] = await Promise.allSettled([
+        const [hist, hlFills, agent, polyPos, fmPos, ftPos] = await Promise.allSettled([
           session.apiFetch<any>("/api/miniapp/history"),
           session.apiFetch<any>("/api/hl/fills"),
           session.apiFetch<any>("/api/miniapp/agent"),
+          session.apiFetch<any>("/api/polymarket/positions"),
+          session.apiFetch<any>("/api/fourmeme/positions"),
+          session.apiFetch<any>("/api/fortytwo/positions"),
         ]);
+        if (polyPos.status === "fulfilled" && Array.isArray(polyPos.value?.positions)) {
+          for (const p of polyPos.value.positions.slice(0, 15)) {
+            const closed = p.closedAt && new Date(p.closedAt).getTime();
+            const opened = p.openedAt && new Date(p.openedAt).getTime();
+            const t = num(closed || opened);
+            if (!t) continue;
+            const pnl = p.pnl != null ? num(p.pnl) : undefined;
+            const isClosed = !!closed;
+            merged.push({
+              id: `poly-${p.id}-${t}`,
+              t,
+              venue: "Poly",
+              color: "text-blue-400",
+              action: isClosed ? `CLOSE ${String(p.outcome ?? "").toUpperCase()}` : `BUY ${String(p.outcome ?? "").toUpperCase()}`,
+              asset: String(p.marketTitle ?? p.marketSlug ?? "—").slice(0, 60),
+              size: pnl != null ? `${pnl >= 0 ? "+" : ""}$${pnl.toFixed(2)}` : `$${num(p.size).toFixed(2)}`,
+              pnl,
+            });
+          }
+        }
+        if (fmPos.status === "fulfilled" && Array.isArray(fmPos.value?.positions)) {
+          for (const p of fmPos.value.positions.slice(0, 15)) {
+            const t = num(p.ts ? new Date(p.ts).getTime() : 0);
+            if (!t) continue;
+            const pnl = p.sold ? num(p.bnbOut) - num(p.bnbIn) : undefined;
+            merged.push({
+              id: `fm-${p.id}-${t}`,
+              t,
+              venue: "4M",
+              color: "text-emerald-400",
+              action: p.kind === "launch" ? "LAUNCH" : (p.sold ? "SELL" : "BUY"),
+              asset: String(p.tokenSymbol ?? p.tokenName ?? "—").slice(0, 24),
+              size: pnl != null ? `${pnl >= 0 ? "+" : ""}${pnl.toFixed(4)} BNB` : `${num(p.bnbIn).toFixed(4)} BNB`,
+              pnl: pnl != null ? pnl * 600 : undefined,
+            });
+          }
+        }
+        if (ftPos.status === "fulfilled" && Array.isArray(ftPos.value?.positions)) {
+          for (const p of ftPos.value.positions.slice(0, 15)) {
+            const closed = p.closedAt && new Date(p.closedAt).getTime();
+            const opened = p.openedAt && new Date(p.openedAt).getTime();
+            const t = num(closed || opened);
+            if (!t) continue;
+            const pnl = p.pnl != null ? num(p.pnl) : undefined;
+            const status = String(p.status ?? "");
+            const action = status === "open" ? "BUY" : status.startsWith("resolved") ? status.toUpperCase().replace("_", " ") : "CLOSE";
+            merged.push({
+              id: `ft-${p.id}-${t}`,
+              t,
+              venue: "42",
+              color: "text-orange-400",
+              action,
+              asset: `${p.outcomeLabel ?? ""} · ${String(p.marketTitle ?? "—").slice(0, 40)}`,
+              size: pnl != null ? `${pnl >= 0 ? "+" : ""}$${pnl.toFixed(2)}` : `$${num(p.usdtIn).toFixed(2)}`,
+              pnl,
+            });
+          }
+        }
         if (hist.status === "fulfilled") {
           const closed = Array.isArray(hist.value?.closedTrades) ? hist.value.closedTrades : [];
           for (const t of closed.slice(0, 20)) {
