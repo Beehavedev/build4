@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BUILD4 — Security Audit v4.0 | Kairos Lab</title>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;800&family=DM+Sans:wght@400;500;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0A0E17; --surface: #111827; --surface2: #1F2937; --border: #1E293B;
+  --text: #F1F5F9; --text2: #94A3B8; --muted: #64748B;
+  --cyan: #00D4FF; --purple: #7C3AED; --green: #059669;
+  --crit: #EF4444; --high: #F97316; --med: #EAB308; --low: #3B82F6; --info: #6B7280;
+  --fh: 'Bricolage Grotesque', sans-serif; --fb: 'DM Sans', sans-serif; --fm: 'Space Mono', monospace;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:var(--bg); color:var(--text); font-family:var(--fb); line-height:1.7; }
+.c { max-width:1100px; margin:0 auto; padding:0 32px; }
+h1,h2,h3,h4 { font-family:var(--fh); font-weight:800; letter-spacing:-0.02em; }
+h2 { font-size:26px; margin-bottom:20px; padding-bottom:10px; border-bottom:1px solid var(--border); }
+h3 { font-size:18px; margin-bottom:12px; }
+h4 { font-size:14px; color:var(--cyan); text-transform:uppercase; letter-spacing:0.08em; margin-bottom:8px; font-weight:600; }
+p { color:var(--text2); margin-bottom:10px; }
+a { color:var(--cyan); text-decoration:none; }
+code { font-family:var(--fm); font-size:12px; background:rgba(0,212,255,0.08); padding:2px 6px; border-radius:4px; }
+.badge { padding:3px 10px; border-radius:4px; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.05em; display:inline-block; }
+.badge.crit { background:rgba(239,68,68,0.15); color:var(--crit); border:1px solid rgba(239,68,68,0.3); }
+.badge.high { background:rgba(249,115,22,0.15); color:var(--high); border:1px solid rgba(249,115,22,0.3); }
+.badge.med { background:rgba(234,179,8,0.15); color:var(--med); border:1px solid rgba(234,179,8,0.3); }
+.badge.low { background:rgba(59,130,246,0.15); color:var(--low); border:1px solid rgba(59,130,246,0.3); }
+.badge.fix { background:rgba(5,150,105,0.15); color:var(--green); border:1px solid rgba(5,150,105,0.3); }
+.badge.part { background:rgba(234,179,8,0.15); color:var(--med); border:1px solid rgba(234,179,8,0.3); }
+.badge.new { background:rgba(124,58,237,0.15); color:var(--purple); border:1px solid rgba(124,58,237,0.3); }
+.badge.regress { background:rgba(239,68,68,0.2); color:#FF6B6B; border:1px solid rgba(239,68,68,0.4); }
+.card { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:24px; margin-bottom:16px; }
+.card:hover { border-color:rgba(0,212,255,0.15); }
+table { width:100%; border-collapse:collapse; margin:16px 0; }
+th { text-align:left; padding:10px 14px; font-size:11px; text-transform:uppercase; letter-spacing:0.08em; color:var(--muted); border-bottom:2px solid var(--border); font-family:var(--fh); }
+td { padding:8px 14px; border-bottom:1px solid var(--border); font-size:13px; vertical-align:middle; }
+tr:hover { background:var(--surface2); }
+.id { font-family:var(--fm); font-size:11px; color:var(--cyan); white-space:nowrap; }
+.fixed { color:var(--green); font-weight:700; font-size:11px; }
+.open { color:var(--crit); font-weight:700; font-size:11px; }
+.partial { color:var(--med); font-weight:700; font-size:11px; }
+.aggrav { color:#FF6B6B; font-weight:700; font-size:11px; }
+.newf { color:var(--purple); font-weight:700; font-size:11px; }
+.grid2 { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin:20px 0; }
+.grid3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px; margin:20px 0; }
+.grid4 { display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:12px; margin:20px 0; }
+.stat { text-align:center; padding:16px; }
+.stat .num { font-size:32px; font-weight:800; font-family:var(--fh); }
+.stat .lbl { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0.08em; margin-top:4px; }
+.divider { width:60px; height:3px; border-radius:2px; margin-bottom:20px; }
+.nav { position:fixed; top:0; left:0; right:0; background:rgba(10,14,23,0.92); backdrop-filter:blur(12px); border-bottom:1px solid var(--border); z-index:100; padding:10px 32px; display:flex; align-items:center; justify-content:space-between; }
+.nav-brand { display:flex; align-items:center; gap:8px; font-family:var(--fh); font-weight:800; font-size:15px; letter-spacing:0.12em; }
+.nav a { font-size:12px; color:var(--muted); margin-left:16px; }
+.nav a:hover { color:var(--cyan); text-decoration:none; }
+section { padding:50px 0; }
+.cover { min-height:100vh; display:flex; flex-direction:column; justify-content:center; align-items:center; text-align:center; padding:60px 32px; position:relative; }
+.cover::before { content:''; position:absolute; inset:0; background:radial-gradient(ellipse at 30% 50%,rgba(0,212,255,0.05) 0%,transparent 60%),radial-gradient(ellipse at 70% 60%,rgba(124,58,237,0.03) 0%,transparent 50%); pointer-events:none; }
+.cover h1 { font-size:48px; background:linear-gradient(135deg,var(--text),var(--cyan)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; position:relative; margin-bottom:8px; }
+.cover h2 { font-size:20px; color:var(--text2); font-weight:400; border:none; position:relative; margin-bottom:32px; padding:0; }
+.finding-card { border-left:4px solid var(--crit); }
+.finding-card.high { border-left-color:var(--high); }
+.finding-card.partial { border-left-color:var(--med); }
+.finding-card.new-finding { border-left-color:var(--purple); }
+.finding-card.low-finding { border-left-color:var(--low); }
+.finding-title { font-size:16px; margin-bottom:8px; }
+.finding-loc { font-family:var(--fm); font-size:11px; color:var(--muted); }
+.timeline { position:relative; padding-left:28px; }
+.timeline::before { content:''; position:absolute; left:8px; top:0; bottom:0; width:2px; background:var(--border); }
+.timeline-item { position:relative; margin-bottom:20px; }
+.timeline-item::before { content:''; position:absolute; left:-24px; top:6px; width:12px; height:12px; border-radius:50%; border:2px solid var(--cyan); background:var(--bg); }
+.timeline-item.warn::before { border-color:var(--high); }
+.timeline-item.danger::before { border-color:var(--crit); }
+.alert-box { border-radius:8px; padding:16px 20px; margin:16px 0; font-size:13px; }
+.alert-box.danger { background:rgba(239,68,68,0.08); border:1px solid rgba(239,68,68,0.2); }
+.alert-box.warn { background:rgba(249,115,22,0.08); border:1px solid rgba(249,115,22,0.2); }
+.alert-box.info { background:rgba(0,212,255,0.05); border:1px solid rgba(0,212,255,0.15); }
+footer { text-align:center; padding:40px 0; border-top:1px solid var(--border); margin-top:40px; }
+footer p { font-size:11px; color:var(--muted); }
+@media print { .nav{display:none;} body{background:#fff;color:#1a1a2e;} .card,.finding-card{background:#f8f9fa;border-color:#ddd;} h2,h4,.id,a{color:#0066cc!important;-webkit-text-fill-color:#0066cc!important;} .cover h1{-webkit-text-fill-color:#1a1a2e!important;} p,td{color:#333!important;} }
+@media(max-width:768px) { .grid2,.grid3{grid-template-columns:1fr;} .cover h1{font-size:32px;} }
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav class="nav">
+  <div class="nav-brand">
+    <svg width="24" height="24" viewBox="0 0 140 140"><polygon points="70,8 128,38 128,102 70,132 12,102 12,38" fill="none" stroke="rgba(200,210,220,0.25)" stroke-width="2.5"/><text x="70" y="76" text-anchor="middle" font-family="'Bricolage Grotesque',sans-serif" font-size="22" font-weight="800" fill="#F1F5F9">K</text><circle cx="70" cy="8" r="6" fill="#9B7FE6"/><circle cx="128" cy="38" r="6" fill="#00D4CC"/><circle cx="128" cy="102" r="6" fill="#4A90D9"/><circle cx="70" cy="132" r="6" fill="#B4A7D6"/><circle cx="12" cy="102" r="6" fill="#7DD4E8"/><circle cx="12" cy="38" r="6" fill="#A8C8E8"/></svg>
+    KAIROS LAB
+  </div>
+  <div>
+    <a href="#status">Status</a>
+    <a href="#fixed">Findings</a>
+    <a href="#new">New Issues</a>
+    <a href="#remaining">Open</a>
+    <a href="#osint">OSINT</a>
+    <a href="#patches">Patches</a>
+  </div>
+</nav>
+
+<!-- COVER -->
+<section class="cover">
+  <div style="position:relative;">
+    <svg width="120" height="120" viewBox="0 0 140 140" style="margin-bottom:20px;">
+      <polygon points="70,8 128,38 128,102 70,132 12,102 12,38" fill="none" stroke="rgba(200,210,220,0.22)" stroke-width="2.5"/>
+      <line x1="70" y1="8" x2="70" y2="70" stroke="rgba(200,210,220,0.10)" stroke-width="1.5"/>
+      <line x1="128" y1="38" x2="70" y2="70" stroke="rgba(200,210,220,0.10)" stroke-width="1.5"/>
+      <line x1="128" y1="102" x2="70" y2="70" stroke="rgba(200,210,220,0.10)" stroke-width="1.5"/>
+      <line x1="70" y1="132" x2="70" y2="70" stroke="rgba(200,210,220,0.10)" stroke-width="1.5"/>
+      <line x1="12" y1="102" x2="70" y2="70" stroke="rgba(200,210,220,0.10)" stroke-width="1.5"/>
+      <line x1="12" y1="38" x2="70" y2="70" stroke="rgba(200,210,220,0.10)" stroke-width="1.5"/>
+      <circle cx="70" cy="70" r="22" fill="rgba(200,210,220,0.08)"/>
+      <text x="70" y="78" text-anchor="middle" font-family="'Bricolage Grotesque',sans-serif" font-size="28" font-weight="800" fill="#1a2332">K</text>
+      <circle cx="70" cy="8" r="8" fill="#9B7FE6"/><circle cx="128" cy="38" r="8" fill="#00D4CC"/><circle cx="128" cy="102" r="8" fill="#4A90D9"/><circle cx="70" cy="132" r="8" fill="#B4A7D6"/><circle cx="12" cy="102" r="8" fill="#7DD4E8"/><circle cx="12" cy="38" r="8" fill="#A8C8E8"/>
+    </svg>
+    <div style="font-family:var(--fh);font-size:22px;font-weight:800;letter-spacing:0.18em;margin-bottom:4px;">KAIROS LAB</div>
+    <div style="font-size:12px;color:var(--muted);letter-spacing:0.12em;text-transform:uppercase;">Security Research</div>
+  </div>
+  <h1 style="margin-top:32px;">BUILD4</h1>
+  <h2>Continuous Audit Report &mdash; v4.0</h2>
+  <div class="card" style="max-width:560px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;text-align:left;position:relative;">
+    <div><span style="color:var(--muted);font-size:12px;">Target</span><br><span style="font-size:13px;">build4.io + @BUILD4_BOT</span></div>
+    <div><span style="color:var(--muted);font-size:12px;">Chain</span><br><span style="font-size:13px;">BNB Smart Chain (56)</span></div>
+    <div><span style="color:var(--muted);font-size:12px;">Initial Audit</span><br><span style="font-size:13px;">April 6, 2026</span></div>
+    <div><span style="color:var(--muted);font-size:12px;">This Review</span><br><span style="font-size:13px;">April 7, 2026</span></div>
+    <div><span style="color:var(--muted);font-size:12px;">Version</span><br><span style="font-size:13px;">v4.0 &mdash; Continuous</span></div>
+    <div><span style="color:var(--muted);font-size:12px;">Commits Reviewed</span><br><span style="font-size:13px;">25 total (5+20)</span></div>
+  </div>
+  <div class="alert-box danger" style="max-width:560px;position:relative;margin-top:16px;">
+    <strong style="color:var(--crit);">&#9888; REGRESSION DETECTED</strong> &mdash; 6 new security findings introduced in post-audit commits. Security score downgraded from 5.5/10 to 4.5/10.
+  </div>
+</section>
+
+<!-- GLOBAL STATUS -->
+<section id="status" class="c">
+  <div class="divider" style="background:linear-gradient(90deg,var(--crit),var(--high));"></div>
+  <h2>Overall Security Status</h2>
+
+  <div class="grid4">
+    <div class="card stat"><div class="num" style="color:var(--green);">33</div><div class="lbl">Fixed</div></div>
+    <div class="card stat"><div class="num" style="color:var(--med);">2</div><div class="lbl">Partial</div></div>
+    <div class="card stat"><div class="num" style="color:var(--crit);">7</div><div class="lbl">Open (Original)</div></div>
+    <div class="card stat"><div class="num" style="color:var(--purple);">6</div><div class="lbl">New Issues</div></div>
+    <div class="card stat"><div class="num" style="color:var(--text);">133</div><div class="lbl">Total Findings</div></div>
+  </div>
+
+  <div class="grid2">
+    <div class="card" style="border-left:4px solid var(--green);">
+      <p style="color:var(--green);font-weight:700;font-size:15px;margin-bottom:8px;">Patches 1-5: Effective Remediation</p>
+      <p>The BUILD4 team pushed 5 security patches fixing 33 of the original 42 critical/high findings, including the critical VM sandbox escape (C04) via <code>isolated-vm</code> migration. Response time was excellent.</p>
+    </div>
+    <div class="card" style="border-left:4px solid var(--crit);">
+      <p style="color:var(--crit);font-weight:700;font-size:15px;margin-bottom:8px;">Post-Patch: 6 New Vulnerabilities Introduced</p>
+      <p>20 new feature commits (Aster V3 Direct, Telegram MiniApp updates) introduced 6 new security issues including a <strong>critical regression</strong>: user wallet private keys now stored in DB, combined with Cloudflare WAF bypass on financial endpoints.</p>
+    </div>
+  </div>
+</section>
+
+<!-- FULL STATUS TABLE -->
+<section id="fixed" class="c">
+  <div class="divider" style="background:linear-gradient(90deg,var(--green),var(--purple));"></div>
+  <h2>All Critical &amp; High Findings &mdash; Status</h2>
+
+  <table>
+    <thead><tr><th>ID</th><th>Finding</th><th>Sev</th><th>Status</th><th>Patch</th></tr></thead>
+    <tbody>
+      <tr><td colspan="5" style="padding:12px 0 6px;font-size:11px;color:var(--crit);border:none;font-weight:700;">CRITICAL SEVERITY</td></tr>
+
+      <tr><td class="id">C01</td><td>Hardcoded Encryption Key for All User Private Keys</td><td><span class="badge crit">CRIT</span></td><td class="fixed">&#10003; Fixed</td><td><code>23db810</code></td></tr>
+      <tr><td class="id">C02</td><td>SQL Injection via sql.raw() in Quest Completion</td><td><span class="badge crit">CRIT</span></td><td class="fixed">&#10003; Fixed</td><td><code>23db810</code></td></tr>
+      <tr><td class="id">C03</td><td>Zero Authentication on MiniApp API (Header Spoofing)</td><td><span class="badge crit">CRIT</span></td><td class="fixed">&#10003; Fixed</td><td><code>23db810</code></td></tr>
+      <tr><td class="id">C04</td><td>Node.js VM Sandbox Escape &rarr; RCE</td><td><span class="badge crit">CRIT</span></td><td class="fixed">&#10003; Fixed</td><td><code>40b6195</code></td></tr>
+      <tr><td class="id">C05</td><td>Private Keys Sent in Telegram Messages</td><td><span class="badge crit">CRIT</span></td><td class="fixed">&#10003; Fixed</td><td><code>bd29247</code></td></tr>
+      <tr><td class="id">C06</td><td>Private Keys Cached in Memory (No TTL)</td><td><span class="badge crit">CRIT</span></td><td class="fixed">&#10003; Fixed</td><td><code>23db810</code></td></tr>
+      <tr><td class="id">C07</td><td>Stealth Buy System Has No Authorization</td><td><span class="badge crit">CRIT</span></td><td class="fixed">&#10003; Fixed</td><td><code>638abf4</code></td></tr>
+      <tr><td class="id">C08</td><td>Plaintext Private Key Caching in Trading Agent</td><td><span class="badge crit">CRIT</span></td><td class="fixed">&#10003; Fixed</td><td><code>638abf4</code></td></tr>
+      <tr style="background:rgba(239,68,68,0.05);"><td class="id">C09</td><td>ERC20 Transfer Return Value Ignored (BUILD4Staking)</td><td><span class="badge crit">CRIT</span></td><td class="open">&#10007; Open</td><td>&mdash;</td></tr>
+      <tr><td class="id">C10</td><td>Unlimited Token Approvals in DeFi Operations</td><td><span class="badge crit">CRIT</span></td><td class="fixed">&#10003; Fixed</td><td><code>bd29247</code></td></tr>
+      <tr><td class="id">C11</td><td>Decrypt Fallback Returns Plaintext on Format Error</td><td><span class="badge crit">CRIT</span></td><td class="fixed">&#10003; Fixed</td><td><code>23db810</code></td></tr>
+      <tr style="background:rgba(239,68,68,0.08);"><td class="id">C12</td><td>Deployer Private Key Hardcoded in .replit</td><td><span class="badge crit">CRIT</span></td><td class="aggrav">&#9888; AGGRAVATED</td><td>&mdash;</td></tr>
+      <tr><td class="id">C13</td><td>WALLET_ENCRYPTION_KEY Missing from Production</td><td><span class="badge crit">CRIT</span></td><td class="fixed">&#10003; Fixed</td><td><code>23db810</code></td></tr>
+
+      <tr><td colspan="5" style="padding:16px 0 6px;font-size:11px;color:var(--high);border:none;font-weight:700;">HIGH SEVERITY</td></tr>
+
+      <tr><td class="id">H01</td><td>Prompt Injection Across All AI Agents</td><td><span class="badge high">HIGH</span></td><td class="fixed">&#10003; Fixed</td><td><code>638abf4</code></td></tr>
+      <tr><td class="id">H02</td><td>15-25% Slippage &rarr; Sandwich Attacks</td><td><span class="badge high">HIGH</span></td><td class="fixed">&#10003; Fixed</td><td><code>23db810</code></td></tr>
+      <tr><td class="id">H03</td><td>HMAC Signature Truncated to 64 Bits</td><td><span class="badge high">HIGH</span></td><td class="fixed">&#10003; Fixed</td><td><code>bd29247</code></td></tr>
+      <tr><td class="id">H04</td><td>Callback Data Manipulation &rarr; Unauthorized Trades</td><td><span class="badge high">HIGH</span></td><td class="fixed">&#10003; Fixed</td><td><code>638abf4</code></td></tr>
+      <tr><td class="id">H05</td><td>SSRF via Outreach URL Fetching</td><td><span class="badge high">HIGH</span></td><td class="fixed">&#10003; Fixed</td><td><code>bd29247</code></td></tr>
+      <tr><td class="id">H06</td><td>Twitter API Credentials Stored Plaintext</td><td><span class="badge high">HIGH</span></td><td class="fixed">&#10003; Fixed</td><td><code>638abf4</code></td></tr>
+      <tr style="background:rgba(239,68,68,0.05);"><td class="id">H07</td><td>creditAgent Creates Unbacked Virtual Balances</td><td><span class="badge high">HIGH</span></td><td class="open">&#10007; Open</td><td>&mdash;</td></tr>
+      <tr style="background:rgba(239,68,68,0.05);"><td class="id">H08</td><td>addRewards() Overwrites Rate, Orphans Tokens</td><td><span class="badge high">HIGH</span></td><td class="open">&#10007; Open</td><td>&mdash;</td></tr>
+      <tr style="background:rgba(239,68,68,0.05);"><td class="id">H09</td><td>withdrawPlatformFees() Always Reverts</td><td><span class="badge high">HIGH</span></td><td class="open">&#10007; Open</td><td>&mdash;</td></tr>
+      <tr><td class="id">H10</td><td>Encryption Key Derived from DATABASE_URL</td><td><span class="badge high">HIGH</span></td><td class="fixed">&#10003; Fixed</td><td><code>bd29247</code></td></tr>
+      <tr><td class="id">H11</td><td>TOCTOU Race Conditions in Buy Execution</td><td><span class="badge high">HIGH</span></td><td class="fixed">&#10003; Fixed</td><td><code>638abf4</code></td></tr>
+      <tr><td class="id">H12</td><td>Unauthorized Profit Fee Extraction</td><td><span class="badge high">HIGH</span></td><td class="fixed">&#10003; Fixed</td><td><code>638abf4</code></td></tr>
+      <tr><td class="id">H13</td><td>Aster Client Logs Sensitive Credentials</td><td><span class="badge high">HIGH</span></td><td class="fixed">&#10003; Fixed</td><td><code>bd29247</code></td></tr>
+      <tr><td class="id">H14</td><td>Bounty Wallet Private Key Exposure in Logs</td><td><span class="badge high">HIGH</span></td><td class="fixed">&#10003; Fixed</td><td><code>638abf4</code></td></tr>
+      <tr style="background:rgba(239,68,68,0.05);"><td class="id">H15</td><td>Complete Centralization &mdash; Single EOA</td><td><span class="badge high">HIGH</span></td><td class="open">&#10007; Open</td><td>&mdash;</td></tr>
+      <tr><td class="id">H16</td><td>CORS Origin Bypass via Wildcard Matching</td><td><span class="badge high">HIGH</span></td><td class="fixed">&#10003; Fixed</td><td><code>bd29247</code></td></tr>
+      <tr><td class="id">H17</td><td>Pervasive SQL Injection in storage.ts (30+)</td><td><span class="badge high">HIGH</span></td><td class="partial">&#9888; Partial</td><td><code>23db810</code></td></tr>
+      <tr><td class="id">H18</td><td>Debug Balance Endpoint in Production</td><td><span class="badge high">HIGH</span></td><td class="fixed">&#10003; Fixed</td><td><code>23db810</code></td></tr>
+      <tr><td class="id">H19</td><td>CSP Allows unsafe-inline and unsafe-eval</td><td><span class="badge high">HIGH</span></td><td class="fixed">&#10003; Fixed</td><td><code>bd29247</code></td></tr>
+      <tr><td class="id">H20</td><td>Simulated ZK Proofs &mdash; Fake Groth16</td><td><span class="badge high">HIGH</span></td><td class="fixed">&#10003; Fixed</td><td><code>638abf4</code></td></tr>
+      <tr><td class="id">H21</td><td>Unlimited ERC20 Approval (MaxUint256)</td><td><span class="badge high">HIGH</span></td><td class="fixed">&#10003; Fixed</td><td><code>bd29247</code></td></tr>
+      <tr><td class="id">H22</td><td>Shared Auth Token Across Analytics Sessions</td><td><span class="badge high">HIGH</span></td><td class="fixed">&#10003; Fixed</td><td><code>638abf4</code></td></tr>
+
+      <tr><td colspan="5" style="padding:16px 0 6px;font-size:11px;color:var(--purple);border:none;font-weight:700;">NEW FINDINGS (v4.0 &mdash; POST-PATCH REGRESSION)</td></tr>
+
+      <tr style="background:rgba(124,58,237,0.06);"><td class="id">NEW-01</td><td>Cloudflare WAF Bypass for All MiniApp Endpoints</td><td><span class="badge crit">CRIT</span></td><td class="newf">&#9733; New</td><td>Post-patch</td></tr>
+      <tr style="background:rgba(124,58,237,0.06);"><td class="id">NEW-02</td><td>X-Frame-Options Removed for MiniApp (Clickjacking)</td><td><span class="badge med">MED</span></td><td class="newf">&#9733; New</td><td>Post-patch</td></tr>
+      <tr style="background:rgba(124,58,237,0.06);"><td class="id">NEW-03</td><td>User Wallet Private Keys Stored as V3 Direct Signer</td><td><span class="badge crit">CRIT</span></td><td class="newf">&#9733; New</td><td>Post-patch</td></tr>
+      <tr style="background:rgba(124,58,237,0.06);"><td class="id">NEW-04</td><td>API Response Body Logged (Information Disclosure)</td><td><span class="badge med">MED</span></td><td class="newf">&#9733; New</td><td>Post-patch</td></tr>
+      <tr style="background:rgba(124,58,237,0.06);"><td class="id">NEW-05</td><td>parentAddress Spoofable via Client Request</td><td><span class="badge med">MED</span></td><td class="newf">&#9733; New</td><td>Post-patch</td></tr>
+      <tr style="background:rgba(124,58,237,0.06);"><td class="id">NEW-06</td><td>Silent API v1/v3 Fallback (Validation Bypass Risk)</td><td><span class="badge low">LOW</span></td><td class="newf">&#9733; New</td><td>Post-patch</td></tr>
+    </tbody>
+  </table>
+  <p style="font-size:12px;color:var(--muted);">Medium/Low/Info findings (85+ total) from initial audit not shown. Majority resolved via same patches.</p>
+</section>
+
+<!-- NEW FINDINGS DETAIL -->
+<section id="new" class="c">
+  <div class="divider" style="background:linear-gradient(90deg,var(--purple),var(--crit));"></div>
+  <h2>New Findings &mdash; Post-Patch Regression (6)</h2>
+  <p>These vulnerabilities were <strong>introduced after the security patches</strong> in 20 new feature commits (Aster V3 Direct connection, Telegram MiniApp updates). They represent a <strong>security regression</strong>.</p>
+
+  <div class="card finding-card new-finding" style="border-left-color:var(--crit);">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+      <span class="id">NEW-01</span>
+      <span class="badge crit">CRITICAL</span>
+      <span class="badge new">REGRESSION</span>
+      <span class="finding-title" style="flex:1;">Cloudflare WAF Bypass for All MiniApp Endpoints</span>
+    </div>
+    <div class="finding-loc">server/index.ts:66</div>
+    <p style="margin-top:8px;">The Cloudflare enforcement middleware now exempts all paths matching <code>/miniapp</code>, <code>/miniapp-old</code>, and <code>/api/miniapp/*</code>. This includes security-critical financial endpoints: <code>/api/miniapp/trade</code> (order execution), <code>/api/miniapp/link-aster</code> (private key submission), <code>/api/miniapp/close-position</code>, and all balance/position queries.</p>
+    <p style="color:var(--crit);"><strong>Impact:</strong> Attackers can directly reach financial endpoints without Cloudflare DDoS/WAF protection, enabling brute-force attacks and direct exploitation.</p>
+    <p style="color:var(--cyan);"><strong>Recommendation:</strong> Only bypass Cloudflare for the HTML page (<code>/miniapp</code>), not the API routes. Apply rate limiting specifically to <code>/api/miniapp/*</code>.</p>
+  </div>
+
+  <div class="card finding-card new-finding" style="border-left-color:var(--crit);">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+      <span class="id">NEW-03</span>
+      <span class="badge crit">CRITICAL</span>
+      <span class="badge new">REGRESSION</span>
+      <span class="finding-title" style="flex:1;">User Wallet Private Keys Stored as V3 Direct Signer</span>
+    </div>
+    <div class="finding-loc">server/miniapp-routes.ts:156-170, server/telegram-bot.ts:13380-13395</div>
+    <p style="margin-top:8px;">The new "V3 Direct" connection flow uses the user's <strong>main wallet private key</strong> as the Aster signer. This private key is stored encrypted in the <code>aster_credentials</code> table as <code>encrypted_api_secret</code>. Previously, only API keys (revocable) were stored.</p>
+    <p style="color:var(--crit);"><strong>Impact:</strong> If the database is compromised (see C12 &mdash; deployer key in .replit), ALL user wallet private keys can be extracted and funds drained. Unlike API keys, private keys cannot be revoked.</p>
+    <p style="color:var(--cyan);"><strong>Recommendation:</strong> Never store main wallet private keys. Use API Wallet delegation (separate key pair) exclusively. If V3 Direct requires wallet signatures, implement a session-based signing flow.</p>
+  </div>
+
+  <div class="card finding-card new-finding" style="border-left-color:var(--med);">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+      <span class="id">NEW-02</span>
+      <span class="badge med">MEDIUM</span>
+      <span class="finding-title" style="flex:1;">X-Frame-Options Removed for MiniApp Routes</span>
+    </div>
+    <div class="finding-loc">server/index.ts:201-204</div>
+    <p style="margin-top:8px;"><code>X-Frame-Options: DENY</code> and <code>Cross-Origin-Opener-Policy: same-origin</code> are conditionally removed for miniapp routes to allow Telegram iframe embedding. While the CSP <code>frame-ancestors</code> directive restricts framing to <code>web.telegram.org</code> and <code>*.telegram.org</code>, older browsers may not support CSP frame-ancestors.</p>
+    <p style="color:var(--cyan);"><strong>Recommendation:</strong> Set <code>X-Frame-Options: ALLOW-FROM https://web.telegram.org</code> as a fallback for legacy browsers.</p>
+  </div>
+
+  <div class="card finding-card new-finding" style="border-left-color:var(--med);">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+      <span class="id">NEW-04</span>
+      <span class="badge med">MEDIUM</span>
+      <span class="finding-title" style="flex:1;">API Response Body Logged in Production</span>
+    </div>
+    <div class="finding-loc">server/aster-client.ts:241</div>
+    <p style="margin-top:8px;">The Aster HMAC request handler now logs the first 500 characters of every API response: <code>body=${text.substring(0, 500)}</code>. This can include user balances, positions, account details, and potentially sensitive order information in production logs.</p>
+    <p style="color:var(--cyan);"><strong>Recommendation:</strong> Remove body logging or restrict to non-production environments. Use structured logging with PII redaction.</p>
+  </div>
+
+  <div class="card finding-card new-finding" style="border-left-color:var(--med);">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+      <span class="id">NEW-05</span>
+      <span class="badge med">MEDIUM</span>
+      <span class="finding-title" style="flex:1;">parentAddress Spoofable via Client Request Body</span>
+    </div>
+    <div class="finding-loc">server/miniapp-routes.ts:132-136</div>
+    <p style="margin-top:8px;">The <code>/api/miniapp/link-aster</code> endpoint accepts a user-supplied <code>parentAddress</code> from the request body with only basic format validation (starts with <code>0x</code>, length 42). No signature verification proves the caller owns that address. An attacker could link their API wallet to another user's parent address.</p>
+    <p style="color:var(--cyan);"><strong>Recommendation:</strong> Require an EIP-712 signature from the parent address proving wallet ownership, or derive the parent address server-side from authenticated session data.</p>
+  </div>
+
+  <div class="card finding-card low-finding">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+      <span class="id">NEW-06</span>
+      <span class="badge low">LOW</span>
+      <span class="finding-title" style="flex:1;">Silent API v1/v3 Endpoint Fallback</span>
+    </div>
+    <div class="finding-loc">server/aster-client.ts &mdash; all futures methods</div>
+    <p style="margin-top:8px;">Every Aster futures method now wraps calls in <code>try { v1 } catch { v3 }</code> fallback patterns. If the v1 endpoint returns an authorization or signature error, the fallback silently retries on v3 which may have different validation rules. Some catch blocks are bare (<code>catch {}</code>) with no error logging.</p>
+    <p style="color:var(--cyan);"><strong>Recommendation:</strong> Only fallback on specific error codes (e.g., 404 Not Found), not on all errors. Log all fallback events. Never silently swallow authorization errors.</p>
+  </div>
+</section>
+
+<!-- REMAINING ORIGINAL OPEN FINDINGS -->
+<section id="remaining" class="c">
+  <div class="divider" style="background:linear-gradient(90deg,var(--crit),var(--high));"></div>
+  <h2>Remaining Original Findings (7 Open + 2 Partial)</h2>
+  <p>These findings from the initial audit remain unresolved. Smart contract issues require on-chain redeployment.</p>
+
+  <div class="card finding-card">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+      <span class="id">C09</span>
+      <span class="badge crit">CRITICAL</span>
+      <span class="finding-title" style="flex:1;">ERC20 Transfer Return Value Ignored (BUILD4Staking)</span>
+    </div>
+    <div class="finding-loc">contracts/web4/BUILD4Staking.sol:104, 136, 150, 157</div>
+    <p style="margin-top:8px;">ERC20 <code>transfer()</code> and <code>transferFrom()</code> return values are not checked. Tokens that return false instead of reverting will silently fail. Requires contract redeployment with <code>SafeERC20</code>.</p>
+  </div>
+
+  <div class="card finding-card" style="border-left-color:#FF6B6B;">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+      <span class="id">C12</span>
+      <span class="badge regress">AGGRAVATED</span>
+      <span class="finding-title" style="flex:1;">Deployer Private Key Hardcoded in .replit &mdash; Now Affects User Funds</span>
+    </div>
+    <div class="finding-loc">.replit:56 &mdash; <code>fbb5ce6442...ecafa87de</code></div>
+    <p style="margin-top:8px;">Originally a deployer key exposure issue. <strong>Now compounded by NEW-03</strong>: user wallet private keys are stored in the same database, encrypted with a key derived from environment variables. If the environment is compromised (key in .replit is public on GitHub), the encryption key for ALL user private keys could be derived.</p>
+    <p style="color:var(--crit);font-weight:700;">Combined impact: C12 + NEW-03 = potential theft of all user funds.</p>
+    <p style="color:var(--cyan);"><strong>Recommendation:</strong> Immediately stop storing user wallet private keys. Transfer contract ownership to a fresh multisig. Purge key from git history. Rotate ALL encryption keys.</p>
+  </div>
+
+  <div class="card finding-card high">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+      <span class="id">H07</span><span class="badge high">HIGH</span>
+      <span class="finding-title" style="flex:1;">creditAgent Creates Unbacked Virtual Balances</span>
+    </div>
+    <div class="finding-loc">contracts/web4/AgentEconomyHub.sol:113</div>
+    <p style="margin-top:8px;"><code>creditAgent()</code> increases virtual balances without real BNB backing. Insolvency risk. Requires contract fix.</p>
+  </div>
+
+  <div class="card finding-card high">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+      <span class="id">H08</span><span class="badge high">HIGH</span>
+      <span class="finding-title" style="flex:1;">addRewards() Overwrites Rate, Orphans Tokens</span>
+    </div>
+    <div class="finding-loc">contracts/web4/BUILD4Staking.sol:155-161</div>
+    <p style="margin-top:8px;">Calling <code>addRewards()</code> before the current reward period ends overwrites <code>rewardRate</code>, permanently locking undistributed tokens.</p>
+  </div>
+
+  <div class="card finding-card high">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+      <span class="id">H09</span><span class="badge high">HIGH</span>
+      <span class="finding-title" style="flex:1;">withdrawPlatformFees() Always Reverts</span>
+    </div>
+    <div class="finding-loc">contracts/web4/SkillMarketplace.sol:123-130</div>
+    <p style="margin-top:8px;">Contract tracks <code>accumulatedPlatformFees</code> but never receives real BNB. The <code>call{value: amount}</code> will always revert. Dead code.</p>
+  </div>
+
+  <div class="card finding-card high">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+      <span class="id">H15</span><span class="badge high">HIGH</span>
+      <span class="finding-title" style="flex:1;">Complete Centralization &mdash; Single EOA Owns All Contracts</span>
+    </div>
+    <div class="finding-loc">All 5 contracts &mdash; Ownable(msg.sender)</div>
+    <p style="margin-top:8px;">No timelock, multisig, or governance. Single compromised key = total control over all contracts.</p>
+  </div>
+
+  <div class="card finding-card partial">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+      <span class="id">H17</span><span class="badge part">PARTIAL</span>
+      <span class="finding-title" style="flex:1;">Remaining sql.raw() Instances in storage.ts</span>
+    </div>
+    <div class="finding-loc">server/storage.ts &mdash; estimated 10-15 remaining</div>
+    <p style="margin-top:8px;">~15 of the original 30+ <code>sql.raw()</code> calls were fixed with parameterized queries. An estimated 10-15 remain. New code in this version adds safe Drizzle ORM usage but does not address the legacy instances.</p>
+  </div>
+</section>
+
+<!-- OSINT / TOKEN ANALYSIS -->
+<section id="osint" class="c">
+  <div class="divider" style="background:linear-gradient(90deg,var(--high),var(--med));"></div>
+  <h2>OSINT &amp; Token Economics Analysis</h2>
+
+  <div class="card" style="border-left:4px solid var(--high);">
+    <h3 style="margin-bottom:16px;">B4 Token &mdash; On-Chain Findings</h3>
+    <div class="grid3">
+      <div><span style="color:var(--muted);font-size:12px;">Token</span><br><code style="font-size:11px;">0x1d547f9d...da4444</code></div>
+      <div><span style="color:var(--muted);font-size:12px;">Supply</span><br><strong>1,000,000,000 B4</strong></div>
+      <div><span style="color:var(--muted);font-size:12px;">Chain</span><br>BSC (BEP-20)</div>
+      <div><span style="color:var(--muted);font-size:12px;">Creator Self-Buy</span><br><strong style="color:var(--crit);">~720M B4 (72%)</strong></div>
+      <div><span style="color:var(--muted);font-size:12px;">Cost</span><br>12.827 BNB (~$7,800)</div>
+      <div><span style="color:var(--muted);font-size:12px;">Launch Method</span><br>Four.meme bonding curve</div>
+    </div>
+  </div>
+
+  <div class="card" style="border-left:4px solid var(--med);">
+    <h3 style="margin-bottom:16px;">Team.Finance Lock Verification</h3>
+    <p style="color:var(--text);font-weight:600;margin-bottom:12px;">Checked: April 7, 2026 &mdash; team.finance/view-coin/0x1d547f9d...da4444</p>
+    <table>
+      <thead><tr><th>Category</th><th>Status</th><th>Details</th></tr></thead>
+      <tbody>
+        <tr><td>Token Locks</td><td class="open">NONE</td><td>"There are no locked tokens for this project yet."</td></tr>
+        <tr><td>Liquidity Locks</td><td class="open">0.00%</td><td>LP tokens not locked &mdash; liquidity can be withdrawn at any time</td></tr>
+        <tr style="background:rgba(5,150,105,0.05);"><td>Token Vesting</td><td class="fixed">4 CONTRACTS</td><td>650,000,000 B4 (65%) across 4 vesting contracts</td></tr>
+      </tbody>
+    </table>
+
+    <h4 style="margin-top:20px;">Vesting Contracts Detail (created March 31, 2026)</h4>
+    <table>
+      <thead><tr><th>Amount</th><th>Created</th><th>Beneficiaries</th><th>From Wallet</th><th>TX</th></tr></thead>
+      <tbody>
+        <tr><td><strong>100,000,000</strong> B4</td><td>31 Mar 2026</td><td>2 investors</td><td><code>0xB986...279D</code></td><td><code>0xf8bd...1423</code></td></tr>
+        <tr><td><strong>135,000,000</strong> B4</td><td>31 Mar 2026</td><td>2 investors</td><td><code>0x5A21...E72A</code></td><td><code>0xbf43...00de</code></td></tr>
+        <tr><td><strong>190,000,000</strong> B4</td><td>31 Mar 2026</td><td>1 investor</td><td><code>0xF8E3...B345</code></td><td><code>0x7583...86cf</code></td></tr>
+        <tr><td><strong>225,000,000</strong> B4</td><td>31 Mar 2026</td><td>1 investor</td><td><code>0xB54F...Bf9d</code></td><td><code>0x1923...3471</code></td></tr>
+      </tbody>
+    </table>
+
+    <div class="alert-box warn" style="margin-top:16px;">
+      <strong style="color:var(--high);">Key Observations:</strong>
+      <ul style="color:var(--text2);padding-left:18px;font-size:13px;line-height:2;margin-top:8px;">
+        <li><strong>650M (65%) in vesting</strong> &mdash; tokens are physically in smart contracts, preventing instant dump</li>
+        <li><strong>350M (35%) NOT vested</strong> &mdash; freely tradeable with no restrictions</li>
+        <li><strong>0% liquidity locked</strong> &mdash; LP can be pulled at any time (rug vector)</li>
+        <li><strong>4 different sender wallets</strong> &mdash; same creator, split across wallets for optics</li>
+        <li><strong>Merkle tree vesting</strong> &mdash; schedule details (cliff, duration) opaque without merkle proofs</li>
+        <li><strong>Vesting created post-audit</strong> (March 31) &mdash; reactive, not planned from launch</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="card" style="border-left:4px solid var(--crit);">
+    <h3 style="margin-bottom:12px;">Public Claims vs On-Chain Reality</h3>
+    <table>
+      <thead><tr><th>Claim (Public Tweet)</th><th>Reality</th><th>Verdict</th></tr></thead>
+      <tbody>
+        <tr><td>"ALL WALLETS LOCKED &amp; VESTED"</td><td>65% vested, 35% free, 0% locked</td><td><span class="badge high">MISLEADING</span></td></tr>
+        <tr><td>"We make it impossible to betray you"</td><td>LP not locked, 350M free tokens, vesting schedule unknown</td><td><span class="badge high">EXAGGERATED</span></td></tr>
+        <tr><td>"24-month linear vesting"</td><td>Vesting uses opaque merkle roots; duration not verifiable on-chain</td><td><span class="badge med">UNVERIFIABLE</span></td></tr>
+      </tbody>
+    </table>
+    <div class="alert-box info" style="margin-top:12px;">
+      <strong style="color:var(--cyan);">Fair Assessment:</strong> The vesting of 65% of supply is a genuine positive step that prevents an instant large-scale dump. However, the public communications significantly overstate the level of protection. The 0% locked liquidity remains the most critical gap.
+    </div>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-bottom:12px;">Wallet Chain (OSINT)</h3>
+    <div class="timeline">
+      <div class="timeline-item">
+        <strong>Binance Hot Wallet 23</strong> <span style="color:var(--muted);font-size:12px;">(KYC-identifiable)</span><br>
+        <span style="color:var(--text2);font-size:13px;">Funded creator wallet with initial BNB</span>
+      </div>
+      <div class="timeline-item">
+        <strong>Creator Wallet</strong> &mdash; <code>0x8CBF7a53af6B88ABb07Ba481Ac66D73A99985878</code><br>
+        <span style="color:var(--text2);font-size:13px;">Derived from exposed .replit private key <code>fbb5ce...87de</code></span>
+      </div>
+      <div class="timeline-item warn">
+        <strong>Deployer</strong> &mdash; <code>0x913a46e2D65C6F76CF4A4AD96B1c7913d5e324d9</code><br>
+        <span style="color:var(--text2);font-size:13px;">12,210 transactions, deployed 5 smart contracts</span>
+      </div>
+      <div class="timeline-item danger">
+        <strong>Self-Buy via Four.meme</strong><br>
+        <span style="color:var(--text2);font-size:13px;">72% of supply purchased by creator for 12.827 BNB through bonding curve</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- PATCH HISTORY -->
+<section id="patches" class="c">
+  <div class="divider" style="background:linear-gradient(90deg,var(--purple),var(--cyan));"></div>
+  <h2>Patch History &amp; Commit Timeline</h2>
+
+  <div class="grid2">
+    <div class="card" style="border-left:4px solid var(--cyan);">
+      <h4>Patch 1 &mdash; <code>23db810</code></h4>
+      <p style="color:var(--muted);font-size:11px;margin-bottom:8px;">Apr 6, 13:23 UTC &mdash; Encryption, SQLi, Auth, Slippage</p>
+      <ul style="color:var(--text2);padding-left:18px;font-size:12px;line-height:2;">
+        <li>C01 &mdash; Hardcoded encryption key removed</li>
+        <li>C02 &mdash; SQLi in routes.ts parameterized</li>
+        <li>C03 &mdash; Telegram HMAC initData auth added</li>
+        <li>C06 &mdash; 5-min TTL on key cache</li>
+        <li>C11 &mdash; Decrypt throws on format error</li>
+        <li>C13 &mdash; WALLET_ENCRYPTION_KEY required</li>
+        <li>H02 &mdash; Slippage reduced to 5/10/12%</li>
+        <li>H17 &mdash; ~15 sql.raw() parameterized</li>
+        <li>H18 &mdash; Debug endpoint removed</li>
+      </ul>
+    </div>
+    <div class="card" style="border-left:4px solid var(--purple);">
+      <h4>Patch 2 &mdash; <code>bd29247</code></h4>
+      <p style="color:var(--muted);font-size:11px;margin-bottom:8px;">Apr 6, 13:38 UTC &mdash; Logs, SSRF, CORS, CSP</p>
+      <ul style="color:var(--text2);padding-left:18px;font-size:12px;line-height:2;">
+        <li>C05 &mdash; Private keys no longer sent via Telegram</li>
+        <li>C10 &mdash; Exact-amount ERC20 approvals</li>
+        <li>H03 &mdash; Full 256-bit HMAC</li>
+        <li>H05 &mdash; SSRF blocked with IP blocklist</li>
+        <li>H10 &mdash; DATABASE_URL key derivation removed</li>
+        <li>H13 &mdash; Credential logging redacted</li>
+        <li>H16 &mdash; CORS exact hostname matching</li>
+        <li>H19 &mdash; unsafe-eval removed from CSP</li>
+        <li>H21 &mdash; MaxUint256 approvals replaced</li>
+      </ul>
+    </div>
+    <div class="card" style="border-left:4px solid var(--green);">
+      <h4>Patch 3 &mdash; <code>b0ebf60</code></h4>
+      <p style="color:var(--muted);font-size:11px;margin-bottom:8px;">Apr 6, 13:50 UTC &mdash; Error handling, XSS, Command Injection</p>
+      <ul style="color:var(--text2);padding-left:18px;font-size:12px;line-height:2;">
+        <li>Error messages no longer leak internals</li>
+        <li>OnchainsOS command injection blocked</li>
+        <li>SEO prerender XSS fixed (escapeHtml)</li>
+        <li>Additional credential redaction in logs</li>
+      </ul>
+    </div>
+    <div class="card" style="border-left:4px solid var(--green);">
+      <h4>Patch 4 &mdash; <code>638abf4</code></h4>
+      <p style="color:var(--muted);font-size:11px;margin-bottom:8px;">Apr 6, 14:19 UTC &mdash; VM Blocklist, Auth, Prompt Injection</p>
+      <ul style="color:var(--text2);padding-left:18px;font-size:12px;line-height:2;">
+        <li>C04 &mdash; VM sandbox: 35+ blocked patterns</li>
+        <li>C07 &mdash; Stealth buy authorization + TTL</li>
+        <li>C08 &mdash; Wallet cache TTL 5min &rarr; 30sec</li>
+        <li>H01 &mdash; Prompt injection defense</li>
+        <li>H04 &mdash; Callback validation + rate limit</li>
+        <li>H06 &mdash; Twitter creds encrypted at rest</li>
+        <li>H11 &mdash; TOCTOU race fixed with mutex</li>
+        <li>H12 &mdash; Fee disclosure added</li>
+        <li>H14 &mdash; PKs redacted in error logs</li>
+        <li>H20 &mdash; ZK proofs labeled experimental</li>
+        <li>H22 &mdash; Session tokens with expiry</li>
+      </ul>
+    </div>
+    <div class="card" style="border-left:4px solid var(--green);">
+      <h4>Patch 5 &mdash; <code>40b6195</code></h4>
+      <p style="color:var(--muted);font-size:11px;margin-bottom:8px;">Apr 6, 14:45 UTC &mdash; isolated-vm (C04 FULLY FIXED)</p>
+      <ul style="color:var(--text2);padding-left:18px;font-size:12px;line-height:2;">
+        <li>C04 &mdash; <strong>FULLY FIXED</strong>: <code>node:vm</code> &rarr; <code>isolated-vm</code></li>
+        <li>32MB memory limit per isolate</li>
+        <li>Frozen builtins (Math, parseInt, parseFloat)</li>
+        <li><code>isolate.dispose()</code> in finally blocks</li>
+        <li>H01 &mdash; Enhanced prompt injection: <code>&lt;|user_data|&gt;</code> tags</li>
+      </ul>
+    </div>
+    <div class="card" style="border-left:4px solid var(--crit);">
+      <h4 style="color:var(--crit);">Post-Patch &mdash; 20 Commits</h4>
+      <p style="color:var(--muted);font-size:11px;margin-bottom:8px;">Apr 6-7 &mdash; Aster V3 Direct, MiniApp Updates</p>
+      <ul style="color:var(--text2);padding-left:18px;font-size:12px;line-height:2;">
+        <li style="color:var(--crit);">NEW-01 &mdash; Cloudflare bypass for /api/miniapp/*</li>
+        <li style="color:var(--crit);">NEW-03 &mdash; User PKs stored in DB as V3 signer</li>
+        <li>NEW-02 &mdash; X-Frame-Options removed for miniapp</li>
+        <li>NEW-04 &mdash; API response body logged</li>
+        <li>NEW-05 &mdash; parentAddress client-spoofable</li>
+        <li>NEW-06 &mdash; Silent v1/v3 API fallback</li>
+        <li>Aster V3 Direct wallet connection flow</li>
+        <li>Custom confirm dialogs (replaces browser confirm)</li>
+        <li>Improved trade error messages</li>
+        <li>UI improvements for Aster API Wallet instructions</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- CONCLUSION -->
+<section class="c">
+  <div class="divider" style="background:linear-gradient(90deg,var(--crit),var(--high),var(--green));"></div>
+  <h2>Conclusion &amp; Risk Assessment</h2>
+
+  <div class="grid2">
+    <div class="card" style="border-left:4px solid var(--green);">
+      <h3 style="color:var(--green);margin-bottom:12px;">Positives</h3>
+      <ul style="color:var(--text2);padding-left:18px;font-size:13px;line-height:2;">
+        <li>Rapid patch response: 5 patches within 2 hours</li>
+        <li>33/42 critical/high findings from initial audit resolved</li>
+        <li>C04 (VM RCE) fully fixed with isolated-vm</li>
+        <li>65% of token supply in on-chain vesting contracts</li>
+        <li>Encryption, auth, and logging significantly improved</li>
+      </ul>
+    </div>
+    <div class="card" style="border-left:4px solid var(--crit);">
+      <h3 style="color:var(--crit);margin-bottom:12px;">Critical Concerns</h3>
+      <ul style="color:var(--text2);padding-left:18px;font-size:13px;line-height:2;">
+        <li><strong>NEW-03 + C12</strong>: User wallet PKs in DB + exposed deployer key = fund theft vector</li>
+        <li><strong>NEW-01</strong>: Financial endpoints bypass Cloudflare WAF</li>
+        <li><strong>0% liquidity locked</strong>: LP rug pull remains possible</li>
+        <li><strong>35% token supply</strong> freely tradeable with no lock</li>
+        <li><strong>Smart contracts</strong>: 5 on-chain issues remain unfixed</li>
+        <li>New features deployed without security review</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="card" style="border-left:4px solid var(--high);margin-top:16px;">
+    <p style="font-size:15px;font-weight:700;margin-bottom:12px;">Risk Assessment: <span style="color:var(--high);">HIGH</span> <span style="color:var(--muted);font-weight:400;">(regressed from MEDIUM-HIGH post-patch)</span></p>
+    <p><strong>Security Score: 4.5/10</strong> (down from 5.5/10 after patches, up from 2/10 at initial audit)</p>
+    <p style="margin-top:12px;">The platform should <strong>not</strong> go to production until:</p>
+    <ol style="color:var(--text2);padding-left:22px;font-size:13px;line-height:2.2;margin-top:8px;">
+      <li><strong>Stop storing user wallet private keys</strong> (NEW-03) &mdash; use API Wallet delegation only</li>
+      <li><strong>Restore Cloudflare protection</strong> on <code>/api/miniapp/*</code> routes (NEW-01)</li>
+      <li><strong>Lock liquidity</strong> via Team.Finance or equivalent &mdash; minimum 12 months</li>
+      <li><strong>Transfer contract ownership</strong> to a multisig with timelock (C12, H15)</li>
+      <li><strong>Redeploy smart contracts</strong> with SafeERC20 and fee fixes (C09, H07-H09)</li>
+      <li><strong>Verify parentAddress ownership</strong> with EIP-712 signatures (NEW-05)</li>
+      <li><strong>Remove production body logging</strong> (NEW-04)</li>
+    </ol>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer class="c">
+  <div style="display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:8px;">
+    <svg width="22" height="22" viewBox="0 0 140 140"><polygon points="70,8 128,38 128,102 70,132 12,102 12,38" fill="none" stroke="rgba(200,210,220,0.25)" stroke-width="2.5"/><text x="70" y="76" text-anchor="middle" font-family="'Bricolage Grotesque',sans-serif" font-size="22" font-weight="800" fill="#94A3B8">K</text><circle cx="70" cy="8" r="6" fill="#9B7FE6"/><circle cx="128" cy="38" r="6" fill="#00D4CC"/><circle cx="128" cy="102" r="6" fill="#4A90D9"/><circle cx="70" cy="132" r="6" fill="#B4A7D6"/><circle cx="12" cy="102" r="6" fill="#7DD4E8"/><circle cx="12" cy="38" r="6" fill="#A8C8E8"/></svg>
+    <span style="font-family:var(--fh);font-weight:800;font-size:13px;letter-spacing:0.12em;">KAIROS LAB</span>
+  </div>
+  <p>Confidential &mdash; BUILD4 Continuous Audit Report &mdash; v4.0 &mdash; April 2026</p>
+  <p style="margin-top:4px;">KSR-BUILD4 | Auditor: Valisthea @ Kairos Lab Security Research</p>
+  <p style="margin-top:8px;">This document contains confidential security findings. Unauthorized distribution is prohibited.</p>
+</footer>
+
+<script>
+document.querySelectorAll('a[href^="#"]').forEach(a => {
+  a.addEventListener('click', function(e) {
+    e.preventDefault();
+    const t = document.querySelector(this.getAttribute('href'));
+    if(t) t.scrollIntoView({behavior:'smooth', block:'start'});
+  });
+});
+</script>
+</body>
+</html>
