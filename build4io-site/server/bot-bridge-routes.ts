@@ -185,6 +185,18 @@ export function registerBotBridgeRoutes(app: Express) {
       // Mirrors PolymarketPosition columns defined in src/ensureTables.ts.
       // Aliased to match the field names the UI pane expects (so the same
       // pane keeps working when this is later swapped for a bot-proxy).
+      //
+      // Realised PnL on partial sells (Task #115): partial SELLs are
+      // recorded as their own PolymarketPosition rows with side='SELL'
+      // (fillSize = shares sold, sizeUsdc = USDC proceeds, entryPrice =
+      // sell fill price). We allocate SELL fills back to BUY lots FIFO
+      // (by openedAt ASC), per (conditionId, tokenId), so each BUY row
+      // gets a per-position cumulative `soldQty` + `realisedPnl` even
+      // when the user has multiple BUYs on the same outcome token.
+      //
+      // Only SELLs with status IN ('filled','matched') are counted to
+      // avoid inflating realised numbers from in-flight or
+      // unconfirmed orders. Failed and 'placed' SELL rows are excluded.
       const r = await pool.query(
         `SELECT id, "userId", "agentId", "conditionId", "tokenId",
                 "marketSlug", "marketTitle",
@@ -194,14 +206,102 @@ export function registerBotBridgeRoutes(app: Express) {
                 "entryPrice" AS price,
                 "exitPrice"  AS "fillPrice",
                 "fillSize", "payoutUsdc", pnl,
-                status, "openedAt", "closedAt"
+                status, "openedAt", "closedAt", "orderId"
            FROM "PolymarketPosition"
           WHERE "userId" = $1
-          ORDER BY "openedAt" DESC NULLS LAST
-          LIMIT 200`,
+          ORDER BY "openedAt" ASC NULLS LAST
+          LIMIT 500`,
         [userId],
       );
-      res.json({ ok: true, positions: r.rows });
+
+      type Acc = { soldQty: number; proceeds: number; remaining: number };
+      const acc = new Map<string, Acc>();
+      const groups = new Map<string, { buys: any[]; sells: any[] }>();
+      const sharesOf = (row: any): number => {
+        const fill = Number(row.fillSize);
+        if (Number.isFinite(fill) && fill > 0) return fill;
+        const price = Number(row.price);
+        const sz = Number(row.size);
+        return price > 0 && Number.isFinite(sz) ? sz / price : 0;
+      };
+      const tsOf = (row: any): number => {
+        const t = row.openedAt ? new Date(row.openedAt).getTime() : 0;
+        return Number.isFinite(t) ? t : 0;
+      };
+
+      // Execution signal: the Polymarket SDK frequently leaves
+      // effectively-filled orders in `placed` state (the same reason the
+      // SELL button is allowed for placed BUYs elsewhere in this pane).
+      // So treating only filled/matched as inventory under-counts real
+      // trades. Instead we require status ∈ {filled, matched, placed}
+      // AND a non-null orderId — orderId is only set when the CLOB
+      // accepted the order, so failed/never-posted rows are excluded
+      // and phantom inventory can't absorb SELL allocations.
+      const isExecuted = (row: any) =>
+        !!row.orderId &&
+        (row.status === "filled" ||
+          row.status === "matched" ||
+          row.status === "placed");
+
+      for (const row of r.rows) {
+        const key = `${row.conditionId}|${row.tokenId}`;
+        if (!groups.has(key)) groups.set(key, { buys: [], sells: [] });
+        const g = groups.get(key)!;
+        if (row.side === "BUY" && isExecuted(row)) {
+          g.buys.push(row);
+          acc.set(row.id, { soldQty: 0, proceeds: 0, remaining: sharesOf(row) });
+        } else if (row.side === "SELL" && isExecuted(row)) {
+          g.sells.push(row);
+        }
+      }
+
+      for (const g of Array.from(groups.values())) {
+        g.buys.sort((a: any, b: any) => tsOf(a) - tsOf(b));
+        g.sells.sort((a: any, b: any) => tsOf(a) - tsOf(b));
+        for (const sell of g.sells) {
+          const sellShares = sharesOf(sell);
+          const sellProceeds = Number(sell.size) || 0;
+          if (sellShares <= 0) continue;
+          let unallocated = sellShares;
+          for (const buy of g.buys) {
+            if (unallocated <= 0) break;
+            const a = acc.get(buy.id)!;
+            if (a.remaining <= 0) continue;
+            const take = Math.min(a.remaining, unallocated);
+            const proceedsShare = (take / sellShares) * sellProceeds;
+            a.soldQty += take;
+            a.proceeds += proceedsShare;
+            a.remaining -= take;
+            unallocated -= take;
+          }
+          // Any leftover `unallocated` means the user sold more shares
+          // than the BUY rows account for (manual on-chain transfer,
+          // missing BUY row, etc.). We silently drop it rather than
+          // attaching nonsense PnL to unrelated rows.
+        }
+      }
+
+      const positions = r.rows
+        .map((row: any) => {
+          if (row.side !== "BUY") {
+            return { ...row, soldQty: null, realisedPnl: null, soldProceeds: null };
+          }
+          const a = acc.get(row.id);
+          if (!a || a.soldQty <= 0) {
+            return { ...row, soldQty: 0, realisedPnl: null, soldProceeds: null };
+          }
+          const buyPrice = Number(row.price) || 0;
+          return {
+            ...row,
+            soldQty: a.soldQty,
+            realisedPnl: a.proceeds - a.soldQty * buyPrice,
+            soldProceeds: a.proceeds,
+          };
+        })
+        .sort((a: any, b: any) => tsOf(b) - tsOf(a))
+        .slice(0, 200);
+
+      res.json({ ok: true, positions });
     } catch (err: any) {
       const msg = String(err?.message ?? err);
       // Table or column missing on a fresh deploy — degrade to empty.

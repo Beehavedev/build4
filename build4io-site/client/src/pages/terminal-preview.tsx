@@ -931,16 +931,23 @@ function PolymarketPane({ session }: { session: any }) {
     // (sizeUsdc / entryPrice) when the SDK didn't report a fill size — an
     // order placed at $5 @ 32¢ implies ~15.625 outcome tokens. Mirrors the
     // miniapp's SELL sizing exactly (see src/miniapp/src/pages/PredictionsPolymarket.tsx).
+    //
+    // Task #115: subtract `soldQty` (cumulative shares already sold across
+    // prior partial SELLs on this conditionId+tokenId) so that "Sell 100%"
+    // after a 50% scale-out submits the remaining 50%, not the original
+    // full size. Fractions are applied to the REMAINING quantity.
     const fillSize = num(p.fillSize);
     const entryPrice = num(p.entryPrice ?? p.fillPrice ?? p.price);
     const sizeUsdc = num(p.sizeUsdc ?? p.size);
-    const fullQty = fillSize > 0
+    const originalQty = fillSize > 0
       ? fillSize
       : (entryPrice > 0 ? sizeUsdc / entryPrice : 0);
+    const soldQty = num(p.soldQty);
+    const remainingQty = Math.max(0, originalQty - soldQty);
     const frac = Math.max(0, Math.min(1, Number.isFinite(fraction) ? fraction : 1));
     // Round to 4 decimals so we don't send tiny floating-point dust to the
     // SDK; CTF outcome tokens are 6-decimal ERC-1155 so 4dp is plenty.
-    const qty = Math.floor(fullQty * frac * 10000) / 10000;
+    const qty = Math.floor(remainingQty * frac * 10000) / 10000;
     if (qty <= 0 || !p.tokenId) {
       setActionMsg("Sell failed: no sellable quantity for this position");
       return;
@@ -1142,18 +1149,39 @@ function PolymarketPane({ session }: { session: any }) {
               const fillSize = num(p.fillSize);
               const entryPrice = num(p.entryPrice ?? p.fillPrice ?? p.price);
               const sizeUsdc = num(p.sizeUsdc ?? p.size);
-              const sellQty = fillSize > 0
+              const originalQty = fillSize > 0
                 ? fillSize
                 : (entryPrice > 0 ? sizeUsdc / entryPrice : 0);
-              const canSell = sellableStatus && !!p.tokenId && side === "BUY" && sellQty > 0;
+              const soldQty = num(p.soldQty);
+              const realisedPnl = p.realisedPnl == null ? null : num(p.realisedPnl);
+              const remainingQty = Math.max(0, originalQty - soldQty);
+              const canSell = sellableStatus && !!p.tokenId && side === "BUY" && remainingQty > 0;
+              const hasRealised = side === "BUY" && soldQty > 0 && realisedPnl !== null;
+              const pnlPositive = (realisedPnl ?? 0) >= 0;
               return (
                 <div key={p.id} className="flex items-center justify-between border-b border-border/40 pb-2 last:border-b-0 gap-3" data-testid={`row-polymarket-${p.id}`}>
                   <div className="flex-1 min-w-0">
                     <div className="font-mono text-xs text-foreground truncate">{p.marketTitle || p.marketSlug || p.conditionId?.slice(0, 12)}</div>
-                    <div className="font-mono text-[10px] text-muted-foreground">{p.outcome || "—"} · {p.status} · {p.size ? `${num(p.size).toFixed(2)} sh` : "—"}</div>
+                    <div className="font-mono text-[10px] text-muted-foreground">
+                      {p.outcome || "—"} · {p.status}
+                      {hasRealised
+                        ? ` · ${remainingQty.toFixed(2)} sh open · ${soldQty.toFixed(2)} sold`
+                        : (p.size ? ` · ${num(p.size).toFixed(2)} sh` : " · —")}
+                    </div>
                   </div>
                   <div className="font-mono text-xs text-right tabular-nums">
-                    {p.fillPrice ? `@ $${num(p.fillPrice).toFixed(3)}` : p.price ? `@ $${num(p.price).toFixed(3)}` : "—"}
+                    <div>
+                      {p.fillPrice ? `@ $${num(p.fillPrice).toFixed(3)}` : p.price ? `@ $${num(p.price).toFixed(3)}` : "—"}
+                    </div>
+                    {hasRealised && (
+                      <div
+                        className={"text-[10px] " + (pnlPositive ? "text-emerald-400" : "text-red-400")}
+                        title={`Realised on ${soldQty.toFixed(2)} sh sold`}
+                        data-testid={`text-polymarket-realised-${p.id}`}
+                      >
+                        {pnlPositive ? "+" : "−"}${Math.abs(realisedPnl as number).toFixed(2)} realised
+                      </div>
+                    )}
                   </div>
                   {isResolvedWin ? (
                     <button
