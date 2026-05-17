@@ -579,6 +579,11 @@ export default function PredictionsPolymarket() {
   const [eoaCopied, setEoaCopied] = useState(false)
   const [positions, setPositions] = useState<PolyPosition[]>([])
   const [tradeIntent, setTradeIntent] = useState<TradeIntent | null>(null)
+  // SELL confirmation intent — mirrors the web terminal's pre-submit
+  // confirm dialog so a fat-finger on a winning position can be cancelled
+  // before the order is signed and routed to the relayer. Holds the
+  // position row + the computed quantity we'll dump.
+  const [sellIntent, setSellIntent] = useState<{ position: PolyPosition; qty: number } | null>(null)
   const [toast, setToast] = useState<{ kind: 'ok' | 'err'; msg: string } | null>(null)
 
   function flash(kind: 'ok' | 'err', msg: string) {
@@ -1111,44 +1116,14 @@ export default function PredictionsPolymarket() {
                   <button
                     type="button"
                     data-testid={`button-poly-sell-${p.id}`}
-                    onClick={async () => {
-                      // Sell the entire fill at market. We don't pop a
-                      // modal for this — exits are intentionally one-tap
-                      // so a user can dump on news without friction.
-                      // SELL amount is the outcome-token quantity, not USDC.
-                      // Use the same sellQty resolved above so 'placed'
-                      // positions (which often have fillSize=0 even after
-                      // matching) still get a sensible quantity derived
-                      // from sizeUsdc/entryPrice.
-                      const qty = sellQty
-                      if (qty <= 0) return
-                      try {
-                        await submitOrder({
-                          tokenId: p.tokenId,
-                          side:    'SELL',
-                          // SELL amount field is reused as token quantity;
-                          // the server validator caps it at 10000 which
-                          // is well above any realistic outcome-token size
-                          // for our small initial book.
-                          sizeUsdc: qty,
-                          // IMPORTANT: do NOT pass entryPrice here. The
-                          // server uses `price` as the slippage-anchor:
-                          // a position whose mark moved >5% from entry
-                          // is exactly the case where you most want to
-                          // exit, not be blocked. Sending 0 disables the
-                          // slippage gate (server treats !Number.isFinite
-                          // || 0 as "no anchor") and lets the SDK price
-                          // the SELL at the best executable bid.
-                          price:    0,
-                          conditionId:  p.conditionId,
-                          marketTitle:  p.marketTitle,
-                          outcomeLabel: p.outcomeLabel,
-                        })
-                        flash('ok', `Sell submitted: ${p.outcomeLabel}`)
-                        await Promise.all([loadWallet(), loadPositions()])
-                      } catch (err: any) {
-                        flash('err', `Sell failed: ${String(err?.message ?? err).slice(0, 80)}`)
-                      }
+                    onClick={() => {
+                      // Open the confirm modal instead of submitting
+                      // straight away — mirrors the web terminal's
+                      // pre-submit confirm step so a fat-finger on a
+                      // winning position can be cancelled before the
+                      // order is signed.
+                      if (sellQty <= 0) return
+                      setSellIntent({ position: p, qty: sellQty })
                     }}
                     style={{
                       padding: '4px 10px', fontSize: 10, fontWeight: 700,
@@ -1201,6 +1176,45 @@ export default function PredictionsPolymarket() {
             await Promise.all([loadWallet(), loadPositions()])
           }}
           onError={(msg) => flash('err', msg)}
+        />
+      )}
+
+      {/* SELL confirm modal — parity with the web terminal. Fetches the
+          live best bid for the position's tokenId and shows
+          market/outcome/qty/best-bid/est. proceeds before the SELL is
+          actually submitted. Cancel leaves the position untouched. */}
+      {sellIntent && (
+        <SellConfirmModal
+          position={sellIntent.position}
+          qty={sellIntent.qty}
+          onCancel={() => setSellIntent(null)}
+          onConfirm={async () => {
+            const p = sellIntent.position
+            const qty = sellIntent.qty
+            try {
+              await submitOrder({
+                tokenId: p.tokenId,
+                side:    'SELL',
+                // SELL amount field is reused as token quantity; same
+                // semantics as the previous one-tap path.
+                sizeUsdc: qty,
+                // IMPORTANT: do NOT pass entryPrice here. The server
+                // uses `price` as the slippage-anchor; sending 0
+                // disables the slippage gate and lets the SDK price the
+                // SELL at the best executable bid (see prior comment).
+                price:    0,
+                conditionId:  p.conditionId,
+                marketTitle:  p.marketTitle,
+                outcomeLabel: p.outcomeLabel,
+              })
+              setSellIntent(null)
+              flash('ok', `Sell submitted: ${p.outcomeLabel}`)
+              await Promise.all([loadWallet(), loadPositions()])
+            } catch (err: any) {
+              flash('err', `Sell failed: ${String(err?.message ?? err).slice(0, 80)}`)
+              throw err
+            }
+          }}
         />
       )}
 
@@ -1375,6 +1389,172 @@ function TradeModal({
 
         <div style={{ marginTop: 10, fontSize: 9, color: '#64748b', lineHeight: 1.4 }}>
           Order signed with your custodial Polygon key and routed directly to Polymarket.
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Sell confirm modal ───
+// Mirrors the web terminal's pre-submit confirm so a fat-finger on a
+// winning position can be cancelled. Shows market / outcome / qty /
+// live best bid / est. proceeds. Live bid is polled at 1s from the
+// public orderbook endpoint (same cadence as OrderbookPanel). The
+// server still prices the SELL at the actual best executable bid —
+// the figure displayed here is informational so the user sees roughly
+// what they'll receive before signing.
+function SellConfirmModal({
+  position,
+  qty,
+  onCancel,
+  onConfirm,
+}: {
+  position: PolyPosition
+  qty: number
+  onCancel: () => void
+  onConfirm: () => Promise<void>
+}) {
+  const [busy, setBusy] = useState(false)
+  const [bestBid, setBestBid] = useState<number | null>(null)
+  const [bookErr, setBookErr] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    async function tick() {
+      try {
+        const r = await fetch(`/api/polymarket/orderbook/${position.tokenId}`)
+        if (!r.ok) {
+          const j = await r.json().catch(() => ({}))
+          throw new Error(j?.error || `HTTP ${r.status}`)
+        }
+        const j: OrderbookResponse = await r.json()
+        if (cancelled) return
+        setBestBid(j.book.bestBid)
+        setBookErr(null)
+      } catch (e) {
+        if (cancelled) return
+        setBookErr((e as Error).message)
+      }
+    }
+    tick()
+    const id = setInterval(tick, 1000)
+    return () => { cancelled = true; clearInterval(id) }
+  }, [position.tokenId])
+
+  const estProceeds = (bestBid !== null && bestBid > 0) ? qty * bestBid : null
+
+  async function handleConfirm() {
+    setBusy(true)
+    try {
+      await onConfirm()
+    } catch {
+      // Parent already flashed an error toast; just unlock the button.
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div
+      onClick={busy ? undefined : onCancel}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 999,
+        background: 'rgba(0,0,0,0.7)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: 12,
+      }}
+      data-testid="modal-poly-sell-confirm"
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: '#0f0f17', border: '1px solid #1e1e2e',
+          borderRadius: 10, padding: 16, maxWidth: 380, width: '100%',
+        }}
+      >
+        <div style={{ fontSize: 11, color: '#64748b', letterSpacing: 0.4, marginBottom: 4 }}>SELL · POLYMARKET</div>
+        <div style={{ fontSize: 13, color: '#e2e8f0', fontWeight: 600, marginBottom: 12, lineHeight: 1.3 }}
+             data-testid="text-sell-question">
+          {position.marketTitle}
+        </div>
+
+        <div style={{
+          display: 'inline-block', padding: '4px 10px', borderRadius: 4,
+          background: '#ef444422',
+          border: '1px solid #ef444444',
+          color: '#ef4444',
+          fontSize: 11, fontWeight: 700, marginBottom: 12,
+        }} data-testid="text-sell-outcome">
+          SELL {position.outcomeLabel.toUpperCase()}
+        </div>
+
+        <div style={{ padding: 8, background: '#0a0a13', borderRadius: 6, fontSize: 10, color: '#94a3b8', lineHeight: 1.7 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <span>Quantity</span>
+            <span style={{ fontFamily: 'ui-monospace, monospace', color: '#e2e8f0' }} data-testid="text-sell-qty">
+              {qty.toFixed(2)} shares
+            </span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <span>Best bid</span>
+            <span style={{ fontFamily: 'ui-monospace, monospace', color: '#e2e8f0' }} data-testid="text-sell-bestbid">
+              {bookErr && bestBid === null ? '—' : fmtPriceCents(bestBid)}
+            </span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <span>Entry</span>
+            <span style={{ fontFamily: 'ui-monospace, monospace', color: '#64748b' }}>
+              {fmtPriceCents(position.entryPrice)}
+            </span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4, paddingTop: 4, borderTop: '1px solid #1e1e2e' }}>
+            <span>Est. proceeds</span>
+            <span style={{ fontFamily: 'ui-monospace, monospace', color: '#10b981', fontWeight: 600 }}
+                  data-testid="text-sell-proceeds">
+              {estProceeds !== null ? `$${estProceeds.toFixed(2)}` : '—'}
+            </span>
+          </div>
+        </div>
+
+        {bookErr && bestBid === null && (
+          <div style={{ marginTop: 8, fontSize: 10, color: '#f59e0b' }}>
+            Orderbook unavailable: {bookErr}. You can still submit — the server will price at the live best bid.
+          </div>
+        )}
+
+        <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={busy}
+            data-testid="button-sell-cancel"
+            style={{
+              flex: 1, padding: '8px 0', borderRadius: 6,
+              background: '#1e1e2e', border: '1px solid #1e1e2e',
+              color: '#94a3b8', fontSize: 12, cursor: busy ? 'wait' : 'pointer',
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleConfirm}
+            disabled={busy}
+            data-testid="button-sell-confirm"
+            style={{
+              flex: 2, padding: '8px 0', borderRadius: 6,
+              background: busy ? '#ef444488' : '#ef4444',
+              border: '1px solid #ef4444',
+              color: 'white', fontSize: 12, fontWeight: 600,
+              cursor: busy ? 'not-allowed' : 'pointer',
+            }}
+          >
+            {busy ? 'Submitting…' : `Confirm SELL ${position.outcomeLabel}`}
+          </button>
+        </div>
+
+        <div style={{ marginTop: 10, fontSize: 9, color: '#64748b', lineHeight: 1.4 }}>
+          Server prices at the live best bid; this estimate is informational.
         </div>
       </div>
     </div>
