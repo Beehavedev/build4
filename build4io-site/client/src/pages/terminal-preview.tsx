@@ -1256,12 +1256,42 @@ function PolymarketPane({ session }: { session: any }) {
                       : `— (${sellIntent.bookErr || "no live bid"})`}
                 </span>
               </div>
-              <div className="flex justify-between gap-3 border-t border-border/40 pt-2">
-                <span className="text-muted-foreground">Est. proceeds</span>
-                <span className="tabular-nums text-foreground" data-testid="text-sell-confirm-proceeds">
-                  {sellIntent.bestBid ? fmtUsd(sellIntent.qty * sellIntent.bestBid) : "—"}
-                </span>
-              </div>
+              {(() => {
+                const entryPrice = num(sellIntent.position.entryPrice ?? sellIntent.position.fillPrice ?? sellIntent.position.price);
+                const hasEntry = entryPrice > 0;
+                const entryCost = hasEntry ? sellIntent.qty * entryPrice : null;
+                const proceeds = sellIntent.bestBid ? sellIntent.qty * sellIntent.bestBid : null;
+                const pnl = (hasEntry && proceeds !== null) ? proceeds - (entryCost as number) : null;
+                const pnlPct = (hasEntry && pnl !== null) ? (pnl / (entryCost as number)) * 100 : null;
+                const pnlColor = pnl === null ? "text-foreground" : pnl >= 0 ? "text-emerald-400" : "text-red-400";
+                const pnlSign = pnl === null ? "" : pnl >= 0 ? "+" : "";
+                return (
+                  <>
+                    <div className="flex justify-between gap-3 border-t border-border/40 pt-2">
+                      <span className="text-muted-foreground">Entry cost</span>
+                      <span className="tabular-nums text-foreground" data-testid="text-sell-confirm-entry-cost">
+                        {hasEntry
+                          ? `${fmtUsd(entryCost as number)} (${sellIntent.qty.toFixed(4)} × $${entryPrice.toFixed(3)})`
+                          : "— (entry unknown)"}
+                      </span>
+                    </div>
+                    <div className="flex justify-between gap-3">
+                      <span className="text-muted-foreground">Est. proceeds</span>
+                      <span className="tabular-nums text-foreground" data-testid="text-sell-confirm-proceeds">
+                        {proceeds !== null ? fmtUsd(proceeds) : "—"}
+                      </span>
+                    </div>
+                    <div className="flex justify-between gap-3">
+                      <span className="text-muted-foreground">Est. PnL</span>
+                      <span className={`tabular-nums ${pnlColor}`} data-testid="text-sell-confirm-pnl">
+                        {pnl !== null && pnlPct !== null
+                          ? `${pnlSign}${fmtUsd(pnl)} (${pnlSign}${pnlPct.toFixed(2)}%)`
+                          : "—"}
+                      </span>
+                    </div>
+                  </>
+                );
+              })()}
             </div>
           )}
           <DialogFooter>
