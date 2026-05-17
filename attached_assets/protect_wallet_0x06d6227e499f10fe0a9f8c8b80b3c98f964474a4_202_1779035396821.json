@@ -1,0 +1,373 @@
+{
+  "schema": "mefai.protect-your-wallet.v1",
+  "generatedAt": "2026-05-17T16:13:02.410Z",
+  "address": "0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4",
+  "overallSeverity": "MEDIUM",
+  "score": 45,
+  "chains": [
+    {
+      "chain": "BSC",
+      "scannedAt": "2026-05-17T16:12:10.433Z",
+      "identity": {
+        "delegated": false,
+        "delegationTarget": null,
+        "txCount": 46,
+        "balanceWei": "1242585763774092",
+        "codePrefix": "0x"
+      },
+      "logsScanned": 4,
+      "findings": [
+        {
+          "id": "BSC:approval:0x5782843c6d20096efa3107e8326081069c5e4444:0x5c952063c7fc8610ffdb798152d69f0b9550762b",
+          "severity": "LOW",
+          "chain": "BSC",
+          "title": "OLF approval to Four.Meme",
+          "whatHappened": "You granted a live OLF allowance of 4.59e-7 to Four.Meme. Not unlimited, but still exposes that amount if the spender is compromised.",
+          "whatToDo": "Revoke the approval below. A one-time on chain transaction will set the allowance back to zero. Costs a small gas fee but removes the risk permanently.",
+          "revoke": {
+            "kind": "erc20",
+            "tokenAddress": "0x5782843c6d20096efa3107e8326081069c5e4444",
+            "spender": "0x5c952063c7fc8610ffdb798152d69f0b9550762b",
+            "chain": "BSC"
+          },
+          "meta": {
+            "Token": "0x5782843c6d20096efa3107e8326081069c5e4444",
+            "Spender": "0x5c952063c7fc8610ffdb798152d69f0b9550762b",
+            "Spender label": "Four.Meme",
+            "Live allowance": "4.59e-7 OLF",
+            "Current balance": "4.59e-7 OLF",
+            "Granted on": "2026-05-11"
+          }
+        },
+        {
+          "id": "BSC:approval:0x55d398326f99059ff775485246999027b3197955:0x128463a60784c4d3f46c23af3f65ed859ba87974",
+          "severity": "LOW",
+          "chain": "BSC",
+          "title": "USDT approval (1.157920892373162e+59) to 0x1284…7974",
+          "whatHappened": "You granted a live USDT allowance of 1.157920892373162e+59 to 0x128463a60784c4d3f46c23af3f65ed859ba87974. Not unlimited, but still exposes that amount if the spender is compromised.",
+          "whatToDo": "Revoke the approval below. A one-time on chain transaction will set the allowance back to zero. Costs a small gas fee but removes the risk permanently.",
+          "revoke": {
+            "kind": "erc20",
+            "tokenAddress": "0x55d398326f99059ff775485246999027b3197955",
+            "spender": "0x128463a60784c4d3f46c23af3f65ed859ba87974",
+            "chain": "BSC"
+          },
+          "meta": {
+            "Token": "0x55d398326f99059ff775485246999027b3197955",
+            "Spender": "0x128463a60784c4d3f46c23af3f65ed859ba87974",
+            "Live allowance": "1.157920892373162e+59 USDT",
+            "Current balance": "8.81716774 USDT",
+            "Contract": "Verified source",
+            "Granted on": "2026-04-22"
+          }
+        },
+        {
+          "id": "BSC:approval:0x000ae314e2a2172a039b26378814c252734f556a:0x2c34a2fb1d0b4f55de51e1d0bdefaddce6b7cdd6",
+          "severity": "MEDIUM",
+          "chain": "BSC",
+          "title": "Unlimited ASTER approval to 0x2c34…cdd6",
+          "whatHappened": "You granted unlimited ASTER spending to 0x2c34a2fb1d0b4f55de51e1d0bdefaddce6b7cdd6. If this contract is ever exploited or turns malicious, your full ASTER balance (0) can be drained in a single transaction.",
+          "whatToDo": "Revoke the approval below. A one-time on chain transaction will set the allowance back to zero. Costs a small gas fee but removes the risk permanently.",
+          "revoke": {
+            "kind": "erc20",
+            "tokenAddress": "0x000ae314e2a2172a039b26378814c252734f556a",
+            "spender": "0x2c34a2fb1d0b4f55de51e1d0bdefaddce6b7cdd6",
+            "chain": "BSC"
+          },
+          "meta": {
+            "Token": "0x000ae314e2a2172a039b26378814c252734f556a",
+            "Spender": "0x2c34a2fb1d0b4f55de51e1d0bdefaddce6b7cdd6",
+            "Live allowance": "UNLIMITED",
+            "Current balance": "0",
+            "Contract": "Verified source",
+            "Granted on": "2026-04-21"
+          }
+        },
+        {
+          "id": "BSC:approval:0x000ae314e2a2172a039b26378814c252734f556a:0x128463a60784c4d3f46c23af3f65ed859ba87974",
+          "severity": "LOW",
+          "chain": "BSC",
+          "title": "ASTER approval (100.94) to 0x1284…7974",
+          "whatHappened": "You granted a live ASTER allowance of 100.94 to 0x128463a60784c4d3f46c23af3f65ed859ba87974. Not unlimited, but still exposes that amount if the spender is compromised.",
+          "whatToDo": "Revoke the approval below. A one-time on chain transaction will set the allowance back to zero. Costs a small gas fee but removes the risk permanently.",
+          "revoke": {
+            "kind": "erc20",
+            "tokenAddress": "0x000ae314e2a2172a039b26378814c252734f556a",
+            "spender": "0x128463a60784c4d3f46c23af3f65ed859ba87974",
+            "chain": "BSC"
+          },
+          "meta": {
+            "Token": "0x000ae314e2a2172a039b26378814c252734f556a",
+            "Spender": "0x128463a60784c4d3f46c23af3f65ed859ba87974",
+            "Live allowance": "100.94 ASTER",
+            "Current balance": "0",
+            "Contract": "Verified source",
+            "Granted on": "2026-05-16"
+          }
+        }
+      ],
+      "error": null
+    },
+    {
+      "chain": "ETH",
+      "scannedAt": "2026-05-17T16:12:10.298Z",
+      "identity": {
+        "delegated": false,
+        "delegationTarget": null,
+        "txCount": null,
+        "balanceWei": null,
+        "codePrefix": null
+      },
+      "logsScanned": 0,
+      "findings": [],
+      "error": null
+    },
+    {
+      "chain": "BASE",
+      "scannedAt": "2026-05-17T16:12:09.881Z",
+      "identity": {
+        "delegated": false,
+        "delegationTarget": null,
+        "txCount": null,
+        "balanceWei": null,
+        "codePrefix": null
+      },
+      "logsScanned": 0,
+      "findings": [],
+      "error": null
+    },
+    {
+      "chain": "ARB",
+      "scannedAt": "2026-05-17T16:12:10.031Z",
+      "identity": {
+        "delegated": false,
+        "delegationTarget": null,
+        "txCount": null,
+        "balanceWei": null,
+        "codePrefix": null
+      },
+      "logsScanned": 1,
+      "findings": [
+        {
+          "id": "ARB:approval:0x912ce59144191c1204e64559fe8253a0e49e6548:0x000000000022d473030f116ddee9f6b43ac78ba3",
+          "severity": "LOW",
+          "chain": "ARB",
+          "title": "ARB approval (9.569421918718623) to 0x0000…8ba3",
+          "whatHappened": "You granted a live ARB allowance of 9.569421918718623 to 0x000000000022d473030f116ddee9f6b43ac78ba3. Not unlimited, but still exposes that amount if the spender is compromised.",
+          "whatToDo": "Revoke the approval below. A one-time on chain transaction will set the allowance back to zero. Costs a small gas fee but removes the risk permanently.",
+          "revoke": {
+            "kind": "erc20",
+            "tokenAddress": "0x912ce59144191c1204e64559fe8253a0e49e6548",
+            "spender": "0x000000000022d473030f116ddee9f6b43ac78ba3",
+            "chain": "ARB"
+          },
+          "meta": {
+            "Token": "0x912ce59144191c1204e64559fe8253a0e49e6548",
+            "Spender": "0x000000000022d473030f116ddee9f6b43ac78ba3",
+            "Live allowance": "9.569421918718623 ARB",
+            "Current balance": "9.569421918718623 ARB",
+            "Contract": "Verified source",
+            "Granted on": "2026-05-04"
+          }
+        }
+      ],
+      "error": null
+    },
+    {
+      "chain": "POLY",
+      "scannedAt": "2026-05-17T16:12:10.076Z",
+      "identity": {
+        "delegated": false,
+        "delegationTarget": null,
+        "txCount": null,
+        "balanceWei": null,
+        "codePrefix": null
+      },
+      "logsScanned": 0,
+      "findings": [],
+      "error": null
+    },
+    {
+      "chain": "OP",
+      "scannedAt": "2026-05-17T16:12:10.072Z",
+      "identity": {
+        "delegated": false,
+        "delegationTarget": null,
+        "txCount": null,
+        "balanceWei": null,
+        "codePrefix": null
+      },
+      "logsScanned": 0,
+      "findings": [],
+      "error": null
+    },
+    {
+      "chain": "AVAX",
+      "scannedAt": "2026-05-17T16:12:10.088Z",
+      "identity": {
+        "delegated": false,
+        "delegationTarget": null,
+        "txCount": null,
+        "balanceWei": null,
+        "codePrefix": null
+      },
+      "logsScanned": 0,
+      "findings": [],
+      "error": null
+    },
+    {
+      "chain": "FTM",
+      "scannedAt": "2026-05-17T16:12:09.844Z",
+      "identity": {
+        "delegated": false,
+        "delegationTarget": null,
+        "txCount": null,
+        "balanceWei": null,
+        "codePrefix": null
+      },
+      "logsScanned": 0,
+      "findings": [],
+      "error": null
+    },
+    {
+      "chain": "CRO",
+      "scannedAt": "2026-05-17T16:12:10.075Z",
+      "identity": {
+        "delegated": false,
+        "delegationTarget": null,
+        "txCount": null,
+        "balanceWei": null,
+        "codePrefix": null
+      },
+      "logsScanned": 0,
+      "findings": [],
+      "error": null
+    },
+    {
+      "chain": "GNO",
+      "scannedAt": "2026-05-17T16:12:10.031Z",
+      "identity": {
+        "delegated": false,
+        "delegationTarget": null,
+        "txCount": null,
+        "balanceWei": null,
+        "codePrefix": null
+      },
+      "logsScanned": 0,
+      "findings": [],
+      "error": null
+    },
+    {
+      "chain": "LINEA",
+      "scannedAt": "2026-05-17T16:12:10.072Z",
+      "identity": {
+        "delegated": false,
+        "delegationTarget": null,
+        "txCount": null,
+        "balanceWei": null,
+        "codePrefix": null
+      },
+      "logsScanned": 0,
+      "findings": [],
+      "error": null
+    },
+    {
+      "chain": "PULSE",
+      "scannedAt": "2026-05-17T16:12:09.845Z",
+      "identity": {
+        "delegated": false,
+        "delegationTarget": null,
+        "txCount": null,
+        "balanceWei": null,
+        "codePrefix": null
+      },
+      "logsScanned": 0,
+      "findings": [],
+      "error": null
+    },
+    {
+      "chain": "RONIN",
+      "scannedAt": "2026-05-17T16:12:10.030Z",
+      "identity": {
+        "delegated": false,
+        "delegationTarget": null,
+        "txCount": null,
+        "balanceWei": null,
+        "codePrefix": null
+      },
+      "logsScanned": 0,
+      "findings": [],
+      "error": null
+    },
+    {
+      "chain": "CHZ",
+      "scannedAt": "2026-05-17T16:12:10.460Z",
+      "identity": {
+        "delegated": false,
+        "delegationTarget": null,
+        "txCount": 0,
+        "balanceWei": "0",
+        "codePrefix": "0x"
+      },
+      "logsScanned": 0,
+      "findings": [],
+      "error": null
+    },
+    {
+      "chain": "MOONBEAM",
+      "scannedAt": "2026-05-17T16:12:10.082Z",
+      "identity": {
+        "delegated": false,
+        "delegationTarget": null,
+        "txCount": null,
+        "balanceWei": null,
+        "codePrefix": null
+      },
+      "logsScanned": 0,
+      "findings": [],
+      "error": null
+    },
+    {
+      "chain": "MOONRIVER",
+      "scannedAt": "2026-05-17T16:12:10.063Z",
+      "identity": {
+        "delegated": false,
+        "delegationTarget": null,
+        "txCount": null,
+        "balanceWei": null,
+        "codePrefix": null
+      },
+      "logsScanned": 0,
+      "findings": [],
+      "error": null
+    },
+    {
+      "chain": "FLOW",
+      "scannedAt": "2026-05-17T16:12:10.047Z",
+      "identity": {
+        "delegated": false,
+        "delegationTarget": null,
+        "txCount": null,
+        "balanceWei": null,
+        "codePrefix": null
+      },
+      "logsScanned": 0,
+      "findings": [],
+      "error": null
+    },
+    {
+      "chain": "LISK",
+      "scannedAt": "2026-05-17T16:12:10.051Z",
+      "identity": {
+        "delegated": false,
+        "delegationTarget": null,
+        "txCount": null,
+        "balanceWei": null,
+        "codePrefix": null
+      },
+      "logsScanned": 0,
+      "findings": [],
+      "error": null
+    }
+  ]
+}
