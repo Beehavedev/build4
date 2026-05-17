@@ -1633,6 +1633,17 @@ function FortyTwoTradeModal({
   );
 }
 
+interface PolymarketBookLevel { price: number; size: number }
+interface PolymarketBook {
+  tokenId: string;
+  bids: PolymarketBookLevel[];
+  asks: PolymarketBookLevel[];
+  midPrice: number | null;
+  bestBid: number | null;
+  bestAsk: number | null;
+  spread: number | null;
+}
+
 function PolymarketTradeModal({
   session, market, event, onClose, onTraded,
 }: {
@@ -1651,23 +1662,67 @@ function PolymarketTradeModal({
 
   const yesLabel = outcomes[0] ?? "YES";
   const noLabel = outcomes[1] ?? "NO";
-  const yesPrice = num(outcomePrices[0]);
-  const noPrice = num(outcomePrices[1]);
+  const yesPriceStatic = num(outcomePrices[0]);
+  const noPriceStatic = num(outcomePrices[1]);
 
   const [outcomeIdx, setOutcomeIdx] = useState<0 | 1>(0);
   const [amount, setAmount] = useState<string>("5");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [book, setBook] = useState<PolymarketBook | null>(null);
+  const [bookErr, setBookErr] = useState<string | null>(null);
+  const [bookStale, setBookStale] = useState(false);
+
+  const activeTokenId = clobTokenIds[outcomeIdx];
+
+  useEffect(() => {
+    if (!activeTokenId) return;
+    let cancelled = false;
+    setBook(null);
+    setBookErr(null);
+    setBookStale(false);
+    const tick = async () => {
+      try {
+        const r: any = await session.apiFetch(`/api/polymarket/orderbook/${activeTokenId}`);
+        if (cancelled) return;
+        if (r?.book) {
+          setBook(r.book as PolymarketBook);
+          setBookStale(!!r.stale);
+          setBookErr(null);
+        } else if (r?.error) {
+          setBookErr(String(r.error));
+        }
+      } catch (e: any) {
+        if (cancelled) return;
+        setBookErr(e?.message || "orderbook unavailable");
+      }
+    };
+    tick();
+    const id = setInterval(tick, 1500);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [activeTokenId, session]);
+
+  const liveAsk = book?.bestAsk ?? null;
+  const liveBid = book?.bestBid ?? null;
+  const livePriceReady = !!(liveAsk && liveAsk > 0 && liveAsk < 1);
+  const livePrice = livePriceReady ? (liveAsk as number) : 0;
+  const sizeNum = Number(amount);
+  const impliedCost = (Number.isFinite(sizeNum) && sizeNum > 0 && livePriceReady)
+    ? sizeNum
+    : 0;
+  const impliedShares = (Number.isFinite(sizeNum) && sizeNum > 0 && livePriceReady)
+    ? sizeNum / livePrice
+    : 0;
 
   const submit = async () => {
-    const tokenId = clobTokenIds[outcomeIdx];
+    const tokenId = activeTokenId;
     const conditionId = market?.conditionId;
     const outcomeLabel = outcomeIdx === 0 ? yesLabel : noLabel;
-    const price = outcomeIdx === 0 ? yesPrice : noPrice;
     if (!tokenId || !conditionId) { setErr("Market is missing conditionId / tokenId"); return; }
     const sizeUsdc = Number(amount);
     if (!Number.isFinite(sizeUsdc) || sizeUsdc <= 0) { setErr("Enter a valid USDC amount"); return; }
-    if (!(price > 0 && price < 1)) { setErr("No live price for this outcome"); return; }
+    if (!livePriceReady) { setErr("Live price unavailable — wait for the orderbook to load or try again"); return; }
+    const price = livePrice;
     setBusy(true);
     setErr(null);
     try {
@@ -1705,10 +1760,11 @@ function PolymarketTradeModal({
         <div className="font-mono text-[11px] text-muted-foreground mb-4 break-words">{event?.title || market?.question || "—"}</div>
 
         <div className="font-mono text-[10px] text-muted-foreground uppercase mb-2">Outcome</div>
-        <div className="grid grid-cols-2 gap-2 mb-4">
+        <div className="grid grid-cols-2 gap-2 mb-3">
           {[0, 1].map((idx) => {
             const label = idx === 0 ? yesLabel : noLabel;
-            const price = idx === 0 ? yesPrice : noPrice;
+            const staticP = idx === 0 ? yesPriceStatic : noPriceStatic;
+            const liveP = (idx === outcomeIdx && livePriceReady) ? livePrice : null;
             const selected = outcomeIdx === idx;
             return (
               <button
@@ -1723,10 +1779,65 @@ function PolymarketTradeModal({
                 }`}
               >
                 <div>{label}</div>
-                <div className="text-[10px] text-muted-foreground mt-1">@ {(price * 100).toFixed(1)}¢</div>
+                <div className="text-[10px] text-muted-foreground mt-1">
+                  {liveP
+                    ? `ask ${(liveP * 100).toFixed(1)}¢`
+                    : (staticP > 0
+                      ? `ref ${(staticP * 100).toFixed(1)}¢`
+                      : "—")}
+                </div>
               </button>
             );
           })}
+        </div>
+
+        <div
+          className="rounded border border-border bg-background/60 p-2 mb-4 font-mono text-[10px]"
+          data-testid="polymarket-book-panel"
+        >
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-muted-foreground uppercase">
+              {outcomeIdx === 0 ? yesLabel : noLabel} book{" "}
+              {bookStale && <span className="text-amber-400">(stale)</span>}
+            </span>
+            <span className="text-muted-foreground">
+              {book?.midPrice != null
+                ? `mid ${(book.midPrice * 100).toFixed(1)}¢`
+                : "mid —"}
+              {" · "}
+              {liveBid != null && liveAsk != null
+                ? `spread ${((liveAsk - liveBid) * 100).toFixed(2)}¢`
+                : "spread —"}
+            </span>
+          </div>
+          {bookErr && !book ? (
+            <div className="text-red-400">Orderbook unavailable: {bookErr}</div>
+          ) : !book ? (
+            <div className="text-muted-foreground">Loading book…</div>
+          ) : (
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <div className="text-green-400 mb-0.5">BIDS</div>
+                {book.bids.slice(0, 3).map((l, i) => (
+                  <div key={i} className="flex justify-between text-green-400" data-testid={`polymarket-bid-${i}`}>
+                    <span>{(l.price * 100).toFixed(1)}¢</span>
+                    <span className="text-muted-foreground">{l.size.toFixed(0)}</span>
+                  </div>
+                ))}
+                {book.bids.length === 0 && <div className="text-muted-foreground">—</div>}
+              </div>
+              <div>
+                <div className="text-red-400 mb-0.5">ASKS</div>
+                {book.asks.slice(0, 3).map((l, i) => (
+                  <div key={i} className="flex justify-between text-red-400" data-testid={`polymarket-ask-${i}`}>
+                    <span>{(l.price * 100).toFixed(1)}¢</span>
+                    <span className="text-muted-foreground">{l.size.toFixed(0)}</span>
+                  </div>
+                ))}
+                {book.asks.length === 0 && <div className="text-muted-foreground">—</div>}
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="font-mono text-[10px] text-muted-foreground uppercase mb-2">USDC amount</div>
@@ -1737,19 +1848,36 @@ function PolymarketTradeModal({
           value={amount}
           onChange={(e) => setAmount(e.target.value)}
           data-testid="input-polymarket-amount"
-          className="w-full rounded border border-border bg-background px-3 py-2 font-mono text-sm text-foreground mb-4"
+          className="w-full rounded border border-border bg-background px-3 py-2 font-mono text-sm text-foreground mb-2"
         />
+
+        <div className="font-mono text-[10px] text-muted-foreground mb-3 flex justify-between" data-testid="polymarket-implied-cost">
+          <span>
+            {livePriceReady
+              ? `live ask ${(livePrice * 100).toFixed(1)}¢`
+              : (book ? "no live ask — book empty" : "waiting for live book…")}
+          </span>
+          <span>
+            {impliedShares > 0
+              ? `≈ ${impliedShares.toFixed(2)} shares for ${impliedCost.toFixed(2)} USDC`
+              : "—"}
+          </span>
+        </div>
 
         {err && <div className="rounded border border-red-500/40 bg-red-500/10 p-2 mb-3 font-mono text-[11px] text-red-400">{err}</div>}
 
         <button
           type="button"
           onClick={submit}
-          disabled={busy}
+          disabled={busy || !livePriceReady}
           data-testid="button-polymarket-trade-submit"
           className="w-full rounded border border-blue-400/40 bg-blue-400/10 px-3 py-2 font-mono text-xs text-blue-400 hover:bg-blue-400/20 disabled:opacity-50"
         >
-          {busy ? "Submitting…" : `Buy ${outcomeIdx === 0 ? yesLabel : noLabel}`}
+          {busy
+            ? "Submitting…"
+            : livePriceReady
+              ? `Buy ${outcomeIdx === 0 ? yesLabel : noLabel} @ ${(livePrice * 100).toFixed(1)}¢`
+              : "Waiting for live price…"}
         </button>
         <div className="font-mono text-[10px] text-muted-foreground mt-2 text-center">
           Order settles to your Polygon Safe. Gas paid by builder relayer — no MATIC needed.
