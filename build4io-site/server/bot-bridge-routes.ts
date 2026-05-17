@@ -301,7 +301,29 @@ export function registerBotBridgeRoutes(app: Express) {
         .sort((a: any, b: any) => tsOf(b) - tsOf(a))
         .slice(0, 200);
 
-      res.json({ ok: true, positions });
+      // Task #120: aggregate realised PnL across every BUY lot that has
+      // been wholly or partially sold. Sum is computed against the full
+      // result set (pre-`slice(0, 200)`) so a user with >200 lots still
+      // gets an accurate KPI even though the row list is truncated.
+      let totalRealisedPnl = 0;
+      let realisedLotCount = 0;
+      for (const row of r.rows) {
+        if (row.side !== "BUY") continue;
+        const a = acc.get(row.id);
+        if (!a || a.soldQty <= 0) continue;
+        const buyPrice = Number(row.price) || 0;
+        totalRealisedPnl += a.proceeds - a.soldQty * buyPrice;
+        realisedLotCount += 1;
+      }
+
+      res.json({
+        ok: true,
+        positions,
+        totals: {
+          realisedPnl: totalRealisedPnl,
+          realisedLotCount,
+        },
+      });
     } catch (err: any) {
       const msg = String(err?.message ?? err);
       // Table or column missing on a fresh deploy — degrade to empty.

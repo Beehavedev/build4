@@ -857,6 +857,7 @@ function NotConnected({ title, sub, accent, color, icon: Icon }: { title: string
 function PolymarketPane({ session }: { session: any }) {
   const [wallet, setWallet] = useState<any>(null);
   const [positions, setPositions] = useState<any[]>([]);
+  const [totals, setTotals] = useState<{ realisedPnl: number; realisedLotCount: number } | null>(null);
   const [events, setEvents] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -898,8 +899,15 @@ function PolymarketPane({ session }: { session: any }) {
         const errs: string[] = [];
         if (w?.ok) setWallet(w);
         else errs.push(`wallet: ${w?.error || "unknown"}`);
-        if (p?.ok) setPositions(Array.isArray(p.positions) ? p.positions : []);
-        else { setPositions([]); errs.push(`positions: ${p?.error || "unknown"}`); }
+        if (p?.ok) {
+          setPositions(Array.isArray(p.positions) ? p.positions : []);
+          const t = p.totals;
+          if (t && typeof t.realisedPnl === "number") {
+            setTotals({ realisedPnl: Number(t.realisedPnl) || 0, realisedLotCount: Number(t.realisedLotCount) || 0 });
+          } else {
+            setTotals(null);
+          }
+        } else { setPositions([]); setTotals(null); errs.push(`positions: ${p?.error || "unknown"}`); }
         // events endpoint returns { ok, events: gamma-array }. Tolerate either array or { events }.
         if (ev?.ok) {
           const raw = Array.isArray(ev.events) ? ev.events : Array.isArray(ev.events?.events) ? ev.events.events : [];
@@ -1061,7 +1069,7 @@ function PolymarketPane({ session }: { session: any }) {
     <div>
       <VenueHeader title="Polymarket" sub="Gasless prediction markets — Safe-routed, USDC settled on Polygon." accent="border-blue-400/40 text-blue-400" />
       {err && <div className="rounded-md border border-red-500/40 bg-red-500/10 p-3 mb-4 font-mono text-[11px] text-red-400">{err}</div>}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
         <div className="rounded-md border bg-card/60 p-4">
           <div className="font-mono text-[10px] text-muted-foreground uppercase mb-1">Safe (deposit)</div>
           <div className="font-mono text-xs text-foreground break-all" data-testid="text-polymarket-safe">
@@ -1073,6 +1081,22 @@ function PolymarketPane({ session }: { session: any }) {
           <div className="font-mono text-[10px] text-muted-foreground uppercase mb-1">USDC.e in Safe</div>
           <div className="font-mono text-lg text-foreground" data-testid="text-polymarket-usdc">
             {wallet?.balances ? fmtUsd(num(wallet.balances.usdc)) : "—"}
+          </div>
+        </div>
+        <div className="rounded-md border bg-card/60 p-4">
+          <div className="font-mono text-[10px] text-muted-foreground uppercase mb-1">Realised PnL</div>
+          <div
+            className={`font-mono text-lg ${totals && totals.realisedPnl > 0 ? "text-emerald-400" : totals && totals.realisedPnl < 0 ? "text-red-400" : "text-foreground"}`}
+            data-testid="text-polymarket-realised-pnl"
+          >
+            {totals
+              ? `${totals.realisedPnl >= 0 ? "+" : "−"}${fmtUsd(Math.abs(totals.realisedPnl))}`
+              : "—"}
+          </div>
+          <div className="font-mono text-[10px] text-muted-foreground mt-1" data-testid="text-polymarket-realised-pnl-sub">
+            {totals && totals.realisedLotCount > 0
+              ? `${totals.realisedLotCount} lot${totals.realisedLotCount === 1 ? "" : "s"} sold`
+              : "no closes yet"}
           </div>
         </div>
         <div className="rounded-md border bg-card/60 p-4">
