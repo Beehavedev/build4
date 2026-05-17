@@ -856,6 +856,9 @@ function PolymarketPane({ session }: { session: any }) {
   const [actionMsg, setActionMsg] = useState<string | null>(null);
   const [reloadTick, setReloadTick] = useState(0);
   const [tradeIntent, setTradeIntent] = useState<{ market: any; event: any } | null>(null);
+  // Per-row sell fraction (1 = 100%). Defaults to 100% so a single tap still
+  // dumps the whole position, matching the bot's one-tap UX.
+  const [sellFraction, setSellFraction] = useState<Record<string, number>>({});
 
   useEffect(() => {
     if (!session.ready) {
@@ -908,7 +911,7 @@ function PolymarketPane({ session }: { session: any }) {
     }
   };
 
-  const runSell = async (p: any) => {
+  const runSell = async (p: any, fraction: number = 1) => {
     // Token quantity for the SELL: prefer the recorded fill, fall back to
     // (sizeUsdc / entryPrice) when the SDK didn't report a fill size — an
     // order placed at $5 @ 32¢ implies ~15.625 outcome tokens. Mirrors the
@@ -916,9 +919,13 @@ function PolymarketPane({ session }: { session: any }) {
     const fillSize = num(p.fillSize);
     const entryPrice = num(p.entryPrice ?? p.fillPrice ?? p.price);
     const sizeUsdc = num(p.sizeUsdc ?? p.size);
-    const qty = fillSize > 0
+    const fullQty = fillSize > 0
       ? fillSize
       : (entryPrice > 0 ? sizeUsdc / entryPrice : 0);
+    const frac = Math.max(0, Math.min(1, Number.isFinite(fraction) ? fraction : 1));
+    // Round to 4 decimals so we don't send tiny floating-point dust to the
+    // SDK; CTF outcome tokens are 6-decimal ERC-1155 so 4dp is plenty.
+    const qty = Math.floor(fullQty * frac * 10000) / 10000;
     if (qty <= 0 || !p.tokenId) {
       setActionMsg("Sell failed: no sellable quantity for this position");
       return;
@@ -1128,16 +1135,40 @@ function PolymarketPane({ session }: { session: any }) {
                       {isRedeemBusy ? "Redeeming…" : "Redeem"}
                     </button>
                   ) : canSell ? (
-                    <button
-                      type="button"
-                      onClick={() => runSell(p)}
-                      disabled={isSellBusy}
-                      title="Exit this position at the best executable bid"
-                      data-testid={`button-polymarket-sell-${p.id}`}
-                      className="rounded border border-red-400/40 bg-red-400/10 px-2 py-1 font-mono text-[10px] text-red-400 hover:bg-red-400/20 disabled:opacity-50"
-                    >
-                      {isSellBusy ? "Selling…" : "Sell"}
-                    </button>
+                    <div className="flex items-center gap-1">
+                      <div className="flex rounded border border-red-400/30 overflow-hidden" role="group" aria-label="Sell size">
+                        {[0.25, 0.5, 0.75, 1].map((f) => {
+                          const selected = (sellFraction[p.id] ?? 1) === f;
+                          return (
+                            <button
+                              key={f}
+                              type="button"
+                              onClick={() => setSellFraction((m) => ({ ...m, [p.id]: f }))}
+                              disabled={isSellBusy}
+                              data-testid={`button-polymarket-sell-pct-${p.id}-${Math.round(f * 100)}`}
+                              className={
+                                "px-1.5 py-1 font-mono text-[10px] disabled:opacity-50 " +
+                                (selected
+                                  ? "bg-red-400/30 text-red-200"
+                                  : "bg-red-400/5 text-red-400/70 hover:bg-red-400/15")
+                              }
+                            >
+                              {Math.round(f * 100)}%
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => runSell(p, sellFraction[p.id] ?? 1)}
+                        disabled={isSellBusy}
+                        title={`Sell ${Math.round((sellFraction[p.id] ?? 1) * 100)}% at the best executable bid`}
+                        data-testid={`button-polymarket-sell-${p.id}`}
+                        className="rounded border border-red-400/40 bg-red-400/10 px-2 py-1 font-mono text-[10px] text-red-400 hover:bg-red-400/20 disabled:opacity-50"
+                      >
+                        {isSellBusy ? "Selling…" : `Sell ${Math.round((sellFraction[p.id] ?? 1) * 100)}%`}
+                      </button>
+                    </div>
                   ) : (
                     <div className="font-mono text-[10px] text-muted-foreground w-8 text-right">—</div>
                   )}
