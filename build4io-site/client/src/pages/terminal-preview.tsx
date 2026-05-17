@@ -22,6 +22,14 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { WalletConnector } from "@/components/wallet-connector";
 import { WalletPanel } from "@/components/wallet-panel";
 import { Wallet as WalletIcon } from "lucide-react";
@@ -856,9 +864,16 @@ function PolymarketPane({ session }: { session: any }) {
   const [actionMsg, setActionMsg] = useState<string | null>(null);
   const [reloadTick, setReloadTick] = useState(0);
   const [tradeIntent, setTradeIntent] = useState<{ market: any; event: any } | null>(null);
-  // Per-row sell fraction (1 = 100%). Defaults to 100% so a single tap still
-  // dumps the whole position, matching the bot's one-tap UX.
+  // Per-row sell fraction (1 = 100%). Defaults to 100% so the slider matches
+  // the bot's full-exit default; the confirm dialog still gates submission.
   const [sellFraction, setSellFraction] = useState<Record<string, number>>({});
+  const [sellIntent, setSellIntent] = useState<{
+    position: any;
+    qty: number;
+    bestBid: number | null;
+    loadingBook: boolean;
+    bookErr: string | null;
+  } | null>(null);
 
   useEffect(() => {
     if (!session.ready) {
@@ -911,7 +926,7 @@ function PolymarketPane({ session }: { session: any }) {
     }
   };
 
-  const runSell = async (p: any, fraction: number = 1) => {
+  const requestSell = (p: any, fraction: number = 1) => {
     // Token quantity for the SELL: prefer the recorded fill, fall back to
     // (sizeUsdc / entryPrice) when the SDK didn't report a fill size — an
     // order placed at $5 @ 32¢ implies ~15.625 outcome tokens. Mirrors the
@@ -930,25 +945,41 @@ function PolymarketPane({ session }: { session: any }) {
       setActionMsg("Sell failed: no sellable quantity for this position");
       return;
     }
+    setActionMsg(null);
+    setSellIntent({ position: p, qty, bestBid: null, loadingBook: true, bookErr: null });
+    // Fetch the live best-bid so we can preview est. proceeds in the confirm
+    // dialog AND anchor the SELL price (server enforces a 5% slippage gate).
+    session
+      .apiFetch(`/api/polymarket/orderbook/${encodeURIComponent(p.tokenId)}`)
+      .then((book: any) => {
+        const bestBid = num(book?.book?.bestBid);
+        setSellIntent((prev) => {
+          if (!prev || prev.position.id !== p.id) return prev;
+          if (!book?.ok || !(bestBid > 0 && bestBid < 1)) {
+            return { ...prev, loadingBook: false, bestBid: null, bookErr: book?.error || "no live bid" };
+          }
+          return { ...prev, loadingBook: false, bestBid, bookErr: null };
+        });
+      })
+      .catch((e: any) => {
+        setSellIntent((prev) => prev && prev.position.id === p.id
+          ? { ...prev, loadingBook: false, bestBid: null, bookErr: e?.message || "orderbook fetch failed" }
+          : prev);
+      });
+  };
+
+  const confirmSell = async () => {
+    if (!sellIntent) return;
+    const { position: p, qty, bestBid } = sellIntent;
+    if (!(bestBid && bestBid > 0 && bestBid < 1)) {
+      setActionMsg(`Sell failed: no live bid for this outcome. Try again in a moment — the book may have thinned out.`);
+      setSellIntent(null);
+      return;
+    }
+    setSellIntent(null);
     setBusy(`sell-${p.id}`);
     setActionMsg(null);
     try {
-      // Fetch the current orderbook so we can anchor the SELL to the live
-      // best-bid. The server's /api/polymarket/order uses `price` as the
-      // slippage-anchor (rejects >5% drift). Sending the live best-bid is
-      // both correct (it's the realistic exit price) and safe (the gate
-      // protects against a stale book tearing the user a bad fill).
-      const book: any = await session
-        .apiFetch(`/api/polymarket/orderbook/${encodeURIComponent(p.tokenId)}`)
-        .catch((e: any) => ({ ok: false, error: e?.message || "orderbook fetch failed" }));
-      const bestBid = num(book?.book?.bestBid);
-      if (!book?.ok || !(bestBid > 0 && bestBid < 1)) {
-        setActionMsg(
-          `Sell failed: no live bid for this outcome${book?.error ? ` (${book.error})` : ""}. ` +
-          `Try again in a moment — the book may have thinned out.`,
-        );
-        return;
-      }
       const r: any = await session.apiFetch("/api/polymarket/order", {
         method: "POST",
         body: {
@@ -1160,7 +1191,7 @@ function PolymarketPane({ session }: { session: any }) {
                       </div>
                       <button
                         type="button"
-                        onClick={() => runSell(p, sellFraction[p.id] ?? 1)}
+                        onClick={() => requestSell(p, sellFraction[p.id] ?? 1)}
                         disabled={isSellBusy}
                         title={`Sell ${Math.round((sellFraction[p.id] ?? 1) * 100)}% at the best executable bid`}
                         data-testid={`button-polymarket-sell-${p.id}`}
@@ -1187,6 +1218,73 @@ function PolymarketPane({ session }: { session: any }) {
           onTraded={(msg) => { setActionMsg(msg); setTradeIntent(null); setReloadTick((t) => t + 1); }}
         />
       )}
+      <Dialog open={!!sellIntent} onOpenChange={(open) => { if (!open) setSellIntent(null); }}>
+        <DialogContent data-testid="dialog-polymarket-sell-confirm">
+          <DialogHeader>
+            <DialogTitle>Confirm sell</DialogTitle>
+            <DialogDescription>
+              Submitting at the live best bid. The server rejects fills more than 5% off this price.
+            </DialogDescription>
+          </DialogHeader>
+          {sellIntent && (
+            <div className="space-y-2 font-mono text-xs">
+              <div className="flex justify-between gap-3">
+                <span className="text-muted-foreground">Market</span>
+                <span className="text-right text-foreground truncate max-w-[60%]" data-testid="text-sell-confirm-market">
+                  {sellIntent.position.marketTitle || sellIntent.position.marketSlug || sellIntent.position.conditionId?.slice(0, 12)}
+                </span>
+              </div>
+              <div className="flex justify-between gap-3">
+                <span className="text-muted-foreground">Outcome</span>
+                <span className="text-foreground" data-testid="text-sell-confirm-outcome">
+                  {sellIntent.position.outcome || sellIntent.position.outcomeLabel || "—"}
+                </span>
+              </div>
+              <div className="flex justify-between gap-3">
+                <span className="text-muted-foreground">Quantity</span>
+                <span className="tabular-nums text-foreground" data-testid="text-sell-confirm-qty">
+                  {sellIntent.qty.toFixed(4)} sh
+                </span>
+              </div>
+              <div className="flex justify-between gap-3">
+                <span className="text-muted-foreground">Best bid</span>
+                <span className="tabular-nums text-foreground" data-testid="text-sell-confirm-bid">
+                  {sellIntent.loadingBook
+                    ? "loading…"
+                    : sellIntent.bestBid
+                      ? `$${sellIntent.bestBid.toFixed(3)}`
+                      : `— (${sellIntent.bookErr || "no live bid"})`}
+                </span>
+              </div>
+              <div className="flex justify-between gap-3 border-t border-border/40 pt-2">
+                <span className="text-muted-foreground">Est. proceeds</span>
+                <span className="tabular-nums text-foreground" data-testid="text-sell-confirm-proceeds">
+                  {sellIntent.bestBid ? fmtUsd(sellIntent.qty * sellIntent.bestBid) : "—"}
+                </span>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <button
+              type="button"
+              onClick={() => setSellIntent(null)}
+              data-testid="button-sell-confirm-cancel"
+              className="rounded border border-border bg-card px-3 py-1.5 font-mono text-xs text-foreground hover:bg-muted"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={confirmSell}
+              disabled={!sellIntent?.bestBid || sellIntent?.loadingBook}
+              data-testid="button-sell-confirm-submit"
+              className="rounded border border-red-400/40 bg-red-400/10 px-3 py-1.5 font-mono text-xs text-red-400 hover:bg-red-400/20 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {sellIntent?.loadingBook ? "Loading bid…" : "Confirm sell"}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
