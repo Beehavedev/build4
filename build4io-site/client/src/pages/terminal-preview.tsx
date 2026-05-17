@@ -874,6 +874,9 @@ function PolymarketPane({ session }: { session: any }) {
     loadingBook: boolean;
     bookErr: string | null;
   } | null>(null);
+  // Per-row custom share quantity (raw input string so typing "0." works).
+  // Empty/missing means "use the percentage picker instead".
+  const [customQty, setCustomQty] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (!session.ready) {
@@ -926,7 +929,7 @@ function PolymarketPane({ session }: { session: any }) {
     }
   };
 
-  const requestSell = (p: any, fraction: number = 1) => {
+  const requestSell = (p: any, opts: { fraction?: number; explicitQty?: number } = {}) => {
     // Token quantity for the SELL: prefer the recorded fill, fall back to
     // (sizeUsdc / entryPrice) when the SDK didn't report a fill size — an
     // order placed at $5 @ 32¢ implies ~15.625 outcome tokens. Mirrors the
@@ -944,10 +947,24 @@ function PolymarketPane({ session }: { session: any }) {
       : (entryPrice > 0 ? sizeUsdc / entryPrice : 0);
     const soldQty = num(p.soldQty);
     const remainingQty = Math.max(0, originalQty - soldQty);
-    const frac = Math.max(0, Math.min(1, Number.isFinite(fraction) ? fraction : 1));
     // Round to 4 decimals so we don't send tiny floating-point dust to the
     // SDK; CTF outcome tokens are 6-decimal ERC-1155 so 4dp is plenty.
-    const qty = Math.floor(remainingQty * frac * 10000) / 10000;
+    let qty: number;
+    if (Number.isFinite(opts.explicitQty) && (opts.explicitQty as number) > 0) {
+      const requested = opts.explicitQty as number;
+      // Cap defensively so a typo can't try to sell more than what's left
+      // after any prior scale-outs.
+      const remainingQtyRounded = Math.floor(remainingQty * 10000) / 10000;
+      if (requested > remainingQtyRounded + 1e-9) {
+        setActionMsg(`Sell failed: only ${remainingQtyRounded.toFixed(4)} shares remaining`);
+        return;
+      }
+      qty = Math.floor(requested * 10000) / 10000;
+    } else {
+      const fraction = opts.fraction ?? 1;
+      const frac = Math.max(0, Math.min(1, Number.isFinite(fraction) ? fraction : 1));
+      qty = Math.floor(remainingQty * frac * 10000) / 10000;
+    }
     if (qty <= 0 || !p.tokenId) {
       setActionMsg("Sell failed: no sellable quantity for this position");
       return;
@@ -1194,40 +1211,87 @@ function PolymarketPane({ session }: { session: any }) {
                       {isRedeemBusy ? "Redeeming…" : "Redeem"}
                     </button>
                   ) : canSell ? (
-                    <div className="flex items-center gap-1">
-                      <div className="flex rounded border border-red-400/30 overflow-hidden" role="group" aria-label="Sell size">
-                        {[0.25, 0.5, 0.75, 1].map((f) => {
-                          const selected = (sellFraction[p.id] ?? 1) === f;
-                          return (
-                            <button
-                              key={f}
-                              type="button"
-                              onClick={() => setSellFraction((m) => ({ ...m, [p.id]: f }))}
-                              disabled={isSellBusy}
-                              data-testid={`button-polymarket-sell-pct-${p.id}-${Math.round(f * 100)}`}
-                              className={
-                                "px-1.5 py-1 font-mono text-[10px] disabled:opacity-50 " +
-                                (selected
-                                  ? "bg-red-400/30 text-red-200"
-                                  : "bg-red-400/5 text-red-400/70 hover:bg-red-400/15")
+                    (() => {
+                      const fullQtyRounded = Math.floor(remainingQty * 10000) / 10000;
+                      const raw = customQty[p.id] ?? "";
+                      const parsed = raw.trim() === "" ? NaN : Number(raw);
+                      const hasCustom = raw.trim() !== "";
+                      const customValid = Number.isFinite(parsed) && parsed > 0 && parsed <= fullQtyRounded + 1e-9;
+                      const customInvalid = hasCustom && !customValid;
+                      const sellLabel = hasCustom
+                        ? (customValid ? `Sell ${parsed.toFixed(4)} sh` : "Sell")
+                        : `Sell ${Math.round((sellFraction[p.id] ?? 1) * 100)}%`;
+                      return (
+                        <div className="flex items-center gap-1">
+                          <div className="flex rounded border border-red-400/30 overflow-hidden" role="group" aria-label="Sell size">
+                            {[0.25, 0.5, 0.75, 1].map((f) => {
+                              const selected = !hasCustom && (sellFraction[p.id] ?? 1) === f;
+                              return (
+                                <button
+                                  key={f}
+                                  type="button"
+                                  onClick={() => {
+                                    setSellFraction((m) => ({ ...m, [p.id]: f }));
+                                    setCustomQty((m) => ({ ...m, [p.id]: "" }));
+                                  }}
+                                  disabled={isSellBusy}
+                                  data-testid={`button-polymarket-sell-pct-${p.id}-${Math.round(f * 100)}`}
+                                  className={
+                                    "px-1.5 py-1 font-mono text-[10px] disabled:opacity-50 " +
+                                    (selected
+                                      ? "bg-red-400/30 text-red-200"
+                                      : "bg-red-400/5 text-red-400/70 hover:bg-red-400/15")
+                                  }
+                                >
+                                  {Math.round(f * 100)}%
+                                </button>
+                              );
+                            })}
+                          </div>
+                          <input
+                            type="number"
+                            inputMode="decimal"
+                            step="0.0001"
+                            min="0"
+                            max={fullQtyRounded}
+                            placeholder={`max ${fullQtyRounded.toFixed(2)}`}
+                            value={raw}
+                            onChange={(e) => setCustomQty((m) => ({ ...m, [p.id]: e.target.value }))}
+                            disabled={isSellBusy}
+                            title={`Custom share quantity (max ${fullQtyRounded.toFixed(4)})`}
+                            data-testid={`input-polymarket-sell-qty-${p.id}`}
+                            className={
+                              "w-24 rounded border bg-red-400/5 px-1.5 py-1 font-mono text-[10px] text-red-200 placeholder:text-red-400/40 disabled:opacity-50 " +
+                              (customInvalid ? "border-red-500/70" : "border-red-400/30")
+                            }
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (hasCustom) {
+                                if (!customValid) {
+                                  setActionMsg(`Sell failed: enter a quantity between 0 and ${fullQtyRounded.toFixed(4)}`);
+                                  return;
+                                }
+                                requestSell(p, { explicitQty: parsed });
+                              } else {
+                                requestSell(p, { fraction: sellFraction[p.id] ?? 1 });
                               }
-                            >
-                              {Math.round(f * 100)}%
-                            </button>
-                          );
-                        })}
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => requestSell(p, sellFraction[p.id] ?? 1)}
-                        disabled={isSellBusy}
-                        title={`Sell ${Math.round((sellFraction[p.id] ?? 1) * 100)}% at the best executable bid`}
-                        data-testid={`button-polymarket-sell-${p.id}`}
-                        className="rounded border border-red-400/40 bg-red-400/10 px-2 py-1 font-mono text-[10px] text-red-400 hover:bg-red-400/20 disabled:opacity-50"
-                      >
-                        {isSellBusy ? "Selling…" : `Sell ${Math.round((sellFraction[p.id] ?? 1) * 100)}%`}
-                      </button>
-                    </div>
+                            }}
+                            disabled={isSellBusy || customInvalid}
+                            title={
+                              hasCustom
+                                ? `Sell ${customValid ? parsed.toFixed(4) : "—"} shares at the best executable bid`
+                                : `Sell ${Math.round((sellFraction[p.id] ?? 1) * 100)}% at the best executable bid`
+                            }
+                            data-testid={`button-polymarket-sell-${p.id}`}
+                            className="rounded border border-red-400/40 bg-red-400/10 px-2 py-1 font-mono text-[10px] text-red-400 hover:bg-red-400/20 disabled:opacity-50"
+                          >
+                            {isSellBusy ? "Selling…" : sellLabel}
+                          </button>
+                        </div>
+                      );
+                    })()
                   ) : (
                     <div className="font-mono text-[10px] text-muted-foreground w-8 text-right">—</div>
                   )}
