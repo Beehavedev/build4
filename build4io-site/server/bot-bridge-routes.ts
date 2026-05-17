@@ -233,6 +233,27 @@ export function registerBotBridgeRoutes(app: Express) {
     }
   });
 
+  // GET /api/polymarket/orderbook/:tokenId — public CLOB orderbook proxy
+  // for one outcome token. Used by the web terminal's Sell button so the
+  // client can anchor the SELL request to the current best bid (server-side
+  // slippage gate in /api/polymarket/order rejects > 5% drift from this
+  // price). Mirrors the bot's /api/polymarket/orderbook/:tokenId.
+  app.get("/api/polymarket/orderbook/:tokenId", async (req, res) => {
+    const tokenId = String(req.params.tokenId ?? "");
+    if (!/^[0-9]{60,80}$/.test(tokenId)) {
+      return res.status(400).json({ ok: false, error: "invalid_token_id" });
+    }
+    try {
+      const { getOrderbook } = await import("../../src/services/polymarket");
+      const book = await getOrderbook(tokenId);
+      res.set("Cache-Control", "public, max-age=1").json({ ok: true, book });
+    } catch (err: any) {
+      const msg = err?.message ?? "clob_unavailable";
+      console.warn("[bot-bridge] /polymarket/orderbook failed:", msg);
+      res.status(502).json({ ok: false, error: msg });
+    }
+  });
+
   // ───────────────────────── fourmeme ─────────────────────────
 
   app.get("/api/fourmeme/positions", walletAuth, async (req: AuthedRequest, res) => {

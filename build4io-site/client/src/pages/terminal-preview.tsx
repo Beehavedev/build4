@@ -852,7 +852,7 @@ function PolymarketPane({ session }: { session: any }) {
   const [events, setEvents] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [busy, setBusy] = useState<string | null>(null); // "setup" | `redeem-${conditionId}`
+  const [busy, setBusy] = useState<string | null>(null); // "setup" | `redeem-${conditionId}` | `sell-${id}`
   const [actionMsg, setActionMsg] = useState<string | null>(null);
   const [reloadTick, setReloadTick] = useState(0);
   const [tradeIntent, setTradeIntent] = useState<{ market: any; event: any } | null>(null);
@@ -903,6 +903,65 @@ function PolymarketPane({ session }: { session: any }) {
       }
     } catch (e: any) {
       setActionMsg(e?.message || "Setup failed");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const runSell = async (p: any) => {
+    // Token quantity for the SELL: prefer the recorded fill, fall back to
+    // (sizeUsdc / entryPrice) when the SDK didn't report a fill size — an
+    // order placed at $5 @ 32¢ implies ~15.625 outcome tokens. Mirrors the
+    // miniapp's SELL sizing exactly (see src/miniapp/src/pages/PredictionsPolymarket.tsx).
+    const fillSize = num(p.fillSize);
+    const entryPrice = num(p.entryPrice ?? p.fillPrice ?? p.price);
+    const sizeUsdc = num(p.sizeUsdc ?? p.size);
+    const qty = fillSize > 0
+      ? fillSize
+      : (entryPrice > 0 ? sizeUsdc / entryPrice : 0);
+    if (qty <= 0 || !p.tokenId) {
+      setActionMsg("Sell failed: no sellable quantity for this position");
+      return;
+    }
+    setBusy(`sell-${p.id}`);
+    setActionMsg(null);
+    try {
+      // Fetch the current orderbook so we can anchor the SELL to the live
+      // best-bid. The server's /api/polymarket/order uses `price` as the
+      // slippage-anchor (rejects >5% drift). Sending the live best-bid is
+      // both correct (it's the realistic exit price) and safe (the gate
+      // protects against a stale book tearing the user a bad fill).
+      const book: any = await session
+        .apiFetch(`/api/polymarket/orderbook/${encodeURIComponent(p.tokenId)}`)
+        .catch((e: any) => ({ ok: false, error: e?.message || "orderbook fetch failed" }));
+      const bestBid = num(book?.book?.bestBid);
+      if (!book?.ok || !(bestBid > 0 && bestBid < 1)) {
+        setActionMsg(
+          `Sell failed: no live bid for this outcome${book?.error ? ` (${book.error})` : ""}. ` +
+          `Try again in a moment — the book may have thinned out.`,
+        );
+        return;
+      }
+      const r: any = await session.apiFetch("/api/polymarket/order", {
+        method: "POST",
+        body: {
+          tokenId: p.tokenId,
+          side: "SELL",
+          sizeUsdc: qty,
+          price: bestBid,
+          conditionId: p.conditionId,
+          marketTitle: p.marketTitle || p.marketSlug || p.conditionId,
+          outcomeLabel: p.outcome || p.outcomeLabel || "Yes",
+        } as any,
+      });
+      if (r?.ok) {
+        setActionMsg(`Sell submitted · ${p.outcome || p.outcomeLabel || ""}`.trim());
+        setReloadTick((t) => t + 1);
+      } else {
+        setActionMsg(r?.details || r?.error || "Sell failed");
+      }
+    } catch (e: any) {
+      setActionMsg(`Sell failed: ${String(e?.message ?? e).slice(0, 120)}`);
     } finally {
       setBusy(null);
     }
@@ -1034,6 +1093,21 @@ function PolymarketPane({ session }: { session: any }) {
               const status = String(p.status || "");
               const isResolvedWin = status === "resolved_win";
               const isRedeemBusy = busy === `redeem-${p.conditionId}`;
+              const isSellBusy = busy === `sell-${p.id}`;
+              // Mirror the miniapp's sellable gate: allow SELL on any non-failed
+              // BUY whose tokens are (or might be) at the Safe. 'placed' is
+              // included because the SDK frequently leaves matched orders in
+              // 'placed' state — gating only on filled/matched left users
+              // permanently stuck.
+              const sellableStatus = status === "filled" || status === "matched" || status === "placed";
+              const side = String(p.side || "BUY").toUpperCase();
+              const fillSize = num(p.fillSize);
+              const entryPrice = num(p.entryPrice ?? p.fillPrice ?? p.price);
+              const sizeUsdc = num(p.sizeUsdc ?? p.size);
+              const sellQty = fillSize > 0
+                ? fillSize
+                : (entryPrice > 0 ? sizeUsdc / entryPrice : 0);
+              const canSell = sellableStatus && !!p.tokenId && side === "BUY" && sellQty > 0;
               return (
                 <div key={p.id} className="flex items-center justify-between border-b border-border/40 pb-2 last:border-b-0 gap-3" data-testid={`row-polymarket-${p.id}`}>
                   <div className="flex-1 min-w-0">
@@ -1043,7 +1117,7 @@ function PolymarketPane({ session }: { session: any }) {
                   <div className="font-mono text-xs text-right tabular-nums">
                     {p.fillPrice ? `@ $${num(p.fillPrice).toFixed(3)}` : p.price ? `@ $${num(p.price).toFixed(3)}` : "—"}
                   </div>
-                  {isResolvedWin && (
+                  {isResolvedWin ? (
                     <button
                       type="button"
                       onClick={() => runRedeem(p.conditionId, false)}
@@ -1053,6 +1127,19 @@ function PolymarketPane({ session }: { session: any }) {
                     >
                       {isRedeemBusy ? "Redeeming…" : "Redeem"}
                     </button>
+                  ) : canSell ? (
+                    <button
+                      type="button"
+                      onClick={() => runSell(p)}
+                      disabled={isSellBusy}
+                      title="Exit this position at the best executable bid"
+                      data-testid={`button-polymarket-sell-${p.id}`}
+                      className="rounded border border-red-400/40 bg-red-400/10 px-2 py-1 font-mono text-[10px] text-red-400 hover:bg-red-400/20 disabled:opacity-50"
+                    >
+                      {isSellBusy ? "Selling…" : "Sell"}
+                    </button>
+                  ) : (
+                    <div className="font-mono text-[10px] text-muted-foreground w-8 text-right">—</div>
                   )}
                 </div>
               );
