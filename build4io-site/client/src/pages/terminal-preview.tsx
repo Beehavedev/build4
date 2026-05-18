@@ -2760,6 +2760,19 @@ function TradeDrawer({
   const [submitting, setSubmitting] = useState(false);
   const [submitErr, setSubmitErr] = useState<string | null>(null);
   const [submitOk, setSubmitOk] = useState<string | null>(null);
+  const [hlLinked, setHlLinked] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    if (!open || venue !== "hl" || !session.ready) {
+      if (venue !== "hl") setHlLinked(null);
+      return;
+    }
+    let cancelled = false;
+    session.apiFetch<any>("/api/hl/account")
+      .then((d) => { if (!cancelled) setHlLinked(d?.linked !== false); })
+      .catch(() => { if (!cancelled) setHlLinked(false); });
+    return () => { cancelled = true; };
+  }, [open, venue, session.ready, session.apiFetch]);
 
   // Sync drawer venue with caller-provided default whenever it (re)opens.
   useEffect(() => {
@@ -3063,6 +3076,11 @@ function TradeDrawer({
                 </>
               )}
 
+              {venue === "hl" && hlLinked === false && (
+                <div className="rounded-md border border-yellow-500/40 bg-yellow-500/10 p-3 font-mono text-[11px] text-yellow-500" data-testid="text-hl-not-linked">
+                  Hyperliquid not linked. Open the BUILD4 bot in Telegram → mini-app → Hyperliquid tab → provision agent wallet, then return here.
+                </div>
+              )}
               {submitErr && (
                 <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 font-mono text-[11px] text-destructive" data-testid="text-trade-error">
                   {submitErr}
@@ -3084,7 +3102,7 @@ function TradeDrawer({
 
             <div className="p-5 border-t">
               <Button
-                disabled={!session.ready || !selectedSym || submitting}
+                disabled={!session.ready || !selectedSym || submitting || (venue === "hl" && hlLinked === false)}
                 onClick={submit}
                 className="w-full font-mono tracking-widest text-xs uppercase h-11"
                 data-testid="button-confirm-trade"
@@ -3095,6 +3113,8 @@ function TradeDrawer({
                   ? "Connect wallet to trade"
                   : !selectedSym
                   ? "Pick a symbol"
+                  : venue === "hl" && hlLinked === false
+                  ? "Link Hyperliquid first"
                   : `Confirm ${sideLabel} · ${venue === "aster" ? `$${margin}` : `${hlSize || "—"} ${selectedSym}`}`}
               </Button>
             </div>
