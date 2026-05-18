@@ -24,7 +24,8 @@ const DEFAULT_COMP_NAME = "BUILD4 × PancakeSwap Season 1";
 const DEFAULT_COMP_DESC = "AI Agent Championship · 7-day BSC trading sprint";
 const DEFAULT_COMP_START_ISO = "2026-05-18T00:00:00Z";
 const DEFAULT_COMP_END_ISO = "2026-05-25T00:00:00Z";
-const DEFAULT_PRIZE_POOL_BNB = "3000";
+// Stored as USD — paid out in BNB at competition close.
+const DEFAULT_PRIZE_POOL_USD = "3000";
 const DEFAULT_MAX_ENTRIES = 500;
 
 // In-memory caches (60s) so leaderboard reads don't slam BSC RPCs.
@@ -82,7 +83,7 @@ export async function ensureDefaultCompetition(): Promise<void> {
     const endIso = process.env.COMP_END_ISO || DEFAULT_COMP_END_ISO;
     const name = process.env.COMP_NAME || DEFAULT_COMP_NAME;
     const desc = process.env.COMP_DESC || DEFAULT_COMP_DESC;
-    const prize = process.env.COMP_PRIZE_POOL || DEFAULT_PRIZE_POOL_BNB;
+    const prize = process.env.COMP_PRIZE_POOL || DEFAULT_PRIZE_POOL_USD;
     const maxEntries = Number(process.env.COMP_MAX_ENTRIES) || DEFAULT_MAX_ENTRIES;
     const existing = await db.execute(sql`SELECT id FROM aster_competition WHERE name = ${name} LIMIT 1`);
     if ((existing.rows ?? []).length > 0) return;
@@ -219,8 +220,8 @@ export function registerCompetitionRoutes(app: Express) {
           status: comp.status,
           startDate: comp.startDate.toISOString(),
           endDate: comp.endDate.toISOString(),
-          prizePoolBnb: comp.prizePool,
-          prizePoolUsd: Number(comp.prizePool) * bnbUsd,
+          prizePoolUsd: Number(comp.prizePool),
+          prizePoolBnb: bnbUsd > 0 ? Number(comp.prizePool) / bnbUsd : 0,
           maxEntries: comp.maxEntries,
           entryCount,
           bnbUsdPrice: bnbUsd,
@@ -395,8 +396,8 @@ export function registerCompetitionRoutes(app: Express) {
           status: comp.status,
           startDate: comp.startDate.toISOString(),
           endDate: comp.endDate.toISOString(),
-          prizePoolBnb: comp.prizePool,
-          prizePoolUsd: Number(comp.prizePool) * bnbUsd,
+          prizePoolUsd: Number(comp.prizePool),
+          prizePoolBnb: bnbUsd > 0 ? Number(comp.prizePool) / bnbUsd : 0,
           maxEntries: comp.maxEntries,
           entryCount: leaderboard.length,
           bnbUsdPrice: bnbUsd,

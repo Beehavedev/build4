@@ -497,7 +497,7 @@ type LiveLeaderRow = {
 type LiveLeaderboardResp = {
   ok: boolean;
   leaderboard: LiveLeaderRow[];
-  competition: { id: string; status: string; entryCount: number; bnbUsdPrice: number; prizePoolBnb: string; prizePoolUsd: number } | null;
+  competition: { id: string; status: string; entryCount: number; bnbUsdPrice: number; prizePoolUsd: number; prizePoolBnb: number } | null;
 };
 type MyEntryResp = {
   ok: boolean;
