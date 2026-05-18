@@ -28,7 +28,12 @@ import { runInferenceWithFallback, getAvailableProviders } from "./inference";
 // ─── Tuning ──────────────────────────────────────────────────────────────────
 const TICK_INTERVAL_MS = Number(process.env.PANCAKE_AGENT_TICK_MS) || 5 * 60_000;
 const MAX_CONCURRENT_ENTRIES = 2;
-const BUST_OUT_PCT = 0.90; // entry busts if equity ≤ 90% of starting balance
+// Bust-out fires when equity drops to ≤ (1 − MAX_DRAWDOWN_PCT) × starting.
+// Default: 10% drawdown → bust-out. Override via env if you want looser/tighter.
+const MAX_DRAWDOWN_PCT = Number(process.env.PANCAKE_AGENT_MAX_DRAWDOWN_PCT) || 0.10;
+const MIN_EQUITY_FRACTION = 1 - MAX_DRAWDOWN_PCT;
+// Postgres advisory lock key — prevents duplicate ticks across replicas.
+const TICK_LOCK_KEY = 0x42554c44; // 'BULD'
 const MIN_TRADE_BNB = 0.003;  // ~$1.80
 const MAX_TRADE_BNB = 0.05;   // ~$30 cap per single trade
 const PER_TRADE_PCT_OF_EQUITY = 0.10; // size each trade at 10% of current equity
@@ -104,23 +109,32 @@ async function getPriceContext(): Promise<string> {
   return lines.join("\n");
 }
 
-async function getHoldingsContext(walletAddress: string, trackedTokens: string[]): Promise<{ summary: string; holdings: Array<{ symbol: string; address: string; tokenWei: bigint; bnbValue: number }> }> {
+async function getHoldingsContext(walletAddress: string, trackedTokens: string[]): Promise<{ summary: string; holdings: Array<{ symbol: string; address: string; tokenWei: bigint; bnbValue: number }>; quoteFailures: number }> {
   const holdings: Array<{ symbol: string; address: string; tokenWei: bigint; bnbValue: number }> = [];
   const lines: string[] = [];
+  let quoteFailures = 0;
   for (const addr of trackedTokens.slice(0, 10)) {
+    const t = TOKEN_BY_ADDR.get(addr.toLowerCase()) || { symbol: addr.slice(0, 6), address: addr };
+    let tokenWei = 0n;
     try {
-      const t = TOKEN_BY_ADDR.get(addr.toLowerCase()) || { symbol: addr.slice(0, 6), address: addr };
-      const { tokenWei } = await getBscWalletBalance(walletAddress, addr);
-      if (tokenWei <= 0n) continue;
+      ({ tokenWei } = await getBscWalletBalance(walletAddress, addr));
+    } catch { continue; }
+    if (tokenWei <= 0n) continue;
+    try {
       const q = await pancakeQuoteSell(addr, tokenWei);
       const bnbValue = Number(ethers.formatEther(q.estimatedBnbWei));
       const info = await pancakeGetTokenInfo(addr);
       const tokenBal = Number(ethers.formatUnits(tokenWei, info.decimals));
       lines.push(`- ${t.symbol}: ${tokenBal.toFixed(6)} (worth ${bnbValue.toFixed(6)} BNB)`);
       holdings.push({ symbol: t.symbol, address: addr, tokenWei, bnbValue });
-    } catch { /* skip */ }
+    } catch {
+      // Has balance but no quote — record as failure so bust-out is suppressed
+      // rather than treating it as zero-value and falsely busting the user.
+      quoteFailures++;
+      lines.push(`- ${t.symbol}: balance held, price quote unavailable (skipping valuation)`);
+    }
   }
-  return { summary: lines.length ? lines.join("\n") : "(no token positions yet — all in BNB)", holdings };
+  return { summary: lines.length ? lines.join("\n") : "(no token positions yet — all in BNB)", holdings, quoteFailures };
 }
 
 function parseDecision(text: string): AgentDecision | null {
@@ -192,14 +206,20 @@ Rules:
   }
 }
 
-async function checkAndApplyBustOut(entry: EntryRow, currentEquityBnb: number): Promise<boolean> {
+async function checkAndApplyBustOut(entry: EntryRow, currentEquityBnb: number, quoteFailures: number = 0): Promise<boolean> {
   const startingBnb = Number(entry.starting_balance_usdt) || 0;
   if (startingBnb <= 0) return false;
-  if (currentEquityBnb / startingBnb <= BUST_OUT_PCT) {
+  // SAFETY: suppress bust-out when ANY held token failed to quote — its value
+  // is unknown, not zero. Better to skip the tick than falsely bust the user.
+  if (quoteFailures > 0) {
+    console.warn(`[PancakeAgent] bust-out check skipped for ${entry.id.slice(0, 8)} — ${quoteFailures} unquotable holdings (equity reading is incomplete)`);
+    return false;
+  }
+  if (currentEquityBnb / startingBnb <= MIN_EQUITY_FRACTION) {
     await db.execute(sql`
       UPDATE aster_competition_entries SET bust_out = true, last_updated = NOW() WHERE id = ${entry.id}
     `);
-    console.log(`[PancakeAgent] BUST-OUT triggered for entry ${entry.id} (${entry.persona}) at ${(currentEquityBnb / startingBnb * 100).toFixed(2)}% of starting`);
+    console.log(`[PancakeAgent] BUST-OUT triggered for entry ${entry.id} (${entry.persona}) at ${(currentEquityBnb / startingBnb * 100).toFixed(2)}% of starting (drawdown ≥ ${(MAX_DRAWDOWN_PCT * 100).toFixed(0)}%)`);
     return true;
   }
   return false;
@@ -272,12 +292,12 @@ async function processEntry(entry: EntryRow): Promise<void> {
 
     const { bnbWei } = await getBscWalletBalance(entry.wallet_address, "0x000000000000000000000000000000000000dEaD");
     const bnbBalance = Number(ethers.formatEther(bnbWei));
-    const { summary: holdingsCtx, holdings } = await getHoldingsContext(entry.wallet_address, trackedRaw);
+    const { summary: holdingsCtx, holdings, quoteFailures } = await getHoldingsContext(entry.wallet_address, trackedRaw);
     const currentEquity = bnbBalance + holdings.reduce((s, h) => s + h.bnbValue, 0);
     const startingBnb = Number(entry.starting_balance_usdt) || 0;
 
-    // Bust-out gate BEFORE trading.
-    if (await checkAndApplyBustOut(entry, currentEquity)) return;
+    // Bust-out gate BEFORE trading (suppressed if any quote failed — see helper).
+    if (await checkAndApplyBustOut(entry, currentEquity, quoteFailures)) return;
 
     // Get price snapshot (cached effectively because pancakeQuoteBuy hits BSC live).
     const priceCtx = await getPriceContext();
@@ -305,7 +325,7 @@ async function processEntry(entry: EntryRow): Promise<void> {
           return trackedRaw;
         } catch { return trackedRaw; }
       })();
-      const { holdings: postHoldings } = await getHoldingsContext(entry.wallet_address, trackedAfter);
+      const { holdings: postHoldings, quoteFailures: postQF } = await getHoldingsContext(entry.wallet_address, trackedAfter);
       const postEquity = postBnbBalance + postHoldings.reduce((s, h) => s + h.bnbValue, 0);
       const pnlBnb = postEquity - startingBnb;
       const pnlPct = startingBnb > 0 ? (pnlBnb / startingBnb) * 100 : 0;
@@ -314,7 +334,7 @@ async function processEntry(entry: EntryRow): Promise<void> {
         SET current_equity_usdt = ${postEquity}, pnl_usdt = ${pnlBnb}, pnl_percent = ${pnlPct}, last_updated = NOW()
         WHERE id = ${entry.id}
       `);
-      await checkAndApplyBustOut(entry, postEquity);
+      await checkAndApplyBustOut(entry, postEquity, postQF);
     }
   } catch (e: any) {
     console.error(`[PancakeAgent] processEntry failed for ${entry.id.slice(0, 8)}:`, e?.message ?? e);
@@ -339,11 +359,20 @@ let _tickInFlight = false;
 async function runPancakeAgentTick(): Promise<void> {
   if (_tickInFlight) return;
   _tickInFlight = true;
+  // Postgres session-level advisory lock so multiple server replicas can't
+  // process the same auto entries concurrently. pg_try_advisory_lock returns
+  // false immediately if another replica already holds it — we just skip.
+  let lockAcquired = false;
   try {
+    const lockRes = await db.execute(sql`SELECT pg_try_advisory_lock(${TICK_LOCK_KEY}) AS got`);
+    lockAcquired = Boolean((lockRes.rows ?? [])[0]?.got);
+    if (!lockAcquired) {
+      console.log("[PancakeAgent] tick skipped — another replica holds the lock");
+      return;
+    }
     const entries = await getAutoEntries();
     if (entries.length === 0) return;
     console.log(`[PancakeAgent] tick start — ${entries.length} auto entries`);
-    // Process in small concurrent batches.
     for (let i = 0; i < entries.length; i += MAX_CONCURRENT_ENTRIES) {
       const batch = entries.slice(i, i + MAX_CONCURRENT_ENTRIES);
       await Promise.all(batch.map(processEntry));
@@ -351,6 +380,10 @@ async function runPancakeAgentTick(): Promise<void> {
   } catch (e: any) {
     console.error("[PancakeAgent] tick failed:", e?.message ?? e);
   } finally {
+    if (lockAcquired) {
+      try { await db.execute(sql`SELECT pg_advisory_unlock(${TICK_LOCK_KEY})`); }
+      catch (e: any) { console.error("[PancakeAgent] unlock failed:", e?.message ?? e); }
+    }
     _tickInFlight = false;
   }
 }

@@ -817,7 +817,8 @@ export default function Competition() {
                   </div>
                 </div>
               ) : myEntry ? (
-                <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 p-4 rounded-lg border border-zinc-800 bg-zinc-950/80" data-testid="block-my-entry">
+                <div className="space-y-3" data-testid="block-my-entry">
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 p-4 rounded-lg border border-zinc-800 bg-zinc-950/80">
                   <div>
                     <div className="text-[10px] font-mono uppercase tracking-wider text-zinc-500">Status</div>
                     <div className="font-mono text-sm" style={{ color: myEntry.bustOut ? PCS_PINK : B4_GREEN }}>
@@ -848,6 +849,67 @@ export default function Competition() {
                       {myEntry.tradeCount}
                     </div>
                   </div>
+                </div>
+                {!myEntry.bustOut && (
+                  <div className="p-4 rounded-lg border border-zinc-800 bg-zinc-950/80 flex flex-col lg:flex-row lg:items-center gap-3 lg:justify-between" data-testid="block-mode-controls">
+                    <div>
+                      <div className="text-[10px] font-mono uppercase tracking-wider text-zinc-500 mb-1">Agent control</div>
+                      <div className="text-[11px] font-mono text-zinc-400">
+                        <span className="text-white font-semibold">Auto</span> = the BUILD4 agent trades for you on a 5-min loop ·{" "}
+                        <span className="text-white font-semibold">Manual</span> = only your hand trades count. Switch any time.
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <select
+                        value={myEntry.persona}
+                        onChange={async (e) => {
+                          const persona = e.target.value;
+                          try {
+                            const r = await session.apiFetch<{ ok: boolean; error?: string }>("/api/competition/mode", {
+                              method: "POST",
+                              body: JSON.stringify({ mode: myEntry.mode, persona }),
+                            });
+                            if (!r.ok) throw new Error(r.error || "update failed");
+                            await loadMe();
+                          } catch (err: any) { setJoinErr(err?.message || "Update failed"); }
+                        }}
+                        className="bg-zinc-900 border border-zinc-800 text-white font-mono text-xs rounded px-2 py-1.5"
+                        data-testid="select-persona"
+                      >
+                        <option value="manual">Persona…</option>
+                        <option value="Quant">Quant</option>
+                        <option value="Degen">Degen</option>
+                        <option value="Hunter">Hunter</option>
+                        <option value="Sniper">Sniper</option>
+                        <option value="Maximalist">Maximalist</option>
+                      </select>
+                      {(["manual", "copilot", "auto"] as const).map((m) => (
+                        <button
+                          key={m}
+                          onClick={async () => {
+                            try {
+                              const r = await session.apiFetch<{ ok: boolean; error?: string }>("/api/competition/mode", {
+                                method: "POST",
+                                body: JSON.stringify({ mode: m, persona: myEntry.persona }),
+                              });
+                              if (!r.ok) throw new Error(r.error || "update failed");
+                              await loadMe();
+                            } catch (err: any) { setJoinErr(err?.message || "Update failed"); }
+                          }}
+                          className={`font-mono text-[11px] uppercase tracking-wider px-3 py-1.5 rounded border transition-colors ${
+                            myEntry.mode === m
+                              ? "border-transparent text-white"
+                              : "border-zinc-800 text-zinc-400 hover:text-white hover:border-zinc-600"
+                          }`}
+                          style={myEntry.mode === m ? { background: PCS_GRADIENT } : undefined}
+                          data-testid={`button-mode-${m}`}
+                        >
+                          {m === "copilot" ? "Co-pilot" : m}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 </div>
               ) : null}
             </div>
