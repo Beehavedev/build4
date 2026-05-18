@@ -13,7 +13,6 @@
 
 import type { Express, Request, Response } from "express";
 import { ethers } from "ethers";
-import { storage } from "./storage";
 import {
   pancakeGetTokenInfo,
   pancakeQuoteBuy,
@@ -23,37 +22,11 @@ import {
   getBscWalletBalance,
 } from "./services/pancakeSwapTrading";
 import { recordPancakeTrade } from "./competition-routes";
+import { requireSiweAuthed } from "./competition-auth";
 
-async function resolveAuthedWallet(req: Request): Promise<{ chatId: string; walletAddress: string; privateKey: string } | { error: string; status: number }> {
-  const walletAddress = (req.headers["x-wallet-address"] as string || "").toLowerCase().trim();
-  if (!walletAddress || !/^0x[a-f0-9]{40}$/.test(walletAddress)) {
-    return { error: "Wallet header missing", status: 401 };
-  }
-  try {
-    const { db } = await import("./db");
-    const { telegramWallets } = await import("@shared/schema");
-    const { eq, and } = await import("drizzle-orm");
-    const rows = await db.select({
-      chatId: telegramWallets.chatId,
-      walletAddress: telegramWallets.walletAddress,
-      hasKey: telegramWallets.encryptedPrivateKey,
-    })
-      .from(telegramWallets)
-      .where(and(eq(telegramWallets.walletAddress, walletAddress)))
-      .limit(1);
-    if (rows.length === 0) {
-      return { error: "Wallet not registered. Connect on /autonomous-economy first to provision a BUILD4 wallet.", status: 404 };
-    }
-    if (!rows[0].hasKey) {
-      return { error: "Wallet has no custodial private key on file. This wallet was imported view-only.", status: 403 };
-    }
-    const pk = await storage.getPrivateKeyByWalletAddress(walletAddress);
-    if (!pk) return { error: "Failed to decrypt wallet key.", status: 500 };
-    return { chatId: rows[0].chatId, walletAddress, privateKey: pk };
-  } catch (e: any) {
-    return { error: e?.message || "Wallet lookup failed", status: 500 };
-  }
-}
+// All authed endpoints below use requireSiweAuthed (see competition-auth.ts):
+// SIWE cookie + matching x-wallet-address + CSRF Origin check on writes +
+// per-chatId rate limiting + idempotency-key replay protection on trades.
 
 export function registerPancakeRoutes(app: Express) {
   // Public: token info (+ optional pre-trade quote). No auth required so
@@ -92,8 +65,12 @@ export function registerPancakeRoutes(app: Express) {
   // Connected user: BNB balance + ERC20 balance of a given token. Used
   // by the trade panel to power Max pre-fill.
   app.get("/api/pancake/wallet-balance/:tokenAddress", async (req: Request, res: Response) => {
-    const auth = await resolveAuthedWallet(req);
-    if ("error" in auth) return res.status(auth.status).json({ ok: false, error: auth.error });
+    // Read-only — no PK fetch, no CSRF check, but still SIWE-gated so we
+    // don't leak balances for arbitrary registered wallets.
+    const auth = await requireSiweAuthed(req, {
+      rateLimit: { key: "pcs:balance", max: 60, windowMs: 60_000 },
+    });
+    if ("error" in auth) return res.status(auth.status).json({ ok: false, error: auth.error, code: auth.code });
     try {
       const tokenAddress = ethers.getAddress(String(req.params.tokenAddress));
       const { bnbWei, tokenWei, tokenDecimals, errors } = await getBscWalletBalance(auth.walletAddress, tokenAddress);
@@ -113,13 +90,18 @@ export function registerPancakeRoutes(app: Express) {
   });
 
   app.post("/api/pancake/buy", async (req: Request, res: Response) => {
-    const auth = await resolveAuthedWallet(req);
-    if ("error" in auth) return res.status(auth.status).json({ ok: false, error: auth.error });
+    const auth = await requireSiweAuthed(req, {
+      isWrite: true,
+      needPrivateKey: true,
+      rateLimit: { key: "pcs:buy", max: 10, windowMs: 60_000 },
+      idempotency: { ttlMs: 60_000 },
+    });
+    if ("error" in auth) return res.status(auth.status).json({ ok: false, error: auth.error, code: auth.code });
     try {
       const { tokenAddress, bnbAmount, slippageBps } = req.body ?? {};
       if (!tokenAddress || !bnbAmount) return res.status(400).json({ ok: false, error: "tokenAddress + bnbAmount required" });
       const bnbWei = ethers.parseEther(String(bnbAmount));
-      const result = await pancakeBuyTokenWithBnb(auth.privateKey, String(tokenAddress), bnbWei, {
+      const result = await pancakeBuyTokenWithBnb(auth.privateKey!, String(tokenAddress), bnbWei, {
         slippageBps: slippageBps != null ? Number(slippageBps) : undefined,
       });
       // Fire-and-forget competition hook — never blocks the response.
@@ -145,15 +127,20 @@ export function registerPancakeRoutes(app: Express) {
   });
 
   app.post("/api/pancake/sell", async (req: Request, res: Response) => {
-    const auth = await resolveAuthedWallet(req);
-    if ("error" in auth) return res.status(auth.status).json({ ok: false, error: auth.error });
+    const auth = await requireSiweAuthed(req, {
+      isWrite: true,
+      needPrivateKey: true,
+      rateLimit: { key: "pcs:sell", max: 10, windowMs: 60_000 },
+      idempotency: { ttlMs: 60_000 },
+    });
+    if ("error" in auth) return res.status(auth.status).json({ ok: false, error: auth.error, code: auth.code });
     try {
       const { tokenAddress, tokenAmount, slippageBps } = req.body ?? {};
       if (!tokenAddress || !tokenAmount) return res.status(400).json({ ok: false, error: "tokenAddress + tokenAmount required" });
       // Always resolve decimals on-chain — never trust the client.
       const info = await pancakeGetTokenInfo(String(tokenAddress));
       const tokensWei = ethers.parseUnits(String(tokenAmount), info.decimals);
-      const result = await pancakeSellTokenForBnb(auth.privateKey, String(tokenAddress), tokensWei, {
+      const result = await pancakeSellTokenForBnb(auth.privateKey!, String(tokenAddress), tokensWei, {
         slippageBps: slippageBps != null ? Number(slippageBps) : undefined,
       });
       recordPancakeTrade({

@@ -18,6 +18,7 @@ import {
   pancakeGetTokenInfo,
   getBscWalletBalance,
 } from "./services/pancakeSwapTrading";
+import { requireSiweAuthed } from "./competition-auth";
 
 // Competition window — must match constants in client/src/pages/competition.tsx.
 const DEFAULT_COMP_NAME = "BUILD4 × PancakeSwap Season 1";
@@ -55,26 +56,9 @@ async function getBnbUsdPrice(): Promise<number> {
   return _bnbUsdCache?.price ?? 600;
 }
 
-async function resolveAuthedWallet(req: Request): Promise<{ chatId: string; walletAddress: string } | { error: string; status: number }> {
-  const walletAddress = (req.headers["x-wallet-address"] as string || "").toLowerCase().trim();
-  if (!walletAddress || !/^0x[a-f0-9]{40}$/.test(walletAddress)) {
-    return { error: "Wallet header missing", status: 401 };
-  }
-  try {
-    const { telegramWallets } = await import("@shared/schema");
-    const { eq } = await import("drizzle-orm");
-    const rows = await db.select({ chatId: telegramWallets.chatId })
-      .from(telegramWallets)
-      .where(eq(telegramWallets.walletAddress, walletAddress))
-      .limit(1);
-    if (rows.length === 0) {
-      return { error: "Wallet not registered. Connect on /autonomous-economy first to provision a BUILD4 wallet.", status: 404 };
-    }
-    return { chatId: rows[0].chatId, walletAddress };
-  } catch (e: any) {
-    return { error: e?.message || "Wallet lookup failed", status: 500 };
-  }
-}
+// All authed endpoints below now use requireSiweAuthed (see competition-auth.ts)
+// which enforces: SIWE cookie + matching x-wallet-address + Origin (writes) +
+// rate limit + optional idempotency.
 
 // Ensure the default competition row exists. Idempotent — call on boot.
 export async function ensureDefaultCompetition(): Promise<void> {
@@ -234,8 +218,10 @@ export function registerCompetitionRoutes(app: Express) {
 
   // Authed: get my entry (creates none if absent).
   app.get("/api/competition/me", async (req: Request, res: Response) => {
-    const auth = await resolveAuthedWallet(req);
-    if ("error" in auth) return res.status(auth.status).json({ ok: false, error: auth.error });
+    const auth = await requireSiweAuthed(req, {
+      rateLimit: { key: "comp:me", max: 60, windowMs: 60_000 },
+    });
+    if ("error" in auth) return res.status(auth.status).json({ ok: false, error: auth.error, code: auth.code });
     try {
       const comp = await getActiveCompetition();
       if (!comp) return res.json({ ok: true, entry: null, competition: null });
@@ -292,8 +278,11 @@ export function registerCompetitionRoutes(app: Express) {
 
   // Authed: switch my mode between manual / co-pilot / auto. Also updates persona/agentName.
   app.post("/api/competition/mode", async (req: Request, res: Response) => {
-    const auth = await resolveAuthedWallet(req);
-    if ("error" in auth) return res.status(auth.status).json({ ok: false, error: auth.error });
+    const auth = await requireSiweAuthed(req, {
+      isWrite: true,
+      rateLimit: { key: "comp:mode", max: 20, windowMs: 60_000 },
+    });
+    if ("error" in auth) return res.status(auth.status).json({ ok: false, error: auth.error, code: auth.code });
     try {
       const comp = await getActiveCompetition();
       if (!comp) return res.status(404).json({ ok: false, error: "No active competition" });
@@ -322,8 +311,11 @@ export function registerCompetitionRoutes(app: Express) {
 
   // Authed: join the active competition. Snapshots BNB balance as starting balance.
   app.post("/api/competition/join", async (req: Request, res: Response) => {
-    const auth = await resolveAuthedWallet(req);
-    if ("error" in auth) return res.status(auth.status).json({ ok: false, error: auth.error });
+    const auth = await requireSiweAuthed(req, {
+      isWrite: true,
+      rateLimit: { key: "comp:join", max: 5, windowMs: 60_000 },
+    });
+    if ("error" in auth) return res.status(auth.status).json({ ok: false, error: auth.error, code: auth.code });
     try {
       const comp = await getActiveCompetition();
       if (!comp) return res.status(404).json({ ok: false, error: "No active competition" });
