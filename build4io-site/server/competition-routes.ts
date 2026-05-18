@@ -290,6 +290,36 @@ export function registerCompetitionRoutes(app: Express) {
     }
   });
 
+  // Authed: switch my mode between manual / co-pilot / auto. Also updates persona/agentName.
+  app.post("/api/competition/mode", async (req: Request, res: Response) => {
+    const auth = await resolveAuthedWallet(req);
+    if ("error" in auth) return res.status(auth.status).json({ ok: false, error: auth.error });
+    try {
+      const comp = await getActiveCompetition();
+      if (!comp) return res.status(404).json({ ok: false, error: "No active competition" });
+      const body = req.body ?? {};
+      const allowedModes = new Set(["manual", "copilot", "auto"]);
+      const allowedPersonas = new Set(["manual", "Quant", "Degen", "Hunter", "Sniper", "Maximalist"]);
+      const mode = String(body.mode || "").toLowerCase();
+      if (!allowedModes.has(mode)) return res.status(400).json({ ok: false, error: "Invalid mode" });
+      const persona = body.persona && allowedPersonas.has(String(body.persona)) ? String(body.persona) : undefined;
+      const agentName = typeof body.agentName === "string" ? body.agentName.slice(0, 40) : undefined;
+      const r = await db.execute(sql`
+        UPDATE aster_competition_entries
+        SET mode = ${mode},
+            persona = COALESCE(${persona ?? null}, persona),
+            agent_name = COALESCE(${agentName ?? null}, agent_name),
+            last_updated = NOW()
+        WHERE competition_id = ${comp.id} AND chat_id = ${auth.chatId}
+        RETURNING id
+      `);
+      if ((r.rows ?? []).length === 0) return res.status(404).json({ ok: false, error: "Not joined yet" });
+      res.json({ ok: true, mode, persona, agentName });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e?.message ?? String(e) });
+    }
+  });
+
   // Authed: join the active competition. Snapshots BNB balance as starting balance.
   app.post("/api/competition/join", async (req: Request, res: Response) => {
     const auth = await resolveAuthedWallet(req);

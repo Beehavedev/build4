@@ -25,6 +25,7 @@ import { registerHyperliquidRoutes } from "./hyperliquid-routes";
 import { registerBotBridgeRoutes } from "./bot-bridge-routes";
 import { registerPancakeRoutes } from "./pancakeswap-routes";
 import { registerCompetitionRoutes, ensureDefaultCompetition, ensureCompetitionColumns } from "./competition-routes";
+import { startPancakeAgentLoop, ensureHouseAgent } from "./pancakeSwapAgent";
 import { registerWalletRoutes } from "./wallet-routes";
 
 export async function registerRoutes(
@@ -50,10 +51,22 @@ export async function registerRoutes(
   registerPancakeRoutes(app);
   registerCompetitionRoutes(app);
   registerWalletRoutes(app);
-  // Idempotent: ensure new columns + a default competition row exist.
-  ensureCompetitionColumns().then(() => ensureDefaultCompetition()).catch((e) => {
-    console.error("[Competition] boot init failed:", e?.message ?? e);
-  });
+  // Idempotent: ensure new columns + a default competition row exist, then
+  // seed the House agent (if HOUSE_AGENT_PRIVATE_KEY set) and start the
+  // autonomous PancakeSwap agent loop.
+  ensureCompetitionColumns()
+    .then(() => ensureDefaultCompetition())
+    .then(() => ensureHouseAgent())
+    .then(() => {
+      if (process.env.NODE_ENV === "production" || process.env.PANCAKE_AGENT_FORCE === "1") {
+        startPancakeAgentLoop();
+      } else {
+        console.log("[PancakeAgent] skipped in development (set PANCAKE_AGENT_FORCE=1 to enable locally)");
+      }
+    })
+    .catch((e) => {
+      console.error("[Competition] boot init failed:", e?.message ?? e);
+    });
 
   const walletExportLimiter = new Map<string, number[]>();
   function checkWalletExportRate(chatId: string): boolean {
