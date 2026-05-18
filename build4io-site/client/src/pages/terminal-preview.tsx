@@ -708,7 +708,7 @@ function HlPane({ session, hlAcct, onTrade, onRefetch }: { session: any; hlAcct:
       <VenueHeader title="Hyperliquid" sub="L1 perps via agent wallet. Sub-second fills, on-chain orderbook." accent="border-cyan-400/40 text-cyan-400" />
       {!linked && (
         <div className="mb-4 px-3 py-2 rounded bg-yellow-500/10 text-yellow-500 border border-yellow-500/30 font-mono text-[11px]">
-          Hyperliquid not linked yet. Open the bot and run /hyperliquid to provision an agent wallet, then return here.
+          Hyperliquid not linked yet. Open the BUILD4 bot in Telegram, tap the mini-app button, go to the Hyperliquid tab and provision an agent wallet, then return here.
         </div>
       )}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
