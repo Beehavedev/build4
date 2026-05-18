@@ -728,15 +728,35 @@ export default function Competition() {
               </div>
 
               <div className="flex flex-col sm:flex-row items-center gap-3">
-                <Link href="/autonomous-economy">
-                  <Button size="lg" className="font-mono text-sm gap-2 px-6 border-0 text-white shadow-lg" style={{ background: PCS_GRADIENT, boxShadow: "0 8px 32px rgba(118,69,217,0.35)" }} data-testid="button-register-hero">
-                    Register your agent <ArrowRight className="w-4 h-4" />
+                {!session.wallet.connected ? (
+                  <WalletConnector />
+                ) : session.registerState === "registering" || session.registerState === "signing" ? (
+                  <Button size="lg" disabled className="font-mono text-sm gap-2 px-6 border-0 text-white shadow-lg opacity-80" style={{ background: PCS_GRADIENT }} data-testid="button-register-hero">
+                    <Loader2 className="w-4 h-4 animate-spin" /> Registering agent…
                   </Button>
-                </Link>
+                ) : (
+                  <Button
+                    size="lg"
+                    onClick={() => {
+                      const el = document.getElementById("join-flow");
+                      if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+                    }}
+                    className="font-mono text-sm gap-2 px-6 border-0 text-white shadow-lg"
+                    style={{ background: PCS_GRADIENT, boxShadow: "0 8px 32px rgba(118,69,217,0.35)" }}
+                    data-testid="button-register-hero"
+                  >
+                    {myEntry ? "View my agent" : "Join the competition"} <ArrowRight className="w-4 h-4" />
+                  </Button>
+                )}
                 <a href="#rules" className="font-mono text-sm text-zinc-400 hover:text-white transition-colors flex items-center gap-1" data-testid="link-rules">
                   Read the rules <ChevronRight className="w-4 h-4" />
                 </a>
               </div>
+              {session.registerState === "error" && session.registerError && (
+                <div className="mt-3 text-[11px] font-mono text-red-400 max-w-md mx-auto" data-testid="text-register-error">
+                  Wallet registration failed. Refresh and try again, or contact support if it persists.
+                </div>
+              )}
 
               <div className="mt-10 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-[11px] font-mono text-zinc-500" data-testid="block-trust">
                 <div className="flex items-center gap-1.5"><ShieldCheck className="w-3.5 h-3.5" style={{ color: B4_GREEN }} /> Prize pool on-chain</div>
@@ -809,7 +829,7 @@ export default function Competition() {
             the user's *identity*; the custodial is a server-managed BSC EOA
             that holds the BNB the agent + manual trades spend from. */}
         {session.ready && funding?.custodialAddress && !ended.ended && (
-          <section className="border-b border-zinc-900 bg-gradient-to-b from-zinc-950/40 to-transparent">
+          <section id="join-flow" className="border-b border-zinc-900 bg-gradient-to-b from-zinc-950/40 to-transparent">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 py-5" data-testid="block-funding">
               <div className="flex flex-col lg:flex-row lg:items-center gap-4 p-4 rounded-lg border border-zinc-800 bg-zinc-950/80">
                 <div className="flex items-start gap-3 flex-1 min-w-0">
@@ -1425,11 +1445,22 @@ export default function Competition() {
               Registration opens 24 hours before the bell.
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
-              <Link href="/autonomous-economy">
-                <Button size="lg" className="font-mono text-sm gap-2 px-8 border-0 text-white shadow-lg" style={{ background: PCS_GRADIENT, boxShadow: "0 8px 32px rgba(118,69,217,0.35)" }} data-testid="button-register-final">
-                  Register your agent <ArrowRight className="w-4 h-4" />
+              {!session.wallet.connected ? (
+                <WalletConnector />
+              ) : (
+                <Button
+                  size="lg"
+                  onClick={() => {
+                    const el = document.getElementById("join-flow");
+                    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+                  }}
+                  className="font-mono text-sm gap-2 px-8 border-0 text-white shadow-lg"
+                  style={{ background: PCS_GRADIENT, boxShadow: "0 8px 32px rgba(118,69,217,0.35)" }}
+                  data-testid="button-register-final"
+                >
+                  {myEntry ? "View my agent" : "Join the competition"} <ArrowRight className="w-4 h-4" />
                 </Button>
-              </Link>
+              )}
               <a
                 href="https://twitter.com/intent/tweet?text=BUILD4%20%C3%97%20PancakeSwap%20AI%20Agent%20Championship%20—%20%243%2C000%20prize%20pool%2C%207%20days%2C%20one%20agent%2C%20your%20rules.%20Coming%20soon."
                 target="_blank"
