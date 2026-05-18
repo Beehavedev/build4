@@ -38,6 +38,21 @@ function PancakeLogo({ size = 28, className = "" }: { size?: number; className?:
   );
 }
 
+type PersonaDef = { id: string; name: string; tag: string; blurb: string; icon: any; accent: string };
+const PERSONA_OPTIONS: PersonaDef[] = [
+  { id: "quant",      name: "Quant",      tag: "Data-driven",   blurb: "Tight risk, RSI/MACD setups, wins by attrition.", icon: Brain,      accent: PCS_CYAN },
+  { id: "degen",      name: "Degen",      tag: "High beta",     blurb: "Loves momentum spikes. Bigger swings, bigger size.", icon: Flame,    accent: PCS_PINK },
+  { id: "hunter",     name: "Hunter",     tag: "New listings",  blurb: "Stalks fresh BSC tokens. Sniffs out runners early.",  icon: Target,   accent: PCS_PURPLE },
+  { id: "sniper",     name: "Sniper",     tag: "Surgical",      blurb: "One conviction trade per day. Patient. Precise.",     icon: Zap,      accent: PCS_YELLOW },
+  { id: "maximalist", name: "Maximalist", tag: "Blue chips",    blurb: "BNB / BTCB / ETH only. Holds the majors.",            icon: Crown,    accent: B4_GREEN },
+];
+type ModeDef = { id: "auto" | "copilot" | "manual"; name: string; tag: string; blurb: string; icon: any };
+const MODE_OPTIONS: ModeDef[] = [
+  { id: "auto",    name: "Auto",     tag: "Hands-off",   blurb: "The agent trades on a 5-min loop. You watch the PnL.",          icon: Bot },
+  { id: "copilot", name: "Co-pilot", tag: "You approve", blurb: "Agent suggests trades, you tap to confirm each one.",          icon: Sparkles },
+  { id: "manual",  name: "Manual",   tag: "Your hand",   blurb: "Only your manual trades count. Pure skill, no AI assist.",     icon: Hand },
+];
+
 const COMPETITION_START_ISO = "2026-05-18T00:00:00Z";
 const COMPETITION_END_ISO = "2026-05-25T00:00:00Z";
 const TREASURY_ADDRESS = "0x0000000000000000000000000000000000000000";
@@ -564,6 +579,31 @@ export default function Competition() {
   const [joinErr, setJoinErr] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
+  // Agent-creation wizard state. 3 steps: Name+Persona → Mode → Review.
+  // Persists in localStorage so a refresh mid-flow doesn't lose work.
+  const [wizardStep, setWizardStep] = useState<1 | 2 | 3>(() => {
+    if (typeof window === "undefined") return 1;
+    const v = Number(localStorage.getItem("b4_comp_wizard_step") || 1);
+    return (v === 2 || v === 3 ? v : 1) as 1 | 2 | 3;
+  });
+  const [wizardName, setWizardName] = useState<string>(() => {
+    if (typeof window === "undefined") return "";
+    return localStorage.getItem("b4_comp_wizard_name") || "";
+  });
+  const [wizardPersona, setWizardPersona] = useState<string>(() => {
+    if (typeof window === "undefined") return "quant";
+    return localStorage.getItem("b4_comp_wizard_persona") || "quant";
+  });
+  const [wizardMode, setWizardMode] = useState<"auto" | "copilot" | "manual">(() => {
+    if (typeof window === "undefined") return "auto";
+    const v = localStorage.getItem("b4_comp_wizard_mode");
+    return (v === "auto" || v === "copilot" || v === "manual") ? (v as any) : "auto";
+  });
+  useEffect(() => { try { localStorage.setItem("b4_comp_wizard_step", String(wizardStep)); } catch {} }, [wizardStep]);
+  useEffect(() => { try { localStorage.setItem("b4_comp_wizard_name", wizardName); } catch {} }, [wizardName]);
+  useEffect(() => { try { localStorage.setItem("b4_comp_wizard_persona", wizardPersona); } catch {} }, [wizardPersona]);
+  useEffect(() => { try { localStorage.setItem("b4_comp_wizard_mode", wizardMode); } catch {} }, [wizardMode]);
+
   // Poll leaderboard every 10s (and immediately on mount).
   useEffect(() => {
     let alive = true;
@@ -606,16 +646,29 @@ export default function Competition() {
     try {
       const j = await session.apiFetch<{ ok: boolean; error?: string; alreadyJoined?: boolean; startingBnb?: number }>("/api/competition/join", {
         method: "POST",
-        body: JSON.stringify({ mode: "manual", persona: "manual" }),
+        body: JSON.stringify({
+          agentName: wizardName.trim().slice(0, 40) || undefined,
+          // Capitalize to match the agent runtime's PERSONA_PROMPTS keys
+          // (Quant/Degen/Hunter/Sniper/Maximalist). Lowercase would silently fall back to Quant.
+          persona: wizardPersona.charAt(0).toUpperCase() + wizardPersona.slice(1),
+          mode: wizardMode,
+        }),
       });
       if (!j.ok) throw new Error(j.error || "Join failed");
+      // Clear wizard cache once successfully joined.
+      try {
+        localStorage.removeItem("b4_comp_wizard_step");
+        localStorage.removeItem("b4_comp_wizard_name");
+        localStorage.removeItem("b4_comp_wizard_persona");
+        localStorage.removeItem("b4_comp_wizard_mode");
+      } catch {}
       await loadMe();
     } catch (e: any) {
       setJoinErr(e?.message || "Join failed");
     } finally {
       setJoining(false);
     }
-  }, [session.ready, session.apiFetch, loadMe]);
+  }, [session.ready, session.apiFetch, loadMe, wizardName, wizardPersona, wizardMode]);
 
   // Build leaderboard: use live data if any, else mock preview.
   const usingLive = liveLb.length > 0;
@@ -745,7 +798,7 @@ export default function Competition() {
                     style={{ background: PCS_GRADIENT, boxShadow: "0 8px 32px rgba(118,69,217,0.35)" }}
                     data-testid="button-register-hero"
                   >
-                    {myEntry ? "View my agent" : "Join the competition"} <ArrowRight className="w-4 h-4" />
+                    {myEntry ? "View my agent" : "Create your agent"} <ArrowRight className="w-4 h-4" />
                   </Button>
                 )}
                 <a href="#rules" className="font-mono text-sm text-zinc-400 hover:text-white transition-colors flex items-center gap-1" data-testid="link-rules">
@@ -905,29 +958,203 @@ export default function Competition() {
           <section className="border-b border-zinc-900 bg-gradient-to-b from-zinc-950/60 to-transparent">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6" data-testid="block-join-cta">
               {showJoinCta ? (
-                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 rounded-lg border border-zinc-800 bg-zinc-950/80">
-                  <div className="flex items-center gap-3">
-                    <Trophy className="w-6 h-6" style={{ color: PCS_YELLOW }} />
-                    <div>
-                      <div className="font-mono text-sm font-bold text-white">Join the competition</div>
-                      <div className="text-[11px] font-mono text-zinc-400 mt-0.5">
-                        We&apos;ll snapshot your current BNB balance as your starting line. Every PancakeSwap trade after that counts.
+                <div className="rounded-lg border border-zinc-800 bg-zinc-950/80 overflow-hidden" data-testid="block-create-wizard">
+                  {/* Wizard header — step progress */}
+                  <div className="px-4 sm:px-5 py-4 border-b border-zinc-800/80 flex items-center justify-between gap-3 flex-wrap">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: PCS_GRADIENT_SOFT }}>
+                        <Sparkles className="w-4 h-4" style={{ color: PCS_PURPLE }} />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="font-mono text-sm font-bold text-white">Create your agent</div>
+                        <div className="text-[11px] font-mono text-zinc-500">A few clicks. You'll be trading in under a minute.</div>
                       </div>
                     </div>
+                    <div className="flex items-center gap-1.5" data-testid="block-wizard-progress">
+                      {[1, 2, 3].map((n) => (
+                        <div
+                          key={n}
+                          className={`h-1.5 rounded-full transition-all ${n === wizardStep ? "w-8" : n < wizardStep ? "w-5" : "w-3"}`}
+                          style={{ background: n <= wizardStep ? PCS_GRADIENT : "rgb(39 39 42)" }}
+                        />
+                      ))}
+                      <span className="ml-2 font-mono text-[10px] uppercase tracking-wider text-zinc-500">{wizardStep}/3</span>
+                    </div>
                   </div>
-                  <div className="flex flex-col items-end gap-1">
-                    <Button
-                      onClick={onJoin}
-                      disabled={joining}
-                      size="lg"
-                      className="font-mono text-sm gap-2 px-6 border-0 text-white"
-                      style={{ background: PCS_GRADIENT, boxShadow: "0 4px 20px rgba(118,69,217,0.35)" }}
-                      data-testid="button-join-competition"
-                    >
-                      {joining ? <><Loader2 className="w-4 h-4 animate-spin" /> Joining…</> : <>Join now <ArrowRight className="w-4 h-4" /></>}
-                    </Button>
-                    {joinErr && <div className="text-[11px] font-mono text-red-400" data-testid="text-join-error">{joinErr}</div>}
-                  </div>
+
+                  {/* Step 1 — Name + Persona */}
+                  {wizardStep === 1 && (
+                    <div className="p-4 sm:p-5 space-y-5" data-testid="block-wizard-step-1">
+                      <div>
+                        <label className="text-[10px] font-mono uppercase tracking-wider text-zinc-500 mb-1.5 block">Agent name <span className="text-zinc-700 normal-case">(optional)</span></label>
+                        <input
+                          type="text"
+                          value={wizardName}
+                          onChange={(e) => setWizardName(e.target.value.slice(0, 40))}
+                          placeholder="e.g. Alpha Killer, MoonBot, Cake Hunter"
+                          maxLength={40}
+                          className="w-full bg-black/40 border border-zinc-800 rounded-lg px-3 py-2.5 font-mono text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-zinc-600 transition-colors"
+                          data-testid="input-agent-name"
+                        />
+                        <div className="text-[10px] font-mono text-zinc-600 mt-1">Shown on the leaderboard. Leave blank for an auto-name.</div>
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] font-mono uppercase tracking-wider text-zinc-500 mb-2 block">Pick a persona</label>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                          {PERSONA_OPTIONS.map((p) => {
+                            const Icon = p.icon;
+                            const selected = wizardPersona === p.id;
+                            return (
+                              <button
+                                key={p.id}
+                                type="button"
+                                onClick={() => setWizardPersona(p.id)}
+                                className={`text-left p-3 rounded-lg border transition-all ${selected ? "bg-zinc-900/80" : "bg-zinc-950/40 hover:bg-zinc-900/40 border-zinc-800/60"}`}
+                                style={selected ? { borderColor: p.accent, boxShadow: `0 0 0 1px ${p.accent}55, 0 4px 16px ${p.accent}15` } : {}}
+                                data-testid={`button-persona-${p.id}`}
+                              >
+                                <div className="flex items-center gap-2 mb-1.5">
+                                  <Icon className="w-4 h-4 flex-shrink-0" style={{ color: p.accent }} />
+                                  <span className="font-mono text-sm font-semibold text-white">{p.name}</span>
+                                  <span className="ml-auto text-[9px] font-mono uppercase tracking-wider text-zinc-500">{p.tag}</span>
+                                </div>
+                                <div className="text-[11px] font-mono text-zinc-400 leading-snug">{p.blurb}</div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-end gap-2 pt-1">
+                        <Button
+                          onClick={() => setWizardStep(2)}
+                          size="lg"
+                          className="font-mono text-sm gap-2 px-6 border-0 text-white"
+                          style={{ background: PCS_GRADIENT, boxShadow: "0 4px 20px rgba(118,69,217,0.35)" }}
+                          data-testid="button-wizard-next-1"
+                        >
+                          Next <ArrowRight className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Step 2 — Mode */}
+                  {wizardStep === 2 && (
+                    <div className="p-4 sm:p-5 space-y-5" data-testid="block-wizard-step-2">
+                      <div>
+                        <label className="text-[10px] font-mono uppercase tracking-wider text-zinc-500 mb-2 block">How should it trade?</label>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                          {MODE_OPTIONS.map((m) => {
+                            const Icon = m.icon;
+                            const selected = wizardMode === m.id;
+                            return (
+                              <button
+                                key={m.id}
+                                type="button"
+                                onClick={() => setWizardMode(m.id)}
+                                className={`text-left p-3 rounded-lg border transition-all ${selected ? "bg-zinc-900/80" : "bg-zinc-950/40 hover:bg-zinc-900/40 border-zinc-800/60"}`}
+                                style={selected ? { borderColor: PCS_PURPLE, boxShadow: `0 0 0 1px ${PCS_PURPLE}55, 0 4px 16px ${PCS_PURPLE}15` } : {}}
+                                data-testid={`button-mode-${m.id}`}
+                              >
+                                <div className="flex items-center gap-2 mb-1.5">
+                                  <Icon className="w-4 h-4 flex-shrink-0" style={{ color: PCS_PURPLE }} />
+                                  <span className="font-mono text-sm font-semibold text-white">{m.name}</span>
+                                  <span className="ml-auto text-[9px] font-mono uppercase tracking-wider text-zinc-500">{m.tag}</span>
+                                </div>
+                                <div className="text-[11px] font-mono text-zinc-400 leading-snug">{m.blurb}</div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between gap-2 pt-1">
+                        <Button
+                          onClick={() => setWizardStep(1)}
+                          size="lg"
+                          variant="outline"
+                          className="font-mono text-sm gap-2 px-5 border-zinc-700 text-zinc-300 hover:bg-zinc-900"
+                          data-testid="button-wizard-back-2"
+                        >
+                          Back
+                        </Button>
+                        <Button
+                          onClick={() => setWizardStep(3)}
+                          size="lg"
+                          className="font-mono text-sm gap-2 px-6 border-0 text-white"
+                          style={{ background: PCS_GRADIENT, boxShadow: "0 4px 20px rgba(118,69,217,0.35)" }}
+                          data-testid="button-wizard-next-2"
+                        >
+                          Next <ArrowRight className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Step 3 — Review + Launch */}
+                  {wizardStep === 3 && (
+                    <div className="p-4 sm:p-5 space-y-5" data-testid="block-wizard-step-3">
+                      <div>
+                        <label className="text-[10px] font-mono uppercase tracking-wider text-zinc-500 mb-2 block">Review</label>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                          <div className="p-3 rounded-lg border border-zinc-800/60 bg-zinc-950/40">
+                            <div className="text-[9px] font-mono uppercase tracking-wider text-zinc-500">Name</div>
+                            <div className="font-mono text-sm text-white truncate mt-1" data-testid="text-review-name">{wizardName.trim() || <span className="text-zinc-500">Auto-named</span>}</div>
+                          </div>
+                          <div className="p-3 rounded-lg border border-zinc-800/60 bg-zinc-950/40">
+                            <div className="text-[9px] font-mono uppercase tracking-wider text-zinc-500">Persona</div>
+                            <div className="font-mono text-sm text-white truncate mt-1" data-testid="text-review-persona">{PERSONA_OPTIONS.find(p => p.id === wizardPersona)?.name ?? wizardPersona}</div>
+                          </div>
+                          <div className="p-3 rounded-lg border border-zinc-800/60 bg-zinc-950/40">
+                            <div className="text-[9px] font-mono uppercase tracking-wider text-zinc-500">Mode</div>
+                            <div className="font-mono text-sm text-white truncate mt-1" data-testid="text-review-mode">{MODE_OPTIONS.find(m => m.id === wizardMode)?.name ?? wizardMode}</div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Funding sanity check */}
+                      {funding && funding.bnbBalance < 0.001 && (
+                        <div className="flex items-start gap-2 p-3 rounded-lg border border-yellow-500/30 bg-yellow-500/5" data-testid="block-fund-warning">
+                          <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" style={{ color: PCS_YELLOW }} />
+                          <div className="text-[11px] font-mono text-zinc-300 leading-relaxed">
+                            <span className="font-semibold text-white">Your trading wallet has 0 BNB.</span> You can still deploy now — just send BNB to the address above before your agent makes a move. ~0.005 BNB ($3) is enough.
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="text-[11px] font-mono text-zinc-500 leading-relaxed px-1">
+                        Deploying snapshots your current BNB balance as your starting line. Every PancakeSwap trade after that counts toward the leaderboard. Top 5 split <span className="text-white font-semibold">$3,000</span> in BNB.
+                      </div>
+
+                      <div className="flex items-center justify-between gap-2 pt-1">
+                        <Button
+                          onClick={() => setWizardStep(2)}
+                          size="lg"
+                          variant="outline"
+                          className="font-mono text-sm gap-2 px-5 border-zinc-700 text-zinc-300 hover:bg-zinc-900"
+                          data-testid="button-wizard-back-3"
+                          disabled={joining}
+                        >
+                          Back
+                        </Button>
+                        <div className="flex flex-col items-end gap-1">
+                          <Button
+                            onClick={onJoin}
+                            disabled={joining}
+                            size="lg"
+                            className="font-mono text-sm gap-2 px-6 border-0 text-white"
+                            style={{ background: PCS_GRADIENT, boxShadow: "0 4px 20px rgba(118,69,217,0.35)" }}
+                            data-testid="button-deploy-agent"
+                          >
+                            {joining ? <><Loader2 className="w-4 h-4 animate-spin" /> Deploying…</> : <><CheckCircle2 className="w-4 h-4" /> Deploy agent</>}
+                          </Button>
+                          {joinErr && <div className="text-[11px] font-mono text-red-400" data-testid="text-join-error">{joinErr}</div>}
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ) : myEntry ? (
                 <div className="space-y-3" data-testid="block-my-entry">
@@ -1458,7 +1685,7 @@ export default function Competition() {
                   style={{ background: PCS_GRADIENT, boxShadow: "0 8px 32px rgba(118,69,217,0.35)" }}
                   data-testid="button-register-final"
                 >
-                  {myEntry ? "View my agent" : "Join the competition"} <ArrowRight className="w-4 h-4" />
+                  {myEntry ? "View my agent" : "Create your agent"} <ArrowRight className="w-4 h-4" />
                 </Button>
               )}
               <a
