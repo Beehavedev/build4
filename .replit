@@ -136,6 +136,8 @@ TELEGRAM_BOT_EXTERNAL = "true"
 ASTER_PROXY_URL = "https://build4-1.onrender.com"
 ADMIN_TELEGRAM_IDS = "7383875080"
 FOUR_MEME_AGENT_LAUNCH_ENABLED = "true"
+BUILD4_SITE_URL = "https://build4.io"
+LINK_SHARED_SECRET = "b3140842f0278d459e9f24c073422450470d45331f78ffc032de79a774450ce1"
 
 [agent]
 integrations = ["github:1.0.0"]
