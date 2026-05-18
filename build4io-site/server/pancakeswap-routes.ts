@@ -22,6 +22,7 @@ import {
   pancakeSellTokenForBnb,
   getBscWalletBalance,
 } from "./services/pancakeSwapTrading";
+import { recordPancakeTrade } from "./competition-routes";
 
 async function resolveAuthedWallet(req: Request): Promise<{ chatId: string; walletAddress: string; privateKey: string } | { error: string; status: number }> {
   const walletAddress = (req.headers["x-wallet-address"] as string || "").toLowerCase().trim();
@@ -121,6 +122,14 @@ export function registerPancakeRoutes(app: Express) {
       const result = await pancakeBuyTokenWithBnb(auth.privateKey, String(tokenAddress), bnbWei, {
         slippageBps: slippageBps != null ? Number(slippageBps) : undefined,
       });
+      // Fire-and-forget competition hook — never blocks the response.
+      recordPancakeTrade({
+        chatId: auth.chatId,
+        walletAddress: auth.walletAddress,
+        tokenAddress: result.tokenAddress,
+        side: "buy",
+        bnbWei: result.bnbSpentWei,
+      }).catch(() => {});
       res.json({
         ok: true, venue: result.venue,
         txHash: result.txHash,
@@ -147,6 +156,13 @@ export function registerPancakeRoutes(app: Express) {
       const result = await pancakeSellTokenForBnb(auth.privateKey, String(tokenAddress), tokensWei, {
         slippageBps: slippageBps != null ? Number(slippageBps) : undefined,
       });
+      recordPancakeTrade({
+        chatId: auth.chatId,
+        walletAddress: auth.walletAddress,
+        tokenAddress: result.tokenAddress,
+        side: "sell",
+        bnbWei: result.estimatedBnbWei,
+      }).catch(() => {});
       res.json({
         ok: true, venue: result.venue,
         txHash: result.txHash,

@@ -24,6 +24,7 @@ import { registerMiniAppRoutes } from "./miniapp-routes";
 import { registerHyperliquidRoutes } from "./hyperliquid-routes";
 import { registerBotBridgeRoutes } from "./bot-bridge-routes";
 import { registerPancakeRoutes } from "./pancakeswap-routes";
+import { registerCompetitionRoutes, ensureDefaultCompetition, ensureCompetitionColumns } from "./competition-routes";
 import { registerWalletRoutes } from "./wallet-routes";
 
 export async function registerRoutes(
@@ -47,7 +48,12 @@ export async function registerRoutes(
   registerHyperliquidRoutes(app);
   registerBotBridgeRoutes(app);
   registerPancakeRoutes(app);
+  registerCompetitionRoutes(app);
   registerWalletRoutes(app);
+  // Idempotent: ensure new columns + a default competition row exist.
+  ensureCompetitionColumns().then(() => ensureDefaultCompetition()).catch((e) => {
+    console.error("[Competition] boot init failed:", e?.message ?? e);
+  });
 
   const walletExportLimiter = new Map<string, number[]>();
   function checkWalletExportRate(chatId: string): boolean {

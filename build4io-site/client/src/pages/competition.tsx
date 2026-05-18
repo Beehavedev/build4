@@ -475,16 +475,148 @@ function PancakeTradePanel() {
   );
 }
 
+type LiveLeaderRow = {
+  rank: number;
+  agentName: string;
+  username: string | null;
+  persona: string;
+  mode: string;
+  walletAddress: string | null;
+  startingBnb: number;
+  currentBnb: number;
+  pnlBnb: number;
+  pnlPct: number;
+  pnlUsd: number;
+  tradeCount: number;
+  winCount: number;
+  lossCount: number;
+  bustOut: boolean;
+  isHouse: boolean;
+  chatId: string;
+};
+type LiveLeaderboardResp = {
+  ok: boolean;
+  leaderboard: LiveLeaderRow[];
+  competition: { id: string; status: string; entryCount: number; bnbUsdPrice: number; prizePoolBnb: string; prizePoolUsd: number } | null;
+};
+type MyEntryResp = {
+  ok: boolean;
+  entry: null | {
+    id: string;
+    walletAddress: string;
+    agentName: string | null;
+    persona: string;
+    mode: string;
+    startingBnb: number;
+    currentBnb: number;
+    pnlBnb: number;
+    pnlPct: number;
+    tradeCount: number;
+    bustOut: boolean;
+    bnbUsdPrice: number;
+    pnlUsd: number;
+    currentUsd: number;
+    startingUsd: number;
+  };
+  competition?: { id: string; status: string };
+};
+
+function mapLiveToLeaderRow(r: LiveLeaderRow, you: boolean): LeaderRow {
+  const personaMap: Record<string, LeaderRow["persona"]> = {
+    Quant: "Quant", Degen: "Degen", Hunter: "Hunter", Sniper: "Sniper", Maximalist: "Maximalist", House: "House",
+    quant: "Quant", degen: "Degen", hunter: "Hunter", sniper: "Sniper", maximalist: "Maximalist", house: "House",
+  };
+  const modeMap: Record<string, LeaderRow["mode"]> = {
+    Auto: "Auto", "Co-pilot": "Co-pilot", Manual: "Manual",
+    auto: "Auto", "co-pilot": "Co-pilot", copilot: "Co-pilot", manual: "Manual",
+  };
+  return {
+    rank: r.rank,
+    name: r.agentName,
+    owner: r.username || (r.walletAddress ? `${r.walletAddress.slice(0, 6)}…${r.walletAddress.slice(-4)}` : "—"),
+    persona: personaMap[r.persona] ?? "Quant",
+    mode: modeMap[r.mode] ?? "Manual",
+    pnlUsd: r.pnlUsd,
+    pnlPct: r.pnlPct,
+    trades: r.tradeCount,
+    streak: 0,
+    isHouse: r.isHouse,
+    isYou: you,
+  };
+}
+
 export default function Competition() {
   const cd = useCountdown(COMPETITION_START_ISO);
   const ended = useCountdown(COMPETITION_END_ISO);
   const live = cd.ended && !ended.ended;
+  const session = useTerminalSession();
 
-  const youRow: LeaderRow | null = null;
-  const fullLeaderboard = MOCK_LEADERBOARD;
+  const [liveLb, setLiveLb] = useState<LiveLeaderRow[]>([]);
+  const [myEntry, setMyEntry] = useState<MyEntryResp["entry"]>(null);
+  const [joining, setJoining] = useState(false);
+  const [joinErr, setJoinErr] = useState<string | null>(null);
+
+  // Poll leaderboard every 10s (and immediately on mount).
+  useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      try {
+        const r = await fetch("/api/competition/leaderboard?limit=100");
+        if (!r.ok) return;
+        const j: LiveLeaderboardResp = await r.json();
+        if (alive && j.ok) setLiveLb(j.leaderboard || []);
+      } catch { /* ignore */ }
+    };
+    load();
+    const id = setInterval(load, 10_000);
+    return () => { alive = false; clearInterval(id); };
+  }, []);
+
+  // Load my entry when wallet is ready.
+  const loadMe = useCallback(async () => {
+    if (!session.ready) { setMyEntry(null); return; }
+    try {
+      const j = await session.apiFetch<MyEntryResp>("/api/competition/me");
+      if (j.ok) setMyEntry(j.entry);
+    } catch { /* ignore */ }
+  }, [session.ready, session.apiFetch]);
+  useEffect(() => { loadMe(); }, [loadMe]);
+
+  const onJoin = useCallback(async () => {
+    if (!session.ready) return;
+    setJoining(true);
+    setJoinErr(null);
+    try {
+      const j = await session.apiFetch<{ ok: boolean; error?: string; alreadyJoined?: boolean; startingBnb?: number }>("/api/competition/join", {
+        method: "POST",
+        body: JSON.stringify({ mode: "manual", persona: "manual" }),
+      });
+      if (!j.ok) throw new Error(j.error || "Join failed");
+      await loadMe();
+    } catch (e: any) {
+      setJoinErr(e?.message || "Join failed");
+    } finally {
+      setJoining(false);
+    }
+  }, [session.ready, session.apiFetch, loadMe]);
+
+  // Build leaderboard: use live data if any, else mock preview.
+  const usingLive = liveLb.length > 0;
+  // Server masks wallet addresses to 0x1234…abcd on the public leaderboard so we
+  // match against the same mask of the user's known full address.
+  const maskedMine = myEntry?.walletAddress
+    ? `${myEntry.walletAddress.slice(0, 6)}…${myEntry.walletAddress.slice(-4)}`.toLowerCase()
+    : null;
+  const myChatIdMatch = (r: LiveLeaderRow) =>
+    !!maskedMine && r.walletAddress?.toLowerCase() === maskedMine;
+  const fullLeaderboard: LeaderRow[] = usingLive
+    ? liveLb.map((r) => mapLiveToLeaderRow(r, !!myChatIdMatch(r)))
+    : MOCK_LEADERBOARD;
   const top5 = fullLeaderboard.slice(0, 5);
   const house = fullLeaderboard.find(r => r.isHouse);
   const beatHouse = house ? fullLeaderboard.filter(r => !r.isHouse && r.pnlPct > house.pnlPct).length : 0;
+
+  const showJoinCta = session.ready && !myEntry && !ended.ended;
 
   return (
     <>
@@ -655,6 +787,73 @@ export default function Competition() {
           </div>
         </section>
 
+        {/* Join CTA / my entry banner */}
+        {(showJoinCta || myEntry) && (
+          <section className="border-b border-zinc-900 bg-gradient-to-b from-zinc-950/60 to-transparent">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6" data-testid="block-join-cta">
+              {showJoinCta ? (
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 rounded-lg border border-zinc-800 bg-zinc-950/80">
+                  <div className="flex items-center gap-3">
+                    <Trophy className="w-6 h-6" style={{ color: PCS_YELLOW }} />
+                    <div>
+                      <div className="font-mono text-sm font-bold text-white">Join the competition</div>
+                      <div className="text-[11px] font-mono text-zinc-400 mt-0.5">
+                        We&apos;ll snapshot your current BNB balance as your starting line. Every PancakeSwap trade after that counts.
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex flex-col items-end gap-1">
+                    <Button
+                      onClick={onJoin}
+                      disabled={joining}
+                      size="lg"
+                      className="font-mono text-sm gap-2 px-6 border-0 text-white"
+                      style={{ background: PCS_GRADIENT, boxShadow: "0 4px 20px rgba(118,69,217,0.35)" }}
+                      data-testid="button-join-competition"
+                    >
+                      {joining ? <><Loader2 className="w-4 h-4 animate-spin" /> Joining…</> : <>Join now <ArrowRight className="w-4 h-4" /></>}
+                    </Button>
+                    {joinErr && <div className="text-[11px] font-mono text-red-400" data-testid="text-join-error">{joinErr}</div>}
+                  </div>
+                </div>
+              ) : myEntry ? (
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 p-4 rounded-lg border border-zinc-800 bg-zinc-950/80" data-testid="block-my-entry">
+                  <div>
+                    <div className="text-[10px] font-mono uppercase tracking-wider text-zinc-500">Status</div>
+                    <div className="font-mono text-sm" style={{ color: myEntry.bustOut ? PCS_PINK : B4_GREEN }}>
+                      {myEntry.bustOut ? "BUST-OUT" : "Active"}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-mono uppercase tracking-wider text-zinc-500">Starting</div>
+                    <div className="font-mono text-sm tabular-nums text-white" data-testid="text-my-starting">
+                      {myEntry.startingBnb.toFixed(4)} BNB
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-mono uppercase tracking-wider text-zinc-500">Current</div>
+                    <div className="font-mono text-sm tabular-nums text-white" data-testid="text-my-current">
+                      {myEntry.currentBnb.toFixed(4)} BNB
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-mono uppercase tracking-wider text-zinc-500">PnL</div>
+                    <div className="font-mono text-sm tabular-nums" style={{ color: myEntry.pnlBnb >= 0 ? B4_GREEN : PCS_PINK }} data-testid="text-my-pnl">
+                      {myEntry.pnlBnb >= 0 ? "+" : ""}{myEntry.pnlBnb.toFixed(4)} BNB ({myEntry.pnlPct >= 0 ? "+" : ""}{myEntry.pnlPct.toFixed(2)}%)
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-mono uppercase tracking-wider text-zinc-500">Trades</div>
+                    <div className="font-mono text-sm tabular-nums text-white" data-testid="text-my-trades">
+                      {myEntry.tradeCount}
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </section>
+        )}
+
         {/* Live leaderboard */}
         <section className="border-b border-zinc-900">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 py-12">
@@ -663,16 +862,16 @@ export default function Competition() {
                 <h2 className="font-mono text-2xl font-bold flex items-center gap-2" data-testid="text-leaderboard-title">
                   <Trophy className="w-6 h-6" style={{ color: "#FFD700" }} />
                   Leaderboard
-                  {live && (
+                  {usingLive && (
                     <span className="text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded ml-1" style={{ background: "rgba(66,207,113,0.15)", color: B4_GREEN }}>
                       Live · refreshing 10s
                     </span>
                   )}
                 </h2>
                 <p className="text-sm text-zinc-400 mt-1">
-                  {live
-                    ? `${fullLeaderboard.length} agents trading · ${beatHouse} beating the house`
-                    : "Preview · live data starts when the bell rings"}
+                  {usingLive
+                    ? `${fullLeaderboard.length} agents trading${house ? ` · ${beatHouse} beating the house` : ""}`
+                    : "Preview · live data starts when the first agent joins"}
                 </p>
               </div>
               {house && (
