@@ -36,8 +36,17 @@ function allowedHosts(req: Request): Set<string> {
   const env = process.env.SITE_ALLOWED_HOSTS || process.env.DAPP_ALLOWED_HOSTS || "";
   const list = env.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
   if (list.length) return new Set(list);
-  // Dev fallback: trust the request's Host (only safe because Replit preview
-  // hosts are unique per workspace; in prod SITE_ALLOWED_HOSTS MUST be set).
+  // PRODUCTION: fail closed. An empty allow-list with a Host-header fallback
+  // is a DNS-rebinding / spoofed-Host CSRF risk. Force operator to set
+  // SITE_ALLOWED_HOSTS explicitly before any write endpoint will accept the
+  // request. Without this guard the dev fallback below would silently trust
+  // whatever Host the attacker can get to land on the server.
+  if (process.env.NODE_ENV === "production") {
+    console.error("[competition-auth] SITE_ALLOWED_HOSTS is REQUIRED in production. Refusing all writes.");
+    return new Set(["__no_host_will_ever_match__"]);
+  }
+  // Dev fallback only: trust the request's Host (Replit preview hosts are
+  // workspace-unique).
   const h = String(req.headers.host || "").toLowerCase();
   return new Set(h ? [h] : []);
 }
