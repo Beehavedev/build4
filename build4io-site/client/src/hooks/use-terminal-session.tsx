@@ -1,8 +1,12 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { useWallet } from "@/hooks/use-wallet";
 
-const CHAT_ID_KEY = "build4_terminal_chat_id";
-const CHAT_ID_FOR_ADDR_KEY = "build4_terminal_chat_id_addr";
+// v2 bump (2026-05-18): force a one-time re-register against
+// /api/miniapp/web-register so existing web users get a server-managed
+// BSC custodial wallet provisioned. Old caches stored just a chatId
+// against a MetaMask-only row with no custodial → trading 403'd.
+const CHAT_ID_KEY = "build4_terminal_chat_id_v2";
+const CHAT_ID_FOR_ADDR_KEY = "build4_terminal_chat_id_addr_v2";
 
 type RegisterState = "idle" | "registering" | "signing" | "ready" | "error";
 

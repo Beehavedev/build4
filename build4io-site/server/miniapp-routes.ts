@@ -396,26 +396,50 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
         }
       } catch {}
 
+      // Helper: ensure this chatId has a custodial wallet row (one with a
+      // server-held private key). The user's MetaMask address is stored as
+      // an *identity* row (no PK); the custodial is a freshly-generated
+      // BSC EOA whose PK we encrypt with WALLET_ENCRYPTION_KEY. The
+      // custodial is what the agent and manual trade endpoints sign with.
+      // Idempotent — returns the existing custodial if one already exists.
+      const ensureCustodial = async (cid: string): Promise<string> => {
+        const wallets = await storage.getTelegramWallets(cid).catch(() => [] as any[]);
+        const existingCustodial = (wallets || []).find((w: any) => !!w.encryptedPrivateKey);
+        if (existingCustodial) return String(existingCustodial.walletAddress).toLowerCase();
+        const { ethers } = await import("ethers");
+        const fresh = ethers.Wallet.createRandom();
+        const custodialAddr = fresh.address.toLowerCase();
+        // saveTelegramWallet encrypts + stores PK and marks this row active.
+        await storage.saveTelegramWallet(cid, custodialAddr, fresh.privateKey);
+        console.log(`[WebRegister] Provisioned BSC custodial for chatId=${cid}: ${custodialAddr.substring(0, 10)}…`);
+        return custodialAddr;
+      };
+
       if (foundChatId) {
         await storage.saveTelegramWallet(foundChatId, addr);
-        await storage.setActiveTelegramWallet(foundChatId, addr);
+        const custodialAddress = await ensureCustodial(foundChatId);
         console.log(`[WebRegister] Auto-linked wallet ${addr.substring(0, 10)} to existing chatId=${foundChatId} via asterCredentials`);
-        return res.json({ success: true, chatId: foundChatId, alreadyRegistered: true });
+        return res.json({ success: true, chatId: foundChatId, custodialAddress, alreadyRegistered: true });
       }
 
       const { createHash } = await import("crypto");
       const hash = createHash("sha256").update(`web:${addr}`).digest("hex");
       const chatId = "8" + hash.replace(/[^0-9]/g, "").substring(0, 14).padEnd(14, "0");
 
+      // Insert MetaMask identity row first (no PK), then provision custodial.
+      // saveTelegramWallet marks each new row active, so the custodial ends
+      // up active (last-write-wins), MetaMask row is left non-active —
+      // exactly what we want for `competition-auth` resolution.
       await storage.saveTelegramWallet(chatId, addr);
-      await storage.setActiveTelegramWallet(chatId, addr);
+      const custodialAddress = await ensureCustodial(chatId);
 
-      console.log(`[WebRegister] New web user: wallet=${addr.substring(0, 10)} chatId=${chatId}`);
+      console.log(`[WebRegister] New web user: identity=${addr.substring(0, 10)} chatId=${chatId} custodial=${custodialAddress.substring(0, 10)}`);
 
       res.json({
         success: true,
         chatId,
         walletAddress: addr,
+        custodialAddress,
         asterLinked: false,
         alreadyRegistered: false,
       });

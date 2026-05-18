@@ -105,26 +105,54 @@ export async function requireSiweAuthed(
     }
   }
 
-  // 4. Resolve chatId from telegram_wallets (and confirm PK presence if needed)
+  // 4. Resolve chatId via the MetaMask identity row, then resolve the
+  //    *custodial* (the chatId's row that holds an encrypted PK).
+  //
+  //    Web user model:
+  //      - identity row:  walletAddress = MetaMask (header),  PK = null
+  //      - custodial row: walletAddress = fresh BSC EOA,      PK = encrypted
+  //
+  //    Telegram /setup user model (legacy):
+  //      - single row:    walletAddress = custodial,          PK = encrypted
+  //      In that case the header MetaMask wouldn't resolve here unless the
+  //      user has *also* linked via /api/miniapp/web-register, which adds
+  //      the identity row.
+  //
+  //    The returned walletAddress is ALWAYS the custodial — that's what
+  //    holds funds, what the agent signs from, and what gets stored in the
+  //    competition entry row. Header binding (SIWE wallet === header) is
+  //    enforced above for *identity*, not for the custodial.
   let chatId: string;
-  let hasKey = false;
+  let custodialAddress: string = headerAddr;
+  let custodialHasKey = false;
   try {
     const { telegramWallets } = await import("@shared/schema");
-    const { eq } = await import("drizzle-orm");
-    const rows = await db
-      .select({ chatId: telegramWallets.chatId, encryptedPrivateKey: telegramWallets.encryptedPrivateKey })
+    const { eq, and, isNotNull, desc } = await import("drizzle-orm");
+    const identityRows = await db
+      .select({ chatId: telegramWallets.chatId })
       .from(telegramWallets)
       .where(eq(telegramWallets.walletAddress, headerAddr))
       .limit(1);
-    if (rows.length === 0) {
-      return { error: "Wallet not registered. Connect on /autonomous-economy first to provision a BUILD4 wallet.", status: 404, code: "NOT_REGISTERED" };
+    if (identityRows.length === 0) {
+      return { error: "Wallet not registered. Reconnect on /competition to provision your BUILD4 trading wallet.", status: 404, code: "NOT_REGISTERED" };
     }
-    chatId = rows[0].chatId;
-    hasKey = !!rows[0].encryptedPrivateKey;
+    chatId = identityRows[0].chatId;
+
+    const custodialRows = await db
+      .select({ walletAddress: telegramWallets.walletAddress, isActive: telegramWallets.isActive })
+      .from(telegramWallets)
+      .where(and(eq(telegramWallets.chatId, chatId), isNotNull(telegramWallets.encryptedPrivateKey)))
+      .orderBy(desc(telegramWallets.isActive))
+      .limit(1);
+    if (custodialRows.length > 0) {
+      custodialAddress = String(custodialRows[0].walletAddress).toLowerCase();
+      custodialHasKey = true;
+    }
   } catch (e: any) {
     console.error("[competition-auth] wallet lookup failed:", e?.message ?? e);
     return { error: "Authentication lookup failed.", status: 500, code: "LOOKUP_FAIL" };
   }
+  const hasKey = custodialHasKey;
 
   // 5. Per-chatId rate limit
   if (opts.rateLimit) {
@@ -148,18 +176,23 @@ export async function requireSiweAuthed(
     }
   }
 
-  // 7. PK fetch (only when needed; never returned to response by callers)
+  // 7. PK fetch (only when needed; never returned to response by callers).
+  //    Always fetched by the CUSTODIAL address, never the identity address.
   let privateKey: string | undefined;
   if (opts.needPrivateKey) {
     if (!hasKey) {
-      return { error: "Wallet has no custodial private key on file (view-only).", status: 403, code: "VIEW_ONLY" };
+      return { error: "No trading wallet provisioned. Reconnect on /competition to set one up.", status: 403, code: "NO_CUSTODIAL" };
     }
-    const pk = await storage.getPrivateKeyByWalletAddress(headerAddr);
+    const pk = await storage.getPrivateKeyByWalletAddress(custodialAddress);
     if (!pk) {
-      return { error: "Failed to decrypt wallet key.", status: 500, code: "DECRYPT_FAIL" };
+      return { error: "Failed to decrypt trading wallet key.", status: 500, code: "DECRYPT_FAIL" };
     }
     privateKey = pk;
   }
 
-  return { chatId, walletAddress: headerAddr, privateKey };
+  // walletAddress returned is the CUSTODIAL — every downstream caller
+  // (getBscWalletBalance, recordPancakeTrade, pancakeBuyTokenWithBnb) uses
+  // it to read/spend funds. The user's MetaMask identity is verified above
+  // and otherwise not exposed.
+  return { chatId, walletAddress: custodialAddress, privateKey };
 }

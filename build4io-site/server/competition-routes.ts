@@ -224,7 +224,21 @@ export function registerCompetitionRoutes(app: Express) {
     if ("error" in auth) return res.status(auth.status).json({ ok: false, error: auth.error, code: auth.code });
     try {
       const comp = await getActiveCompetition();
-      if (!comp) return res.json({ ok: true, entry: null, competition: null });
+      // Always-fresh funding panel — even before they join, they need to see
+      // the custodial deposit address + current BNB balance.
+      const bnbUsd = await getBnbUsdPrice();
+      let fundingBnb = 0;
+      try {
+        const { bnbWei } = await getBscWalletBalance(auth.walletAddress, "0x000000000000000000000000000000000000dEaD");
+        fundingBnb = Number(ethers.formatEther(bnbWei));
+      } catch { /* network glitch — leave 0 */ }
+      const funding = {
+        custodialAddress: auth.walletAddress,
+        bnbBalance: fundingBnb,
+        bnbUsdPrice: bnbUsd,
+        bnbUsdBalance: fundingBnb * bnbUsd,
+      };
+      if (!comp) return res.json({ ok: true, entry: null, competition: null, funding });
       const r = await db.execute(sql`
         SELECT id, username, agent_name, persona, mode, starting_balance_usdt, current_equity_usdt,
                pnl_usdt, pnl_percent, trade_count, win_count, loss_count, bust_out,
@@ -233,14 +247,13 @@ export function registerCompetitionRoutes(app: Express) {
         WHERE competition_id = ${comp.id} AND chat_id = ${auth.chatId} LIMIT 1
       `);
       const row = (r.rows ?? [])[0] as any;
-      if (!row) return res.json({ ok: true, entry: null, competition: { id: comp.id, status: comp.status } });
+      if (!row) return res.json({ ok: true, entry: null, competition: { id: comp.id, status: comp.status }, funding });
       let tracked: string[] = [];
       try { tracked = JSON.parse(String(row.tracked_tokens || "[]")); } catch {}
       const equityBnb = await recomputeEntryEquity(auth.walletAddress, tracked);
       const startBnb = Number(row.starting_balance_usdt) || 0;
       const pnlBnb = equityBnb - startBnb;
       const pnlPct = startBnb > 0 ? (pnlBnb / startBnb) * 100 : 0;
-      const bnbUsd = await getBnbUsdPrice();
       // Persist computed equity so leaderboard reads can sort without re-fetching every wallet.
       await db.execute(sql`
         UPDATE aster_competition_entries
@@ -270,6 +283,7 @@ export function registerCompetitionRoutes(app: Express) {
           currentUsd: equityBnb * bnbUsd,
           pnlUsd: pnlBnb * bnbUsd,
         },
+        funding,
       });
     } catch (e: any) {
       res.status(500).json({ ok: false, error: e?.message ?? String(e) });

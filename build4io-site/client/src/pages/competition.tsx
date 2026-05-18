@@ -519,6 +519,12 @@ type MyEntryResp = {
     startingUsd: number;
   };
   competition?: { id: string; status: string };
+  funding?: {
+    custodialAddress: string;
+    bnbBalance: number;
+    bnbUsdPrice: number;
+    bnbUsdBalance: number;
+  };
 };
 
 function mapLiveToLeaderRow(r: LiveLeaderRow, you: boolean): LeaderRow {
@@ -553,8 +559,10 @@ export default function Competition() {
 
   const [liveLb, setLiveLb] = useState<LiveLeaderRow[]>([]);
   const [myEntry, setMyEntry] = useState<MyEntryResp["entry"]>(null);
+  const [funding, setFunding] = useState<MyEntryResp["funding"] | null>(null);
   const [joining, setJoining] = useState(false);
   const [joinErr, setJoinErr] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
   // Poll leaderboard every 10s (and immediately on mount).
   useEffect(() => {
@@ -572,15 +580,24 @@ export default function Competition() {
     return () => { alive = false; clearInterval(id); };
   }, []);
 
-  // Load my entry when wallet is ready.
+  // Load my entry + funding panel when wallet is ready. Refresh every 20s
+  // so the BNB balance updates after a deposit lands.
   const loadMe = useCallback(async () => {
-    if (!session.ready) { setMyEntry(null); return; }
+    if (!session.ready) { setMyEntry(null); setFunding(null); return; }
     try {
       const j = await session.apiFetch<MyEntryResp>("/api/competition/me");
-      if (j.ok) setMyEntry(j.entry);
+      if (j.ok) {
+        setMyEntry(j.entry);
+        setFunding(j.funding ?? null);
+      }
     } catch { /* ignore */ }
   }, [session.ready, session.apiFetch]);
-  useEffect(() => { loadMe(); }, [loadMe]);
+  useEffect(() => {
+    loadMe();
+    if (!session.ready) return;
+    const id = setInterval(loadMe, 20_000);
+    return () => clearInterval(id);
+  }, [loadMe, session.ready]);
 
   const onJoin = useCallback(async () => {
     if (!session.ready) return;
@@ -786,6 +803,82 @@ export default function Competition() {
             </div>
           </div>
         </section>
+
+        {/* Fund Your Agent — custodial deposit address. Visible whenever a
+            wallet is connected (pre- and post-join). The MetaMask wallet is
+            the user's *identity*; the custodial is a server-managed BSC EOA
+            that holds the BNB the agent + manual trades spend from. */}
+        {session.ready && funding?.custodialAddress && !ended.ended && (
+          <section className="border-b border-zinc-900 bg-gradient-to-b from-zinc-950/40 to-transparent">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 py-5" data-testid="block-funding">
+              <div className="flex flex-col lg:flex-row lg:items-center gap-4 p-4 rounded-lg border border-zinc-800 bg-zinc-950/80">
+                <div className="flex items-start gap-3 flex-1 min-w-0">
+                  <div
+                    className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0"
+                    style={{ background: PCS_GRADIENT_SOFT }}
+                  >
+                    <span className="font-mono text-base" style={{ color: PCS_YELLOW }}>⛽</span>
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="font-mono text-sm font-bold text-white">
+                      {myEntry ? "Your trading wallet" : "Fund your agent"}
+                    </div>
+                    <div className="text-[11px] font-mono text-zinc-400 mt-0.5 leading-relaxed">
+                      Send BNB on BSC to this address. {myEntry ? "Funds here power your trades + agent loop." : "Once funded, click Join to snapshot your starting balance."}
+                    </div>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <code
+                        className="font-mono text-[11px] sm:text-xs text-white bg-black/40 px-2 py-1.5 rounded border border-zinc-800 break-all"
+                        data-testid="text-custodial-address"
+                      >
+                        {funding.custodialAddress}
+                      </code>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            await navigator.clipboard.writeText(funding.custodialAddress);
+                            setCopied(true);
+                            setTimeout(() => setCopied(false), 1500);
+                          } catch { /* user denied clipboard */ }
+                        }}
+                        className="font-mono text-[10px] uppercase tracking-wider px-2.5 py-1.5 rounded border border-zinc-800 hover:border-zinc-600 text-zinc-300 hover:text-white transition-colors"
+                        data-testid="button-copy-custodial"
+                      >
+                        {copied ? "✓ Copied" : "Copy"}
+                      </button>
+                      <a
+                        href={`https://bscscan.com/address/${funding.custodialAddress}`}
+                        target="_blank"
+                        rel="noreferrer noopener"
+                        className="font-mono text-[10px] uppercase tracking-wider px-2.5 py-1.5 rounded border border-zinc-800 hover:border-zinc-600 text-zinc-300 hover:text-white transition-colors"
+                        data-testid="link-bscscan-custodial"
+                      >
+                        BscScan ↗
+                      </a>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-6 lg:border-l lg:border-zinc-800 lg:pl-6">
+                  <div>
+                    <div className="text-[10px] font-mono uppercase tracking-wider text-zinc-500">Balance</div>
+                    <div className="font-mono text-lg tabular-nums text-white" data-testid="text-custodial-bnb">
+                      {funding.bnbBalance.toFixed(4)} <span className="text-xs text-zinc-500">BNB</span>
+                    </div>
+                    <div className="text-[10px] font-mono text-zinc-500 tabular-nums">
+                      ≈ ${funding.bnbUsdBalance.toFixed(2)}
+                    </div>
+                  </div>
+                </div>
+              </div>
+              {funding.bnbBalance < 0.001 && !myEntry && (
+                <div className="mt-2 text-[11px] font-mono text-zinc-500 px-1" data-testid="text-funding-hint">
+                  Tip: 0.005 BNB (~$3) is enough to start trading. The agent sizes positions $1.80–$30 per trade.
+                </div>
+              )}
+            </div>
+          </section>
+        )}
 
         {/* Join CTA / my entry banner */}
         {(showJoinCta || myEntry) && (
