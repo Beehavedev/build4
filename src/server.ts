@@ -96,6 +96,60 @@ app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() })
 })
 
+// ── Phase 4 (ERC-8183): Agent commerce manifest ──────────────────────────────
+// Public discovery endpoint listing BUILD4's products, capabilities, and
+// endpoints. Served at both the canonical .well-known path (for AI-agent
+// scanners) and a /api alias (for in-app fetches).
+{
+  const { getAgentManifest } = await import('./services/agentManifest')
+  const handler = (_req: express.Request, res: express.Response) => {
+    res.setHeader('Cache-Control', 'public, max-age=300')
+    res.setHeader('Access-Control-Allow-Origin', '*')
+    res.json(getAgentManifest())
+  }
+  app.get('/.well-known/agent.json', handler)
+  app.get('/api/agent/manifest', handler)
+}
+
+// ── Phase 3 (x402): demo premium-signal endpoint ─────────────────────────────
+// Gated behind a USDT-on-BSC micropayment. While X402_ENABLED is not
+// "true" the gate returns 503 (fail-closed), so accidental misconfigs
+// can't serve paid content for free. Status endpoint is always public.
+{
+  const { requireX402Payment, x402Status } = await import('./services/x402')
+
+  app.get('/api/x402/status', (_req, res) => {
+    res.json(x402Status())
+  })
+
+  app.get(
+    '/api/x402/premium-signal',
+    requireX402Payment({
+      amountUsdt: 0.10,
+      description: 'Premium BTC/Perp Signal (5-LLM swarm verdict)',
+      resource: '/api/x402/premium-signal',
+    }),
+    async (req: any, res) => {
+      // After payment is verified, return a sample signal. In real use
+      // this would call the trading brain; for the MVP we return a
+      // deterministic placeholder so the wiring can be smoke-tested
+      // without hitting the LLM swarm on every paid call.
+      res.json({
+        generatedAt: new Date().toISOString(),
+        payer: req.x402?.payer,
+        txHash: req.x402?.txHash,
+        signal: {
+          pair: 'BTCUSDT',
+          side: 'LONG',
+          conviction: 0.72,
+          horizonHours: 8,
+          note: 'Sample signal — real signal generation wired in subsequent release.',
+        },
+      })
+    }
+  )
+}
+
 // ERC-8004 metadata endpoint — public, returns the agent's identity JSON.
 // AI-agent scanners (NFAScan, etc.) fetch this to verify the agent's
 // declared model, learning Merkle root, and trust signals.

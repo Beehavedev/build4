@@ -18,6 +18,20 @@ async function run(sql: string) {
 export async function ensureNewTables() {
   console.log('[DB] Ensuring new tables exist (safe — no drops)...')
 
+  // Phase 3 (x402): single-use payment ledger. Used by
+  // src/services/x402.ts to enforce that each USDT txhash can only
+  // unlock a resource ONCE. Idempotent CREATE — never drops data.
+  await run(`CREATE TABLE IF NOT EXISTS "X402Payment" (
+    "tx_hash" TEXT NOT NULL,
+    "payer" TEXT NOT NULL,
+    "resource" TEXT NOT NULL,
+    "amount" TEXT NOT NULL,
+    "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT "X402Payment_pkey" PRIMARY KEY ("tx_hash")
+  )`)
+  await run(`CREATE INDEX IF NOT EXISTS "X402Payment_payer_idx" ON "X402Payment"("payer")`)
+  await run(`CREATE INDEX IF NOT EXISTS "X402Payment_resource_idx" ON "X402Payment"("resource")`)
+
   await run(`CREATE TABLE IF NOT EXISTS "User" (
     "id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
     "telegramId" BIGINT NOT NULL,
