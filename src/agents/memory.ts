@@ -1,4 +1,5 @@
 import { db } from '../db'
+import { mirrorMemoryAsync } from '../services/greenfield'
 
 export type MemoryType = 'observation' | 'decision' | 'correction' | 'market_note'
 
@@ -9,9 +10,57 @@ export async function saveMemory(
   metadata: Record<string, unknown> | null = null
 ): Promise<void> {
   try {
-    await db.agentMemory.create({
+    const row = await db.agentMemory.create({
       data: { agentId, type, content, metadata: metadata ?? undefined }
     })
+    // Phase 2 (BNBAgent SDK): mirror to BNB Greenfield for decentralized
+    // long-term storage. Fire-and-forget — Postgres is the source of
+    // truth, Greenfield is a verifiable mirror. Disabled by default
+    // unless GREENFIELD_ENABLED=true + all required env vars set.
+    mirrorMemoryAsync(
+      {
+        agentId,
+        memoryId: row.id,
+        type,
+        content,
+        metadata,
+        createdAt: row.createdAt,
+      },
+      // On success, write the Greenfield ref back into the metadata JSON
+      // so the row is self-describing (no schema change needed — uses
+      // the existing JSON metadata column, respecting the
+      // "do not change prisma/" constraint). We re-read the row in the
+      // callback to avoid clobbering any concurrent metadata updates
+      // that may have landed between the create and this callback —
+      // the Greenfield round-trip can take seconds and we don't want
+      // a stale `row.metadata` snapshot to overwrite fresh fields.
+      async (ref) => {
+        try {
+          const fresh = await db.agentMemory.findUnique({ where: { id: row.id } })
+          if (!fresh) return // row was pruned before mirror completed
+          const existing =
+            (typeof fresh.metadata === 'object' && fresh.metadata !== null
+              ? (fresh.metadata as Record<string, unknown>)
+              : {}) || {}
+          await db.agentMemory.update({
+            where: { id: row.id },
+            data: {
+              metadata: {
+                ...existing,
+                greenfield: {
+                  bucket: ref.bucket,
+                  object: ref.objectName,
+                  txHash: ref.txHash,
+                  mirroredAt: new Date().toISOString(),
+                },
+              },
+            },
+          })
+        } catch (err) {
+          console.error('[Memory] greenfield ref update failed:', err)
+        }
+      }
+    )
     // Prune if over limit
     const count = await db.agentMemory.count({ where: { agentId } })
     if (count > 200) {

@@ -13,6 +13,8 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.96.0",
+    "@bnb-chain/greenfield-js-sdk": "^2.2.2",
+    "@bnb-chain/reed-solomon": "^1.1.4",
     "@exodus/bigint-buffer": "^1.1.5-exodus.1",
     "@grammyjs/conversations": "^2.1.1",
     "@hookform/resolvers": "^3.10.0",
