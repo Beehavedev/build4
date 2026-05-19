@@ -54,7 +54,7 @@ const MODE_OPTIONS: ModeDef[] = [
   { id: "manual",  name: "Manual",   tag: "Your hand",   blurb: "Only your manual trades count. Pure skill, no AI assist.",     icon: Hand },
 ];
 
-const COMPETITION_START_ISO = "2026-05-18T00:00:00Z";
+const COMPETITION_START_ISO = "2026-05-21T12:00:00Z";
 const COMPETITION_END_ISO = "2026-05-25T00:00:00Z";
 const TREASURY_ADDRESS = "0x0000000000000000000000000000000000000000";
 const HOUSE_AGENT_NAME = "BUILD4_HOUSE";
