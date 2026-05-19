@@ -84,12 +84,41 @@ async function miniAppAuth(req: Request, res: Response, next: NextFunction) {
       return next();
     }
   }
+  // ── 2026-05-19 INCIDENT FIX (KSR-BUILD4-INCIDENT-2026-05-17 NEW-05) ─────
+  // The two fallbacks below — accepting `x-telegram-chat-id` as a raw
+  // header, and accepting `x-wallet-address` and trusting the DB lookup —
+  // are AUTHENTICATION-BY-CLAIM. They have no signature, no proof of
+  // ownership. Anyone who knows a victim's chatId (or their public BSC
+  // wallet address, which is on-chain and trivially enumerable) could
+  // impersonate them.
+  //
+  // Combined with the pre-fix Cloudflare WAF bypass on /api/miniapp/*
+  // (now narrowed — see build4io-site/server/index.ts), this is the most
+  // plausible vector for the W2 drain: an attacker hits the API directly
+  // with the victim's wallet address as a header, becomes the victim,
+  // calls /api/miniapp/link-aster or other state-changing routes.
+  //
+  // Default-deny both fallbacks until a proper EIP-712/SIWE signing flow
+  // ships. The Telegram InitData path above (HMAC-signed by Telegram with
+  // the bot token) remains the ONLY safe authenticator. The web terminal
+  // (build4.io users without Telegram) is intentionally broken until
+  // SIWE lands — set `MINIAPP_ALLOW_UNSIGNED_AUTH=true` in Render env to
+  // re-enable temporarily, BUT this re-opens the exact hole that caused
+  // the drain. Don't flip it back without a very clear reason.
+  const allowUnsigned = process.env.MINIAPP_ALLOW_UNSIGNED_AUTH === "true";
+
   const chatId = req.headers["x-telegram-chat-id"] as string;
   if (chatId && /^\d+$/.test(chatId)) {
-    return next();
+    if (allowUnsigned) return next();
+    console.warn(`[WebAuth] blocked unsigned x-telegram-chat-id=${chatId.substring(0, 6)}… (set MINIAPP_ALLOW_UNSIGNED_AUTH=true to re-enable; NOT RECOMMENDED)`);
+    return res.status(401).json({ error: "Unsigned auth disabled. Open via Telegram." });
   }
   const walletAddress = (req.headers["x-wallet-address"] as string || "").toLowerCase().trim();
   if (walletAddress && /^0x[a-f0-9]{40}$/.test(walletAddress)) {
+    if (!allowUnsigned) {
+      console.warn(`[WebAuth] blocked unsigned x-wallet-address=${walletAddress.substring(0, 10)}… (set MINIAPP_ALLOW_UNSIGNED_AUTH=true to re-enable; NOT RECOMMENDED)`);
+      return res.status(401).json({ error: "Unsigned wallet auth disabled. Sign in via Telegram or upgrade to SIWE flow." });
+    }
     try {
       const { db } = await import("./db");
       const { telegramWallets, asterCredentials: asterCredsTable } = await import("@shared/schema");
