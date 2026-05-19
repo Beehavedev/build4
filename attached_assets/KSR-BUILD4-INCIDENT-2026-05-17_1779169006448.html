@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BUILD4 — Incident Forensic Report | Kairos Lab</title>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;800&family=DM+Sans:wght@400;500;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0A0E17; --surface: #111827; --surface2: #1F2937; --border: #1E293B;
+  --text: #F1F5F9; --text2: #94A3B8; --muted: #64748B;
+  --cyan: #00D4FF; --purple: #7C3AED; --green: #059669;
+  --crit: #EF4444; --high: #F97316; --med: #EAB308; --low: #3B82F6; --info: #6B7280;
+  --fh: 'Bricolage Grotesque', sans-serif; --fb: 'DM Sans', sans-serif; --fm: 'Space Mono', monospace;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:var(--bg); color:var(--text); font-family:var(--fb); line-height:1.7; }
+.c { max-width:1100px; margin:0 auto; padding:0 32px; }
+h1,h2,h3,h4 { font-family:var(--fh); font-weight:800; letter-spacing:-0.02em; }
+h2 { font-size:26px; margin-bottom:20px; padding-bottom:10px; border-bottom:1px solid var(--border); margin-top: 40px;}
+h3 { font-size:18px; margin-bottom:12px; margin-top: 24px;}
+h4 { font-size:14px; color:var(--cyan); text-transform:uppercase; letter-spacing:0.08em; margin-bottom:8px; font-weight:600; }
+p { color:var(--text2); margin-bottom:10px; }
+ul, ol { color: var(--text2); padding-left: 22px; margin: 8px 0 12px; }
+li { margin-bottom: 4px; }
+a { color:var(--cyan); text-decoration:none; }
+code { font-family:var(--fm); font-size:12px; background:rgba(0,212,255,0.08); padding:2px 6px; border-radius:4px; word-break:break-all; }
+pre { background: #0B1220; border: 1px solid var(--border); border-radius: 8px; padding: 14px; overflow-x: auto; font-family: var(--fm); font-size: 11px; color: var(--text2); margin: 12px 0; white-space: pre-wrap; }
+.badge { padding:3px 10px; border-radius:4px; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.05em; display:inline-block; }
+.badge.crit { background:rgba(239,68,68,0.15); color:var(--crit); border:1px solid rgba(239,68,68,0.3); }
+.badge.high { background:rgba(249,115,22,0.15); color:var(--high); border:1px solid rgba(249,115,22,0.3); }
+.badge.med { background:rgba(234,179,8,0.15); color:var(--med); border:1px solid rgba(234,179,8,0.3); }
+.badge.low { background:rgba(59,130,246,0.15); color:var(--low); border:1px solid rgba(59,130,246,0.3); }
+.badge.proven { background:rgba(5,150,105,0.15); color:var(--green); border:1px solid rgba(5,150,105,0.4); }
+.badge.likely { background:rgba(234,179,8,0.15); color:var(--med); border:1px solid rgba(234,179,8,0.4); }
+.badge.uncertain { background:rgba(107,114,128,0.18); color:var(--text2); border:1px solid rgba(107,114,128,0.4); }
+.card { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:24px; margin-bottom:16px; }
+table { width:100%; border-collapse:collapse; margin:16px 0; }
+th { text-align:left; padding:10px 14px; font-size:11px; text-transform:uppercase; letter-spacing:0.08em; color:var(--muted); border-bottom:2px solid var(--border); font-family:var(--fh); }
+td { padding:8px 14px; border-bottom:1px solid var(--border); font-size:13px; vertical-align:top; }
+.id { font-family:var(--fm); font-size:11px; color:var(--cyan); white-space:nowrap; }
+.grid2 { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin:20px 0; }
+.grid3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px; margin:20px 0; }
+.grid4 { display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:12px; margin:20px 0; }
+.stat { text-align:center; padding:16px; }
+.stat .num { font-size:32px; font-weight:800; font-family:var(--fh); }
+.stat .lbl { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0.08em; margin-top:4px; }
+.divider { width:60px; height:3px; border-radius:2px; margin-bottom:20px; }
+section { padding:50px 0; }
+.cover { min-height:100vh; display:flex; flex-direction:column; justify-content:center; align-items:center; text-align:center; padding:60px 32px; position:relative; page-break-after:always; }
+.cover::before { content:''; position:absolute; inset:0; background:radial-gradient(ellipse at 30% 50%,rgba(0,212,255,0.05) 0%,transparent 60%),radial-gradient(ellipse at 70% 60%,rgba(124,58,237,0.03) 0%,transparent 50%); pointer-events:none; }
+.cover-logos { display:flex; align-items:center; gap:48px; margin-bottom:32px; position:relative; }
+.cover-logo-sep { width:1px; height:80px; background:rgba(200,210,220,0.15); }
+.cover-logo-brand { display:flex; flex-direction:column; align-items:center; gap:6px; }
+.cover-logo-brand .brand-name { font-family:var(--fh); font-weight:800; letter-spacing:0.18em; font-size:13px; color:var(--text); }
+.cover-logo-brand .brand-role { font-size:10px; color:var(--muted); letter-spacing:0.1em; text-transform:uppercase; }
+.cover h1 { font-size:48px; background:linear-gradient(135deg,var(--text),var(--crit)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; position:relative; margin-bottom:8px; }
+.cover h2 { font-size:20px; color:var(--text2); font-weight:400; border:none; position:relative; margin-bottom:32px; padding:0; }
+.alert-box { border-radius:8px; padding:16px 20px; margin:16px 0; font-size:13px; }
+.alert-box.danger { background:rgba(239,68,68,0.08); border:1px solid rgba(239,68,68,0.2); }
+.alert-box.warn { background:rgba(249,115,22,0.08); border:1px solid rgba(249,115,22,0.2); }
+.alert-box.info { background:rgba(0,212,255,0.05); border:1px solid rgba(0,212,255,0.15); }
+.alert-box.good { background:rgba(5,150,105,0.06); border:1px solid rgba(5,150,105,0.2); }
+.kc-step { background:var(--surface2); border:1px solid var(--border); border-radius:8px; padding:10px 14px; margin-bottom:8px; font-size:13px; }
+.kc-step .step-num { font-size:10px; color:var(--crit); font-weight:700; text-transform:uppercase; letter-spacing:0.1em; margin-right:8px; }
+.mermaid { background: #0B1220; border: 1px solid var(--border); border-radius: 12px; padding: 28px; margin: 20px 0; }
+.k-hex { width:90px; height:90px; }
+.k-hex polygon { fill:none; stroke:rgba(200,210,220,0.25); stroke-width:2.5; }
+.k-hex circle.dot { stroke:none; }
+.b4-logo { width:90px; height:90px; border-radius:18px; box-shadow: 0 6px 24px rgba(0,255,128,0.10); }
+footer { text-align:center; padding:40px 0; border-top:1px solid var(--border); margin-top:40px; }
+footer p { font-size:11px; color:var(--muted); }
+.page-break { page-break-before: always; }
+@media print {
+  body { background:white; color:#1a1a2e; }
+  section { padding: 28px 0; }
+  .card { background:#f8f9fa; border-color:#ddd; }
+  .alert-box.danger { background:#fff0f0; border-color:#fca5a5; }
+  .alert-box.warn   { background:#fff7e6; border-color:#fdba74; }
+  .alert-box.info   { background:#e6f7ff; border-color:#7dd3fc; }
+  .alert-box.good   { background:#e6f9ee; border-color:#86efac; }
+  h2, h4, .id, a, .cover h1 { color:#0066cc !important; -webkit-text-fill-color:#0066cc !important; }
+  .cover h1 { -webkit-text-fill-color: #1a1a2e !important; background:none !important; }
+  .badge.crit { background:#fee; color:#c00; border-color:#fca5a5; }
+  .badge.proven { background:#e6f9ee; color:#047857; border-color:#86efac; }
+  .badge.likely { background:#fff7e6; color:#a16207; border-color:#fdba74; }
+  .badge.uncertain { background:#f3f4f6; color:#374151; border-color:#d1d5db; }
+  p, td, li { color:#222 !important; }
+  pre { background: #f4f4f4; color: #222; border-color: #ddd; }
+  code { color: #0066cc; background: rgba(0,212,255,0.06); }
+  .kc-step { background: #f9f9fb; border-color: #ddd; }
+  .mermaid { background: #f9fafb; border-color: #e5e7eb; }
+  .cover-logo-brand .brand-name { color: #1a1a2e !important; }
+  .cover-logo-brand .brand-role { color: #475569 !important; }
+  .cover-logo-sep { background: #cbd5e1 !important; }
+  .k-hex polygon { stroke: #94a3b8 !important; }
+  .k-hex text { fill: #1a1a2e !important; }
+}
+</style>
+</head>
+<body>
+
+<!-- ============= COVER ============= -->
+<section class="cover">
+  <div class="cover-logos">
+    <!-- KAIROS LAB LOGO -->
+    <div class="cover-logo-brand">
+      <svg class="k-hex" viewBox="0 0 140 140">
+        <polygon points="70,8 128,38 128,102 70,132 12,102 12,38"/>
+        <line x1="70" y1="8"   x2="70" y2="70" stroke="rgba(200,210,220,0.10)" stroke-width="1.5"/>
+        <line x1="128" y1="38" x2="70" y2="70" stroke="rgba(200,210,220,0.10)" stroke-width="1.5"/>
+        <line x1="128" y1="102" x2="70" y2="70" stroke="rgba(200,210,220,0.10)" stroke-width="1.5"/>
+        <line x1="70" y1="132" x2="70" y2="70" stroke="rgba(200,210,220,0.10)" stroke-width="1.5"/>
+        <line x1="12" y1="102" x2="70" y2="70" stroke="rgba(200,210,220,0.10)" stroke-width="1.5"/>
+        <line x1="12" y1="38"  x2="70" y2="70" stroke="rgba(200,210,220,0.10)" stroke-width="1.5"/>
+        <circle cx="70" cy="70" r="22" fill="rgba(200,210,220,0.08)"/>
+        <text x="70" y="78" text-anchor="middle" font-family="Bricolage Grotesque,sans-serif" font-size="28" font-weight="800" fill="#F1F5F9">K</text>
+        <circle class="dot" cx="70"  cy="8"   r="8" fill="#9B7FE6"/>
+        <circle class="dot" cx="128" cy="38"  r="8" fill="#00D4CC"/>
+        <circle class="dot" cx="128" cy="102" r="8" fill="#4A90D9"/>
+        <circle class="dot" cx="70"  cy="132" r="8" fill="#B4A7D6"/>
+        <circle class="dot" cx="12"  cy="102" r="8" fill="#7DD4E8"/>
+        <circle class="dot" cx="12"  cy="38"  r="8" fill="#A8C8E8"/>
+      </svg>
+      <span class="brand-name">KAIROS LAB</span>
+      <span class="brand-role">Security Research — Auditor</span>
+    </div>
+    <div class="cover-logo-sep"></div>
+    <div class="cover-logo-brand">
+      <img class="b4-logo" src="build4_logo/build4_logo_1024.png" alt="BUILD4 logo">
+      <span class="brand-name">BUILD4</span>
+      <span class="brand-role">Client — build4.io</span>
+    </div>
+  </div>
+
+  <h1 style="margin-top:24px;">INCIDENT FORENSIC REPORT</h1>
+  <h2>3 User Wallets Drained — Root Cause &amp; Action Plan</h2>
+
+  <div class="card" style="max-width:600px;display:grid;grid-template-columns:1fr 1fr;gap:14px;text-align:left;position:relative;">
+    <div><span style="color:var(--muted);font-size:11px;">Client</span><br><span style="font-size:13px;">BUILD4 — build4.io + @BUILD4_BOT</span></div>
+    <div><span style="color:var(--muted);font-size:11px;">Auditor</span><br><span style="font-size:13px;">Kairos Lab Security Research</span></div>
+    <div><span style="color:var(--muted);font-size:11px;">Incident Window</span><br><span style="font-size:13px;">2026-04-21 → 2026-05-16 (UTC)</span></div>
+    <div><span style="color:var(--muted);font-size:11px;">Reported</span><br><span style="font-size:13px;">2026-05-17 by founder</span></div>
+    <div><span style="color:var(--muted);font-size:11px;">Chain(s)</span><br><span style="font-size:13px;">BNB Smart Chain (56) &middot; Aster Chain L1</span></div>
+    <div><span style="color:var(--muted);font-size:11px;">Report ID</span><br><span style="font-size:13px;">KSR-BUILD4-INCIDENT-2026-05-17</span></div>
+    <div><span style="color:var(--muted);font-size:11px;">Confirmed Loss (W2)</span><br><span style="font-size:13px;color:var(--crit);font-weight:700;">~382 ASTER + ~38 USDT</span></div>
+    <div><span style="color:var(--muted);font-size:11px;">Classification</span><br><span style="font-size:13px;color:var(--crit);">CONFIDENTIAL</span></div>
+  </div>
+
+  <div class="alert-box danger" style="max-width:600px;position:relative;margin-top:16px;">
+    <strong style="color:var(--crit);">CONFIRMED DRAIN &mdash; IMMEDIATE ACTION REQUIRED</strong><br>
+    Wallet 2 was demonstrably drained on BSC via 6 on-chain Transfer events. Vulnerabilities flagged in our KSR-BUILD4-AUDIT V4 (April 7, 2026) are still present in the codebase 40 days later. The bot must be paused until at least steps 1-9 of the action plan are complete.
+  </div>
+</section>
+
+<!-- ============= TL;DR + VERDICT ============= -->
+<section class="c">
+  <div class="divider" style="background:linear-gradient(90deg,var(--crit),var(--high));"></div>
+  <h2>TL;DR — Verdict</h2>
+
+  <div class="alert-box danger">
+    The 3 wallets you sent are user wallets generated by your Telegram bot.
+    Wallet 2 (<code>0x06d622…</code>) was unambiguously drained: <strong>~382 ASTER + ~38 USDT</strong> (≈ $420 at current prices) routed to drainer EOA <code>0xa711a2af…</code>
+    between 2026-04-21 and 2026-05-16, then swap-laundered through 3 DEX/AMM contracts to break the trace.
+    Wallets 1 and 3 show <strong>no confirmed BSC outflow of USDT/ASTER</strong> in the last 27 days — their reported losses
+    are either (a) still pending on Aster L1, (b) drained on a different chain we have not scanned (Arbitrum / Hyperliquid),
+    or (c) the user's perception of loss exceeds the on-chain reality. We need DB extracts and the user's Aster account balances to close this gap.
+  </div>
+
+  <h3>Verdict Matrix</h3>
+  <table>
+    <thead>
+      <tr><th>Claim</th><th>Confidence</th><th>Basis</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Wallet 2 was drained &mdash; funds left the wallet without owner's intent</td>
+        <td><span class="badge proven">PROVEN</span></td>
+        <td>6 immutable BSC Transfer events &mdash; W2 &rarr; <code>0xa711a2af</code> &rarr; 3 DEX contracts. Drainer EOA has nonce 10, ~$0.30 BNB dust, 1 incoming counterparty.</td>
+      </tr>
+      <tr>
+        <td>Drainer <code>0xa711a2af</code> is attacker-controlled</td>
+        <td><span class="badge proven">PROVEN</span></td>
+        <td>Fresh EOA (nonce 10), no labels on Etherscan/Chainabuse, immediately routed funds to swap contracts to break tracing &mdash; classic drainer signature.</td>
+      </tr>
+      <tr>
+        <td>The stolen funds were swap-laundered (not direct CEX deposit)</td>
+        <td><span class="badge proven">PROVEN</span></td>
+        <td>USDT was sent to a PancakeSwap V3 USDT/WBNB pool (factory <code>0x0bfbcf…91865</code>). ASTER was sent to 2 high-volume swap contracts ($285M and $6.4M USDT throughput).</td>
+      </tr>
+      <tr>
+        <td>Build4 codebase still contains the vulnerabilities flagged in V4 audit (Apr 7)</td>
+        <td><span class="badge proven">PROVEN</span></td>
+        <td>3 hardcoded fallback encryption keys present in <code>src/services/wallet.ts</code> + <code>build4io-site/server/bot-wallet.ts</code>. Deployer PK <code>fbb5ce…87de</code> still in <code>build4io-site/.replit:56</code>.</td>
+      </tr>
+      <tr>
+        <td>Root cause = Build4 DB compromise + default-key decryption of user PKs</td>
+        <td><span class="badge likely">HIGHLY LIKELY</span></td>
+        <td>Pattern matches the V4 audit prediction (C12 + NEW-03). Requires DB extract to formally prove — the encrypted_pk column for W2 + attempted decryption with the default key would close this.</td>
+      </tr>
+      <tr>
+        <td>Wallets 1 &amp; 3 were drained</td>
+        <td><span class="badge uncertain">UNCERTAIN</span></td>
+        <td>No detectable BSC outflow of USDT/ASTER for W1 or W3 in 27-day archive scan. Aster L1 records show small Withdraws but they may not have bridged to BSC, or funds may have moved as native BNB / on another chain.</td>
+      </tr>
+      <tr>
+        <td>Final attacker exit destination identified</td>
+        <td><span class="badge uncertain">UNCERTAIN</span></td>
+        <td>After DEX swaps, funds converted to BNB native — which doesn't emit Transfer events. Requires native-BNB indexing API (Routescan, GoldRush, dedicated archive node) to follow further.</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ============= TIMELINE MERMAID ============= -->
+<section class="c page-break">
+  <div class="divider" style="background:linear-gradient(90deg,var(--cyan),var(--purple));"></div>
+  <h2>Incident Timeline</h2>
+  <p>Annotated forensic timeline. Note the 14-day gap between our V4 audit warning and the first observable drain.</p>
+
+  <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:14px;text-align:center;">
+    <svg style="max-width:100%;height:auto;display:block;margin:0 auto;" id="container" width="276" xmlns="http://www.w3.org/2000/svg" class="flowchart" height="1670" viewBox="0 0 276 1670" role="graphics-document document" aria-roledescription="flowchart-v2"><style>#container{font-family:"trebuchet ms",verdana,arial,sans-serif;font-size:16px;fill:#333;}@keyframes edge-animation-frame{from{stroke-dashoffset:0;}}@keyframes dash{to{stroke-dashoffset:0;}}#container .edge-animation-slow{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 50s linear infinite;stroke-linecap:round;}#container .edge-animation-fast{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 20s linear infinite;stroke-linecap:round;}#container .error-icon{fill:#552222;}#container .error-text{fill:#552222;stroke:#552222;}#container .edge-thickness-normal{stroke-width:1px;}#container .edge-thickness-thick{stroke-width:3.5px;}#container .edge-pattern-solid{stroke-dasharray:0;}#container .edge-thickness-invisible{stroke-width:0;fill:none;}#container .edge-pattern-dashed{stroke-dasharray:3;}#container .edge-pattern-dotted{stroke-dasharray:2;}#container .marker{fill:#333333;stroke:#333333;}#container .marker.cross{stroke:#333333;}#container svg{font-family:"trebuchet ms",verdana,arial,sans-serif;font-size:16px;}#container p{margin:0;}#container .label{font-family:"trebuchet ms",verdana,arial,sans-serif;color:#333;}#container .cluster-label text{fill:#333;}#container .cluster-label span{color:#333;}#container .cluster-label span p{background-color:transparent;}#container .label text,#container span{fill:#333;color:#333;}#container .node rect,#container .node circle,#container .node ellipse,#container .node polygon,#container .node path{fill:#ECECFF;stroke:#9370DB;stroke-width:1px;}#container .rough-node .label text,#container .node .label text,#container .image-shape .label,#container .icon-shape .label{text-anchor:middle;}#container .node .katex path{fill:#000;stroke:#000;stroke-width:1px;}#container .rough-node .label,#container .node .label,#container .image-shape .label,#container .icon-shape .label{text-align:center;}#container .node.clickable{cursor:pointer;}#container .root .anchor path{fill:#333333!important;stroke-width:0;stroke:#333333;}#container .arrowheadPath{fill:#333333;}#container .edgePath .path{stroke:#333333;stroke-width:2.0px;}#container .flowchart-link{stroke:#333333;fill:none;}#container .edgeLabel{background-color:rgba(232,232,232, 0.8);text-align:center;}#container .edgeLabel p{background-color:rgba(232,232,232, 0.8);}#container .edgeLabel rect{opacity:0.5;background-color:rgba(232,232,232, 0.8);fill:rgba(232,232,232, 0.8);}#container .labelBkg{background-color:rgba(232, 232, 232, 0.5);}#container .cluster rect{fill:#ffffde;stroke:#aaaa33;stroke-width:1px;}#container .cluster text{fill:#333;}#container .cluster span{color:#333;}#container div.mermaidTooltip{position:absolute;text-align:center;max-width:200px;padding:2px;font-family:"trebuchet ms",verdana,arial,sans-serif;font-size:12px;background:hsl(80, 100%, 96.2745098039%);border:1px solid #aaaa33;border-radius:2px;pointer-events:none;z-index:100;}#container .flowchartTitleText{text-anchor:middle;font-size:18px;fill:#333;}#container rect.text{fill:none;stroke-width:0;}#container .icon-shape,#container .image-shape{background-color:rgba(232,232,232, 0.8);text-align:center;}#container .icon-shape p,#container .image-shape p{background-color:rgba(232,232,232, 0.8);padding:2px;}#container .icon-shape rect,#container .image-shape rect{opacity:0.5;background-color:rgba(232,232,232, 0.8);fill:rgba(232,232,232, 0.8);}#container .label-icon{display:inline-block;height:1em;overflow:visible;vertical-align:-0.125em;}#container .node .label-icon path{fill:currentColor;stroke:revert;stroke-width:revert;}#container :root{--mermaid-font-family:"trebuchet ms",verdana,arial,sans-serif;}#container .audit&gt;*{fill:#dbeafe!important;stroke:#1e3a8a!important;stroke-width:2px!important;color:#1e3a8a!important;}#container .audit span{fill:#dbeafe!important;stroke:#1e3a8a!important;stroke-width:2px!important;color:#1e3a8a!important;}#container .audit tspan{fill:#1e3a8a!important;}#container .warn&gt;*{fill:#ede9fe!important;stroke:#7c3aed!important;stroke-width:2px!important;color:#5b21b6!important;}#container .warn span{fill:#ede9fe!important;stroke:#7c3aed!important;stroke-width:2px!important;color:#5b21b6!important;}#container .warn tspan{fill:#5b21b6!important;}#container .drain&gt;*{fill:#fecaca!important;stroke:#7f1d1d!important;stroke-width:2px!important;color:#7f1d1d!important;}#container .drain span{fill:#fecaca!important;stroke:#7f1d1d!important;stroke-width:2px!important;color:#7f1d1d!important;}#container .drain tspan{fill:#7f1d1d!important;}#container .uncertain&gt;*{fill:#f3f4f6!important;stroke:#6b7280!important;stroke-width:1.5px!important;color:#374151!important;}#container .uncertain span{fill:#f3f4f6!important;stroke:#6b7280!important;stroke-width:1.5px!important;color:#374151!important;}#container .uncertain tspan{fill:#374151!important;}#container .alert&gt;*{fill:#fed7aa!important;stroke:#9a3412!important;stroke-width:2px!important;color:#7c2d12!important;}#container .alert span{fill:#fed7aa!important;stroke:#9a3412!important;stroke-width:2px!important;color:#7c2d12!important;}#container .alert tspan{fill:#7c2d12!important;}</style><g><marker id="container_flowchart-v2-pointEnd" class="marker flowchart-v2" viewBox="0 0 10 10" refX="5" refY="5" markerUnits="userSpaceOnUse" markerWidth="8" markerHeight="8" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></path></marker><marker id="container_flowchart-v2-pointStart" class="marker flowchart-v2" viewBox="0 0 10 10" refX="4.5" refY="5" markerUnits="userSpaceOnUse" markerWidth="8" markerHeight="8" orient="auto"><path d="M 0 5 L 10 10 L 10 0 z" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></path></marker><marker id="container_flowchart-v2-circleEnd" class="marker flowchart-v2" viewBox="0 0 10 10" refX="11" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></circle></marker><marker id="container_flowchart-v2-circleStart" class="marker flowchart-v2" viewBox="0 0 10 10" refX="-1" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></circle></marker><marker id="container_flowchart-v2-crossEnd" class="marker cross flowchart-v2" viewBox="0 0 11 11" refX="12" refY="5.2" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><path d="M 1,1 l 9,9 M 10,1 l -9,9" class="arrowMarkerPath" style="stroke-width: 2; stroke-dasharray: 1, 0;"></path></marker><marker id="container_flowchart-v2-crossStart" class="marker cross flowchart-v2" viewBox="0 0 11 11" refX="-1" refY="5.2" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><path d="M 1,1 l 9,9 M 10,1 l -9,9" class="arrowMarkerPath" style="stroke-width: 2; stroke-dasharray: 1, 0;"></path></marker><g class="root"><g class="clusters"></g><g class="edgePaths"><path d="M138,134L138,138.167C138,142.333,138,150.667,138,158.333C138,166,138,173,138,176.5L138,180" id="L_A1_A2_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style=";" data-edge="true" data-et="edge" data-id="L_A1_A2_0" data-points="W3sieCI6MTM4LCJ5IjoxMzR9LHsieCI6MTM4LCJ5IjoxNTl9LHsieCI6MTM4LCJ5IjoxODR9XQ==" marker-end="url(#container_flowchart-v2-pointEnd)"></path><path d="M138,310L138,314.167C138,318.333,138,326.667,138,334.333C138,342,138,349,138,352.5L138,356" id="L_A2_A3_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style=";" data-edge="true" data-et="edge" data-id="L_A2_A3_0" data-points="W3sieCI6MTM4LCJ5IjozMTB9LHsieCI6MTM4LCJ5IjozMzV9LHsieCI6MTM4LCJ5IjozNjB9XQ==" marker-end="url(#container_flowchart-v2-pointEnd)"></path><path d="M138,534L138,538.167C138,542.333,138,550.667,138,558.333C138,566,138,573,138,576.5L138,580" id="L_A3_B1_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style=";" data-edge="true" data-et="edge" data-id="L_A3_B1_0" data-points="W3sieCI6MTM4LCJ5Ijo1MzR9LHsieCI6MTM4LCJ5Ijo1NTl9LHsieCI6MTM4LCJ5Ijo1ODR9XQ==" marker-end="url(#container_flowchart-v2-pointEnd)"></path><path d="M138,686L138,690.167C138,694.333,138,702.667,138,710.333C138,718,138,725,138,728.5L138,732" id="L_B1_B2_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style=";" data-edge="true" data-et="edge" data-id="L_B1_B2_0" data-points="W3sieCI6MTM4LCJ5Ijo2ODZ9LHsieCI6MTM4LCJ5Ijo3MTF9LHsieCI6MTM4LCJ5Ijo3MzZ9XQ==" marker-end="url(#container_flowchart-v2-pointEnd)"></path><path d="M138,862L138,866.167C138,870.333,138,878.667,138,886.333C138,894,138,901,138,904.5L138,908" id="L_B2_B3_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style=";" data-edge="true" data-et="edge" data-id="L_B2_B3_0" data-points="W3sieCI6MTM4LCJ5Ijo4NjJ9LHsieCI6MTM4LCJ5Ijo4ODd9LHsieCI6MTM4LCJ5Ijo5MTJ9XQ==" marker-end="url(#container_flowchart-v2-pointEnd)"></path><path d="M138,1062L138,1066.167C138,1070.333,138,1078.667,138,1086.333C138,1094,138,1101,138,1104.5L138,1108" id="L_B3_B4_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style=";" data-edge="true" data-et="edge" data-id="L_B3_B4_0" data-points="W3sieCI6MTM4LCJ5IjoxMDYyfSx7IngiOjEzOCwieSI6MTA4N30seyJ4IjoxMzgsInkiOjExMTJ9XQ==" marker-end="url(#container_flowchart-v2-pointEnd)"></path><path d="M138,1262L138,1266.167C138,1270.333,138,1278.667,138,1286.333C138,1294,138,1301,138,1304.5L138,1308" id="L_B4_B5_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style=";" data-edge="true" data-et="edge" data-id="L_B4_B5_0" data-points="W3sieCI6MTM4LCJ5IjoxMjYyfSx7IngiOjEzOCwieSI6MTI4N30seyJ4IjoxMzgsInkiOjEzMTJ9XQ==" marker-end="url(#container_flowchart-v2-pointEnd)"></path><path d="M138,1438L138,1442.167C138,1446.333,138,1454.667,138,1462.333C138,1470,138,1477,138,1480.5L138,1484" id="L_B5_C1_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style=";" data-edge="true" data-et="edge" data-id="L_B5_C1_0" data-points="W3sieCI6MTM4LCJ5IjoxNDM4fSx7IngiOjEzOCwieSI6MTQ2M30seyJ4IjoxMzgsInkiOjE0ODh9XQ==" marker-end="url(#container_flowchart-v2-pointEnd)"></path></g><g class="edgeLabels"><g class="edgeLabel"><g class="label" data-id="L_A1_A2_0" transform="translate(0, 0)"><foreignObject width="0" height="0"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="edgeLabel"></span></div></foreignObject></g></g><g class="edgeLabel"><g class="label" data-id="L_A2_A3_0" transform="translate(0, 0)"><foreignObject width="0" height="0"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="edgeLabel"></span></div></foreignObject></g></g><g class="edgeLabel"><g class="label" data-id="L_A3_B1_0" transform="translate(0, 0)"><foreignObject width="0" height="0"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="edgeLabel"></span></div></foreignObject></g></g><g class="edgeLabel"><g class="label" data-id="L_B1_B2_0" transform="translate(0, 0)"><foreignObject width="0" height="0"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="edgeLabel"></span></div></foreignObject></g></g><g class="edgeLabel"><g class="label" data-id="L_B2_B3_0" transform="translate(0, 0)"><foreignObject width="0" height="0"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="edgeLabel"></span></div></foreignObject></g></g><g class="edgeLabel"><g class="label" data-id="L_B3_B4_0" transform="translate(0, 0)"><foreignObject width="0" height="0"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="edgeLabel"></span></div></foreignObject></g></g><g class="edgeLabel"><g class="label" data-id="L_B4_B5_0" transform="translate(0, 0)"><foreignObject width="0" height="0"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="edgeLabel"></span></div></foreignObject></g></g><g class="edgeLabel"><g class="label" data-id="L_B5_C1_0" transform="translate(0, 0)"><foreignObject width="0" height="0"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="edgeLabel"></span></div></foreignObject></g></g></g><g class="nodes"><g class="node default audit" id="flowchart-A1-0" transform="translate(138, 71)"><rect class="basic label-container" style="fill:#dbeafe !important;stroke:#1e3a8a !important;stroke-width:2px !important" x="-130" y="-63" width="260" height="126"></rect><g class="label" style="color:#1e3a8a !important" transform="translate(-100, -48)"><rect></rect><foreignObject width="200" height="96"><div style="color: rgb(30, 58, 138) !important; display: table; white-space: break-spaces; line-height: 1.5; max-width: 200px; text-align: center; width: 200px;" xmlns="http://www.w3.org/1999/xhtml"><span style="color:#1e3a8a !important" class="nodeLabel"><p>Apr 06 13:23 UTC<br/>KSR V1 AUDIT<br/>127 findings (14 Critical, 35 High)</p></span></div></foreignObject></g></g><g class="node default audit" id="flowchart-A2-1" transform="translate(138, 247)"><rect class="basic label-container" style="fill:#dbeafe !important;stroke:#1e3a8a !important;stroke-width:2px !important" x="-130" y="-63" width="260" height="126"></rect><g class="label" style="color:#1e3a8a !important" transform="translate(-100, -48)"><rect></rect><foreignObject width="200" height="96"><div style="color: rgb(30, 58, 138) !important; display: table; white-space: break-spaces; line-height: 1.5; max-width: 200px; text-align: center; width: 200px;" xmlns="http://www.w3.org/1999/xhtml"><span style="color:#1e3a8a !important" class="nodeLabel"><p>Apr 06 13:23-14:45<br/>Build4 ships 5 patches in 2h<br/>33 of 42 critical/high fixed</p></span></div></foreignObject></g></g><g class="node default warn" id="flowchart-A3-3" transform="translate(138, 447)"><rect class="basic label-container" style="fill:#ede9fe !important;stroke:#7c3aed !important;stroke-width:2px !important" x="-130" y="-87" width="260" height="174"></rect><g class="label" style="color:#5b21b6 !important" transform="translate(-100, -72)"><rect></rect><foreignObject width="200" height="144"><div style="color: rgb(91, 33, 182) !important; display: table; white-space: break-spaces; line-height: 1.5; max-width: 200px; text-align: center; width: 200px;" xmlns="http://www.w3.org/1999/xhtml"><span style="color:#5b21b6 !important" class="nodeLabel"><p>Apr 07<br/>KSR V4 RE-AUDIT<br/>6 NEW regressions detected<br/>C12 + NEW-03 = potential theft of all user funds</p></span></div></foreignObject></g></g><g class="node default drain" id="flowchart-B1-5" transform="translate(138, 635)"><rect class="basic label-container" style="fill:#fecaca !important;stroke:#7f1d1d !important;stroke-width:2px !important" x="-113.7421875" y="-51" width="227.484375" height="102"></rect><g class="label" style="color:#7f1d1d !important" transform="translate(-83.7421875, -36)"><rect></rect><foreignObject width="167.484375" height="72"><div style="color: rgb(127, 29, 29) !important; display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;" xmlns="http://www.w3.org/1999/xhtml"><span style="color:#7f1d1d !important" class="nodeLabel"><p>Apr 21 11:28 UTC<br/>W2 first Aster Withdraw<br/>200 ASTER to BSC self</p></span></div></foreignObject></g></g><g class="node default drain" id="flowchart-B2-7" transform="translate(138, 799)"><rect class="basic label-container" style="fill:#fecaca !important;stroke:#7f1d1d !important;stroke-width:2px !important" x="-130" y="-63" width="260" height="126"></rect><g class="label" style="color:#7f1d1d !important" transform="translate(-100, -48)"><rect></rect><foreignObject width="200" height="96"><div style="color: rgb(127, 29, 29) !important; display: table; white-space: break-spaces; line-height: 1.5; max-width: 200px; text-align: center; width: 200px;" xmlns="http://www.w3.org/1999/xhtml"><span style="color:#7f1d1d !important" class="nodeLabel"><p>Apr 21 same day<br/>1st BSC DRAIN<br/>272.55 ASTER swept to attacker 0xa711a2af</p></span></div></foreignObject></g></g><g class="node default uncertain" id="flowchart-B3-9" transform="translate(138, 987)"><rect class="basic label-container" style="fill:#f3f4f6 !important;stroke:#6b7280 !important;stroke-width:1.5px !important" x="-130" y="-75" width="260" height="150"></rect><g class="label" style="color:#374151 !important" transform="translate(-100, -60)"><rect></rect><foreignObject width="200" height="120"><div style="color: rgb(55, 65, 81) !important; display: table; white-space: break-spaces; line-height: 1.5; max-width: 200px; text-align: center; width: 200px;" xmlns="http://www.w3.org/1999/xhtml"><span style="color:#374151 !important" class="nodeLabel"><p>May 12-13<br/>W1 issues 2 Aster Withdraws ~70 USDT<br/>not observed as outflow on BSC</p></span></div></foreignObject></g></g><g class="node default uncertain" id="flowchart-B4-11" transform="translate(138, 1187)"><rect class="basic label-container" style="fill:#f3f4f6 !important;stroke:#6b7280 !important;stroke-width:1.5px !important" x="-130" y="-75" width="260" height="150"></rect><g class="label" style="color:#374151 !important" transform="translate(-100, -60)"><rect></rect><foreignObject width="200" height="120"><div style="color: rgb(55, 65, 81) !important; display: table; white-space: break-spaces; line-height: 1.5; max-width: 200px; text-align: center; width: 200px;" xmlns="http://www.w3.org/1999/xhtml"><span style="color:#374151 !important" class="nodeLabel"><p>May 13 12:47<br/>W3 issues 1 Aster Withdraw 8.85 USDT<br/>not observed as outflow on BSC</p></span></div></foreignObject></g></g><g class="node default drain" id="flowchart-B5-13" transform="translate(138, 1375)"><rect class="basic label-container" style="fill:#fecaca !important;stroke:#7f1d1d !important;stroke-width:2px !important" x="-130" y="-63" width="260" height="126"></rect><g class="label" style="color:#7f1d1d !important" transform="translate(-100, -48)"><rect></rect><foreignObject width="200" height="96"><div style="color: rgb(127, 29, 29) !important; display: table; white-space: break-spaces; line-height: 1.5; max-width: 200px; text-align: center; width: 200px;" xmlns="http://www.w3.org/1999/xhtml"><span style="color:#7f1d1d !important" class="nodeLabel"><p>May 15-16<br/>W2 DRAIN CONTINUES<br/>272.70 + 109.94 ASTER + 16.30 USDT swept</p></span></div></foreignObject></g></g><g class="node default alert" id="flowchart-C1-15" transform="translate(138, 1575)"><rect class="basic label-container" style="fill:#fed7aa !important;stroke:#9a3412 !important;stroke-width:2px !important" x="-130" y="-87" width="260" height="174"></rect><g class="label" style="color:#7c2d12 !important" transform="translate(-100, -72)"><rect></rect><foreignObject width="200" height="144"><div style="color: rgb(124, 45, 18) !important; display: table; white-space: break-spaces; line-height: 1.5; max-width: 200px; text-align: center; width: 200px;" xmlns="http://www.w3.org/1999/xhtml"><span style="color:#7c2d12 !important" class="nodeLabel"><p>May 17 today<br/>W3 still actively using Aster H5<br/>Bot service NOT paused<br/>Founder contacts Kairos Lab</p></span></div></foreignObject></g></g></g></g></g></svg>
+  </div>
+
+  <div class="alert-box warn" style="margin-top:20px;">
+    <strong style="color:var(--high);">Time from KSR V4 warning &rarr; first drain: 14 days</strong><br>
+    Time from first drain &rarr; founder notice: ~26 days &middot; Time from founder notice &rarr; bot still running: ongoing
+  </div>
+</section>
+
+<!-- ============= ATTACK CHAIN MERMAID ============= -->
+<section class="c page-break">
+  <div class="divider" style="background:linear-gradient(90deg,var(--crit),var(--purple));"></div>
+  <h2>Attack Chain Reconstruction</h2>
+  <p>Step-by-step reconstruction. Solid arrows are <strong>proven on-chain</strong>; dashed arrows are <strong>inferred</strong> (off-chain hypothesis, requires DB / log evidence to certify).</p>
+
+  <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:14px;text-align:center;">
+    <svg style="max-width:100%;height:auto;display:block;margin:0 auto;" id="container" width="585.35546875" xmlns="http://www.w3.org/2000/svg" class="flowchart" height="1470" viewBox="0 0 585.35546875 1470" role="graphics-document document" aria-roledescription="flowchart-v2"><style>#container{font-family:"trebuchet ms",verdana,arial,sans-serif;font-size:16px;fill:#333;}@keyframes edge-animation-frame{from{stroke-dashoffset:0;}}@keyframes dash{to{stroke-dashoffset:0;}}#container .edge-animation-slow{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 50s linear infinite;stroke-linecap:round;}#container .edge-animation-fast{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 20s linear infinite;stroke-linecap:round;}#container .error-icon{fill:#552222;}#container .error-text{fill:#552222;stroke:#552222;}#container .edge-thickness-normal{stroke-width:1px;}#container .edge-thickness-thick{stroke-width:3.5px;}#container .edge-pattern-solid{stroke-dasharray:0;}#container .edge-thickness-invisible{stroke-width:0;fill:none;}#container .edge-pattern-dashed{stroke-dasharray:3;}#container .edge-pattern-dotted{stroke-dasharray:2;}#container .marker{fill:#333333;stroke:#333333;}#container .marker.cross{stroke:#333333;}#container svg{font-family:"trebuchet ms",verdana,arial,sans-serif;font-size:16px;}#container p{margin:0;}#container .label{font-family:"trebuchet ms",verdana,arial,sans-serif;color:#333;}#container .cluster-label text{fill:#333;}#container .cluster-label span{color:#333;}#container .cluster-label span p{background-color:transparent;}#container .label text,#container span{fill:#333;color:#333;}#container .node rect,#container .node circle,#container .node ellipse,#container .node polygon,#container .node path{fill:#ECECFF;stroke:#9370DB;stroke-width:1px;}#container .rough-node .label text,#container .node .label text,#container .image-shape .label,#container .icon-shape .label{text-anchor:middle;}#container .node .katex path{fill:#000;stroke:#000;stroke-width:1px;}#container .rough-node .label,#container .node .label,#container .image-shape .label,#container .icon-shape .label{text-align:center;}#container .node.clickable{cursor:pointer;}#container .root .anchor path{fill:#333333!important;stroke-width:0;stroke:#333333;}#container .arrowheadPath{fill:#333333;}#container .edgePath .path{stroke:#333333;stroke-width:2.0px;}#container .flowchart-link{stroke:#333333;fill:none;}#container .edgeLabel{background-color:rgba(232,232,232, 0.8);text-align:center;}#container .edgeLabel p{background-color:rgba(232,232,232, 0.8);}#container .edgeLabel rect{opacity:0.5;background-color:rgba(232,232,232, 0.8);fill:rgba(232,232,232, 0.8);}#container .labelBkg{background-color:rgba(232, 232, 232, 0.5);}#container .cluster rect{fill:#ffffde;stroke:#aaaa33;stroke-width:1px;}#container .cluster text{fill:#333;}#container .cluster span{color:#333;}#container div.mermaidTooltip{position:absolute;text-align:center;max-width:200px;padding:2px;font-family:"trebuchet ms",verdana,arial,sans-serif;font-size:12px;background:hsl(80, 100%, 96.2745098039%);border:1px solid #aaaa33;border-radius:2px;pointer-events:none;z-index:100;}#container .flowchartTitleText{text-anchor:middle;font-size:18px;fill:#333;}#container rect.text{fill:none;stroke-width:0;}#container .icon-shape,#container .image-shape{background-color:rgba(232,232,232, 0.8);text-align:center;}#container .icon-shape p,#container .image-shape p{background-color:rgba(232,232,232, 0.8);padding:2px;}#container .icon-shape rect,#container .image-shape rect{opacity:0.5;background-color:rgba(232,232,232, 0.8);fill:rgba(232,232,232, 0.8);}#container .label-icon{display:inline-block;height:1em;overflow:visible;vertical-align:-0.125em;}#container .node .label-icon path{fill:currentColor;stroke:revert;stroke-width:revert;}#container :root{--mermaid-font-family:"trebuchet ms",verdana,arial,sans-serif;}#container .vuln&gt;*{fill:#fecaca!important;stroke:#7f1d1d!important;stroke-width:2px!important;color:#7f1d1d!important;}#container .vuln span{fill:#fecaca!important;stroke:#7f1d1d!important;stroke-width:2px!important;color:#7f1d1d!important;}#container .vuln tspan{fill:#7f1d1d!important;}#container .attacker&gt;*{fill:#ede9fe!important;stroke:#7c3aed!important;stroke-width:3px!important;color:#5b21b6!important;}#container .attacker span{fill:#ede9fe!important;stroke:#7c3aed!important;stroke-width:3px!important;color:#5b21b6!important;}#container .attacker tspan{fill:#5b21b6!important;}#container .victim&gt;*{fill:#f3f4f6!important;stroke:#374151!important;stroke-width:1.5px!important;color:#111827!important;}#container .victim span{fill:#f3f4f6!important;stroke:#374151!important;stroke-width:1.5px!important;color:#111827!important;}#container .victim tspan{fill:#111827!important;}#container .swap&gt;*{fill:#cffafe!important;stroke:#0e7490!important;stroke-width:1.5px!important;color:#0e7490!important;}#container .swap span{fill:#cffafe!important;stroke:#0e7490!important;stroke-width:1.5px!important;color:#0e7490!important;}#container .swap tspan{fill:#0e7490!important;}#container .limbo&gt;*{fill:#fef3c7!important;stroke:#a16207!important;stroke-width:1.5px!important;color:#713f12!important;}#container .limbo span{fill:#fef3c7!important;stroke:#a16207!important;stroke-width:1.5px!important;color:#713f12!important;}#container .limbo tspan{fill:#713f12!important;}#container .unknown&gt;*{fill:#fed7aa!important;stroke:#9a3412!important;stroke-width:2px!important;color:#7c2d12!important;}#container .unknown span{fill:#fed7aa!important;stroke:#9a3412!important;stroke-width:2px!important;color:#7c2d12!important;}#container .unknown tspan{fill:#7c2d12!important;}</style><g><marker id="container_flowchart-v2-pointEnd" class="marker flowchart-v2" viewBox="0 0 10 10" refX="5" refY="5" markerUnits="userSpaceOnUse" markerWidth="8" markerHeight="8" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></path></marker><marker id="container_flowchart-v2-pointStart" class="marker flowchart-v2" viewBox="0 0 10 10" refX="4.5" refY="5" markerUnits="userSpaceOnUse" markerWidth="8" markerHeight="8" orient="auto"><path d="M 0 5 L 10 10 L 10 0 z" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></path></marker><marker id="container_flowchart-v2-circleEnd" class="marker flowchart-v2" viewBox="0 0 10 10" refX="11" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></circle></marker><marker id="container_flowchart-v2-circleStart" class="marker flowchart-v2" viewBox="0 0 10 10" refX="-1" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></circle></marker><marker id="container_flowchart-v2-crossEnd" class="marker cross flowchart-v2" viewBox="0 0 11 11" refX="12" refY="5.2" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><path d="M 1,1 l 9,9 M 10,1 l -9,9" class="arrowMarkerPath" style="stroke-width: 2; stroke-dasharray: 1, 0;"></path></marker><marker id="container_flowchart-v2-crossStart" class="marker cross flowchart-v2" viewBox="0 0 11 11" refX="-1" refY="5.2" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><path d="M 1,1 l 9,9 M 10,1 l -9,9" class="arrowMarkerPath" style="stroke-width: 2; stroke-dasharray: 1, 0;"></path></marker><g class="root"><g class="clusters"></g><g class="edgePaths"><path d="M407.992,158L407.992,164.167C407.992,170.333,407.992,182.667,407.992,194.333C407.992,206,407.992,217,407.992,222.5L407.992,228" id="L_A_B_0" class="edge-thickness-normal edge-pattern-dotted edge-thickness-normal edge-pattern-solid flowchart-link" style=";" data-edge="true" data-et="edge" data-id="L_A_B_0" data-points="W3sieCI6NDA3Ljk5MjE4NzUsInkiOjE1OH0seyJ4Ijo0MDcuOTkyMTg3NSwieSI6MTk1fSx7IngiOjQwNy45OTIxODc1LCJ5IjoyMzJ9XQ==" marker-end="url(#container_flowchart-v2-pointEnd)"></path><path d="M407.992,334L407.992,342.167C407.992,350.333,407.992,366.667,407.992,382.333C407.992,398,407.992,413,407.992,420.5L407.992,428" id="L_B_C_0" class="edge-thickness-normal edge-pattern-dotted edge-thickness-normal edge-pattern-solid flowchart-link" style=";" data-edge="true" data-et="edge" data-id="L_B_C_0" data-points="W3sieCI6NDA3Ljk5MjE4NzUsInkiOjMzNH0seyJ4Ijo0MDcuOTkyMTg3NSwieSI6MzgzfSx7IngiOjQwNy45OTIxODc1LCJ5Ijo0MzJ9XQ==" marker-end="url(#container_flowchart-v2-pointEnd)"></path><path d="M407.992,510L407.992,516.167C407.992,522.333,407.992,534.667,407.992,548.333C407.992,562,407.992,577,407.992,584.5L407.992,592" id="L_C_D_0" class="edge-thickness-normal edge-pattern-dotted edge-thickness-normal edge-pattern-solid flowchart-link" style=";" data-edge="true" data-et="edge" data-id="L_C_D_0" data-points="W3sieCI6NDA3Ljk5MjE4NzUsInkiOjUxMH0seyJ4Ijo0MDcuOTkyMTg3NSwieSI6NTQ3fSx7IngiOjQwNy45OTIxODc1LCJ5Ijo1OTZ9XQ==" marker-end="url(#container_flowchart-v2-pointEnd)"></path><path d="M407.992,674L407.992,686.167C407.992,698.333,407.992,722.667,395.619,744.587C383.245,766.508,358.499,786.016,346.125,795.77L333.752,805.524" id="L_D_E_0" class="edge-thickness-normal edge-pattern-dotted edge-thickness-normal edge-pattern-solid flowchart-link" style=";" data-edge="true" data-et="edge" data-id="L_D_E_0" data-points="W3sieCI6NDA3Ljk5MjE4NzUsInkiOjY3NH0seyJ4Ijo0MDcuOTkyMTg3NSwieSI6NzQ3fSx7IngiOjMzMC42MTAzNTE1NjI1LCJ5Ijo4MDh9XQ==" marker-end="url(#container_flowchart-v2-pointEnd)"></path><path d="M123.836,686L123.836,696.167C123.836,706.333,123.836,726.667,136.209,746.587C148.583,766.508,173.33,786.016,185.703,795.77L198.076,805.524" id="L_F_E_0" class="edge-thickness-thick edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style=";" data-edge="true" data-et="edge" data-id="L_F_E_0" data-points="W3sieCI6MTIzLjgzNTkzNzUsInkiOjY4Nn0seyJ4IjoxMjMuODM1OTM3NSwieSI6NzQ3fSx7IngiOjIwMS4yMTc3NzM0Mzc1LCJ5Ijo4MDh9XQ==" marker-end="url(#container_flowchart-v2-pointEnd)"></path><path d="M373.367,905.469L389.373,912.391C405.379,919.313,437.391,933.156,453.396,945.578C469.402,958,469.402,969,469.402,974.5L469.402,980" id="L_E_G_0" class="edge-thickness-thick edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style=";" data-edge="true" data-et="edge" data-id="L_E_G_0" data-points="W3sieCI6MzczLjM2NzE4NzUsInkiOjkwNS40Njg4OTIxNzM2MTI2fSx7IngiOjQ2OS40MDIzNDM3NSwieSI6OTQ3fSx7IngiOjQ2OS40MDIzNDM3NSwieSI6OTg0fV0=" marker-end="url(#container_flowchart-v2-pointEnd)"></path><path d="M191.676,910L182.699,916.167C173.723,922.333,155.769,934.667,146.793,946.333C137.816,958,137.816,969,137.816,974.5L137.816,980" id="L_E_H_0" class="edge-thickness-thick edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style=";" data-edge="true" data-et="edge" data-id="L_E_H_0" data-points="W3sieCI6MTkxLjY3NTY0ODA4MjM4NjM3LCJ5Ijo5MTB9LHsieCI6MTM3LjgxNjQwNjI1LCJ5Ijo5NDd9LHsieCI6MTM3LjgxNjQwNjI1LCJ5Ijo5ODR9XQ==" marker-end="url(#container_flowchart-v2-pointEnd)"></path><path d="M119.9,1086L117.734,1092.167C115.568,1098.333,111.235,1110.667,109.069,1122.333C106.902,1134,106.902,1145,106.902,1150.5L106.902,1156" id="L_H_I_0" class="edge-thickness-normal edge-pattern-dotted edge-thickness-normal edge-pattern-solid flowchart-link" style=";" data-edge="true" data-et="edge" data-id="L_H_I_0" data-points="W3sieCI6MTE5LjkwMDMwMTg0NjU5MDksInkiOjEwODZ9LHsieCI6MTA2LjkwMjM0Mzc1LCJ5IjoxMTIzfSx7IngiOjEwNi45MDIzNDM3NSwieSI6MTE2MH1d" marker-end="url(#container_flowchart-v2-pointEnd)"></path><path d="M469.402,1086L469.402,1092.167C469.402,1098.333,469.402,1110.667,463.338,1124.478C457.274,1138.289,445.146,1153.578,439.082,1161.222L433.018,1168.866" id="L_G_J_0" class="edge-thickness-normal edge-pattern-dotted edge-thickness-normal edge-pattern-solid flowchart-link" style=";" data-edge="true" data-et="edge" data-id="L_G_J_0" data-points="W3sieCI6NDY5LjQwMjM0Mzc1LCJ5IjoxMDg2fSx7IngiOjQ2OS40MDIzNDM3NSwieSI6MTEyM30seyJ4Ijo0MzAuNTMxNjQ5NTAyODQwOTMsInkiOjExNzJ9XQ==" marker-end="url(#container_flowchart-v2-pointEnd)"></path><path d="M215.29,1086L224.658,1092.167C234.025,1098.333,252.761,1110.667,273.467,1124.623C294.173,1138.578,316.85,1154.157,328.188,1161.946L339.526,1169.735" id="L_H_J_0" class="edge-thickness-normal edge-pattern-dotted edge-thickness-normal edge-pattern-solid flowchart-link" style=";" data-edge="true" data-et="edge" data-id="L_H_J_0" data-points="W3sieCI6MjE1LjI4OTg2MTUwNTY4MTgsInkiOjEwODZ9LHsieCI6MjcxLjQ5NjA5Mzc1LCJ5IjoxMTIzfSx7IngiOjM0Mi44MjMxOTc3OTgyOTU0NCwieSI6MTE3Mn1d" marker-end="url(#container_flowchart-v2-pointEnd)"></path><path d="M399.594,1250L399.594,1258.167C399.594,1266.333,399.594,1282.667,399.594,1296.333C399.594,1310,399.594,1321,399.594,1326.5L399.594,1332" id="L_J_K_0" class="edge-thickness-normal edge-pattern-dotted edge-thickness-normal edge-pattern-solid flowchart-link" style=";" data-edge="true" data-et="edge" data-id="L_J_K_0" data-points="W3sieCI6Mzk5LjU5Mzc1LCJ5IjoxMjUwfSx7IngiOjM5OS41OTM3NSwieSI6MTI5OX0seyJ4IjozOTkuNTkzNzUsInkiOjEzMzZ9XQ==" marker-end="url(#container_flowchart-v2-pointEnd)"></path></g><g class="edgeLabels"><g class="edgeLabel" transform="translate(407.9921875, 195)"><g class="label" data-id="L_A_B_0" transform="translate(-83.046875, -12)"><foreignObject width="166.09375" height="24"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="edgeLabel"><p>step 1 read public repo</p></span></div></foreignObject></g></g><g class="edgeLabel" transform="translate(407.9921875, 383)"><g class="label" data-id="L_B_C_0" transform="translate(-96.3671875, -24)"><foreignObject width="192.734375" height="48"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="edgeLabel"><p>step 2 DB compromise<br/>SQLi/WAF bypass/env leak</p></span></div></foreignObject></g></g><g class="edgeLabel" transform="translate(407.9921875, 547)"><g class="label" data-id="L_C_D_0" transform="translate(-66.75, -12)"><foreignObject width="133.5" height="24"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="edgeLabel"><p>step 3 AES decrypt</p></span></div></foreignObject></g></g><g class="edgeLabel" transform="translate(407.9921875, 747)"><g class="label" data-id="L_D_E_0" transform="translate(-51.703125, -24)"><foreignObject width="103.40625" height="48"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="edgeLabel"><p>step 4 sign tx<br/>with stolen PK</p></span></div></foreignObject></g></g><g class="edgeLabel" transform="translate(123.8359375, 747)"><g class="label" data-id="L_F_E_0" transform="translate(-69.9609375, -36)"><foreignObject width="139.921875" height="72"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="edgeLabel"><p>272.55+109.79 ASTER<br/>+37.88 USDT<br/>PROVEN on-chain</p></span></div></foreignObject></g></g><g class="edgeLabel" transform="translate(469.40234375, 947)"><g class="label" data-id="L_E_G_0" transform="translate(-38.25, -12)"><foreignObject width="76.5" height="24"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="edgeLabel"><p>USDT 37.88</p></span></div></foreignObject></g></g><g class="edgeLabel" transform="translate(137.81640625, 947)"><g class="label" data-id="L_E_H_0" transform="translate(-55.4375, -12)"><foreignObject width="110.875" height="24"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="edgeLabel"><p>ASTER 382 total</p></span></div></foreignObject></g></g><g class="edgeLabel"><g class="label" data-id="L_H_I_0" transform="translate(0, 0)"><foreignObject width="0" height="0"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="edgeLabel"></span></div></foreignObject></g></g><g class="edgeLabel" transform="translate(469.40234375, 1123)"><g class="label" data-id="L_G_J_0" transform="translate(-77.7890625, -12)"><foreignObject width="155.578125" height="24"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="edgeLabel"><p>WBNB unwrap to BNB</p></span></div></foreignObject></g></g><g class="edgeLabel" transform="translate(279.42737, 1128.4486)"><g class="label" data-id="L_H_J_0" transform="translate(-41.828125, -12)"><foreignObject width="83.65625" height="24"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="edgeLabel"><p>output BNB</p></span></div></foreignObject></g></g><g class="edgeLabel" transform="translate(399.59375, 1299)"><g class="label" data-id="L_J_K_0" transform="translate(-55.203125, -12)"><foreignObject width="110.40625" height="24"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="edgeLabel"><p>step 5 final exit</p></span></div></foreignObject></g></g></g><g class="nodes"><g class="node default vuln" id="flowchart-A-0" transform="translate(407.9921875, 83)"><rect class="basic label-container" style="fill:#fecaca !important;stroke:#7f1d1d !important;stroke-width:2px !important" x="-130" y="-75" width="260" height="150"></rect><g class="label" style="color:#7f1d1d !important" transform="translate(-100, -60)"><rect></rect><foreignObject width="200" height="120"><div style="color: rgb(127, 29, 29) !important; display: table; white-space: break-spaces; line-height: 1.5; max-width: 200px; text-align: center; width: 200px;" xmlns="http://www.w3.org/1999/xhtml"><span style="color:#7f1d1d !important" class="nodeLabel"><p>GitHub Public Repo<br/>build4io-site/.replit:56<br/>DEPLOYER_PK leaked<br/>+ hardcoded encryption defaults</p></span></div></foreignObject></g></g><g class="node default vuln" id="flowchart-B-1" transform="translate(407.9921875, 283)"><rect class="basic label-container" style="fill:#fecaca !important;stroke:#7f1d1d !important;stroke-width:2px !important" x="-123.5078125" y="-51" width="247.015625" height="102"></rect><g class="label" style="color:#7f1d1d !important" transform="translate(-93.5078125, -36)"><rect></rect><foreignObject width="187.015625" height="72"><div style="color: rgb(127, 29, 29) !important; display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;" xmlns="http://www.w3.org/1999/xhtml"><span style="color:#7f1d1d !important" class="nodeLabel"><p>Attacker has<br/>default encryption key<br/>+ deployer PK 0x8CBF7a53</p></span></div></foreignObject></g></g><g class="node default vuln" id="flowchart-C-2" transform="translate(407.9921875, 471)"><rect class="basic label-container" style="fill:#fecaca !important;stroke:#7f1d1d !important;stroke-width:2px !important" x="-122.5625" y="-39" width="245.125" height="78"></rect><g class="label" style="color:#7f1d1d !important" transform="translate(-92.5625, -24)"><rect></rect><foreignObject width="185.125" height="48"><div style="color: rgb(127, 29, 29) !important; display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;" xmlns="http://www.w3.org/1999/xhtml"><span style="color:#7f1d1d !important" class="nodeLabel"><p>Build4 Postgres DB<br/>User.encryptedPK column</p></span></div></foreignObject></g></g><g class="node default vuln" id="flowchart-D-3" transform="translate(407.9921875, 635)"><rect class="basic label-container" style="fill:#fecaca !important;stroke:#7f1d1d !important;stroke-width:2px !important" x="-118.3203125" y="-39" width="236.640625" height="78"></rect><g class="label" style="color:#7f1d1d !important" transform="translate(-88.3203125, -24)"><rect></rect><foreignObject width="176.640625" height="48"><div style="color: rgb(127, 29, 29) !important; display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;" xmlns="http://www.w3.org/1999/xhtml"><span style="color:#7f1d1d !important" class="nodeLabel"><p>Decrypted user PKs<br/>W1 W2 W3 possibly more</p></span></div></foreignObject></g></g><g class="node default attacker" id="flowchart-E-4" transform="translate(265.9140625, 859)"><rect class="basic label-container" style="fill:#ede9fe !important;stroke:#7c3aed !important;stroke-width:3px !important" x="-107.453125" y="-51" width="214.90625" height="102"></rect><g class="label" style="color:#5b21b6 !important" transform="translate(-77.453125, -36)"><rect></rect><foreignObject width="154.90625" height="72"><div style="color: rgb(91, 33, 182) !important; display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;" xmlns="http://www.w3.org/1999/xhtml"><span style="color:#5b21b6 !important" class="nodeLabel"><p>DRAINER EOA<br/>0xa711a2af<br/>Fresh wallet nonce 10</p></span></div></foreignObject></g></g><g class="node default victim" id="flowchart-F-5" transform="translate(123.8359375, 635)"><rect class="basic label-container" style="fill:#f3f4f6 !important;stroke:#374151 !important;stroke-width:1.5px !important" x="-115.8359375" y="-51" width="231.671875" height="102"></rect><g class="label" style="color:#111827 !important" transform="translate(-85.8359375, -36)"><rect></rect><foreignObject width="171.671875" height="72"><div style="color: rgb(17, 24, 39) !important; display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;" xmlns="http://www.w3.org/1999/xhtml"><span style="color:#111827 !important" class="nodeLabel"><p>W2 BSC wallet<br/>0x06d622<br/>Aster Withdraws settled</p></span></div></foreignObject></g></g><g class="node default swap" id="flowchart-G-6" transform="translate(469.40234375, 1035)"><rect class="basic label-container" style="fill:#cffafe !important;stroke:#0e7490 !important;stroke-width:1.5px !important" x="-107.953125" y="-51" width="215.90625" height="102"></rect><g class="label" style="color:#0e7490 !important" transform="translate(-77.953125, -36)"><rect></rect><foreignObject width="155.90625" height="72"><div style="color: rgb(14, 116, 144) !important; display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;" xmlns="http://www.w3.org/1999/xhtml"><span style="color:#0e7490 !important" class="nodeLabel"><p>PancakeSwap V3 pool<br/>USDT/WBNB<br/>0x172fcd41</p></span></div></foreignObject></g></g><g class="node default swap" id="flowchart-H-7" transform="translate(137.81640625, 1035)"><rect class="basic label-container" style="fill:#cffafe !important;stroke:#0e7490 !important;stroke-width:1.5px !important" x="-98.2421875" y="-51" width="196.484375" height="102"></rect><g class="label" style="color:#0e7490 !important" transform="translate(-68.2421875, -36)"><rect></rect><foreignObject width="136.484375" height="72"><div style="color: rgb(14, 116, 144) !important; display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;" xmlns="http://www.w3.org/1999/xhtml"><span style="color:#0e7490 !important" class="nodeLabel"><p>Swap contract 1<br/>0x238a3588<br/>285M USDT volume</p></span></div></foreignObject></g></g><g class="node default swap" id="flowchart-I-8" transform="translate(106.90234375, 1211)"><rect class="basic label-container" style="fill:#cffafe !important;stroke:#0e7490 !important;stroke-width:1.5px !important" x="-90.1328125" y="-51" width="180.265625" height="102"></rect><g class="label" style="color:#0e7490 !important" transform="translate(-60.1328125, -36)"><rect></rect><foreignObject width="120.265625" height="72"><div style="color: rgb(14, 116, 144) !important; display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;" xmlns="http://www.w3.org/1999/xhtml"><span style="color:#0e7490 !important" class="nodeLabel"><p>Swap contract 2<br/>0x4c3ccc98<br/>6M USDT volume</p></span></div></foreignObject></g></g><g class="node default limbo" id="flowchart-J-9" transform="translate(399.59375, 1211)"><rect class="basic label-container" style="fill:#fef3c7 !important;stroke:#a16207 !important;stroke-width:1.5px !important" x="-127.2265625" y="-39" width="254.453125" height="78"></rect><g class="label" style="color:#713f12 !important" transform="translate(-97.2265625, -24)"><rect></rect><foreignObject width="194.453125" height="48"><div style="color: rgb(113, 63, 18) !important; display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;" xmlns="http://www.w3.org/1999/xhtml"><span style="color:#713f12 !important" class="nodeLabel"><p>Drainer holds BNB native<br/>invisible in Transfer events</p></span></div></foreignObject></g></g><g class="node default unknown" id="flowchart-K-10" transform="translate(399.59375, 1399)"><rect class="basic label-container" style="fill:#fed7aa !important;stroke:#9a3412 !important;stroke-width:2px !important" x="-130" y="-63" width="260" height="126"></rect><g class="label" style="color:#7c2d12 !important" transform="translate(-100, -48)"><rect></rect><foreignObject width="200" height="96"><div style="color: rgb(124, 45, 18) !important; display: table; white-space: break-spaces; line-height: 1.5; max-width: 200px; text-align: center; width: 200px;" xmlns="http://www.w3.org/1999/xhtml"><span style="color:#7c2d12 !important" class="nodeLabel"><p>??? FINAL EXIT<br/>CEX deposit / bridge / mixer<br/>requires native BNB trace</p></span></div></foreignObject></g></g></g></g></g></svg>
+  </div>
+
+  <div class="alert-box info" style="margin-top:20px;">
+    <strong style="color:var(--cyan);">Reading the diagram:</strong>
+    Solid lines (<code>==&gt;</code>) are <em>verified on-chain transactions</em> &mdash; the Transfer events are immutable.
+    Dashed lines (<code>-.-&gt;</code>) are the <em>inferred root cause</em> chain &mdash; matching the V4 audit prediction.
+    Step <strong>C</strong> (DB compromise) requires logs/DB access to formally certify.
+    The final exit (<strong>K</strong>) requires additional native-BNB tracing.
+  </div>
+</section>
+
+<!-- ============= ON-CHAIN EVIDENCE ============= -->
+<section class="c page-break">
+  <div class="divider" style="background:linear-gradient(90deg,var(--green),var(--cyan));"></div>
+  <h2>On-Chain Evidence</h2>
+
+  <h3>Three target wallets &mdash; profile</h3>
+  <table>
+    <thead><tr><th>Wallet</th><th>Aster L1 first/last</th><th>BSC nonce</th><th>BSC BNB</th><th>Pattern</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x9751EB…</code> (W1)</td><td>Apr 26 → May 16</td><td>39</td><td>0 BNB</td><td>Active trader, 241 PlaceOrder, 6 ApproveAgent</td></tr>
+      <tr><td><code>0x06d622…</code> (W2)</td><td>Apr 18 → May 16</td><td>49</td><td>0.00124 dust</td><td><strong>Heavy bot user — 188 ApproveAgent re-approval loop</strong></td></tr>
+      <tr><td><code>0xf7fcea…</code> (W3)</td><td>Apr 25 → May 17</td><td>6</td><td>0.001 dust</td><td>Small user, 113 PlaceOrder, 1 Withdraw 8.85 USDT</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Aster L1 Withdraw events (signature chain 56)</h3>
+  <p>All 7 Withdraws had destination = self (the user's own BSC address). Funds bridged correctly to the rightful owner. <strong>The drain happened AFTER, on BSC.</strong></p>
+  <table>
+    <thead><tr><th>#</th><th>Wallet</th><th>Date (UTC)</th><th>Amount</th><th>Token</th><th>Aster L1 tx</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>W2</td><td>Apr 21 11:28:45</td><td>200</td><td>ASTER</td><td><code>0x6588d297…</code></td></tr>
+      <tr><td>2</td><td>W1</td><td>May 12 19:55:16</td><td>48.87</td><td>USDT</td><td><code>0x3e1cad12…</code></td></tr>
+      <tr><td>3</td><td>W1</td><td>May 13 10:14:51</td><td>22.48</td><td>USDT</td><td><code>0xd59e164a…</code></td></tr>
+      <tr><td>4</td><td>W3</td><td>May 13 12:47:45</td><td>8.85</td><td>USDT</td><td><code>0xe6c53a3e…</code></td></tr>
+      <tr><td>5</td><td>W2</td><td>May 15 05:57:55</td><td>272.70</td><td>ASTER</td><td><code>0x4a896924…</code></td></tr>
+      <tr><td>6</td><td>W2</td><td>May 15 06:01:55</td><td>16.41</td><td>USDT</td><td><code>0xe2b76f3e…</code></td></tr>
+      <tr><td>7</td><td>W2</td><td>May 16 08:37:06</td><td>109.94</td><td>ASTER</td><td><code>0xdf9ea14f…</code></td></tr>
+    </tbody>
+  </table>
+
+  <h3>BSC outflow trace (the actual drain)</h3>
+  <p>Archive-node scan of 800 000 BSC blocks (≈ 27 days), all <code>Transfer</code> events for USDT, ASTER, USDC, BUSD with <code>topics[1] = wallet</code>:</p>
+
+  <pre>
+WALLET 1 (0x9751EB...) OUTFLOWS:
+  blk=98457667 | 1.723006 USDT -> 0x523151fe... (EIP-1167 minimal proxy, 23-byte code)
+                 tx=0xb672d075...
+
+WALLET 2 (0x06d622...) OUTFLOWS:
+  blk=98378510 | 272.550308 ASTER -> 0xa711a2af... (DRAINER)
+                 tx=0x0d620478...
+  blk=98378744 |  21.578243 USDT  -> 0xa711a2af... (DRAINER)
+                 tx=0x0bbf5259...
+  blk=98379006 |  16.302625 USDT  -> 0xa711a2af... (DRAINER)
+                 tx=0x1797dfb9...
+  blk=98581339 |   9.000000 ASTER -> 0x128463a6... (legit Aster bridge, 3862 BNB)
+                 tx=0x88e195f9...
+  blk=98584530 | 100.940000 ASTER -> 0x128463a6... (legit Aster bridge)
+                 tx=0xa6e061ec...
+  blk=98591401 | 109.789800 ASTER -> 0xa711a2af... (DRAINER)
+                 tx=0x58a7df9e...
+
+WALLET 3 (0xf7fcea...) OUTFLOWS: 0 USDT / 0 ASTER / 0 USDC / 0 BUSD
+  </pre>
+
+  <h3>Drainer wallet &amp; cash-out classification</h3>
+  <table>
+    <thead><tr><th>Address</th><th>Type</th><th>Nonce</th><th>BNB Bal</th><th>Identification</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><code>0xa711a2af8864e276f4c28716d543100f6709cd24</code></td>
+        <td>EOA</td><td>10</td><td>~$0.30 dust</td>
+        <td><strong>DRAINER</strong> — fresh wallet, 1 incoming counterparty (W2), no labels</td>
+      </tr>
+      <tr>
+        <td><code>0x172fcd41e0913e95784454622d1c3724f546f849</code></td>
+        <td>Contract</td><td>1</td><td>0</td>
+        <td><strong>PancakeSwap V3 Pool USDT/WBNB</strong> — factory <code>0x0bfbcf…91865</code>, token0=USDT, token1=WBNB</td>
+      </tr>
+      <tr>
+        <td><code>0x238a358808379702088667322f80ac48bad5e6c4</code></td>
+        <td>Contract</td><td>1</td><td>10 868 BNB (~$2.5M)</td>
+        <td>Major swap/router — <strong>$285M USDT + 1.96M ASTER incoming, 5677 senders</strong> — likely Aster spot/router</td>
+      </tr>
+      <tr>
+        <td><code>0x4c3ccc98c01103be72bcfd29e1d2454c98d1a6e3</code></td>
+        <td>Contract</td><td>1</td><td>0</td>
+        <td>Swap hub — $6.4M USDT + 147k ASTER incoming, 6984 senders</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ============= ROOT CAUSE ============= -->
+<section class="c page-break">
+  <div class="divider" style="background:linear-gradient(90deg,var(--crit),var(--purple));"></div>
+  <h2>Root Cause Analysis</h2>
+
+  <h3>The 4 KSR V4 findings that explain the drain</h3>
+  <table>
+    <thead><tr><th>ID</th><th>Severity</th><th>Status April 7</th><th>Status May 17 (today)</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><span class="id">C12</span></td>
+        <td><span class="badge crit">CRITICAL Aggravated</span></td>
+        <td>Open</td>
+        <td><span class="badge crit">STILL OPEN</span> — <code>build4io-site/.replit:56</code> still contains <code>fbb5ce…87de</code></td>
+      </tr>
+      <tr>
+        <td><span class="id">NEW-03</span></td>
+        <td><span class="badge crit">CRITICAL Regression</span></td>
+        <td>New</td>
+        <td><span class="badge crit">STILL OPEN</span> — user wallet PKs still in Postgres <code>aster_credentials.encrypted_api_secret</code></td>
+      </tr>
+      <tr>
+        <td><span class="id">NEW-01</span></td>
+        <td><span class="badge crit">CRITICAL Regression</span></td>
+        <td>New</td>
+        <td><span class="badge crit">STILL OPEN</span> — Cloudflare WAF bypass on <code>/api/miniapp/*</code></td>
+      </tr>
+      <tr>
+        <td><span class="id">C13 / wallet.ts</span></td>
+        <td><span class="badge crit">CRITICAL</span></td>
+        <td>"Fixed" (Patch 1)</td>
+        <td><span class="badge crit">REGRESSED</span> — hardcoded encryption defaults still in code, both bot and site</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>Evidence: the encryption regression</h3>
+
+  <h4>Location 1 &mdash; Telegram Bot (Render production)</h4>
+  <p><strong>File:</strong> <code>src/services/wallet.ts</code> lines 7-8</p>
+  <pre>const MASTER_KEY = process.env.MASTER_ENCRYPTION_KEY
+  ?? process.env.WALLET_ENCRYPTION_KEY
+  ?? 'default_dev_key_change_in_prod_32c'              // ← fallback in PUBLIC repo
+
+const LEGACY_MASTER = process.env.WALLET_ENCRYPTION_KEY
+  ?? process.env.MASTER_ENCRYPTION_KEY
+  ?? 'default-dev-key-change-me-32chars!'              // ← second fallback</pre>
+
+  <p>The <code>decryptPrivateKey</code> function (lines 89-94) <strong>always tries the hardcoded defaults as last-resort candidates</strong>. Your own comment at lines 82-88 admits:</p>
+  <div class="alert-box warn">
+    <em>"production was running for some period without either env var set, so wallets created during that window were encrypted under the default <code>'default_dev_key_change_in_prod_32c'</code>"</em>
+  </div>
+  <p>→ Any user wallet created during that window is decryptable by anyone reading the public GitHub.</p>
+
+  <h4>Location 2 &mdash; Marketing Site / web4 dApp</h4>
+  <p><strong>File:</strong> <code>build4io-site/server/bot-wallet.ts</code> line 30 — same hardcoded fallback, in a separate Render service with its own Postgres connection.</p>
+
+  <h4>Location 3 &mdash; Deployer Private Key (STILL leaked)</h4>
+  <p><strong>File:</strong> <code>build4io-site/.replit</code> line 56:</p>
+  <pre>DEPLOYER_PRIVATE_KEY = "fbb5ce6442238283335abf13d09d2419827a7f60774cda24f610097ecafa87de"</pre>
+  <p>This key derives to address <code>0x8CBF7a53af6B88ABb07Ba481Ac66D73A99985878</code> &mdash; the "Creator Wallet" identified in our V4 audit. Used in 9 places across the codebase. <strong>Any owner of this private key controls ownership of all 5 deployed smart contracts</strong> (BUILD4Staking, AgentEconomyHub, AgentReplication, ConstitutionRegistry, SkillMarketplace).</p>
+
+  <h3>Step-by-step reconstructed attack chain</h3>
+  <div class="kc-step"><span class="step-num">STEP 1</span>Attacker reads public GitHub repository (<code>build4io-site/.replit:56</code> + <code>wallet.ts:7-8</code> + <code>bot-wallet.ts:30</code>) → has the default encryption keys.</div>
+  <div class="kc-step"><span class="step-num">STEP 2</span>Attacker obtains Postgres <code>User.encryptedPK</code> / <code>aster_credentials.encrypted_api_secret</code>. Possible paths (any one of): (a) SQL injection via remaining <code>sql.raw()</code> calls (H17 partial); (b) Cloudflare WAF bypass on <code>/api/miniapp/*</code> (NEW-01); (c) <code>/api/miniapp/link-aster</code> parentAddress spoofing (NEW-05); (d) Replit Secrets exfiltration; (e) DB backup leak; (f) Render employee / supply chain.</div>
+  <div class="kc-step"><span class="step-num">STEP 3</span>Attacker decrypts: <code>key = SHA256(default_key + userId)</code> → <code>wallet_pk = AES-CBC-decrypt(encryptedPK, key)</code>.</div>
+  <div class="kc-step"><span class="step-num">STEP 4</span>Attacker waits for user-initiated Aster Withdraw OR directly signs a Withdraw with the stolen PK. Funds arrive on user's BSC EOA.</div>
+  <div class="kc-step"><span class="step-num">STEP 5</span>Attacker sweeps BSC tokens to drainer EOA <code>0xa711a2af</code>. <em>(PROVEN on-chain.)</em></div>
+  <div class="kc-step"><span class="step-num">STEP 6</span>Drainer routes USDT through PancakeSwap V3 to convert to WBNB/BNB. ASTER routed through Aster/swap routers to convert. <em>(PROVEN on-chain.)</em></div>
+  <div class="kc-step"><span class="step-num">STEP 7</span>Final cash-out as native BNB &mdash; either to CEX deposit, cross-chain bridge, or further swaps. <em>(Not yet traced — requires native-BNB indexing.)</em></div>
+
+  <h3>Alternatives considered &amp; rejected</h3>
+  <ul>
+    <li><strong>Phishing approval signed by user</strong> — would require infinite ERC-20 approval to a drainer contract. We saw NO such approval in the BSC outflow data. <span class="badge low">RULED OUT</span></li>
+    <li><strong>Aster Agent abuse</strong> — Aster's builder/agent role <em>cannot</em> withdraw user funds (verified against AsterCode V3 docs). Only places orders. <span class="badge low">RULED OUT</span></li>
+    <li><strong>Malware on user device</strong> — would explain individual drains but cannot be ruled out without device forensics. The pattern (drain happening <em>after</em> funds arrive on BSC, no fingerprint of standard drainer contract) is more consistent with custodial breach. <span class="badge med">POSSIBLE but less likely</span></li>
+    <li><strong>User self-withdraw to consolidate</strong> — founder says "I don't know what happened", so this is denied. <span class="badge low">RULED OUT</span></li>
+  </ul>
+</section>
+
+<!-- ============= IMMEDIATE ACTIONS ============= -->
+<section class="c page-break">
+  <div class="divider" style="background:linear-gradient(90deg,var(--high),var(--crit));"></div>
+  <h2>Immediate Actions (do today)</h2>
+
+  <h3>Phase 0 — Stop the bleeding (within 1 hour)</h3>
+  <ol>
+    <li><strong>Pause the bot.</strong> Remove the Telegram webhook or kill the Render service. Every minute the bot runs with the current code, more users may be at risk.</li>
+    <li><strong>Notify your top-5 most-active users</strong> via Telegram DM to stop depositing to bot-generated wallets and manually withdraw any pending Aster L1 balances to a wallet they personally control.</li>
+    <li><strong>Stop committing to the public GitHub repository</strong> until full credential rotation is complete.</li>
+  </ol>
+
+  <h3>Phase 1 — Rotate credentials (within 4 hours)</h3>
+  <ol start="4">
+    <li><strong>Rotate <code>DEPLOYER_PRIVATE_KEY</code></strong>: generate fresh keypair, transfer ownership of all 5 contracts to a multisig (not a fresh EOA — see H15), purge the leaked key from <code>build4io-site/.replit</code>, all <code>.cjs</code> hardhat configs, and from git history (<code>git filter-repo</code>).</li>
+    <li><strong>Rotate <code>WALLET_ENCRYPTION_KEY</code> / <code>MASTER_ENCRYPTION_KEY</code></strong>: new 256-bit key, set in both Render services. Migrate existing wallets: decrypt with old key, re-encrypt with new key. Then <strong>DELETE the hardcoded defaults from <code>wallet.ts:7-8</code> and <code>bot-wallet.ts:30</code></strong>.</li>
+    <li><strong>Rotate <code>DATABASE_URL</code></strong> (new Postgres password).</li>
+    <li><strong>Rotate <code>TELEGRAM_BOT_TOKEN</code></strong>, <code>ANTHROPIC_API_KEY</code>, <code>XAI_API_KEY</code>, <code>HYPERBOLIC_API_KEY</code>, <code>AKASH_API_KEY</code>, <code>ASTER_AGENT_PRIVATE_KEY</code>, <code>ASTER_BUILDER_ADDRESS</code> — every secret accessible from Render env.</li>
+  </ol>
+
+  <h3>Phase 2 — Fund-recovery actions (within 24 hours)</h3>
+  <ol start="8">
+    <li><strong>Submit Chainabuse reports</strong> for the drainer + 3 cash-out destinations.</li>
+    <li><strong>Open MistTrack tracking</strong> on <code>0xa711a2af</code> to monitor onward flows in real-time.</li>
+    <li><strong>Engage AsterDex security team</strong> directly — they have visibility on the Spot/Bridge contracts (cash-out #1 and #2 might be their infrastructure) and may help freeze or trace.</li>
+    <li><strong>If we trace funds to a CEX deposit</strong>: have the affected user file a police report in their jurisdiction (required for CEX freeze in most cases) + submit freeze requests using the template in Annex B.</li>
+  </ol>
+
+  <h3>Phase 3 — Architecture changes (within 1 week)</h3>
+  <ol start="12">
+    <li><strong>Remove the custodial "broker model"</strong> for new users. Migrate to <strong>Aster API-Wallet delegation only</strong>: user signs once with their own wallet to grant a separate, revocable API key. Build4 never sees the main wallet PK.</li>
+    <li><strong>Restore Cloudflare WAF</strong> on <code>/api/miniapp/*</code> (NEW-01) — bypass should only cover the HTML page, not the API.</li>
+    <li><strong>Implement EIP-712 ownership verification</strong> on <code>parentAddress</code> (NEW-05).</li>
+    <li><strong>Remove API response body logging</strong> in production (NEW-04) or gate behind <code>NODE_ENV !== 'production'</code>.</li>
+    <li><strong>Migrate from <code>sql.raw()</code> to parameterized Drizzle ORM</strong> for the remaining 10-15 instances in <code>server/storage.ts</code> (H17).</li>
+    <li><strong>Multi-sig + timelock</strong> for all 5 contracts (H15).</li>
+    <li><strong>Redeploy contracts with the open fixes</strong>: C09 (SafeERC20), H07 (creditAgent), H08 (addRewards), H09 (withdrawPlatformFees).</li>
+  </ol>
+
+  <h3>Phase 4 — Continuous monitoring</h3>
+  <ol start="19">
+    <li><strong>Alert on every <code>User.encryptedPK</code> read</strong> outside the bot's normal flow.</li>
+    <li><strong>Alert on every Render deploy</strong> to a private Telegram channel.</li>
+    <li><strong>Alert on every Postgres connection</strong> from an IP not on your allowlist.</li>
+    <li><strong>Scheduled scan every 5 min</strong>: check that no active user wallet has outflows to a non-whitelisted address. Kairos can provide a ready-to-deploy <code>wallet-watch</code> collector.</li>
+  </ol>
+</section>
+
+<!-- ============= WHAT WE STILL NEED ============= -->
+<section class="c page-break">
+  <div class="divider" style="background:linear-gradient(90deg,var(--cyan),var(--green));"></div>
+  <h2>What we still need from you to close the case</h2>
+  <p>To upgrade the root-cause confidence from "highly likely" to <span class="badge proven">PROVEN</span>:</p>
+
+  <ol>
+    <li><strong>Confirmation per wallet</strong> — is the wallet bot-generated, imported, or your own test?
+      <ul>
+        <li>If bot-generated → encrypted PK is in the DB</li>
+        <li>Is W2 your own test wallet? If yes, the drain interpretation may need revision</li>
+      </ul>
+    </li>
+    <li><strong>Postgres extract</strong> for the 3 user rows (W1, W2, W3): <code>encryptedPK</code> value, <code>createdAt</code>, <code>lastLoginAt</code>. We will test decryption with the default key &mdash; this either <em>proves</em> the hypothesis or refutes it definitively.</li>
+    <li><strong>Render audit log</strong> — past 60 days: any suspicious deploys, env-var reads, restarts?</li>
+    <li><strong>Replit access log</strong> — has anyone other than you accessed the workspace?</li>
+    <li><strong>GitHub access log</strong> — any unexpected clones or forks of the public repo?</li>
+    <li><strong>Complete list of user wallet addresses</strong> in your DB &mdash; so we can scan for the same drainer pattern across the full user base and quantify total exposure.</li>
+    <li><strong>Aster account balance check</strong> for W1 and W3 &mdash; their L1 Withdraws may not have settled. Run <code>POST /explorer { type: "userDetails", user: "0x9751EB..." }</code> on <code>explorer.asterdex.com</code> &mdash; report the <code>balanceDetails</code> and <code>positions</code> arrays.</li>
+  </ol>
+</section>
+
+<!-- ============= ANNEX A — KEY ACTORS ============= -->
+<section class="c page-break">
+  <div class="divider" style="background:linear-gradient(90deg,var(--purple),var(--cyan));"></div>
+  <h2>Annex A — Key actors identified</h2>
+  <table>
+    <thead><tr><th>Role</th><th>Address</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td>BUILD4 deployer (leaked key)</td><td><code>0x8CBF7a53af6B88ABb07Ba481Ac66D73A99985878</code></td><td>Derived from <code>fbb5ce…87de</code>. Nonce 308, 0 BNB now.</td></tr>
+      <tr><td>Drained user W1</td><td><code>0x9751EB70C3042b4b2a228f8E67dfE356CB2d3026</code></td><td>Active trader, no large BSC outflows detected.</td></tr>
+      <tr><td>Drained user W2</td><td><code>0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4</code></td><td><strong>Confirmed drained</strong> — 188 ApproveAgent re-approval loops.</td></tr>
+      <tr><td>Drained user W3</td><td><code>0xf7fcea645C2d0cB97F5a3a76d69E38E047EDdaf9</code></td><td>Small user, no BSC outflows detected.</td></tr>
+      <tr><td><strong>Drainer EOA</strong></td><td><code>0xa711a2af8864e276f4c28716d543100f6709cd24</code></td><td>Nonce 10, dust BNB, fresh attacker wallet.</td></tr>
+      <tr><td>PancakeSwap V3 USDT/WBNB pool</td><td><code>0x172fcd41e0913e95784454622d1c3724f546f849</code></td><td>Used by drainer to swap USDT → WBNB.</td></tr>
+      <tr><td>Swap hub #1 (likely Aster spot)</td><td><code>0x238a358808379702088667322f80ac48bad5e6c4</code></td><td>10 868 BNB balance, $285M USDT throughput, 5677 senders.</td></tr>
+      <tr><td>Swap hub #2</td><td><code>0x4c3ccc98c01103be72bcfd29e1d2454c98d1a6e3</code></td><td>$6.4M USDT throughput, 6984 senders.</td></tr>
+      <tr><td>Aster Bridge (legit BSC contract)</td><td><code>0x128463a60784c4d3f46c23af3f65ed859ba87974</code></td><td>3 862 BNB. Received 109.94 ASTER from W2 as a deposit-back-into-Aster (normal user op).</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ============= ANNEX B — CEX FREEZE TEMPLATE ============= -->
+<section class="c page-break">
+  <div class="divider" style="background:linear-gradient(90deg,var(--high),var(--med));"></div>
+  <h2>Annex B — CEX freeze request template</h2>
+  <pre>Subject: URGENT — Wallet draining incident — freeze request for BSC addresses
+
+Hello [CEX] compliance / security team,
+
+I report an active wallet-drainer incident affecting users of the Build4
+platform (build4.io). Funds were stolen from user-controlled wallets on BSC
+and routed through DEX/AMM contracts before final cash-out. We suspect the
+final destination(s) may correspond to deposit addresses on your exchange.
+
+Drainer EOA (BSC):
+  0xa711a2af8864e276f4c28716d543100f6709cd24
+
+Intermediate swap hubs:
+  0x172fcd41e0913e95784454622d1c3724f546f849 (PancakeSwap V3 USDT/WBNB)
+  0x238a358808379702088667322f80ac48bad5e6c4 (large swap router)
+  0x4c3ccc98c01103be72bcfd29e1d2454c98d1a6e3 (secondary swap hub)
+
+Source victim (BSC):
+  0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4
+  (potentially more victims under investigation)
+
+Stolen amounts (confirmed for the one victim):
+  ~382 ASTER (BEP-20) + ~38 USDT (BEP-20), ≈ $420 at time of theft.
+
+Incident window: 2026-04-21 to 2026-05-16 UTC.
+
+We ask that you:
+ 1. Identify whether any of these addresses correspond to user deposit
+    addresses on your platform.
+ 2. Freeze any unwithdrawn balances and pending deposits to those accounts.
+ 3. Preserve KYC and IP-log evidence pending legal process.
+
+A formal police report is being filed in [jurisdiction]. Case number will
+be supplied as soon as it is assigned.
+
+Auditor of record: Kairos Lab Security Research (Valisthea)
+Contact: admin@kairos-lab.org
+
+Best regards,
+[founder name + email]
+  </pre>
+</section>
+
+<!-- ============= ANNEX C — VULN FILE FOOTPRINT ============= -->
+<section class="c page-break">
+  <div class="divider" style="background:linear-gradient(90deg,var(--crit),var(--high));"></div>
+  <h2>Annex C — Footprint of vulnerable code (for your grep)</h2>
+  <pre>src/services/wallet.ts:7
+  ?? 'default_dev_key_change_in_prod_32c'        DELETE FALLBACK, FAIL HARD IF ENV UNSET
+
+src/services/wallet.ts:8
+  ?? 'default-dev-key-change-me-32chars!'        DELETE FALLBACK, FAIL HARD IF ENV UNSET
+
+src/services/wallet.ts:89-94
+  const HISTORICAL_DEFAULT_MODERN = ...          DELETE AFTER MIGRATION
+
+build4io-site/server/bot-wallet.ts:30
+  ?? "default_dev_key_change_in_prod_32c"        DELETE FALLBACK, FAIL HARD IF ENV UNSET
+
+build4io-site/.replit:56
+  DEPLOYER_PRIVATE_KEY = "fbb5ce..."             DELETE LINE, ROTATE KEY, PURGE GIT HISTORY
+
+build4io-site/hardhat.config.web4.cjs:36,41,46,51,56,61
+build4io-site/server/onchain.ts:206,259,948,1468,1548
+build4io-site/server/agent-runner.ts:1506,1612
+build4io-site/server/decentralized-storage.ts:6
+  process.env.DEPLOYER_PRIVATE_KEY               KEEP, but with new key value only
+
+server/index.ts:66 (per V4 NEW-01)
+  Cloudflare bypass for /miniapp + /api/miniapp/*  Restrict to /miniapp HTML only
+
+server/miniapp-routes.ts:132-136 (per V4 NEW-05)
+  parentAddress from body, no signature check    Require EIP-712 sig from parentAddress
+
+server/aster-client.ts:241 (per V4 NEW-04)
+  body=${text.substring(0, 500)}                 Remove or gate behind NODE_ENV check
+
+server/storage.ts (per V4 H17)
+  sql.raw() calls (~10-15 remaining)             Replace with parameterized Drizzle ORM</pre>
+</section>
+
+<!-- ============= CLOSING ============= -->
+<section class="c page-break">
+  <div class="divider" style="background:linear-gradient(90deg,var(--crit),var(--high),var(--green));"></div>
+  <h2>Closing</h2>
+  <div class="alert-box danger">
+    <p style="font-size:14px;color:#7a1212;font-weight:700;margin-bottom:8px;">You did the right thing by coming back to us, but you delivered the very outcome we warned you about in April.</p>
+    <p>The platform is competitively built and your patch velocity in April was excellent (5 patches in 2 hours, 33 of 42 fixed). But the post-patch regression (Aster V3 Direct shipped without security review) was the failure mode we flagged in V4 &mdash; and it is exactly what is now costing your users their funds.</p>
+    <p style="margin-top:8px;"><strong>You should not resume the bot in production until at least steps 1-9 of section 6 are complete.</strong> Continuing to operate now is actively dangerous &mdash; every user transaction is a potential drain event.</p>
+  </div>
+
+  <div class="alert-box good">
+    <p style="font-weight:700;color:#047857;">Confirmed losses we have proof for: ~$420 (W2 only).<br>If our root-cause hypothesis is correct, total exposure scales with the size of your user base. We can quantify this immediately if you provide the full user-wallet list.</p>
+  </div>
+</section>
+
+<!-- ============= FOOTER ============= -->
+<footer class="c">
+  <div style="display:flex;align-items:center;justify-content:center;gap:14px;margin-bottom:8px;">
+    <svg width="22" height="22" viewBox="0 0 140 140"><polygon points="70,8 128,38 128,102 70,132 12,102 12,38" fill="none" stroke="rgba(200,210,220,0.25)" stroke-width="2.5"/><text x="70" y="76" text-anchor="middle" font-family="Bricolage Grotesque,sans-serif" font-size="22" font-weight="800" fill="#94A3B8">K</text><circle cx="70" cy="8" r="6" fill="#9B7FE6"/><circle cx="128" cy="38" r="6" fill="#00D4CC"/><circle cx="128" cy="102" r="6" fill="#4A90D9"/><circle cx="70" cy="132" r="6" fill="#B4A7D6"/><circle cx="12" cy="102" r="6" fill="#7DD4E8"/><circle cx="12" cy="38" r="6" fill="#A8C8E8"/></svg>
+    <span style="font-family:var(--fh);font-weight:800;font-size:13px;letter-spacing:0.12em;">KAIROS LAB</span>
+  </div>
+  <p>KSR-BUILD4-INCIDENT-2026-05-17 &mdash; Confidential</p>
+  <p style="margin-top:4px;">Auditor: Valisthea @ Kairos Lab Security Research &mdash; admin@kairos-lab.org</p>
+  <p style="margin-top:8px;">This document contains confidential security findings. Unauthorized distribution is prohibited.</p>
+</footer>
+
+</body>
+</html>
