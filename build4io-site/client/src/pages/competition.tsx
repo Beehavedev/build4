@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/card";
 import { SEO } from "@/components/seo";
 import { WalletConnector } from "@/components/wallet-connector";
 import { useTerminalSession } from "@/hooks/use-terminal-session";
+import { useToast } from "@/hooks/use-toast";
 import {
   Trophy, Flame, Zap, Bot, Hand, Sparkles, Lock, ChevronRight, ExternalLink,
   TrendingUp, TrendingDown, Crown, Medal, Target, Brain, ShieldCheck,
@@ -508,6 +509,8 @@ type LiveLeaderRow = {
   bustOut: boolean;
   isHouse: boolean;
   chatId: string;
+  erc8004AgentId?: string | null;
+  erc8004TokenUrl?: string | null;
 };
 type LiveLeaderboardResp = {
   ok: boolean;
@@ -532,6 +535,14 @@ type MyEntryResp = {
     pnlUsd: number;
     currentUsd: number;
     startingUsd: number;
+    erc8004?: {
+      agentId: string | null;
+      txHash: string | null;
+      status: "pending" | "minting" | "minted" | "failed";
+      error: string | null;
+      tokenUrl: string | null;
+      txUrl: string | null;
+    };
   };
   competition?: { id: string; status: string };
   funding?: {
@@ -571,6 +582,7 @@ export default function Competition() {
   const ended = useCountdown(COMPETITION_END_ISO);
   const live = cd.ended && !ended.ended;
   const session = useTerminalSession();
+  const { toast } = useToast();
 
   const [liveLb, setLiveLb] = useState<LiveLeaderRow[]>([]);
   const [myEntry, setMyEntry] = useState<MyEntryResp["entry"]>(null);
@@ -638,6 +650,17 @@ export default function Competition() {
     const id = setInterval(loadMe, 20_000);
     return () => clearInterval(id);
   }, [loadMe, session.ready]);
+
+  // Fast-poll while the ERC-8004 mint is in flight so the user sees
+  // pending → minting → minted within ~3s of confirmation instead of
+  // waiting up to 20s for the slow loop above.
+  useEffect(() => {
+    if (!session.ready || !myEntry?.erc8004) return;
+    const s = myEntry.erc8004.status;
+    if (s !== "minting" && s !== "pending") return;
+    const id = setInterval(loadMe, 3_000);
+    return () => clearInterval(id);
+  }, [session.ready, myEntry?.erc8004?.status, loadMe]);
 
   const onJoin = useCallback(async () => {
     if (!session.ready) return;
@@ -1124,8 +1147,14 @@ export default function Competition() {
                         </div>
                       )}
 
-                      <div className="text-[11px] font-mono text-zinc-500 leading-relaxed px-1">
-                        Deploying snapshots your current BNB balance as your starting line. Every PancakeSwap trade after that counts toward the leaderboard. Top 5 split <span className="text-white font-semibold">$3,000</span> in BNB.
+                      <div className="text-[11px] font-mono text-zinc-500 leading-relaxed px-1 space-y-1">
+                        <div>
+                          Deploying snapshots your current BNB balance as your starting line. Every PancakeSwap trade after that counts toward the leaderboard. Top 5 split <span className="text-white font-semibold">$3,000</span> in BNB.
+                        </div>
+                        <div className="flex items-start gap-1.5">
+                          <ShieldCheck className="w-3.5 h-3.5 flex-shrink-0 mt-px" style={{ color: B4_GREEN }} />
+                          <span>We'll also mint your agent's on-chain <span className="text-white">ERC-8004 identity</span> so it shows up on BscScan / 8004scan. Costs ~$0.10 in BNB gas, paid by the wallet you're funding.</span>
+                        </div>
                       </div>
 
                       <div className="flex items-center justify-between gap-2 pt-1">
@@ -1190,6 +1219,80 @@ export default function Competition() {
                     </div>
                   </div>
                 </div>
+
+                {/* On-chain ERC-8004 identity — minted async at /join, surfaces status + BscScan link. */}
+                {myEntry.erc8004 && (
+                  <div className="p-3 rounded-lg border border-zinc-800 bg-zinc-950/80 flex flex-wrap items-center justify-between gap-3" data-testid="block-erc8004">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <ShieldCheck className="w-4 h-4 flex-shrink-0" style={{ color: myEntry.erc8004.status === "minted" ? B4_GREEN : myEntry.erc8004.status === "failed" ? PCS_PINK : "#a1a1aa" }} />
+                      <div className="min-w-0">
+                        <div className="text-[10px] font-mono uppercase tracking-wider text-zinc-500">On-chain identity · ERC-8004</div>
+                        {myEntry.erc8004.status === "minted" && myEntry.erc8004.agentId ? (
+                          <div className="font-mono text-xs text-white truncate" data-testid="text-erc8004-minted">
+                            Agent <span className="font-semibold" style={{ color: B4_GREEN }}>#{myEntry.erc8004.agentId}</span> minted on BSC
+                          </div>
+                        ) : myEntry.erc8004.status === "minting" ? (
+                          <div className="font-mono text-xs text-zinc-400" data-testid="text-erc8004-minting">Minting on-chain… (~10s)</div>
+                        ) : myEntry.erc8004.status === "failed" ? (
+                          <div className="font-mono text-xs truncate" style={{ color: PCS_PINK }} data-testid="text-erc8004-failed" title={myEntry.erc8004.error || undefined}>
+                            Mint failed — {myEntry.erc8004.error?.slice(0, 80) || "unknown error"}
+                          </div>
+                        ) : (
+                          <div className="font-mono text-xs text-zinc-400" data-testid="text-erc8004-pending">Queued — will mint shortly</div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      {myEntry.erc8004.status === "minted" && myEntry.erc8004.tokenUrl && (
+                        <a
+                          href={myEntry.erc8004.tokenUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="font-mono text-[11px] uppercase tracking-wider text-zinc-300 hover:text-white border border-zinc-700 hover:border-zinc-500 rounded px-2 py-1 transition-colors"
+                          data-testid="link-erc8004-bscscan"
+                        >
+                          View on BscScan ↗
+                        </a>
+                      )}
+                      {(myEntry.erc8004.status === "failed" || myEntry.erc8004.status === "pending") && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="font-mono text-[11px] uppercase tracking-wider h-7"
+                          onClick={async () => {
+                            try {
+                              const r = await fetch("/api/competition/mint-identity", {
+                                method: "POST",
+                                credentials: "include",
+                                headers: { "Content-Type": "application/json", "x-wallet-address": session.address || "" },
+                              });
+                              const j = await r.json();
+                              if (!j.ok) {
+                                toast({ title: "Retry failed", description: j.error || "Try again in a moment", variant: "destructive" });
+                              } else {
+                                toast({ title: j.alreadyMinted ? "Already minted" : "Mint queued", description: j.alreadyMinted ? `Agent #${j.agentId}` : "Refreshing status…" });
+                                // Force a /me refresh so status flips to "minting" immediately.
+                                setTimeout(() => { void (async () => {
+                                  try {
+                                    const me = await fetch("/api/competition/me", { credentials: "include", headers: { "x-wallet-address": session.address || "" } });
+                                    const mj = await me.json();
+                                    if (mj.ok) setMyEntry(mj.entry);
+                                  } catch {}
+                                })(); }, 500);
+                              }
+                            } catch (e: any) {
+                              toast({ title: "Network error", description: String(e?.message ?? e), variant: "destructive" });
+                            }
+                          }}
+                          data-testid="button-erc8004-retry"
+                        >
+                          Retry mint
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 {!myEntry.bustOut && (
                   <div className="p-4 rounded-lg border border-zinc-800 bg-zinc-950/80 flex flex-col lg:flex-row lg:items-center gap-3 lg:justify-between" data-testid="block-mode-controls">
                     <div>

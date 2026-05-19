@@ -19,6 +19,7 @@ import {
   getBscWalletBalance,
 } from "./services/pancakeSwapTrading";
 import { requireSiweAuthed } from "./competition-auth";
+import { mintAgentIdentity, getBscScanTokenUrl, getBscScanTxUrl } from "./services/erc8004Mint";
 
 // Competition window — must match constants in client/src/pages/competition.tsx.
 const DEFAULT_COMP_NAME = "BUILD4 × PancakeSwap Season 1";
@@ -94,6 +95,18 @@ export async function ensureCompetitionColumns(): Promise<void> {
     await db.execute(sql`ALTER TABLE aster_competition_entries ADD COLUMN IF NOT EXISTS mode TEXT DEFAULT 'manual'`);
     await db.execute(sql`ALTER TABLE aster_competition_entries ADD COLUMN IF NOT EXISTS agent_name TEXT`);
     await db.execute(sql`ALTER TABLE aster_competition_entries ADD COLUMN IF NOT EXISTS bust_out BOOLEAN DEFAULT false`);
+    // ERC-8004 on-chain identity columns. Status transitions:
+    //   pending  -> created at /join, mint not yet attempted
+    //   minting  -> async mint in flight
+    //   minted   -> success, agent_id + tx_hash populated
+    //   failed   -> mint reverted or wallet underfunded; user can retry
+    await db.execute(sql`ALTER TABLE aster_competition_entries ADD COLUMN IF NOT EXISTS erc8004_agent_id TEXT`);
+    await db.execute(sql`ALTER TABLE aster_competition_entries ADD COLUMN IF NOT EXISTS erc8004_tx_hash TEXT`);
+    await db.execute(sql`ALTER TABLE aster_competition_entries ADD COLUMN IF NOT EXISTS erc8004_mint_status TEXT DEFAULT 'pending'`);
+    await db.execute(sql`ALTER TABLE aster_competition_entries ADD COLUMN IF NOT EXISTS erc8004_mint_error TEXT`);
+    // mint_started_at gives us a stale-mint reaper: if a row is stuck at
+    // 'minting' for longer than STALE_MINT_MS the next claim can take it over.
+    await db.execute(sql`ALTER TABLE aster_competition_entries ADD COLUMN IF NOT EXISTS erc8004_mint_started_at TIMESTAMPTZ`);
     await db.execute(sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_comp_entry_unique ON aster_competition_entries (competition_id, chat_id)`);
   } catch (e: any) {
     console.error("[Competition] ensureCompetitionColumns failed:", e?.message ?? e);
@@ -187,6 +200,82 @@ export async function recordPancakeTrade(opts: {
   }
 }
 
+// Fire-and-forget ERC-8004 mint with status updates. Looks up the
+// custodial PK via storage (never returned to clients); persists
+// 'minting' before the tx, 'minted' on success, 'failed' + error on
+// any throw. Safe to call multiple times — caller checks status first
+// (the /api/competition/mint-identity retry endpoint guards against
+// concurrent attempts).
+// Stuck-mint reaper window: if a row sits at 'minting' for longer than
+// this without flipping to minted/failed (e.g. server crashed mid-tx),
+// the next claim can take it over and retry. Reads of the registry are
+// idempotent — worst case we waste a few cents of gas if the original
+// tx eventually lands; the on-chain identity ends up the same agent's.
+const STALE_MINT_MS = 10 * 60 * 1000; // 10 min
+
+async function runIdentityMint(opts: {
+  entryId: string;
+  custodialAddress: string;
+  ownerAddress: string;
+  agentName: string;
+  persona: string;
+  mode: string;
+}): Promise<void> {
+  // Atomic claim: only proceed if this row is in a claimable state
+  // (pending, failed, or stale 'minting'). Returns the row id on
+  // success, empty result if another worker beat us to it — in which
+  // case we silently exit so we don't double-mint and double-spend gas.
+  const staleCutoff = new Date(Date.now() - STALE_MINT_MS);
+  const claim = await db.execute(sql`
+    UPDATE aster_competition_entries
+    SET erc8004_mint_status = 'minting',
+        erc8004_mint_started_at = NOW(),
+        erc8004_mint_error = NULL
+    WHERE id = ${opts.entryId}
+      AND (
+        erc8004_mint_status IN ('pending', 'failed')
+        OR (erc8004_mint_status = 'minting' AND (erc8004_mint_started_at IS NULL OR erc8004_mint_started_at < ${staleCutoff.toISOString()}))
+      )
+    RETURNING id
+  `);
+  if ((claim.rows ?? []).length === 0) {
+    console.log(`[Competition] mint claim skipped for entry ${opts.entryId} (already in flight by another worker)`);
+    return;
+  }
+  try {
+    const pk = await storage.getPrivateKeyByWalletAddress(opts.custodialAddress);
+    if (!pk) throw new Error("Custodial PK not retrievable");
+    const result = await mintAgentIdentity({
+      custodialPk: pk,
+      ownerAddress: opts.ownerAddress,
+      agentName: opts.agentName,
+      persona: opts.persona,
+      mode: opts.mode,
+    });
+    await db.execute(sql`
+      UPDATE aster_competition_entries
+      SET erc8004_agent_id = ${result.tokenId},
+          erc8004_tx_hash = ${result.txHash},
+          erc8004_mint_status = 'minted',
+          erc8004_mint_error = NULL
+      WHERE id = ${opts.entryId}
+    `);
+    console.log(`[Competition] minted ERC-8004 #${result.tokenId} tx=${result.txHash} entry=${opts.entryId}`);
+  } catch (e: any) {
+    const msg = String(e?.message ?? e).slice(0, 500);
+    console.warn(`[Competition] ERC-8004 mint failed for entry ${opts.entryId}: ${msg}`);
+    try {
+      await db.execute(sql`
+        UPDATE aster_competition_entries
+        SET erc8004_mint_status = 'failed', erc8004_mint_error = ${msg}
+        WHERE id = ${opts.entryId}
+      `);
+    } catch (e2: any) {
+      console.error("[Competition] failed to record mint failure:", e2?.message ?? e2);
+    }
+  }
+}
+
 export function registerCompetitionRoutes(app: Express) {
   // Public: returns active competition + entry count.
   app.get("/api/competition/active", async (_req: Request, res: Response) => {
@@ -242,12 +331,29 @@ export function registerCompetitionRoutes(app: Express) {
       const r = await db.execute(sql`
         SELECT id, username, agent_name, persona, mode, starting_balance_usdt, current_equity_usdt,
                pnl_usdt, pnl_percent, trade_count, win_count, loss_count, bust_out,
-               tracked_tokens, wallet_address, joined_at
+               tracked_tokens, wallet_address, joined_at,
+               erc8004_agent_id, erc8004_tx_hash, erc8004_mint_status, erc8004_mint_error
         FROM aster_competition_entries
         WHERE competition_id = ${comp.id} AND chat_id = ${auth.chatId} LIMIT 1
       `);
       const row = (r.rows ?? [])[0] as any;
       if (!row) return res.json({ ok: true, entry: null, competition: { id: comp.id, status: comp.status }, funding });
+      // Lazy backfill: if this entry pre-dates the ERC-8004 feature (or
+      // a previous mint was never started), kick off a mint on next view.
+      // Also self-heals stale 'minting' rows beyond STALE_MINT_MS. The
+      // atomic claim in runIdentityMint dedupes against concurrent /me.
+      const mintStatus = row.erc8004_mint_status ? String(row.erc8004_mint_status) : "pending";
+      const needsAutoMint = mintStatus === "pending";
+      if (needsAutoMint) {
+        void runIdentityMint({
+          entryId: String(row.id),
+          custodialAddress: auth.walletAddress,
+          ownerAddress: auth.walletAddress,
+          agentName: row.agent_name || `Agent#${String(row.id).slice(0, 6)}`,
+          persona: row.persona || "manual",
+          mode: row.mode || "manual",
+        });
+      }
       let tracked: string[] = [];
       try { tracked = JSON.parse(String(row.tracked_tokens || "[]")); } catch {}
       const equityBnb = await recomputeEntryEquity(auth.walletAddress, tracked);
@@ -282,6 +388,15 @@ export function registerCompetitionRoutes(app: Express) {
           startingUsd: startBnb * bnbUsd,
           currentUsd: equityBnb * bnbUsd,
           pnlUsd: pnlBnb * bnbUsd,
+          erc8004: {
+            agentId: row.erc8004_agent_id ? String(row.erc8004_agent_id) : null,
+            txHash: row.erc8004_tx_hash ? String(row.erc8004_tx_hash) : null,
+            status: (row.erc8004_mint_status ? String(row.erc8004_mint_status) : "pending") as
+              "pending" | "minting" | "minted" | "failed",
+            error: row.erc8004_mint_error ? String(row.erc8004_mint_error) : null,
+            tokenUrl: row.erc8004_agent_id ? getBscScanTokenUrl(String(row.erc8004_agent_id)) : null,
+            txUrl: row.erc8004_tx_hash ? getBscScanTxUrl(String(row.erc8004_tx_hash)) : null,
+          },
         },
         funding,
       });
@@ -375,9 +490,64 @@ export function registerCompetitionRoutes(app: Express) {
         }
         return res.status(403).json({ ok: false, error: "Competition is full" });
       }
+      // Kick off async ERC-8004 identity mint. Fire-and-forget so the user
+      // gets an instant /join response; status is polled via /me.
+      const newEntryId = String((insertedId as any).id);
+      const safeAgentName = agentName || `Agent#${newEntryId.slice(0, 6)}`;
+      void runIdentityMint({
+        entryId: newEntryId,
+        custodialAddress: auth.walletAddress,
+        ownerAddress: auth.walletAddress,
+        agentName: safeAgentName,
+        persona,
+        mode,
+      });
+
       res.json({ ok: true, alreadyJoined: false, startingBnb, walletAddress: auth.walletAddress });
     } catch (e: any) {
       console.error("[Competition] join failed:", e?.message ?? e);
+      res.status(500).json({ ok: false, error: e?.message ?? String(e) });
+    }
+  });
+
+  // Authed: retry ERC-8004 identity mint if the initial attempt failed
+  // (most common cause: wallet was unfunded at join time). Idempotent —
+  // safe to call repeatedly; no-op if status is already 'minted'.
+  app.post("/api/competition/mint-identity", async (req: Request, res: Response) => {
+    const auth = await requireSiweAuthed(req, {
+      isWrite: true,
+      rateLimit: { key: "comp:mint", max: 5, windowMs: 60_000 },
+    });
+    if ("error" in auth) return res.status(auth.status).json({ ok: false, error: auth.error, code: auth.code });
+    try {
+      const comp = await getActiveCompetition();
+      if (!comp) return res.status(404).json({ ok: false, error: "No active competition" });
+      const r = await db.execute(sql`
+        SELECT id, agent_name, persona, mode, erc8004_mint_status, erc8004_agent_id
+        FROM aster_competition_entries
+        WHERE competition_id = ${comp.id} AND chat_id = ${auth.chatId} LIMIT 1
+      `);
+      const row = (r.rows ?? [])[0] as any;
+      if (!row) return res.status(404).json({ ok: false, error: "Not joined yet" });
+      if (row.erc8004_mint_status === "minted" && row.erc8004_agent_id) {
+        return res.json({ ok: true, alreadyMinted: true, agentId: String(row.erc8004_agent_id) });
+      }
+      // Note: we no longer 409 on status='minting'. The atomic claim in
+      // runIdentityMint makes duplicate-call safe (whichever request
+      // wins the claim does the mint; the loser silently exits). This
+      // also frees the stale-mint reaper path: a 'minting' row older
+      // than STALE_MINT_MS will be reclaimable.
+      // Kick off another attempt and return immediately. Status is polled via /me.
+      void runIdentityMint({
+        entryId: String(row.id),
+        custodialAddress: auth.walletAddress,
+        ownerAddress: auth.walletAddress,
+        agentName: row.agent_name || `Agent#${String(row.id).slice(0, 6)}`,
+        persona: row.persona || "manual",
+        mode: row.mode || "manual",
+      });
+      res.json({ ok: true, status: "minting" });
+    } catch (e: any) {
       res.status(500).json({ ok: false, error: e?.message ?? String(e) });
     }
   });
@@ -393,7 +563,8 @@ export function registerCompetitionRoutes(app: Express) {
       const rows = await db.execute(sql`
         SELECT id, chat_id, username, agent_name, persona, mode, wallet_address,
                starting_balance_usdt, current_equity_usdt, pnl_usdt, pnl_percent,
-               trade_count, win_count, loss_count, bust_out, last_updated
+               trade_count, win_count, loss_count, bust_out, last_updated,
+               erc8004_agent_id
         FROM aster_competition_entries
         WHERE competition_id = ${comp.id}
         ORDER BY pnl_percent DESC NULLS LAST
@@ -422,6 +593,8 @@ export function registerCompetitionRoutes(app: Express) {
         bustOut: Boolean(r.bust_out),
         lastUpdated: r.last_updated,
         isHouse: r.persona === "House",
+        erc8004AgentId: r.erc8004_agent_id ? String(r.erc8004_agent_id) : null,
+        erc8004TokenUrl: r.erc8004_agent_id ? getBscScanTokenUrl(String(r.erc8004_agent_id)) : null,
       }));
       res.json({
         ok: true,
