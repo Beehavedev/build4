@@ -4,8 +4,34 @@ import nodeCrypto from 'crypto'
 import { db } from '../db'
 import { buildBscProvider } from './bscProvider'
 
-const MASTER_KEY = process.env.MASTER_ENCRYPTION_KEY ?? process.env.WALLET_ENCRYPTION_KEY ?? 'default_dev_key_change_in_prod_32c'
-const LEGACY_MASTER = process.env.WALLET_ENCRYPTION_KEY ?? process.env.MASTER_ENCRYPTION_KEY ?? 'default-dev-key-change-me-32chars!'
+// ── 2026-05-19 INCIDENT FIX (KSR-BUILD4-INCIDENT-2026-05-17) ─────────────────
+// Hardcoded fallbacks were the root-cause leg of the W2 drain. They REMAIN
+// as a candidate in `decryptPrivateKey` ONLY so existing orphaned wallets
+// stay decryptable until the migration script in
+// `scripts/reencryptOrphanedWallets.ts` has been run. After migration the
+// `HISTORICAL_DEFAULT_*` constants below MUST be deleted entirely.
+//
+// New writes (encryptPrivateKey) refuse to operate without an env-provided
+// key — see `getEncryptKeyOrThrow` below. This means no fresh poisoned
+// wallets can be created even if env vars are accidentally unset.
+const HISTORICAL_DEFAULT_MODERN = 'default_dev_key_change_in_prod_32c'
+const HISTORICAL_DEFAULT_LEGACY = 'default-dev-key-change-me-32chars!'
+const MASTER_KEY = process.env.MASTER_ENCRYPTION_KEY ?? process.env.WALLET_ENCRYPTION_KEY ?? HISTORICAL_DEFAULT_MODERN
+const LEGACY_MASTER = process.env.WALLET_ENCRYPTION_KEY ?? process.env.MASTER_ENCRYPTION_KEY ?? HISTORICAL_DEFAULT_LEGACY
+
+function getEncryptKeyOrThrow(): string {
+  // Fail-closed: if MASTER_KEY ended up resolving to the hardcoded default
+  // (because env vars are unset), refuse to encrypt. The bot must never
+  // mint another user wallet under the public-default key.
+  const env = process.env.MASTER_ENCRYPTION_KEY ?? process.env.WALLET_ENCRYPTION_KEY
+  if (!env || env === HISTORICAL_DEFAULT_MODERN || env === HISTORICAL_DEFAULT_LEGACY) {
+    throw new Error(
+      '[SECURITY] MASTER_ENCRYPTION_KEY (or WALLET_ENCRYPTION_KEY) is unset or matches a known leaked default. ' +
+      'Refusing to encrypt new wallets. Set a fresh 32+ char secret in env before continuing.'
+    )
+  }
+  return env
+}
 const BSC_RPC    = process.env.BSC_RPC_URL ?? 'https://bsc-dataseed.binance.org'
 const ARB_RPC    = process.env.ARBITRUM_RPC_URL ?? process.env.ARB_RPC_URL ?? 'https://arb1.arbitrum.io/rpc'
 
@@ -57,7 +83,11 @@ const ERC20_ABI = [
 ]
 
 export function encryptPrivateKey(privateKey: string, userId: string, pin?: string): string {
-  const keyMaterial = pin ? MASTER_KEY + userId + ':' + pin : MASTER_KEY + userId
+  // INCIDENT FIX: pull the master key via getEncryptKeyOrThrow so any
+  // call site that runs while env vars are unset fails LOUDLY instead
+  // of silently using the public default.
+  const masterKey = getEncryptKeyOrThrow()
+  const keyMaterial = pin ? masterKey + userId + ':' + pin : masterKey + userId
   const key = CryptoJS.SHA256(keyMaterial).toString()
   return CryptoJS.AES.encrypt(privateKey, key).toString()
 }
@@ -78,16 +108,14 @@ export function decryptPrivateKey(encrypted: string, userId: string, pin?: strin
   // env-var convention can't be decrypted with MASTER_KEY alone — try
   // both candidates so users whose wallets predate the env rename
   // aren't permanently locked out of activation.
-  // Always include the historical hardcoded defaults: production was
-  // running for some period without either env var set, so wallets
-  // created during that window were encrypted under the default
-  // 'default_dev_key_change_in_prod_32c' (or 'default-dev-key-change
-  // -me-32chars!'). Once env vars were added, MASTER_KEY/LEGACY_MASTER
-  // started resolving to the env values and could no longer reach the
-  // original default. Append the defaults as last-resort candidates so
-  // those orphaned wallets remain decryptable forever.
-  const HISTORICAL_DEFAULT_MODERN = 'default_dev_key_change_in_prod_32c'
-  const HISTORICAL_DEFAULT_LEGACY = 'default-dev-key-change-me-32chars!'
+  // INCIDENT FIX: the historical defaults stay as decrypt candidates
+  // ONLY to unlock orphaned wallets long enough to migrate them. After
+  // `scripts/reencryptOrphanedWallets.ts` has re-encrypted every row
+  // under a fresh env key, DELETE these two constants + the candidates
+  // below and rely on MASTER_KEY/LEGACY_MASTER alone. Until then,
+  // every read that succeeds via a HISTORICAL_DEFAULT_* candidate
+  // emits a `[SECURITY]` warning to console so we can quantify the
+  // remaining at-risk population.
   const keyCandidates = Array.from(new Set([
     MASTER_KEY, LEGACY_MASTER,
     HISTORICAL_DEFAULT_MODERN, HISTORICAL_DEFAULT_LEGACY,
@@ -99,8 +127,20 @@ export function decryptPrivateKey(encrypted: string, userId: string, pin?: strin
       const key = CryptoJS.SHA256(keyMaterial).toString()
       const bytes = CryptoJS.AES.decrypt(encrypted, key)
       const out = bytes.toString(CryptoJS.enc.Utf8)
-      if (out && out.startsWith('0x')) return out
-      if (out) return out
+      if (out && (out.startsWith('0x') || out.length > 0)) {
+        if (
+          masterCandidate === HISTORICAL_DEFAULT_MODERN ||
+          masterCandidate === HISTORICAL_DEFAULT_LEGACY
+        ) {
+          // Orphaned-wallet read — flag for migration. Don't log the userId
+          // at INFO depth (PII); a short prefix is enough for grep.
+          console.warn(
+            `[SECURITY] orphaned-wallet decrypt succeeded via HISTORICAL_DEFAULT ` +
+            `candidate for user=${userId.slice(0, 8)}… — schedule for reencrypt.`
+          )
+        }
+        return out
+      }
       lastErr = new Error('decrypt produced empty result')
     } catch (e: any) {
       lastErr = e

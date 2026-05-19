@@ -9124,6 +9124,26 @@ app.get('/api/admin/swarm-divergence/samples', async (req, res) => {
 })
 
 async function main() {
+  // ── 2026-05-19 INCIDENT FIX (KSR-BUILD4-INCIDENT-2026-05-17) ─────────────
+  // EMERGENCY_PAUSE kill switch. Flip this env var to "true" in the Render
+  // dashboard to refuse to start. The bot keeps the Render container alive
+  // (no crash loop spam) but does NOT register the Telegram webhook, run
+  // crons, or expose trading endpoints — only /_health / /healthz answer.
+  // Use this whenever a wallet-drain pattern is suspected, before pushing
+  // a fix. Unset (or set to anything other than "true") to resume.
+  if (process.env.EMERGENCY_PAUSE === 'true') {
+    console.error('[SECURITY] EMERGENCY_PAUSE=true — bot will NOT start. ' +
+      'Trading, webhooks, agent runners, and admin endpoints are disabled. ' +
+      'Set EMERGENCY_PAUSE to anything other than "true" in Render env to resume.')
+    const port = parseInt(process.env.PORT ?? '5000', 10)
+    const minimalApp = (await import('express')).default()
+    minimalApp.get('/_health', (_req, res) => res.status(503).json({ status: 'paused', reason: 'EMERGENCY_PAUSE' }))
+    minimalApp.get('/healthz', (_req, res) => res.status(503).json({ status: 'paused', reason: 'EMERGENCY_PAUSE' }))
+    minimalApp.use((_req, res) => res.status(503).json({ error: 'service paused for security incident response' }))
+    minimalApp.listen(port, () => console.log(`[SECURITY] paused minimal server on :${port}`))
+    return
+  }
+
   // Connect DB — retry up to 5 times with exponential backoff so a
   // transient Postgres P1017 ("server has closed the connection",
   // typically Render's Postgres briefly at connection limit or in a

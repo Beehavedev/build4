@@ -63,8 +63,16 @@ if (ENFORCE_CLOUDFLARE) {
     if (req.headers["user-agent"]?.includes("health") || req.headers["x-healthcheck"]) return next();
     if (req.path === "/_health" || req.path === "/healthz") return next();
     if (req.headers["x-replit-cluster"]) return next();
-    if (req.path === "/miniapp" || req.path === "/miniapp-old" || req.path.startsWith("/api/miniapp")) return next();
-    if (req.path === "/hyperliquid" || req.path.startsWith("/api/hl/") || req.path.startsWith("/assets/")) return next();
+    // ── 2026-05-19 INCIDENT FIX (KSR-BUILD4-INCIDENT-2026-05-17 NEW-01) ──
+    // The bypass previously covered /api/miniapp/* too, which let an
+    // attacker hit our API endpoints directly without Cloudflare WAF
+    // protection. Restrict bypass to the HTML page only; force every
+    // API call through the WAF.
+    if (req.path === "/miniapp" || req.path === "/miniapp-old") return next();
+    // INCIDENT FIX: removed `/api/hl/*` from this bypass (same family of
+    // hole as `/api/miniapp/*`). Only the HTML page + static assets bypass;
+    // every API call goes through the WAF.
+    if (req.path === "/hyperliquid" || req.path.startsWith("/assets/")) return next();
 
     const realIp = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim()
       || req.socket.remoteAddress || "";

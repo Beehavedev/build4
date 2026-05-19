@@ -27,10 +27,26 @@
 import CryptoJS from "crypto-js";
 import { pool } from "./db";
 
-const MASTER_KEY = process.env.MASTER_ENCRYPTION_KEY ?? process.env.WALLET_ENCRYPTION_KEY ?? "default_dev_key_change_in_prod_32c";
-const LEGACY_MASTER = process.env.WALLET_ENCRYPTION_KEY ?? process.env.MASTER_ENCRYPTION_KEY ?? "default-dev-key-change-me-32chars!";
+// ── 2026-05-19 INCIDENT FIX (KSR-BUILD4-INCIDENT-2026-05-17) ────────────────
+// This file is decrypt-only — it never encrypts new wallets, so we keep the
+// historical defaults as legacy candidates for orphaned wallets until the
+// bot-side migration script (`scripts/reencryptOrphanedWallets.ts`) runs.
+// After migration is complete, remove HISTORICAL_DEFAULT_* + the candidates.
+// We DO refuse to operate at all if NEITHER env var nor a HISTORICAL_DEFAULT
+// is available — but since the historicals are hardcoded constants here,
+// the practical effect is: this file always works; the env-var-set path is
+// just preferred. The CRITICAL fix lives in the bot (encrypt path).
 const HISTORICAL_DEFAULT_MODERN = "default_dev_key_change_in_prod_32c";
 const HISTORICAL_DEFAULT_LEGACY = "default-dev-key-change-me-32chars!";
+const MASTER_KEY = process.env.MASTER_ENCRYPTION_KEY ?? process.env.WALLET_ENCRYPTION_KEY ?? HISTORICAL_DEFAULT_MODERN;
+const LEGACY_MASTER = process.env.WALLET_ENCRYPTION_KEY ?? process.env.MASTER_ENCRYPTION_KEY ?? HISTORICAL_DEFAULT_LEGACY;
+if (!process.env.MASTER_ENCRYPTION_KEY && !process.env.WALLET_ENCRYPTION_KEY) {
+  console.warn(
+    "[SECURITY] build4io-site/server/bot-wallet.ts: neither MASTER_ENCRYPTION_KEY nor " +
+    "WALLET_ENCRYPTION_KEY is set in env. Falling back to historical defaults for decrypt — " +
+    "this is acceptable ONLY during the wallet-reencrypt migration window."
+  );
+}
 
 export interface BotCustodial {
   userId: string;
