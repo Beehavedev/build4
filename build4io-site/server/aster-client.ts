@@ -783,21 +783,26 @@ export function createAsterFuturesClient(config: AsterClientConfig) {
       return request("/fapi/v1/openInterest", { params: { symbol } });
     },
 
+    // ── 2026-05-19: Aster V1 API deprecation (June 30, 2026) ──
+    // Aster Code Builder migration: V3 endpoints are now primary. V1 kept
+    // as fallback ONLY until users migrate their V1 balances via the
+    // user-asset-migration flow. Remove V1 fallback after June 30 or
+    // after `scripts/asterMigrateV1ToV3.ts` has completed for all users.
     async balance(): Promise<AsterBalance[]> {
       try {
-        return await request("/fapi/v1/balance", { signed: true });
+        return await request("/fapi/v3/balance", { signed: true });
       } catch (e1: any) {
-        console.log(`[AsterHMAC] /fapi/v1/balance failed: ${e1.message?.substring(0, 100)}, trying /fapi/v3/balance`);
-        return request("/fapi/v3/balance", { signed: true });
+        console.log(`[AsterHMAC] /fapi/v3/balance failed: ${e1.message?.substring(0, 100)}, trying legacy /fapi/v1/balance`);
+        return request("/fapi/v1/balance", { signed: true });
       }
     },
 
     async account(): Promise<any> {
       try {
-        return await request("/fapi/v1/account", { signed: true });
+        return await request("/fapi/v3/account", { signed: true });
       } catch (e1: any) {
-        console.log(`[AsterHMAC] /fapi/v1/account failed: ${e1.message?.substring(0, 100)}, trying /fapi/v3/account`);
-        return request("/fapi/v3/account", { signed: true });
+        console.log(`[AsterHMAC] /fapi/v3/account failed: ${e1.message?.substring(0, 100)}, trying legacy /fapi/v1/account`);
+        return request("/fapi/v1/account", { signed: true });
       }
     },
 
@@ -808,10 +813,10 @@ export function createAsterFuturesClient(config: AsterClientConfig) {
     async positionRisk(): Promise<AsterPosition[]> {
       let data: any;
       try {
-        data = await request("/fapi/v1/positionRisk", { signed: true });
-      } catch (e1: any) {
-        console.log(`[AsterHMAC] /fapi/v1/positionRisk failed: ${e1.message?.substring(0, 100)}, trying /fapi/v3/positionRisk`);
         data = await request("/fapi/v3/positionRisk", { signed: true });
+      } catch (e1: any) {
+        console.log(`[AsterHMAC] /fapi/v3/positionRisk failed: ${e1.message?.substring(0, 100)}, trying legacy /fapi/v1/positionRisk`);
+        data = await request("/fapi/v1/positionRisk", { signed: true });
       }
       if (Array.isArray(data)) return data;
       return [];
@@ -855,26 +860,26 @@ export function createAsterFuturesClient(config: AsterClientConfig) {
         params.newClientOrderId = `BUILD4_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
       }
       try {
-        return await request("/fapi/v1/order", { method: "POST", signed: true, params });
+        return await request("/fapi/v3/order", { method: "POST", signed: true, params });
       } catch (e1: any) {
-        console.log(`[AsterHMAC] /fapi/v1/order failed: ${e1.message?.substring(0, 100)}, trying /fapi/v3/order`);
-        return request("/fapi/v3/order", { method: "POST", signed: true, params });
+        console.log(`[AsterHMAC] /fapi/v3/order failed: ${e1.message?.substring(0, 100)}, trying legacy /fapi/v1/order`);
+        return request("/fapi/v1/order", { method: "POST", signed: true, params });
       }
     },
 
     async cancelOrder(symbol: string, orderId: number): Promise<AsterOrder> {
       try {
-        return await request("/fapi/v1/order", { method: "DELETE", signed: true, params: { symbol, orderId } });
+        return await request("/fapi/v3/order", { method: "DELETE", signed: true, params: { symbol, orderId } });
       } catch {
-        return request("/fapi/v3/order", { method: "DELETE", signed: true, params: { symbol, orderId } });
+        return request("/fapi/v1/order", { method: "DELETE", signed: true, params: { symbol, orderId } });
       }
     },
 
     async cancelAllOrders(symbol: string): Promise<any> {
       try {
-        return await request("/fapi/v1/allOpenOrders", { method: "DELETE", signed: true, params: { symbol } });
+        return await request("/fapi/v3/allOpenOrders", { method: "DELETE", signed: true, params: { symbol } });
       } catch {
-        return request("/fapi/v3/allOpenOrders", { method: "DELETE", signed: true, params: { symbol } });
+        return request("/fapi/v1/allOpenOrders", { method: "DELETE", signed: true, params: { symbol } });
       }
     },
 
@@ -882,17 +887,17 @@ export function createAsterFuturesClient(config: AsterClientConfig) {
       const params: Record<string, string | number | boolean | undefined> = {};
       if (symbol) params.symbol = symbol;
       try {
-        return await request("/fapi/v1/openOrders", { signed: true, params });
+        return await request("/fapi/v3/openOrders", { signed: true, params });
       } catch {
-        return request("/fapi/v3/openOrders", { signed: true, params });
+        return request("/fapi/v1/openOrders", { signed: true, params });
       }
     },
 
     async allOrders(symbol: string, limit: number = 50): Promise<AsterOrder[]> {
       try {
-        return await request("/fapi/v1/allOrders", { signed: true, params: { symbol, limit } });
+        return await request("/fapi/v3/allOrders", { signed: true, params: { symbol, limit } });
       } catch {
-        return request("/fapi/v3/allOrders", { signed: true, params: { symbol, limit } });
+        return request("/fapi/v1/allOrders", { signed: true, params: { symbol, limit } });
       }
     },
 
