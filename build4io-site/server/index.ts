@@ -279,7 +279,8 @@ app.use((req, res, next) => {
 });
 
 async function ensureSchema() {
-  if (!process.env.DATABASE_URL) return;
+  const DB_URL = process.env.SITE_DATABASE_URL || process.env.DATABASE_URL;
+  if (!DB_URL) return;
   const thisDir = typeof __dirname !== 'undefined' ? __dirname : new URL(".", import.meta.url).pathname;
   const candidates = [
     join(process.cwd(), "dist", "schema-init.sql"),
@@ -291,11 +292,11 @@ async function ensureSchema() {
   for (const p of candidates) {
     try { sqlContent = readFileSync(p, "utf-8"); break; } catch {}
   }
-  const isSSL = process.env.DATABASE_URL.includes("render.com") ||
-    process.env.DATABASE_URL.includes("neon.tech") ||
+  const isSSL = DB_URL.includes("render.com") ||
+    DB_URL.includes("neon.tech") ||
     process.env.RENDER === "true";
   const pool = new pg.Pool({
-    connectionString: process.env.DATABASE_URL,
+    connectionString: DB_URL,
     ssl: isSSL ? { rejectUnauthorized: false } : false,
   });
   try {
