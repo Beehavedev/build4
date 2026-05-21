@@ -253,6 +253,40 @@ export function initRunner(bot: Bot) {
   setTimeout(tickFourMemeTakeProfit, 12_000)
   setInterval(tickFourMemeTakeProfit, 60_000)
 
+  // ── Topaz DEX (BSC ve(3,3)) — Phase 1 master-wallet-only sweep ──────
+  // 5-min interval matches the in-agent MIN_TICK_INTERVAL_MS so even a
+  // double-fire from the watchdog cron can't trade twice per window.
+  // Single-flight via `topazTickInflight` so a slow LLM round-trip or
+  // pending swap tx receipt can't pile up sweeps.
+  let topazTickInflight = false
+  const tickTopaz = async () => {
+    if (topazTickInflight) {
+      console.log('[topazAgent] previous tick still running, skipping')
+      return
+    }
+    topazTickInflight = true
+    try {
+      const { tickAllTopazAgents } = await import('./topazAgent')
+      const r = await tickAllTopazAgents()
+      if (r.scanned > 0 || r.errors > 0) {
+        console.log(
+          `[topazAgent] scanned=${r.scanned} ticked=${r.ticked} taken=${r.actionsTaken} ` +
+            `skipped=${r.actionsSkipped} errors=${r.errors}`,
+        )
+      }
+    } catch (err) {
+      console.error('[topazAgent] sweep failed:', (err as Error).message)
+    } finally {
+      topazTickInflight = false
+    }
+  }
+  // Boot catch-up so a redeploy mid-window doesn't wait the full 5 min.
+  setTimeout(tickTopaz, 15_000)
+  setInterval(tickTopaz, 300_000)
+  // Belt-and-suspenders watchdog: every 5 min cron + in-process interval.
+  // The agent itself enforces MIN_TICK_INTERVAL_MS, so this is idempotent.
+  cron.schedule('*/5 * * * *', () => { void tickTopaz() }, { timezone: 'UTC' })
+
   // Module 4 — auto-expire stale launch approval requests. The agent's
   // pending-dedup gate refuses to propose new launches while any
   // pending_user_approval row sits open. Without a sweeper, an owner

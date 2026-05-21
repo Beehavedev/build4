@@ -722,5 +722,53 @@ export async function ensureNewTables() {
   )`)
   await run(`CREATE INDEX IF NOT EXISTS "HouseLog_createdAt_idx" ON "HouseLog"("createdAt" DESC)`)
 
+  // ── Topaz DEX (BSC ve(3,3)) — Phase 1 schema additions ─────────────────
+  // Master-wallet-only Phase 1: per-agent toggles + position-tracking table.
+  // We intentionally do NOT add 'topaz' to the enabledVenues auto-expansion
+  // UPDATE above — Topaz is opt-in via TOPAZ_AGENT_ALLOWLIST until Phase 2
+  // multi-user rollout, and clobbering enabledVenues on every boot would
+  // override user-driven chip toggles.
+  await run(`ALTER TABLE "Agent" ADD COLUMN IF NOT EXISTS "topazEnabled" BOOLEAN NOT NULL DEFAULT false`)
+  await run(`ALTER TABLE "Agent" ADD COLUMN IF NOT EXISTS "topazMaxSizeUsdt" DOUBLE PRECISION NOT NULL DEFAULT 50`)
+  await run(`ALTER TABLE "Agent" ADD COLUMN IF NOT EXISTS "lastTopazTickAt" TIMESTAMP(3)`)
+
+  await run(`CREATE TABLE IF NOT EXISTS "TopazPosition" (
+    "id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
+    "userId" TEXT NOT NULL,
+    "agentId" TEXT,
+    "poolAddress" TEXT NOT NULL,
+    "positionType" TEXT NOT NULL,
+    "tokenId" TEXT,
+    "tickLower" INTEGER,
+    "tickUpper" INTEGER,
+    "entryAmt0" DOUBLE PRECISION,
+    "entryAmt1" DOUBLE PRECISION,
+    "entryValueUsdt" DOUBLE PRECISION,
+    "claimedTopazAmt" DOUBLE PRECISION DEFAULT 0,
+    "claimedTopazValueUsdt" DOUBLE PRECISION DEFAULT 0,
+    "exitAmt0" DOUBLE PRECISION,
+    "exitAmt1" DOUBLE PRECISION,
+    "exitValueUsdt" DOUBLE PRECISION,
+    "status" TEXT NOT NULL DEFAULT 'open',
+    "txHashOpen" TEXT,
+    "txHashClose" TEXT,
+    "reasoning" TEXT,
+    "openedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "closedAt" TIMESTAMP(3),
+    CONSTRAINT "TopazPosition_pkey" PRIMARY KEY ("id")
+  )`)
+  await run(`CREATE INDEX IF NOT EXISTS "TopazPosition_agent_status_idx" ON "TopazPosition"("agentId","status")`)
+  await run(`CREATE INDEX IF NOT EXISTS "TopazPosition_user_status_idx"  ON "TopazPosition"("userId","status")`)
+  await run(`CREATE INDEX IF NOT EXISTS "TopazPosition_pool_idx"         ON "TopazPosition"("poolAddress")`)
+  // Lifecycle columns used by tickOneAgent CLOSE_LP/CLAIM paths:
+  // gauge is resolved at OPEN time (so CLOSE doesn't need a re-lookup);
+  // lpAmount stores v2 LP balance staked (so CLOSE knows how much to unstake/remove);
+  // tokenA/B+stable identify the v2 pair for the Router.removeLiquidity call.
+  await run(`ALTER TABLE "TopazPosition" ADD COLUMN IF NOT EXISTS "gaugeAddress" TEXT`)
+  await run(`ALTER TABLE "TopazPosition" ADD COLUMN IF NOT EXISTS "lpAmount" NUMERIC(78, 0)`)
+  await run(`ALTER TABLE "TopazPosition" ADD COLUMN IF NOT EXISTS "tokenA" TEXT`)
+  await run(`ALTER TABLE "TopazPosition" ADD COLUMN IF NOT EXISTS "tokenB" TEXT`)
+  await run(`ALTER TABLE "TopazPosition" ADD COLUMN IF NOT EXISTS "stable" BOOLEAN`)
+
   console.log('[DB] All new tables ready')
 }

@@ -5125,6 +5125,101 @@ app.post('/api/admin/campaign/tick', requireAdmin, async (req, res) => {
   }
 })
 
+// ── Topaz DEX (Phase 1 master-wallet-only) admin surface ─────────────────
+//   POST /api/admin/topaz/tick           → fire one sweep immediately
+//   GET  /api/admin/topaz/state          → config + master wallet snapshot
+// Both gated by requireAdmin. Read-only for ops; the sweep itself
+// short-circuits unless TOPAZ_ENABLED + TOPAZ_AGENT_ALLOWLIST +
+// TOPAZ_MASTER_WALLET_ID are all set.
+app.post('/api/admin/topaz/tick', requireAdmin, async (req, res) => {
+  try {
+    const agentId = typeof req.query.agentId === 'string' ? req.query.agentId : undefined
+    const kind = typeof req.query.kind === 'string' ? req.query.kind.toUpperCase() : 'AUTO'
+    if (kind !== 'AUTO' && kind !== 'FORCE') {
+      return res.status(400).json({ error: 'kind must be AUTO or FORCE' })
+    }
+    const { tickAllTopazAgents } = await import('./agents/topazAgent')
+    const r = await tickAllTopazAgents({ onlyAgentId: agentId, force: kind === 'FORCE' })
+    return res.json({ ok: true, onlyAgentId: agentId ?? null, kind, ...r })
+  } catch (err) {
+    console.error('[API] /admin/topaz/tick failed:', err)
+    res.status(500).json({ error: (err as Error).message })
+  }
+})
+
+app.get('/api/admin/topaz/state', requireAdmin, async (req, res) => {
+  try {
+    const { getTopazConfig } = await import('./services/topaz')
+    const cfg = getTopazConfig()
+    let masterAddress: string | null = null
+    let masterError: string | null = null
+    if (cfg.enabled && cfg.masterWalletId) {
+      try {
+        const { getMasterSigner } = await import('./services/topazTrading')
+        const m = await getMasterSigner()
+        masterAddress = m.address
+      } catch (e) {
+        masterError = (e as Error).message
+      }
+    }
+    const agentId = typeof req.query.agentId === 'string' ? req.query.agentId : null
+    const positions = await db.$queryRawUnsafe<Array<any>>(
+      `SELECT id, "agentId", "poolAddress", "positionType", status,
+              "entryValueUsdt", "exitValueUsdt", "claimedTopazAmt",
+              "tokenId", "gaugeAddress", "txHashOpen", "txHashClose",
+              "openedAt", "closedAt"
+         FROM "TopazPosition"
+        ${agentId ? `WHERE "agentId" = $1` : ''}
+        ORDER BY "openedAt" DESC
+        LIMIT 100`,
+      ...(agentId ? [agentId] : []),
+    )
+    // Recent decisions for ops: last 50 AgentLog rows tagged exchange='topaz'.
+    const decisions = await db.$queryRawUnsafe<Array<any>>(
+      `SELECT id, "agentId", "userId", action, "parsedAction", "executionResult",
+              reason, score, "createdAt"
+         FROM "AgentLog"
+        WHERE exchange = 'topaz'
+        ${agentId ? `AND "agentId" = $1` : ''}
+        ORDER BY "createdAt" DESC
+        LIMIT 50`,
+      ...(agentId ? [agentId] : []),
+    )
+    return res.json({
+      ok: true,
+      filteredAgentId: agentId,
+      config: {
+        enabled: cfg.enabled,
+        agentAllowlist: [...cfg.agentAllowlist],
+        masterWalletId: cfg.masterWalletId,
+        router: cfg.router,
+        npm: cfg.npm,
+        voter: cfg.voter,
+        mixedQuoter: cfg.mixedQuoter,
+        topazToken: cfg.topazToken,
+        subgraphV2Url: cfg.subgraphV2Url,
+        subgraphV3Url: cfg.subgraphV3Url,
+        maxTradeUsdt: cfg.maxTradeUsdt,
+        defaultSlippageBps: cfg.defaultSlippageBps,
+        defaultDeadlineSec: cfg.defaultDeadlineSec,
+      },
+      masterWallet: { address: masterAddress, error: masterError },
+      recentPositions: positions.map((p: any) => ({
+        ...p,
+        openedAt: p.openedAt instanceof Date ? p.openedAt.toISOString() : p.openedAt,
+        closedAt: p.closedAt instanceof Date ? p.closedAt.toISOString() : p.closedAt,
+      })),
+      recentDecisions: decisions.map((d: any) => ({
+        ...d,
+        createdAt: d.createdAt instanceof Date ? d.createdAt.toISOString() : d.createdAt,
+      })),
+    })
+  } catch (err) {
+    console.error('[API] /admin/topaz/state failed:', err)
+    res.status(500).json({ error: (err as Error).message })
+  }
+})
+
 // Force a real, on-chain prediction-market trade RIGHT NOW for partnership
 // demos. Picks the highest-volume live 42.space market, reads its outcomes
 // on-chain, picks the highest-implied-probability outcome (most liquid side),

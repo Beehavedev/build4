@@ -1,0 +1,834 @@
+// =====================================================================
+// Topaz DEX — Phase 1 execution layer (master-wallet-only).
+//
+// Architecture
+// ─────────────
+// Pure execution: no LLM lives here. The Topaz agent brain
+// (src/agents/topazAgent.ts) emits a {action, ...} JSON decision and
+// hands it to this module, which:
+//   1. Resolves the master wallet (TOPAZ_MASTER_WALLET_ID env), decrypts
+//      the PK via the existing wallet.ts AES-256 flow, and constructs an
+//      ethers.Wallet bound to a hardened BSC FallbackProvider.
+//   2. Re-quotes the action on-chain (Router.getAmountsOut / CLPool /
+//      MixedRouteQuoterV1) — never trusts the brain's input price.
+//   3. Computes amountOutMin = quote × (1 - slippage_bps/10000) — every
+//      write path enforces a non-zero minOut. We NEVER pass 0.
+//   4. Stamps deadline = now + 20m (default; overridable). NEVER 0.
+//   5. Fails closed on missing addresses / unknown pools / out-of-range
+//      CL mints (when intendsToFarm=true).
+//
+// All on-chain calls go through ethers v6 against the multi-endpoint
+// FallbackProvider (src/services/bscProvider.ts). Per-wallet serialization
+// is enforced by the master-wallet model itself — there's only one
+// active signer in Phase 1, no concurrent nonce contention possible.
+//
+// Operating-principle gotchas (from Topaz SKILL.md, repeated next to the
+// call site that enforces them):
+//   • Router.swapExactTokensForTokens: amountOutMin > 0 AND deadline > now.
+//   • CLPool.swap: sqrtPriceLimitX96 must be a non-zero sentinel.
+//   • NPM.mint: out-of-range tick window → position earns ZERO.
+//   • CLGauge.deposit: NFT must be approved (setApprovalForAll) first.
+//   • Voter.vote: once per epoch — out of scope for Phase 1.
+// =====================================================================
+
+import { ethers } from 'ethers'
+import { db } from '../db'
+import { decryptPrivateKey } from './wallet'
+import { buildBscProvider } from './bscProvider'
+import {
+  ERC20_ABI,
+  TOPAZ_ROUTER_ABI,
+  TOPAZ_V2_PAIR_ABI,
+  TOPAZ_CL_POOL_ABI,
+  TOPAZ_NPM_ABI,
+  TOPAZ_GAUGE_ABI,
+  TOPAZ_CL_GAUGE_ABI,
+  TOPAZ_MIXED_QUOTER_ABI,
+  TOPAZ_VOTER_ABI,
+} from './topaz/abis'
+import { getTopazConfig, requireAddress, type TopazConfig } from './topaz'
+
+// ── Provider / signer ────────────────────────────────────────────────────
+
+export interface TopazTradingDeps {
+  buildProvider: () => ethers.AbstractProvider
+  loadWallet: (walletId: string) => Promise<{ address: string; privateKey: string }>
+  now: () => number
+}
+
+const defaultDeps: TopazTradingDeps = {
+  buildProvider: () => buildBscProvider(process.env.BSC_RPC_URL),
+  loadWallet: defaultLoadWallet,
+  now: () => Date.now(),
+}
+
+let activeDeps: TopazTradingDeps = defaultDeps
+
+export function __setTopazTestDeps(deps: Partial<TopazTradingDeps>): void {
+  activeDeps = { ...defaultDeps, ...deps }
+}
+
+export function __resetTopazTestDeps(): void {
+  activeDeps = defaultDeps
+}
+
+async function defaultLoadWallet(walletId: string): Promise<{ address: string; privateKey: string }> {
+  const w = await db.wallet.findUnique({ where: { id: walletId } })
+  if (!w) throw new Error(`topaz_wallet_not_found:${walletId}`)
+  if (w.chain !== 'BSC') {
+    throw new Error(`topaz_wallet_wrong_chain:${w.chain} (expected BSC)`)
+  }
+  const pk = decryptPrivateKey(w.encryptedPK, w.userId)
+  if (!pk || !pk.startsWith('0x')) {
+    throw new Error(`topaz_wallet_decrypt_failed:${walletId}`)
+  }
+  return { address: w.address, privateKey: pk }
+}
+
+/**
+ * Resolve and instantiate the Phase-1 master signer. Throws fail-closed
+ * if TOPAZ_MASTER_WALLET_ID is unset or the row can't be decrypted.
+ */
+export async function getMasterSigner(): Promise<{
+  signer: ethers.Wallet
+  address: string
+  cfg: TopazConfig
+}> {
+  const cfg = getTopazConfig()
+  if (!cfg.masterWalletId) {
+    throw new Error('topaz_config_missing:masterWalletId — set TOPAZ_MASTER_WALLET_ID')
+  }
+  const { address, privateKey } = await activeDeps.loadWallet(cfg.masterWalletId)
+  const provider = activeDeps.buildProvider()
+  const signer = new ethers.Wallet(privateKey, provider)
+  return { signer, address, cfg }
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────
+
+function computeDeadline(cfg: TopazConfig, override?: number): number {
+  const sec = override && override > 0 ? Math.floor(override) : cfg.defaultDeadlineSec
+  // Mandatory: deadline must always be strictly in the future. We
+  // assert here so a caller passing a stale value blows up early.
+  const deadline = Math.floor(activeDeps.now() / 1000) + sec
+  if (deadline <= Math.floor(activeDeps.now() / 1000)) {
+    throw new Error('topaz_invalid_deadline')
+  }
+  return deadline
+}
+
+function applySlippage(quoted: bigint, slippageBps: number): bigint {
+  // amountOutMin = quoted × (1 - slippage/10000). We round DOWN
+  // (integer division) so the minOut is conservative — never round
+  // up, that would refuse fills that match our intended slippage.
+  if (!Number.isFinite(slippageBps) || slippageBps < 0) {
+    throw new Error(`topaz_invalid_slippage_bps:${slippageBps}`)
+  }
+  const num = 10_000n - BigInt(Math.floor(slippageBps))
+  if (num <= 0n) {
+    // 100% slippage = trade for free. Refuse fail-closed.
+    throw new Error(`topaz_slippage_too_large:${slippageBps}bps`)
+  }
+  const minOut = (quoted * num) / 10_000n
+  // Mandatory guardrail. The Topaz Router itself reverts on minOut==0,
+  // but we surface a clearer error before sending the tx.
+  if (minOut <= 0n) {
+    throw new Error('topaz_min_out_zero — refusing to send a swap with amountOutMin=0')
+  }
+  return minOut
+}
+
+async function ensureAllowance(
+  signer: ethers.Wallet,
+  token: string,
+  spender: string,
+  minAmount: bigint,
+): Promise<void> {
+  const erc = new ethers.Contract(token, ERC20_ABI, signer)
+  const current = (await erc.allowance(signer.address, spender)) as bigint
+  if (current >= minAmount) return
+  // Approve max — fewer txns over the lifetime of the master wallet.
+  // This is the same pattern Polymarket's relayer uses (uint256 max).
+  const tx = await erc.approve(spender, ethers.MaxUint256)
+  await tx.wait(1)
+}
+
+// ── Read paths ───────────────────────────────────────────────────────────
+
+export interface PoolStats {
+  address: string
+  type: 'v2' | 'v3'
+  token0: string
+  token1: string
+  // v2 only
+  reserve0?: bigint
+  reserve1?: bigint
+  stable?: boolean
+  // v3 only
+  tick?: number
+  sqrtPriceX96?: bigint
+  liquidity?: bigint
+  fee?: number
+  tickSpacing?: number
+}
+
+/**
+ * Read on-chain stats for a pool. Auto-detects v2 vs v3 by attempting
+ * the v3-only slot0() call first; if it reverts, falls back to v2's
+ * reserve0/reserve1. Throws `topaz_pool_not_found` if neither path
+ * succeeds — caller treats this as "refuse to trade against this pool".
+ */
+export async function getPoolStats(poolAddr: string): Promise<PoolStats> {
+  if (!ethers.isAddress(poolAddr)) throw new Error(`topaz_invalid_pool_address:${poolAddr}`)
+  const provider = activeDeps.buildProvider()
+  const addr = ethers.getAddress(poolAddr)
+  // Try v3 first.
+  try {
+    const v3 = new ethers.Contract(addr, TOPAZ_CL_POOL_ABI, provider)
+    const [token0, token1, slot0, liquidity, fee, tickSpacing] = await Promise.all([
+      v3.token0() as Promise<string>,
+      v3.token1() as Promise<string>,
+      v3.slot0() as Promise<[bigint, bigint, bigint, bigint, bigint, boolean]>,
+      v3.liquidity() as Promise<bigint>,
+      v3.fee() as Promise<bigint>,
+      v3.tickSpacing() as Promise<bigint>,
+    ])
+    return {
+      address: addr,
+      type: 'v3',
+      token0,
+      token1,
+      tick: Number(slot0[1]),
+      sqrtPriceX96: slot0[0],
+      liquidity,
+      fee: Number(fee),
+      tickSpacing: Number(tickSpacing),
+    }
+  } catch {
+    // fall through to v2 detection
+  }
+  try {
+    const v2 = new ethers.Contract(addr, TOPAZ_V2_PAIR_ABI, provider)
+    const [token0, token1, r0, r1, stable] = await Promise.all([
+      v2.token0() as Promise<string>,
+      v2.token1() as Promise<string>,
+      v2.reserve0() as Promise<bigint>,
+      v2.reserve1() as Promise<bigint>,
+      v2.stable() as Promise<boolean>,
+    ])
+    return { address: addr, type: 'v2', token0, token1, reserve0: r0, reserve1: r1, stable }
+  } catch {
+    throw new Error(`topaz_pool_not_found:${addr}`)
+  }
+}
+
+export interface SwapRoute {
+  // 'v2' = single-pool Router.getAmountsOut/swapExactTokensForTokens.
+  // 'mixed' = packed-path via MixedRouteQuoterV1 (off-chain quote only
+  // in Phase 1; execution path is deferred).
+  kind: 'v2' | 'mixed'
+  // v2: hop list — each (from,to,stable).
+  hops?: Array<{ from: string; to: string; stable: boolean }>
+  // mixed: pre-packed bytes path (see TOPAZ_MIXED_QUOTER_ABI).
+  path?: string
+}
+
+export interface SwapQuote {
+  amountOut: bigint
+  route: SwapRoute
+}
+
+/**
+ * Quote a swap. Always uses an actual contract read (never an
+ * off-chain price hint) so the brain can't trick the executor with a
+ * fabricated number. Returns the raw bigint amountOut — caller is
+ * responsible for applying slippage and decimal scaling.
+ */
+export async function quoteSwap(
+  tokenIn: string,
+  tokenOut: string,
+  amountIn: bigint,
+  route: SwapRoute,
+): Promise<SwapQuote> {
+  if (amountIn <= 0n) throw new Error('topaz_invalid_amount_in')
+  const cfg = getTopazConfig()
+  const provider = activeDeps.buildProvider()
+
+  if (route.kind === 'v2') {
+    const router = requireAddress(cfg, 'router')
+    const hops = route.hops ?? []
+    if (hops.length === 0) throw new Error('topaz_route_missing_hops')
+    if (hops[0].from.toLowerCase() !== tokenIn.toLowerCase()) {
+      throw new Error('topaz_route_first_hop_mismatch')
+    }
+    if (hops[hops.length - 1].to.toLowerCase() !== tokenOut.toLowerCase()) {
+      throw new Error('topaz_route_last_hop_mismatch')
+    }
+    const r = new ethers.Contract(router, TOPAZ_ROUTER_ABI, provider)
+    const amounts = (await r.getAmountsOut(amountIn, hops)) as bigint[]
+    const out = amounts[amounts.length - 1]
+    if (out <= 0n) throw new Error('topaz_quote_zero')
+    return { amountOut: out, route }
+  }
+
+  // mixed
+  const quoter = requireAddress(cfg, 'mixedQuoter')
+  if (!route.path) throw new Error('topaz_mixed_route_missing_path')
+  const q = new ethers.Contract(quoter, TOPAZ_MIXED_QUOTER_ABI, provider)
+  // quoteExactInput is a state-changing method on-paper but the quoter
+  // contract is gas-only — callStatic via .staticCall in ethers v6.
+  const res = (await q.quoteExactInput.staticCall(route.path, amountIn)) as [bigint, ...unknown[]]
+  const out = res[0]
+  if (out <= 0n) throw new Error('topaz_quote_zero')
+  return { amountOut: out, route }
+}
+
+// ── Write paths ──────────────────────────────────────────────────────────
+
+export interface SwapResult {
+  ok: boolean
+  txHash?: string
+  amountOut?: bigint
+  amountOutMin?: bigint
+  error?: string
+}
+
+/**
+ * Execute a v2 swap with mandatory pre-trade quote + slippage cap +
+ * deadline. Mixed-route execution is not enabled in Phase 1 — quote
+ * works, but executing through the v3 SwapRouter is deferred.
+ */
+export async function swap(
+  args: {
+    tokenIn: string
+    tokenOut: string
+    amountIn: bigint
+    route: SwapRoute
+    slippageBps?: number
+    deadlineSec?: number
+  },
+): Promise<SwapResult> {
+  try {
+    if (args.route.kind !== 'v2') {
+      throw new Error('topaz_mixed_swap_not_enabled_phase1')
+    }
+    const { signer, address, cfg } = await getMasterSigner()
+    const router = requireAddress(cfg, 'router')
+
+    // Re-quote on-chain so the executor never trusts a stale price.
+    const quote = await quoteSwap(args.tokenIn, args.tokenOut, args.amountIn, args.route)
+    // Server-side slippage CAP (not floor): if caller specified an
+    // override, clamp it to cfg.maxSlippageBps so a buggy/hostile
+    // upstream can't force adverse fills. Default is used when caller
+    // didn't specify anything.
+    const slippageBps = Math.min(
+      cfg.maxSlippageBps,
+      args.slippageBps ?? cfg.defaultSlippageBps,
+    )
+    const minOut = applySlippage(quote.amountOut, slippageBps)
+    const deadline = computeDeadline(cfg, args.deadlineSec)
+
+    await ensureAllowance(signer, args.tokenIn, router, args.amountIn)
+
+    const r = new ethers.Contract(router, TOPAZ_ROUTER_ABI, signer)
+    const tx = await r.swapExactTokensForTokens(
+      args.amountIn,
+      minOut,
+      args.route.hops,
+      address,
+      deadline,
+    )
+    const receipt = await tx.wait(1)
+    return { ok: true, txHash: receipt?.hash ?? tx.hash, amountOut: quote.amountOut, amountOutMin: minOut }
+  } catch (err) {
+    return { ok: false, error: (err as Error).message }
+  }
+}
+
+export interface AddV2LiquidityArgs {
+  tokenA: string
+  tokenB: string
+  stable: boolean
+  amountADesired: bigint
+  amountBDesired: bigint
+  slippageBps?: number
+  deadlineSec?: number
+}
+
+export interface AddV2LiquidityResult {
+  ok: boolean
+  txHash?: string
+  amountA?: bigint
+  amountB?: bigint
+  liquidity?: bigint
+  error?: string
+}
+
+export async function addV2Liquidity(args: AddV2LiquidityArgs): Promise<AddV2LiquidityResult> {
+  try {
+    if (args.amountADesired <= 0n || args.amountBDesired <= 0n) {
+      throw new Error('topaz_invalid_lp_amounts')
+    }
+    const { signer, address, cfg } = await getMasterSigner()
+    const router = requireAddress(cfg, 'router')
+
+    // Verify the pair exists. pairFor is deterministic — if the pair
+    // hasn't been created on-chain yet we'd be funding a brand-new
+    // pool and inheriting its initial-price risk; refuse fail-closed.
+    const r = new ethers.Contract(router, TOPAZ_ROUTER_ABI, signer)
+    const pair = (await r.pairFor(args.tokenA, args.tokenB, args.stable)) as string
+    try {
+      await getPoolStats(pair)
+    } catch {
+      throw new Error(`topaz_pool_not_found:${pair} (router.pairFor returned an address that doesn't expose v2 reserves)`)
+    }
+
+    // Server-side slippage CAP (see comment in swap()).
+    const slip = Math.min(cfg.maxSlippageBps, args.slippageBps ?? cfg.defaultSlippageBps)
+    const minA = applySlippage(args.amountADesired, slip)
+    const minB = applySlippage(args.amountBDesired, slip)
+    const deadline = computeDeadline(cfg, args.deadlineSec)
+
+    await Promise.all([
+      ensureAllowance(signer, args.tokenA, router, args.amountADesired),
+      ensureAllowance(signer, args.tokenB, router, args.amountBDesired),
+    ])
+
+    const tx = await r.addLiquidity(
+      args.tokenA,
+      args.tokenB,
+      args.stable,
+      args.amountADesired,
+      args.amountBDesired,
+      minA,
+      minB,
+      address,
+      deadline,
+    )
+    const receipt = await tx.wait(1)
+    return { ok: true, txHash: receipt?.hash ?? tx.hash }
+  } catch (err) {
+    return { ok: false, error: (err as Error).message }
+  }
+}
+
+export interface RemoveV2LiquidityArgs {
+  tokenA: string
+  tokenB: string
+  stable: boolean
+  liquidity: bigint
+  amountAMin: bigint
+  amountBMin: bigint
+  deadlineSec?: number
+}
+
+export async function removeV2Liquidity(args: RemoveV2LiquidityArgs): Promise<SwapResult> {
+  try {
+    if (args.liquidity <= 0n) throw new Error('topaz_invalid_lp_burn_amount')
+    if (args.amountAMin <= 0n || args.amountBMin <= 0n) {
+      throw new Error('topaz_remove_lp_min_zero')
+    }
+    const { signer, address, cfg } = await getMasterSigner()
+    const router = requireAddress(cfg, 'router')
+    const deadline = computeDeadline(cfg, args.deadlineSec)
+    const pair = (await new ethers.Contract(router, TOPAZ_ROUTER_ABI, signer)
+      .pairFor(args.tokenA, args.tokenB, args.stable)) as string
+    await ensureAllowance(signer, pair, router, args.liquidity)
+    const r = new ethers.Contract(router, TOPAZ_ROUTER_ABI, signer)
+    const tx = await r.removeLiquidity(
+      args.tokenA,
+      args.tokenB,
+      args.stable,
+      args.liquidity,
+      args.amountAMin,
+      args.amountBMin,
+      address,
+      deadline,
+    )
+    const receipt = await tx.wait(1)
+    return { ok: true, txHash: receipt?.hash ?? tx.hash }
+  } catch (err) {
+    return { ok: false, error: (err as Error).message }
+  }
+}
+
+export interface MintV3PositionArgs {
+  pool: string
+  tickLower: number
+  tickUpper: number
+  amount0Desired: bigint
+  amount1Desired: bigint
+  slippageBps?: number
+  deadlineSec?: number
+  // When true, refuse the mint if the current tick is outside
+  // [tickLower, tickUpper] — an out-of-range CL position earns ZERO
+  // fees and ZERO emissions until the price re-enters range.
+  // The brain should set this to true for any farming position.
+  intendsToFarm: boolean
+}
+
+export interface MintV3PositionResult {
+  ok: boolean
+  txHash?: string
+  tokenId?: bigint
+  liquidity?: bigint
+  error?: string
+}
+
+export async function mintV3Position(args: MintV3PositionArgs): Promise<MintV3PositionResult> {
+  try {
+    if (args.tickLower >= args.tickUpper) {
+      throw new Error(`topaz_invalid_tick_range: ${args.tickLower} >= ${args.tickUpper}`)
+    }
+    if (args.amount0Desired <= 0n && args.amount1Desired <= 0n) {
+      throw new Error('topaz_v3_mint_zero_amounts')
+    }
+    const { signer, address, cfg } = await getMasterSigner()
+    const npm = requireAddress(cfg, 'npm')
+
+    // Resolve pool stats + tickSpacing. getPoolStats throws if the pool
+    // doesn't exist or isn't a v3 CLPool — fail closed.
+    const stats = await getPoolStats(args.pool)
+    if (stats.type !== 'v3' || stats.tick === undefined || stats.tickSpacing === undefined) {
+      throw new Error(`topaz_pool_not_v3:${args.pool}`)
+    }
+    if (args.tickLower % stats.tickSpacing !== 0 || args.tickUpper % stats.tickSpacing !== 0) {
+      throw new Error(`topaz_ticks_not_aligned_to_spacing:${stats.tickSpacing}`)
+    }
+    if (args.intendsToFarm) {
+      if (stats.tick < args.tickLower || stats.tick > args.tickUpper) {
+        throw new Error(
+          `topaz_out_of_range_mint_refused: pool tick ${stats.tick} not in [${args.tickLower}, ${args.tickUpper}] — would earn ZERO emissions`,
+        )
+      }
+    }
+
+    // Server-side slippage CAP (see comment in swap()).
+    const slip = Math.min(cfg.maxSlippageBps, args.slippageBps ?? cfg.defaultSlippageBps)
+    const min0 = args.amount0Desired > 0n ? applySlippage(args.amount0Desired, slip) : 0n
+    const min1 = args.amount1Desired > 0n ? applySlippage(args.amount1Desired, slip) : 0n
+    const deadline = computeDeadline(cfg, args.deadlineSec)
+
+    await Promise.all([
+      args.amount0Desired > 0n ? ensureAllowance(signer, stats.token0, npm, args.amount0Desired) : Promise.resolve(),
+      args.amount1Desired > 0n ? ensureAllowance(signer, stats.token1, npm, args.amount1Desired) : Promise.resolve(),
+    ])
+
+    const n = new ethers.Contract(npm, TOPAZ_NPM_ABI, signer)
+    const tx = await n.mint({
+      token0: stats.token0,
+      token1: stats.token1,
+      tickSpacing: stats.tickSpacing,
+      tickLower: args.tickLower,
+      tickUpper: args.tickUpper,
+      amount0Desired: args.amount0Desired,
+      amount1Desired: args.amount1Desired,
+      amount0Min: min0,
+      amount1Min: min1,
+      recipient: address,
+      deadline,
+      sqrtPriceX96: 0n,
+    })
+    const receipt = await tx.wait(1)
+    return { ok: true, txHash: receipt?.hash ?? tx.hash }
+  } catch (err) {
+    return { ok: false, error: (err as Error).message }
+  }
+}
+
+export async function burnV3Position(tokenId: bigint, deadlineSec?: number): Promise<SwapResult> {
+  try {
+    if (tokenId <= 0n) throw new Error('topaz_invalid_token_id')
+    const { signer, address, cfg } = await getMasterSigner()
+    const npm = requireAddress(cfg, 'npm')
+    const n = new ethers.Contract(npm, TOPAZ_NPM_ABI, signer)
+
+    // 1. Fetch the position to learn its liquidity.
+    const pos = (await n.positions(tokenId)) as {
+      liquidity: bigint
+    }
+    const deadline = computeDeadline(cfg, deadlineSec)
+
+    // 2. Decrease liquidity. Use staticCall first to learn the
+    // protocol-quoted amounts, then enforce a slippage-bounded min on
+    // the real send. Removes the previous `amount0Min: 0n, amount1Min: 0n`
+    // exposure (reviewer flagged) — a sandwich attacker could otherwise
+    // skim the entire exit through frontrun + backrun on a single tx.
+    if (pos.liquidity > 0n) {
+      const cfg = getTopazConfig()
+      let q0: bigint = 0n, q1: bigint = 0n
+      try {
+        const quoted = await n.decreaseLiquidity.staticCall({
+          tokenId,
+          liquidity: pos.liquidity,
+          amount0Min: 0n,
+          amount1Min: 0n,
+          deadline,
+        }) as { 0?: bigint; 1?: bigint } | [bigint, bigint]
+        if (Array.isArray(quoted)) { q0 = quoted[0]; q1 = quoted[1] }
+        else { q0 = (quoted as any).amount0 ?? quoted[0] ?? 0n; q1 = (quoted as any).amount1 ?? quoted[1] ?? 0n }
+      } catch {
+        // staticCall not supported on this NPM impl — refuse with a
+        // fail-closed marker rather than send a 0-min tx.
+        throw new Error('topaz_burn_static_call_unsupported — cannot derive safe minOut, refusing to burn unsafely')
+      }
+      const slipCap = cfg.maxSlippageBps
+      const amount0Min = q0 > 0n ? applySlippage(q0, slipCap) : 0n
+      const amount1Min = q1 > 0n ? applySlippage(q1, slipCap) : 0n
+      const tx1 = await n.decreaseLiquidity({
+        tokenId,
+        liquidity: pos.liquidity,
+        amount0Min,
+        amount1Min,
+        deadline,
+      })
+      await tx1.wait(1)
+    }
+
+    // 3. Collect accumulated fees + the removed liquidity output.
+    const max128 = (1n << 128n) - 1n
+    const tx2 = await n.collect({
+      tokenId,
+      recipient: address,
+      amount0Max: max128,
+      amount1Max: max128,
+    })
+    await tx2.wait(1)
+
+    // 4. Burn the now-empty NFT.
+    const tx3 = await n.burn(tokenId)
+    const receipt = await tx3.wait(1)
+    return { ok: true, txHash: receipt?.hash ?? tx3.hash }
+  } catch (err) {
+    return { ok: false, error: (err as Error).message }
+  }
+}
+
+// ── Gauge / emissions ────────────────────────────────────────────────────
+
+export async function stakeInGauge(
+  args: { gauge: string; kind: 'v2' | 'v3'; lpAmount?: bigint; tokenId?: bigint },
+): Promise<SwapResult> {
+  try {
+    if (!ethers.isAddress(args.gauge)) throw new Error(`topaz_invalid_gauge:${args.gauge}`)
+    const { signer, cfg } = await getMasterSigner()
+    if (args.kind === 'v2') {
+      if (!args.lpAmount || args.lpAmount <= 0n) throw new Error('topaz_v2_stake_zero_amount')
+      // v2 Gauge.deposit pulls the LP token via transferFrom — must
+      // approve the gauge for the LP amount first.
+      // The LP token IS the pair address; the gauge contract itself is
+      // the LP-holder when staked. We don't know the LP address here
+      // without a Voter.gauges() lookup; require caller to resolve it.
+      // Instead, take a permissive approach: the LP token must already
+      // be approved (caller's responsibility — addV2Liquidity user can
+      // approve the gauge separately, or we expose a helper later).
+      const g = new ethers.Contract(args.gauge, TOPAZ_GAUGE_ABI, signer)
+      const tx = await g.deposit(args.lpAmount)
+      const receipt = await tx.wait(1)
+      return { ok: true, txHash: receipt?.hash ?? tx.hash }
+    }
+    // v3 — CLGauge.deposit pulls the NFT via safeTransferFrom.
+    if (!args.tokenId || args.tokenId <= 0n) throw new Error('topaz_v3_stake_no_token_id')
+    const npm = requireAddress(cfg, 'npm')
+    const npmCtr = new ethers.Contract(npm, TOPAZ_NPM_ABI, signer)
+    const isApproved = (await npmCtr.isApprovedForAll(signer.address, args.gauge)) as boolean
+    if (!isApproved) {
+      const approve = await npmCtr.setApprovalForAll(args.gauge, true)
+      await approve.wait(1)
+    }
+    const g = new ethers.Contract(args.gauge, TOPAZ_CL_GAUGE_ABI, signer)
+    const tx = await g.deposit(args.tokenId)
+    const receipt = await tx.wait(1)
+    return { ok: true, txHash: receipt?.hash ?? tx.hash }
+  } catch (err) {
+    return { ok: false, error: (err as Error).message }
+  }
+}
+
+export async function unstakeFromGauge(
+  args: { gauge: string; kind: 'v2' | 'v3'; lpAmount?: bigint; tokenId?: bigint },
+): Promise<SwapResult> {
+  try {
+    const { signer } = await getMasterSigner()
+    if (args.kind === 'v2') {
+      if (!args.lpAmount || args.lpAmount <= 0n) throw new Error('topaz_v2_unstake_zero')
+      const g = new ethers.Contract(args.gauge, TOPAZ_GAUGE_ABI, signer)
+      const tx = await g.withdraw(args.lpAmount)
+      const receipt = await tx.wait(1)
+      return { ok: true, txHash: receipt?.hash ?? tx.hash }
+    }
+    if (!args.tokenId || args.tokenId <= 0n) throw new Error('topaz_v3_unstake_no_token_id')
+    const g = new ethers.Contract(args.gauge, TOPAZ_CL_GAUGE_ABI, signer)
+    const tx = await g.withdraw(args.tokenId)
+    const receipt = await tx.wait(1)
+    return { ok: true, txHash: receipt?.hash ?? tx.hash }
+  } catch (err) {
+    return { ok: false, error: (err as Error).message }
+  }
+}
+
+export async function claimGaugeRewards(
+  args: { gauge: string; kind: 'v2' | 'v3'; tokenId?: bigint },
+): Promise<SwapResult & { claimed?: bigint }> {
+  try {
+    const { signer, address } = await getMasterSigner()
+    if (args.kind === 'v2') {
+      const g = new ethers.Contract(args.gauge, TOPAZ_GAUGE_ABI, signer)
+      const tx = await g.getReward(address)
+      const receipt = await tx.wait(1)
+      return { ok: true, txHash: receipt?.hash ?? tx.hash }
+    }
+    if (!args.tokenId || args.tokenId <= 0n) throw new Error('topaz_v3_claim_no_token_id')
+    const g = new ethers.Contract(args.gauge, TOPAZ_CL_GAUGE_ABI, signer)
+    const tx = await g.getReward(args.tokenId)
+    const receipt = await tx.wait(1)
+    return { ok: true, txHash: receipt?.hash ?? tx.hash }
+  } catch (err) {
+    return { ok: false, error: (err as Error).message }
+  }
+}
+
+export async function getClaimableEmissions(
+  gauge: string,
+  walletAddr: string,
+  tokenId?: bigint,
+): Promise<bigint> {
+  const provider = activeDeps.buildProvider()
+  if (tokenId && tokenId > 0n) {
+    const g = new ethers.Contract(gauge, TOPAZ_CL_GAUGE_ABI, provider)
+    return (await g.earned(walletAddr, tokenId)) as bigint
+  }
+  const g = new ethers.Contract(gauge, TOPAZ_GAUGE_ABI, provider)
+  return (await g.earned(walletAddr)) as bigint
+}
+
+// ── LP-position discovery ────────────────────────────────────────────────
+
+export interface OpenLpPosition {
+  kind: 'v3-nft'
+  tokenId: bigint
+  token0: string
+  token1: string
+  tickLower: number
+  tickUpper: number
+  liquidity: bigint
+  tickSpacing: number
+}
+
+/**
+ * Enumerate the master wallet's v3 NFT positions via NPM.balanceOf +
+ * tokenOfOwnerByIndex. v2 LP discovery is intentionally out-of-scope
+ * here — the master wallet's v2 staked balance is read from the gauge
+ * directly (single Gauge.balanceOf call) when needed.
+ */
+export async function listOpenLpPositions(walletAddr: string): Promise<OpenLpPosition[]> {
+  const cfg = getTopazConfig()
+  if (!cfg.npm) return []
+  const provider = activeDeps.buildProvider()
+  const n = new ethers.Contract(cfg.npm, TOPAZ_NPM_ABI, provider)
+  const bal = Number((await n.balanceOf(walletAddr)) as bigint)
+  if (bal === 0) return []
+  const positions: OpenLpPosition[] = []
+  for (let i = 0; i < bal; i++) {
+    try {
+      const tokenId = (await n.tokenOfOwnerByIndex(walletAddr, i)) as bigint
+      const pos = (await n.positions(tokenId)) as {
+        token0: string
+        token1: string
+        tickSpacing: bigint
+        tickLower: bigint
+        tickUpper: bigint
+        liquidity: bigint
+      }
+      if (pos.liquidity === 0n) continue
+      positions.push({
+        kind: 'v3-nft',
+        tokenId,
+        token0: pos.token0,
+        token1: pos.token1,
+        tickLower: Number(pos.tickLower),
+        tickUpper: Number(pos.tickUpper),
+        liquidity: pos.liquidity,
+        tickSpacing: Number(pos.tickSpacing),
+      })
+    } catch (e) {
+      // skip enumeration errors silently — these are rare and we don't
+      // want one bad NFT to poison the whole list.
+      void e
+    }
+  }
+  return positions
+}
+
+// ── Gauge ranking (subgraph) ─────────────────────────────────────────────
+
+export interface RankedGauge {
+  gauge: string
+  pool: string
+  token0Symbol: string
+  token1Symbol: string
+  aprPct: number
+  tvlUsd: number
+  isV3: boolean
+}
+
+/**
+ * Pull the top-N gauges sorted by emissions APR from the Goldsky
+ * subgraph. Returns [] if the subgraph isn't configured — the agent
+ * brain then makes decisions from on-chain pool stats alone. We do
+ * NOT throw here: ranking is informational, not load-bearing for the
+ * trade itself.
+ */
+export async function getTopGaugesByApr(limit: number): Promise<RankedGauge[]> {
+  const cfg = getTopazConfig()
+  if (!cfg.subgraphV3Url && !cfg.subgraphV2Url) return []
+  const urls = [cfg.subgraphV3Url, cfg.subgraphV2Url].filter((u): u is string => !!u)
+  const out: RankedGauge[] = []
+  for (const url of urls) {
+    try {
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query: `{ gauges(first: ${Math.max(1, Math.min(50, limit))}, orderBy: aprPct, orderDirection: desc, where: { isAlive: true }) { id pool { id token0 { symbol } token1 { symbol } } aprPct tvlUsd isV3 } }`,
+        }),
+      })
+      if (!resp.ok) continue
+      const json = (await resp.json()) as { data?: { gauges?: any[] } }
+      const items = json?.data?.gauges ?? []
+      for (const g of items) {
+        out.push({
+          gauge: String(g.id),
+          pool: String(g.pool?.id ?? ''),
+          token0Symbol: String(g.pool?.token0?.symbol ?? ''),
+          token1Symbol: String(g.pool?.token1?.symbol ?? ''),
+          aprPct: Number(g.aprPct ?? 0),
+          tvlUsd: Number(g.tvlUsd ?? 0),
+          isV3: !!g.isV3,
+        })
+      }
+    } catch (e) {
+      // Subgraph optional — never fail the agent for a subgraph hiccup.
+      console.warn(`[topazTrading] subgraph fetch failed (${url}):`, (e as Error).message)
+    }
+  }
+  return out
+    .sort((a, b) => b.aprPct - a.aprPct)
+    .slice(0, limit)
+}
+
+// ── Convenience: Voter introspection (read-only) ─────────────────────────
+
+export async function resolveGaugeForPool(pool: string): Promise<string | null> {
+  const cfg = getTopazConfig()
+  if (!cfg.voter) return null
+  try {
+    const provider = activeDeps.buildProvider()
+    const v = new ethers.Contract(cfg.voter, TOPAZ_VOTER_ABI, provider)
+    const g = (await v.gauges(pool)) as string
+    if (!g || g === ethers.ZeroAddress) return null
+    return g
+  } catch {
+    return null
+  }
+}

@@ -18,6 +18,7 @@ import { registerShowcase } from './commands/showcase'
 import { registerSwarmStats } from './commands/swarmstats'
 import { registerCampaignWallet } from './commands/campaignWallet'
 import { registerFourMeme } from './commands/fourMeme'
+import { registerTopaz } from './commands/topaz'
 import { registerLlm } from './llm'
 
 export function createBot(): Bot {
@@ -58,6 +59,7 @@ export function createBot(): Bot {
   registerSwarmStats(bot)
   registerCampaignWallet(bot)
   registerFourMeme(bot)
+  registerTopaz(bot)
 
   // Fallback commands
   bot.command('settings', async (ctx) => {
