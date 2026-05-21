@@ -122,6 +122,12 @@ export async function ensureNewTables() {
   await run(`ALTER TABLE "Agent" ADD COLUMN IF NOT EXISTS "erc8004TxHash" TEXT`)
   await run(`ALTER TABLE "Agent" ADD COLUMN IF NOT EXISTS "erc8004FundTxHash" TEXT`)
   await run(`ALTER TABLE "Agent" ADD COLUMN IF NOT EXISTS "erc8004Verified" BOOLEAN DEFAULT false`)
+  // House/system agents — minted by BUILD4 itself to satisfy ecosystem
+  // grants that require a minimum on-chain agent count. Flagged so they
+  // can be filtered out of user-facing lists (mini-app /myagents, copy-
+  // trading leaderboard, runner queues) without affecting per-agent
+  // queries that need to see them (erc8004 backfill, on-chain audit).
+  await run(`ALTER TABLE "Agent" ADD COLUMN IF NOT EXISTS "isHouseAgent" BOOLEAN DEFAULT false`)
   // AUTO-mode pair scanner state — populated each tick when pairs:['AUTO']
   await run(`ALTER TABLE "Agent" ADD COLUMN IF NOT EXISTS "currentPair" TEXT`)
   await run(`ALTER TABLE "Agent" ADD COLUMN IF NOT EXISTS "lastScanScore" INTEGER`)
