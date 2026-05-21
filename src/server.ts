@@ -9226,6 +9226,104 @@ async function main() {
     }
   }
 
+  // ─── House Agent admin panel ────────────────────────────────────────────
+  // Standalone singleton, decoupled from Telegram users. Wallet PK lives in
+  // process.env.HOUSE_AGENT_PRIVATE_KEY. All routes gated by requireAdmin.
+  // Registered AFTER the webhook/polling branch so they exist in both modes.
+  {
+    const {
+      getHouseAgent,
+      setHouseConfig,
+      houseManualTrade,
+      getHouseBrainFeed,
+      getHouseWalletAddress,
+    } = await import('./services/houseAgent')
+
+    app.get('/api/admin/house/state', requireAdmin, async (_req, res) => {
+      try {
+        const [state, feed] = await Promise.all([getHouseAgent(), getHouseBrainFeed(50)])
+        let walletAddress: string | null = state.walletAddress
+        let walletReady = !!walletAddress
+        if (!walletAddress) {
+          try { walletAddress = getHouseWalletAddress(); walletReady = true } catch { walletReady = false }
+        }
+        res.json({ ok: true, state: { ...state, walletAddress }, walletReady, feed })
+      } catch (err: any) {
+        res.status(500).json({ ok: false, error: err?.message || String(err) })
+      }
+    })
+
+    app.post('/api/admin/house/config', requireAdmin, async (req, res) => {
+      try {
+        const { enabled, mode, dex, campaignId, config } = req.body ?? {}
+        if (mode !== undefined && !['idle', 'autotrade', 'campaign'].includes(mode)) {
+          return res.status(400).json({ ok: false, error: 'invalid mode' })
+        }
+        if (dex !== undefined && !['pancake', 'aster', 'hyperliquid', '42'].includes(dex)) {
+          return res.status(400).json({ ok: false, error: 'invalid dex' })
+        }
+        const next = await setHouseConfig({ enabled, mode, dex, campaignId, config })
+        res.json({ ok: true, state: next })
+      } catch (err: any) {
+        res.status(500).json({ ok: false, error: err?.message || String(err) })
+      }
+    })
+
+    app.post('/api/admin/house/enable', requireAdmin, async (_req, res) => {
+      try { res.json({ ok: true, state: await setHouseConfig({ enabled: true }) }) }
+      catch (err: any) { res.status(500).json({ ok: false, error: err?.message || String(err) }) }
+    })
+    app.post('/api/admin/house/disable', requireAdmin, async (_req, res) => {
+      try { res.json({ ok: true, state: await setHouseConfig({ enabled: false }) }) }
+      catch (err: any) { res.status(500).json({ ok: false, error: err?.message || String(err) }) }
+    })
+
+    app.post('/api/admin/house/mode', requireAdmin, async (req, res) => {
+      try {
+        const { mode } = req.body ?? {}
+        if (!['idle', 'autotrade', 'campaign'].includes(mode)) {
+          return res.status(400).json({ ok: false, error: 'invalid mode' })
+        }
+        res.json({ ok: true, state: await setHouseConfig({ mode }) })
+      } catch (err: any) {
+        res.status(500).json({ ok: false, error: err?.message || String(err) })
+      }
+    })
+
+    app.post('/api/admin/house/trade', requireAdmin, async (req, res) => {
+      try {
+        const { dex, side, tokenAddress, amount, slippageBps } = req.body ?? {}
+        if (dex !== 'pancake') return res.status(400).json({ ok: false, error: `dex '${dex}' not wired` })
+        if (!['buy', 'sell'].includes(side)) return res.status(400).json({ ok: false, error: 'invalid side' })
+        if (typeof tokenAddress !== 'string' || !/^0x[a-fA-F0-9]{40}$/.test(tokenAddress)) {
+          return res.status(400).json({ ok: false, error: 'invalid tokenAddress' })
+        }
+        if (typeof amount !== 'string' || !/^\d+(\.\d+)?$/.test(amount)) {
+          return res.status(400).json({ ok: false, error: 'amount must be a positive decimal string' })
+        }
+        if (slippageBps !== undefined) {
+          if (typeof slippageBps !== 'number' || !Number.isFinite(slippageBps)
+              || !Number.isInteger(slippageBps) || slippageBps < 1 || slippageBps > 2000) {
+            return res.status(400).json({ ok: false, error: 'slippageBps must be integer 1..2000' })
+          }
+        }
+        const r = await houseManualTrade({ dex, side, tokenAddress, amount, slippageBps })
+        res.json(r)
+      } catch (err: any) {
+        res.status(500).json({ ok: false, error: err?.message || String(err) })
+      }
+    })
+
+    app.get('/api/admin/house/feed', requireAdmin, async (req, res) => {
+      try {
+        const limit = parseInt(String(req.query.limit ?? '50'), 10) || 50
+        res.json({ ok: true, feed: await getHouseBrainFeed(limit) })
+      } catch (err: any) {
+        res.status(500).json({ ok: false, error: err?.message || String(err) })
+      }
+    })
+  }
+
   // Start agent runner
   initRunner(bot)
   console.log('[Runner] Agent runner started')

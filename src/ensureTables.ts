@@ -688,5 +688,39 @@ export async function ensureNewTables() {
   await run(`CREATE INDEX IF NOT EXISTS "PolymarketPosition_status_idx" ON "PolymarketPosition"("status")`)
   await run(`CREATE INDEX IF NOT EXISTS "PolymarketPosition_conditionId_idx" ON "PolymarketPosition"("conditionId")`)
 
+  // HouseAgent singleton — the BUILD4 house agent (standalone, no User row).
+  // Wallet PK lives in process.env.HOUSE_AGENT_PRIVATE_KEY; this table only
+  // holds runtime config + last-tick state. Single row, id='singleton'.
+  await run(`CREATE TABLE IF NOT EXISTS "HouseAgent" (
+    "id" TEXT NOT NULL DEFAULT 'singleton',
+    "enabled" BOOLEAN NOT NULL DEFAULT false,
+    "mode" TEXT NOT NULL DEFAULT 'idle',
+    "dex" TEXT NOT NULL DEFAULT 'pancake',
+    "walletAddress" TEXT,
+    "campaignId" TEXT,
+    "lastTickAt" TIMESTAMP(3),
+    "lastTickStatus" TEXT,
+    "config" JSONB NOT NULL DEFAULT '{}'::jsonb,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "HouseAgent_pkey" PRIMARY KEY ("id")
+  )`)
+  await run(`INSERT INTO "HouseAgent" ("id") VALUES ('singleton') ON CONFLICT ("id") DO NOTHING`)
+
+  // HouseLog — brain-feed for the house agent. Decoupled from AgentLog
+  // (which has NOT NULL FKs to Agent + User) since house has neither.
+  await run(`CREATE TABLE IF NOT EXISTS "HouseLog" (
+    "id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "dex" TEXT,
+    "kind" TEXT NOT NULL DEFAULT 'info',
+    "decision" TEXT,
+    "reasoning" TEXT NOT NULL,
+    "txHash" TEXT,
+    "meta" JSONB,
+    CONSTRAINT "HouseLog_pkey" PRIMARY KEY ("id")
+  )`)
+  await run(`CREATE INDEX IF NOT EXISTS "HouseLog_createdAt_idx" ON "HouseLog"("createdAt" DESC)`)
+
   console.log('[DB] All new tables ready')
 }
