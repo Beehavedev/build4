@@ -28,7 +28,7 @@
  *   EXECUTE=true tsx scripts/backfillErc8004.ts            # ALL remaining
  */
 
-import 'dotenv/config'
+// dotenv not required — Render/Replit inject env vars directly into the process
 import fs from 'fs'
 import path from 'path'
 import { db, setAgentOnchainFields } from '../src/db'
@@ -69,7 +69,11 @@ async function main() {
   if (ONLY_AGENT_ID) console.log(`Agent:   ${ONLY_AGENT_ID} (single)`)
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n')
 
-  const where: any = { erc8004AgentId: null, walletId: { not: null } }
+  const where: any = {
+    erc8004AgentId: null,
+    encryptedPK: { not: null },
+    walletAddress: { not: null },
+  }
   if (ONLY_AGENT_ID) where.id = ONLY_AGENT_ID
 
   const candidates = await db.agent.findMany({
@@ -89,54 +93,47 @@ async function main() {
     const a = candidates[i]
     const tag = `[${i + 1}/${candidates.length}] ${a.id} (${a.name ?? '?'})`
 
-    if (!a.walletId) {
-      console.log(`${tag} — SKIP: no walletId`)
-      pushRow({ agentId: a.id, name: a.name, userId: a.userId, result: 'SKIP', note: 'no walletId' })
-      skipCount++; continue
-    }
-
-    const wallet = await db.wallet.findUnique({ where: { id: a.walletId } })
-    if (!wallet?.encryptedPK || !wallet.address) {
-      console.log(`${tag} — SKIP: wallet missing encryptedPK or address`)
-      pushRow({ agentId: a.id, name: a.name, userId: a.userId, result: 'SKIP', note: 'wallet incomplete' })
+    if (!a.encryptedPK || !a.walletAddress) {
+      console.log(`${tag} — SKIP: missing encryptedPK or walletAddress`)
+      pushRow({ agentId: a.id, name: a.name, userId: a.userId, result: 'SKIP', note: 'agent wallet incomplete' })
       skipCount++; continue
     }
 
     // Resolve the user's address — needed for the identity payload's owner
     // field. Fall back to the agent's own wallet if no user wallet exists
-    // (won't happen in prod, defensive only).
+    // (defensive only).
     const user = await db.user.findUnique({ where: { id: a.userId } })
     const ownerAddress =
       (user as any)?.walletAddress ??
-      wallet.address // defensive fallback
+      a.walletAddress // defensive fallback
 
     let privateKey: string
     try {
-      privateKey = decryptPrivateKey(wallet.encryptedPK, a.userId)
+      privateKey = decryptPrivateKey(a.encryptedPK, a.userId)
     } catch (e: any) {
       console.log(`${tag} — FAIL: decrypt: ${e.message}`)
-      pushRow({ agentId: a.id, name: a.name, address: wallet.address, userId: a.userId, result: 'FAIL', note: `decrypt: ${e.message}` })
+      pushRow({ agentId: a.id, name: a.name, address: a.walletAddress, userId: a.userId, result: 'FAIL', note: `decrypt: ${e.message}` })
       failCount++; continue
     }
 
     const identity = buildAgentIdentity({
       name: a.name ?? `Agent${a.id.slice(0, 6)}`,
-      agentAddress: wallet.address,
+      agentAddress: a.walletAddress,
       ownerAddress,
       publicBaseUrl: PUBLIC_BASE_URL,
       chain: CHAIN,
     })
 
     if (!EXECUTE) {
-      console.log(`${tag} — DRY: would register ${wallet.address} → ${identity.metadataUri}`)
-      pushRow({ agentId: a.id, name: a.name, address: wallet.address, userId: a.userId, result: 'DRY_RUN', note: identity.metadataUri })
+      console.log(`${tag} — DRY: would register ${a.walletAddress} → ${identity.metadataUri}`)
+      pushRow({ agentId: a.id, name: a.name, address: a.walletAddress, userId: a.userId, result: 'DRY_RUN', note: identity.metadataUri })
       continue
     }
 
-    console.log(`${tag} — registering ${wallet.address}...`)
+    console.log(`${tag} — registering ${a.walletAddress}...`)
     const reg = await registerAgentOnchain({
       agentWalletPK: privateKey,
-      agentAddress: wallet.address,
+      agentAddress: a.walletAddress,
       metadataURI: identity.metadataUri,
       chain: CHAIN,
       onAgentFunded: async (h) => { try { await setAgentOnchainFields(a.id, { erc8004FundTxHash: h }) } catch {} },
@@ -151,11 +148,11 @@ async function main() {
         erc8004Verified: true,
       })
       console.log(`${tag} — ✅ agentId=${reg.agentId} tx=${reg.txHash}`)
-      pushRow({ agentId: a.id, name: a.name, address: wallet.address, userId: a.userId, result: 'OK', erc8004AgentId: reg.agentId, txHash: reg.txHash, note: '' })
+      pushRow({ agentId: a.id, name: a.name, address: a.walletAddress, userId: a.userId, result: 'OK', erc8004AgentId: reg.agentId, txHash: reg.txHash, note: '' })
       okCount++
     } else {
       console.log(`${tag} — ❌ ${reg.reason}`)
-      pushRow({ agentId: a.id, name: a.name, address: wallet.address, userId: a.userId, result: 'FAIL', note: reg.reason })
+      pushRow({ agentId: a.id, name: a.name, address: a.walletAddress, userId: a.userId, result: 'FAIL', note: reg.reason })
       failCount++
     }
   }
