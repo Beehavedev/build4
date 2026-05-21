@@ -41,13 +41,20 @@ const ALLOWLIST = new Set<string>([
   // Add Hyperliquid bridge, PancakeSwap router etc as needed
 ].map(a => a.toLowerCase()))
 
-// ERC-20 tokens we watch outflows of
+// ERC-20 tokens we watch outflows of.
+// ASTER token (BEP-20) intentionally omitted: the real contract address has
+// not yet been confirmed in this repo; setting an invalid placeholder would
+// have crashed ethers.Contract() at boot. Add it here once the canonical
+// address is verified — the runtime guard below filters any invalid entries
+// defensively in case a placeholder ever sneaks back in.
 const WATCHED_TOKENS = [
   { symbol: 'USDT', address: '0x55d398326f99059fF775485246999027B3197955', decimals: 18 },
-  { symbol: 'ASTER', address: '0x000000', decimals: 18 },   // TODO: fill the real BEP-20 contract
   { symbol: 'USDC', address: '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d', decimals: 18 },
   { symbol: 'BUSD', address: '0xe9e7CEA3DedcA5984780Bafc599bD69ADd087D56', decimals: 18 },
-]
+].filter((t) => {
+  try { ethers.getAddress(t.address); return true }
+  catch { console.warn(`[walletWatch] dropping ${t.symbol}: invalid address ${t.address}`); return false }
+})
 
 const TRANSFER_TOPIC = ethers.id('Transfer(address,address,uint256)')
 

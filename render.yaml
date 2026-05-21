@@ -93,3 +93,32 @@ services:
       # hourly) by setting SWARM_DIVERGENCE_CRON.
       - key: SWARM_DIVERGENCE_CRON
         value: "15 9 * * *"
+
+  # ── Wallet-watch cron (KSR-BUILD4-INCIDENT-2026-05-17 #22) ─────────────
+  # Every 5 minutes, scans every active user wallet on BSC for outflows
+  # to addresses NOT on the allowlist. Alerts to a Telegram channel
+  # (WALLET_WATCH_TG_CHAT) if anything matches. Source: scripts/walletWatch.ts.
+  - type: cron
+    name: build4-wallet-watch
+    runtime: node
+    plan: starter
+    schedule: "*/5 * * * *"
+    buildCommand: npm install && npx prisma generate --schema=src/_prisma_bot/schema.prisma
+    startCommand: npx tsx scripts/walletWatch.ts
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: build4db
+          property: connectionString
+      - key: BSC_RPC_URL
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: WALLET_WATCH_TG_CHAT
+        sync: false
+      - key: WALLET_ENCRYPTION_KEY
+        sync: false
+      - key: LOOKBACK_MIN
+        value: "5"
