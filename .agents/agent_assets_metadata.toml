@@ -221,3 +221,9 @@ id = "O0PIaaUmgaK4pSD09QzKp"
 uri = "file://pitch/BUILD4-pitch-deck.pdf"
 type = "pdf"
 title = "BUILD4 Pitch Deck (typo fixed)"
+
+[[outputs]]
+id = "yCWG3cKMlr8nANuMcQB0H"
+uri = "file://exports/BUILD4-pitch-deck-13pages.pdf"
+type = "pdf"
+title = "BUILD4 Pitch Deck (13 pages)"
