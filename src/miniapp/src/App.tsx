@@ -18,7 +18,6 @@ import Onboard from './pages/Onboard'
 import LaunchToken from './pages/LaunchToken'
 import TokenTrade from './pages/TokenTrade'
 import CampaignBrain from './pages/CampaignBrain'
-import HouseAgent from './pages/HouseAgent'
 import { apiFetch, type AgentData } from './api'
 
 declare global {
@@ -27,7 +26,7 @@ declare global {
   }
 }
 
-type Page = 'dashboard' | 'agents' | 'wallet' | 'trade' | 'copy' | 'portfolio' | 'predictions' | 'hyperliquid' | 'admin' | 'aiusage' | 'onboard' | 'launchToken' | 'tokenTrade' | 'brain' | 'house'
+type Page = 'dashboard' | 'agents' | 'wallet' | 'trade' | 'copy' | 'portfolio' | 'predictions' | 'hyperliquid' | 'admin' | 'aiusage' | 'onboard' | 'launchToken' | 'tokenTrade' | 'brain'
 
 export default function App() {
   const [page, setPage] = useState<Page>('dashboard')
@@ -166,7 +165,9 @@ export default function App() {
     ...(launchEnabled ? [{ id: 'launchToken' as Page, label: 'Launch token', icon: '🚀' }] : []),
     ...(isAdmin ? [{ id: 'aiusage' as Page, label: 'AI Usage', icon: '🧠' }] : []),
     ...(isAdmin ? [{ id: 'admin' as Page, label: 'Admin', icon: '🛠' }] : []),
-    ...(isAdmin ? [{ id: 'house' as Page, label: 'House Agent', icon: '🏛' }] : []),
+    // House Agent lives at /house as a standalone admin panel — kept out of
+    // the Telegram mini-app so the operator's personal Telegram account can't
+    // collide with the singleton house agent.
   ]
   const hasOverflow = overflowItems.length > 0
 
@@ -298,7 +299,6 @@ export default function App() {
         {page === 'launchToken' && <LaunchToken />}
         {page === 'tokenTrade' && <TokenTrade />}
         {page === 'brain' && <CampaignBrain />}
-        {page === 'house' && <HouseAgent />}
         {page === 'onboard' && (
           <Onboard
             asterOnboarded={asterOnboarded}

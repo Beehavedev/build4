@@ -1,0 +1,386 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>BUILD4 · House Agent</title>
+<style>
+  :root {
+    --bg: #0d0e12;
+    --bg-card: #16181f;
+    --bg-elev: #1d2029;
+    --border: #2a2d36;
+    --text: #e8e9ec;
+    --text-dim: #8a8e98;
+    --purple: #7645d9;
+    --green: #1cb46a;
+    --red: #d04e4e;
+    --amber: #e0a020;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 14px; min-height: 100vh;
+  }
+  .wrap { max-width: 720px; margin: 0 auto; padding: 20px 16px 48px; }
+  h1 { font-size: 22px; margin: 4px 0 18px; font-weight: 700; }
+  .card {
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: 10px; padding: 14px; margin-bottom: 12px;
+  }
+  .label {
+    font-size: 11px; color: var(--text-dim); text-transform: uppercase;
+    letter-spacing: 1px; font-weight: 600;
+  }
+  .row { display: flex; gap: 8px; align-items: center; }
+  .between { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+  .mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .grid2-stack { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  button {
+    border: none; border-radius: 8px; cursor: pointer; font-weight: 600;
+    font-size: 13px; padding: 10px 14px;
+    background: var(--bg-elev); color: var(--text); transition: background .12s;
+  }
+  button:hover:not(:disabled) { background: #262a36; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  button.primary { background: var(--purple); color: #fff; }
+  button.green   { background: var(--green); color: #fff; }
+  button.red     { background: var(--red); color: #fff; }
+  button.gray    { background: #5a5a5a; color: #fff; }
+  button.choice {
+    text-align: left; padding: 10px 12px;
+    border: 1px solid var(--border); background: transparent;
+  }
+  button.choice.active { border-color: var(--purple); background: rgba(118,69,217,0.12); }
+  button.choice .t { font-weight: 600; font-size: 13px; display: block; }
+  button.choice .d { font-size: 11px; color: var(--text-dim); margin-top: 2px; display: block; }
+  input {
+    background: var(--bg-elev); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 8px 10px; font-size: 13px; width: 100%;
+  }
+  input.mono { font-family: ui-monospace, monospace; }
+  label.field { display: flex; flex-direction: column; font-size: 11px; color: var(--text-dim); gap: 4px; }
+  .err {
+    padding: 10px; border-radius: 8px; background: rgba(208,78,78,0.12);
+    border: 1px solid rgba(208,78,78,0.4); color: #ffb4b4;
+    font-size: 12px; margin-bottom: 12px;
+  }
+  .tag {
+    font-size: 10px; padding: 2px 6px; border-radius: 4px;
+    background: var(--bg-elev); border: 1px solid var(--border);
+    color: var(--text-dim); text-transform: uppercase;
+    letter-spacing: 0.5px; font-weight: 600;
+  }
+  .tag.purple { background: rgba(118,69,217,0.18); color: #c2a3ff; border-color: rgba(118,69,217,0.4); }
+  .feed-row {
+    padding: 8px; border-radius: 6px; background: var(--bg-elev);
+    border: 1px solid var(--border); font-size: 11px; margin-bottom: 6px;
+  }
+  .feed-meta { display: flex; gap: 8px; align-items: center; margin-bottom: 4px; }
+  .login-wrap {
+    min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 16px;
+  }
+  .login-card { max-width: 360px; width: 100%; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+(() => {
+  const TOKEN_KEY = "b4_house_admin_token";
+  const $ = (id) => document.getElementById(id);
+  const root = $("root");
+
+  let state = null;       // server state
+  let feed = [];
+  let walletReady = false;
+  let lastErr = null;
+  let busy = false;
+  let tradeBusy = false;
+  let tradeResult = null;
+  let configDraft = {};
+  let trade = { side: "buy", token: "", amount: "0.01", slippage: "100" };
+
+  function getToken() { return localStorage.getItem(TOKEN_KEY) || ""; }
+  function setToken(t) {
+    if (t) localStorage.setItem(TOKEN_KEY, t);
+    else localStorage.removeItem(TOKEN_KEY);
+  }
+
+  async function api(path, init = {}) {
+    const token = getToken();
+    if (!token) throw new Error("not authenticated");
+    const headers = Object.assign({ "x-admin-token": token }, init.headers || {});
+    if (init.body && !headers["content-type"]) headers["content-type"] = "application/json";
+    const r = await fetch(path, Object.assign({}, init, { headers }));
+    const txt = await r.text();
+    let json; try { json = txt ? JSON.parse(txt) : {}; } catch { json = { raw: txt }; }
+    if (!r.ok) {
+      if (r.status === 401 || r.status === 403) { setToken(""); render(); }
+      throw new Error(json.error || json.message || (`HTTP ${r.status}`));
+    }
+    return json;
+  }
+
+  async function refresh() {
+    try {
+      const r = await api("/api/admin/house/state");
+      state = r.state; feed = r.feed || []; walletReady = !!r.walletReady;
+      configDraft = Object.assign({}, state.config || {}, configDraft);
+      lastErr = null;
+    } catch (e) {
+      lastErr = e.message || String(e);
+      if (e.message === "not authenticated") state = null;
+    }
+    render();
+  }
+
+  async function patch(body) {
+    busy = true; render();
+    try {
+      await api("/api/admin/house/config", { method: "POST", body: JSON.stringify(body) });
+      await refresh();
+    } catch (e) { lastErr = e.message; render(); }
+    finally { busy = false; }
+  }
+
+  async function sendTrade() {
+    tradeBusy = true; tradeResult = null; lastErr = null; render();
+    try {
+      const body = {
+        dex: "pancake",
+        side: trade.side,
+        tokenAddress: trade.token.trim(),
+        amount: trade.amount.trim(),
+        slippageBps: parseInt(trade.slippage, 10) || 100,
+      };
+      const r = await api("/api/admin/house/trade", { method: "POST", body: JSON.stringify(body) });
+      tradeResult = "✓ " + trade.side.toUpperCase() + " sent · tx " + r.txHash;
+      await refresh();
+    } catch (e) {
+      tradeResult = "✗ " + (e.message || String(e));
+    } finally {
+      tradeBusy = false; render();
+    }
+  }
+
+  function attemptLogin(token) {
+    setToken(token);
+    state = null; lastErr = null;
+    refresh();
+  }
+
+  // ---- Rendering -----------------------------------------------------------
+
+  const esc = (s) => String(s == null ? "" : s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+
+  function loginView() {
+    return `
+      <div class="login-wrap">
+        <div class="card login-card">
+          <h1 style="margin-top:0">🏛 House Agent</h1>
+          <div class="label" style="margin-bottom:6px">Admin token</div>
+          <input id="login-token" type="password" placeholder="ADMIN_TOKEN" autocomplete="off" />
+          ${lastErr ? `<div class="err" style="margin-top:10px">${esc(lastErr)}</div>` : ""}
+          <button class="primary" id="login-btn" style="width:100%; margin-top:12px">Unlock</button>
+          <div style="font-size:11px;color:var(--text-dim);margin-top:10px;line-height:1.5">
+            Standalone admin panel — no Telegram auth, no user collision.
+            Token is the server's ADMIN_TOKEN secret. Stored in this browser only.
+          </div>
+        </div>
+      </div>`;
+  }
+
+  function modeBtn(id, label, desc) {
+    const active = state.mode === id;
+    return `<button class="choice ${active ? "active" : ""}" data-mode="${id}" ${busy ? "disabled" : ""}>
+      <span class="t">${label}</span><span class="d">${desc}</span>
+    </button>`;
+  }
+  function dexBtn(id, label, ready) {
+    const active = state.dex === id;
+    return `<button class="choice ${active ? "active" : ""}" data-dex="${id}"
+        ${busy || !ready ? "disabled" : ""} style="${!ready ? "opacity:.5" : ""}">
+      <span class="t">${label}${ready ? "" : " (soon)"}</span>
+    </button>`;
+  }
+
+  function feedRow(r) {
+    return `<div class="feed-row">
+      <div class="feed-meta">
+        <span class="mono" style="color:var(--text-dim)">${esc(new Date(r.createdAt).toLocaleTimeString())}</span>
+        ${r.dex ? `<span class="tag">${esc(r.dex)}</span>` : ""}
+        <span class="tag">${esc(r.kind)}</span>
+        ${r.decision ? `<span class="tag purple">${esc(r.decision)}</span>` : ""}
+      </div>
+      <div>${esc(r.reasoning)}</div>
+      ${r.txHash ? `<div class="mono" style="font-size:10px;color:var(--text-dim);margin-top:4px;word-break:break-all">tx ${esc(r.txHash)}</div>` : ""}
+    </div>`;
+  }
+
+  function panelView() {
+    if (!state) {
+      return `<div class="wrap">
+        ${lastErr ? `<div class="err">${esc(lastErr)}</div>` : "Loading…"}
+      </div>`;
+    }
+    const cfg = configDraft;
+    const numField = (label, key, step) => `
+      <label class="field">${label}
+        <input type="number" step="${step}" data-cfg="${key}"
+               value="${cfg[key] == null ? "" : esc(cfg[key])}" class="mono" />
+      </label>`;
+    const textField = (label, key) => `
+      <label class="field">${label}
+        <input type="text" data-cfg-str="${key}" value="${esc(cfg[key] || "")}" />
+      </label>`;
+    return `
+      <div class="wrap">
+        <div class="between" style="margin-bottom:10px">
+          <h1 style="margin:0">🏛 House Agent</h1>
+          <button id="logout" style="font-size:11px;padding:6px 10px">Lock</button>
+        </div>
+        ${lastErr ? `<div class="err">${esc(lastErr)}</div>` : ""}
+
+        <section class="card">
+          <div class="between">
+            <div>
+              <div class="label">Wallet</div>
+              <div class="mono" style="margin-top:2px;word-break:break-all">${esc(state.walletAddress || "—")}</div>
+              ${!walletReady ? `<div style="font-size:11px;color:#ffb4b4;margin-top:4px">⚠ HOUSE_AGENT_PRIVATE_KEY not set on server</div>` : ""}
+            </div>
+            <button id="toggle" class="${state.enabled ? "green" : "gray"}" ${busy || !walletReady ? "disabled" : ""}>
+              ${state.enabled ? "ENABLED" : "DISABLED"}
+            </button>
+          </div>
+          <div style="margin-top:10px;font-size:11px;color:var(--text-dim)">
+            Last tick: ${state.lastTickAt ? esc(new Date(state.lastTickAt).toLocaleString()) : "never"}
+            ${state.lastTickStatus ? " · " + esc(state.lastTickStatus) : ""}
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="label">Mode</div>
+          <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px">
+            ${modeBtn("idle", "Idle", "No trades fire. Safe parked state.")}
+            ${modeBtn("autotrade", "Autotrade", "Continuous AI trading between campaigns.")}
+            ${modeBtn("campaign", "Campaign", "Hand control to a scheduled campaign brain.")}
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="label">DEX</div>
+          <div class="grid2-stack" style="margin-top:8px">
+            ${dexBtn("pancake", "PancakeSwap (BSC)", true)}
+            ${dexBtn("42", "42.space", true)}
+            ${dexBtn("aster", "Aster DEX", false)}
+            ${dexBtn("hyperliquid", "Hyperliquid L1", false)}
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="label">Trading config</div>
+          <div class="grid2" style="margin-top:8px">
+            ${numField("Size (BNB)", "sizeBnb", "0.001")}
+            ${numField("Slippage (bps)", "slippageBps", "10")}
+            ${numField("Drawdown cap (%)", "drawdownCapPct", "1")}
+            ${numField("Max open positions", "maxOpenPositions", "1")}
+            ${numField("Max trades / hour", "maxTradesPerHour", "1")}
+            ${textField("Persona", "persona")}
+          </div>
+          <button class="primary" id="save-cfg" style="margin-top:12px" ${busy ? "disabled" : ""}>Save config</button>
+        </section>
+
+        <section class="card">
+          <div class="label">Manual trade · PancakeSwap</div>
+          <div style="display:flex;gap:6px;margin:10px 0">
+            <button class="${trade.side === "buy" ? "green" : "choice"}" data-side="buy" style="flex:1">BUY</button>
+            <button class="${trade.side === "sell" ? "red" : "choice"}" data-side="sell" style="flex:1">SELL</button>
+          </div>
+          <label class="field">Token address (0x…)
+            <input type="text" id="tr-token" class="mono" value="${esc(trade.token)}" placeholder="0x…" />
+          </label>
+          <div class="grid2" style="margin-top:8px">
+            <label class="field">${trade.side === "buy" ? "BNB amount" : "Token wei amount"}
+              <input type="text" id="tr-amount" class="mono" value="${esc(trade.amount)}" />
+            </label>
+            <label class="field">Slippage (bps)
+              <input type="text" id="tr-slip" class="mono" value="${esc(trade.slippage)}" />
+            </label>
+          </div>
+          <button class="${trade.side === "buy" ? "green" : "red"}" id="send-trade"
+                  style="margin-top:12px;width:100%" ${tradeBusy || !trade.token || !trade.amount ? "disabled" : ""}>
+            ${tradeBusy ? "Sending…" : "Send " + trade.side.toUpperCase()}
+          </button>
+          ${tradeResult ? `<div class="mono" style="margin-top:10px;font-size:11px;word-break:break-all;color:${tradeResult.startsWith("✓") ? "var(--green)" : "#ffb4b4"}">${esc(tradeResult)}</div>` : ""}
+        </section>
+
+        <section class="card">
+          <div class="label">Brain feed · last ${feed.length}</div>
+          ${feed.length === 0
+            ? `<div style="font-size:12px;color:var(--text-dim);margin-top:8px">No activity yet. Enable + send a trade to populate.</div>`
+            : `<div style="margin-top:8px">${feed.map(feedRow).join("")}</div>`}
+        </section>
+      </div>`;
+  }
+
+  function render() {
+    if (!getToken()) {
+      root.innerHTML = loginView();
+      const btn = $("login-btn"), tok = $("login-token");
+      btn.onclick = () => { if (tok.value) attemptLogin(tok.value); };
+      tok.addEventListener("keydown", (e) => { if (e.key === "Enter" && tok.value) attemptLogin(tok.value); });
+      tok.focus();
+      return;
+    }
+    root.innerHTML = panelView();
+
+    // Wire panel handlers
+    const logout = $("logout"); if (logout) logout.onclick = () => { setToken(""); render(); };
+    const tgl = $("toggle"); if (tgl) tgl.onclick = () => patch({ enabled: !state.enabled });
+
+    document.querySelectorAll("[data-mode]").forEach(b => {
+      b.onclick = () => patch({ mode: b.dataset.mode });
+    });
+    document.querySelectorAll("[data-dex]").forEach(b => {
+      b.onclick = () => patch({ dex: b.dataset.dex });
+    });
+
+    document.querySelectorAll("[data-cfg]").forEach(inp => {
+      inp.oninput = () => {
+        const v = inp.value;
+        configDraft[inp.dataset.cfg] = v === "" ? undefined : Number(v);
+      };
+    });
+    document.querySelectorAll("[data-cfg-str]").forEach(inp => {
+      inp.oninput = () => { configDraft[inp.dataset.cfgStr] = inp.value; };
+    });
+    const save = $("save-cfg"); if (save) save.onclick = () => patch({ config: configDraft });
+
+    document.querySelectorAll("[data-side]").forEach(b => {
+      b.onclick = () => { trade.side = b.dataset.side; render(); };
+    });
+    const tt = $("tr-token"); if (tt) tt.oninput = () => { trade.token = tt.value; updateTradeBtn(); };
+    const ta = $("tr-amount"); if (ta) ta.oninput = () => { trade.amount = ta.value; updateTradeBtn(); };
+    const ts = $("tr-slip"); if (ts) ts.oninput = () => { trade.slippage = ts.value; };
+    const sb = $("send-trade"); if (sb) sb.onclick = sendTrade;
+  }
+
+  function updateTradeBtn() {
+    const b = $("send-trade");
+    if (!b) return;
+    b.disabled = tradeBusy || !trade.token || !trade.amount;
+  }
+
+  // ---- Init ----------------------------------------------------------------
+  render();
+  if (getToken()) refresh();
+  setInterval(() => { if (getToken() && state) refresh(); }, 5000);
+})();
+</script>
+</body>
+</html>

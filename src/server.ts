@@ -51,6 +51,17 @@ app.use('/app', (_req, res) => {
   res.sendFile(path.join(miniAppDist, 'index.html'))
 })
 
+// ── Standalone House Agent admin panel ──────────────────────────────────────
+// Lives at /house — completely separate from the Telegram mini-app so the
+// operator's personal Telegram account can't collide with the singleton
+// house agent. Gated by ADMIN_TOKEN in-browser (entered at the login screen,
+// stored in localStorage, sent as x-admin-token on every fetch).
+const housePanelPath = path.join(__dirname, '..', 'public', 'house.html')
+app.get('/house', (_req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+  res.sendFile(housePanelPath)
+})
+
 // ── Public landing page (https://build4.io/) ────────────────────────────────
 // Serves public/index.html with the WalletConnect Project ID injected in
 // place of the placeholder string. We read the file once at boot, do the
