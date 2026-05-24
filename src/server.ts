@@ -9359,17 +9359,28 @@ async function main() {
         try { if (walletReady) positions = await getHousePositions() } catch (e: any) {
           console.warn('[house/state] positions failed:', e?.message)
         }
-        // BNB balance of house wallet for convenience
+        // BNB + USDT balances of the house wallet for convenience
         let bnbBalance: string | null = null
+        let usdtBalance: string | null = null
         if (walletReady && walletAddress) {
           try {
             const { buildBscProvider } = await import('./services/bscProvider')
             const { ethers } = await import('ethers')
-            const bal = await buildBscProvider(process.env.BSC_RPC_URL).getBalance(walletAddress)
-            bnbBalance = ethers.formatEther(bal)
-          } catch {}
+            const provider = buildBscProvider(process.env.BSC_RPC_URL)
+            const USDT_BSC = '0x55d398326f99059fF775485246999027B3197955' // 18 decimals on BSC
+            const erc20 = new ethers.Contract(USDT_BSC,
+              ['function balanceOf(address) view returns (uint256)'], provider)
+            const [bnb, usdt] = await Promise.all([
+              provider.getBalance(walletAddress),
+              erc20.balanceOf(walletAddress) as Promise<bigint>,
+            ])
+            bnbBalance = ethers.formatEther(bnb)
+            usdtBalance = ethers.formatUnits(usdt, 18)
+          } catch (e: any) {
+            console.warn('[house/state] balance fetch failed:', e?.message)
+          }
         }
-        res.json({ ok: true, state: { ...state, walletAddress }, walletReady, bnbBalance, positions, feed })
+        res.json({ ok: true, state: { ...state, walletAddress }, walletReady, bnbBalance, usdtBalance, positions, feed })
       } catch (err: any) {
         res.status(500).json({ ok: false, error: err?.message || String(err) })
       }

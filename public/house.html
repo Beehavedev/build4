@@ -92,7 +92,8 @@
   }
   .pos-row .sym { font-weight: 700; font-size: 13px; }
   .pos-row .addr { font-size: 10px; color: var(--text-dim); }
-  .stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; }
+  .stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 10px; }
+  @media (max-width: 600px) { .stat-grid { grid-template-columns: repeat(2, 1fr); } }
   .stat { background: var(--bg-elev); border: 1px solid var(--border); border-radius: 8px; padding: 10px; }
   .stat .v { font-size: 18px; font-weight: 700; margin-top: 2px; }
   .stat .l { font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; }
@@ -119,6 +120,7 @@
   let feed = [];
   let positions = [];
   let bnbBalance = null;
+  let usdtBalance = null;
   let walletReady = false;
   let lastErr = null;
   let busy = false;
@@ -158,6 +160,7 @@
       state = r.state; feed = r.feed || [];
       positions = r.positions || [];
       bnbBalance = r.bnbBalance ?? null;
+      usdtBalance = r.usdtBalance ?? null;
       walletReady = !!r.walletReady;
       configDraft = Object.assign({}, state.config || {}, configDraft);
       lastErr = null;
@@ -347,6 +350,10 @@
             <div class="stat">
               <div class="l">BNB balance</div>
               <div class="v mono">${fmt(bnbBalance, 5)}</div>
+            </div>
+            <div class="stat">
+              <div class="l">USDT balance</div>
+              <div class="v mono">${fmt(usdtBalance, 2)}</div>
             </div>
             <div class="stat">
               <div class="l">Open positions</div>
