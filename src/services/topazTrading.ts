@@ -31,6 +31,7 @@
 //   • Voter.vote: once per epoch — out of scope for Phase 1.
 // =====================================================================
 
+import { AsyncLocalStorage } from 'async_hooks'
 import { ethers } from 'ethers'
 import { db } from '../db'
 import { decryptPrivateKey } from './wallet'
@@ -85,6 +86,24 @@ async function defaultLoadWallet(walletId: string): Promise<{ address: string; p
   return { address: w.address, privateKey: pk }
 }
 
+// ── House-mode signer override ────────────────────────────────────────────
+// When code runs inside `runWithHouseSigner(fn)`, getMasterSigner() pulls
+// keys from HOUSE_AGENT_PRIVATE_KEY instead of decrypting the Wallet row
+// pointed to by TOPAZ_MASTER_WALLET_ID. This lets the /house admin panel
+// reuse the entire Topaz execution layer against its own dedicated wallet
+// without forcing the operator to import the house PK into the Wallet
+// table. Concurrency-safe via AsyncLocalStorage — concurrent regular agent
+// ticks running on the master wallet are unaffected.
+const houseModeStore = new AsyncLocalStorage<{ pk: string }>()
+
+export async function runWithHouseSigner<T>(fn: () => Promise<T>): Promise<T> {
+  const pk = (process.env.HOUSE_AGENT_PRIVATE_KEY ?? '').trim()
+  if (!pk || !pk.startsWith('0x')) {
+    throw new Error('topaz_house_pk_missing — HOUSE_AGENT_PRIVATE_KEY not set')
+  }
+  return houseModeStore.run({ pk }, fn)
+}
+
 /**
  * Resolve and instantiate the Phase-1 master signer. Throws fail-closed
  * if TOPAZ_MASTER_WALLET_ID is unset or the row can't be decrypted.
@@ -95,11 +114,18 @@ export async function getMasterSigner(): Promise<{
   cfg: TopazConfig
 }> {
   const cfg = getTopazConfig()
+  const provider = activeDeps.buildProvider()
+  // House-mode override (set by runWithHouseSigner). Skips the Wallet
+  // table entirely; pk comes from HOUSE_AGENT_PRIVATE_KEY env.
+  const houseCtx = houseModeStore.getStore()
+  if (houseCtx) {
+    const signer = new ethers.Wallet(houseCtx.pk, provider)
+    return { signer, address: signer.address, cfg }
+  }
   if (!cfg.masterWalletId) {
     throw new Error('topaz_config_missing:masterWalletId — set TOPAZ_MASTER_WALLET_ID')
   }
   const { address, privateKey } = await activeDeps.loadWallet(cfg.masterWalletId)
-  const provider = activeDeps.buildProvider()
   const signer = new ethers.Wallet(privateKey, provider)
   return { signer, address, cfg }
 }

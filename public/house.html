@@ -133,6 +133,16 @@
   let trackInput = "";
   let trackBusy = false;
 
+  // Topaz state ────────────────────────────────────────────────────────
+  // Topaz swap UX uses 18-decimal assumption for amount entry; the server
+  // re-reads on-chain decimals so this is just for the UI default.
+  let topazPositions = [];
+  let topazSwap = { tokenIn: "0x55d398326f99059fF775485246999027B3197955", tokenOut: "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c", amountIn: "10", slippage: "1", stable: "" /* "" | "true" | "false" */ };
+  let topazLp = { tokenA: "0x55d398326f99059fF775485246999027B3197955", tokenB: "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c", stable: false, amountA: "10", amountB: "0.05" };
+  let topazBusy = false;
+  let topazResult = null;
+  let topazCloseBusy = null; // pair-or-tokenId currently closing
+
   function getToken() { return localStorage.getItem(TOKEN_KEY) || ""; }
   function setToken(t) {
     if (t) localStorage.setItem(TOKEN_KEY, t);
@@ -164,11 +174,78 @@
       walletReady = !!r.walletReady;
       configDraft = Object.assign({}, state.config || {}, configDraft);
       lastErr = null;
+      // Topaz positions are cheap to refetch (single RPC enumeration)
+      try {
+        const tp = await api("/api/admin/house/topaz/positions");
+        topazPositions = tp.positions || [];
+      } catch (e) { /* not fatal — Topaz may be unconfigured */ }
     } catch (e) {
       lastErr = e.message || String(e);
       if (e.message === "not authenticated") state = null;
     }
     render();
+  }
+
+  async function sendTopazSwap() {
+    topazBusy = true; topazResult = null; lastErr = null; render();
+    try {
+      const slippagePct = parseFloat(topazSwap.slippage);
+      if (!isFinite(slippagePct) || slippagePct <= 0) throw new Error("Slippage must be positive");
+      const body = {
+        tokenIn:  topazSwap.tokenIn.trim(),
+        tokenOut: topazSwap.tokenOut.trim(),
+        amountIn: topazSwap.amountIn.trim(),
+        slippagePct,
+      };
+      if (topazSwap.stable === "true")  body.stable = true;
+      if (topazSwap.stable === "false") body.stable = false;
+      const r = await api("/api/admin/house/topaz/swap", { method: "POST", body: JSON.stringify(body) });
+      const d = r.details || {};
+      topazResult = `✓ SWAP · ${d.amountIn} ${d.tokenIn?.slice(0,10)}… → ${d.tokenOut?.slice(0,10)}… (${d.stable ? 'stable' : 'volatile'}) · tx ${r.txHash || '—'}`;
+      await refresh();
+    } catch (e) {
+      topazResult = "✗ " + (e.message || String(e));
+    } finally {
+      topazBusy = false; render();
+    }
+  }
+
+  async function sendTopazLp() {
+    topazBusy = true; topazResult = null; lastErr = null; render();
+    try {
+      const body = {
+        tokenA: topazLp.tokenA.trim(),
+        tokenB: topazLp.tokenB.trim(),
+        stable: !!topazLp.stable,
+        amountADesired: topazLp.amountA.trim(),
+        amountBDesired: topazLp.amountB.trim(),
+      };
+      const r = await api("/api/admin/house/topaz/lp", { method: "POST", body: JSON.stringify(body) });
+      topazResult = `✓ OPEN_LP · minted ${r.lpAmount} LP · staked=${r.staked ? 'yes' : 'no'} · tx ${r.txHash || '—'}`;
+      await refresh();
+    } catch (e) {
+      topazResult = "✗ " + (e.message || String(e));
+    } finally {
+      topazBusy = false; render();
+    }
+  }
+
+  async function closeTopazPosition(p) {
+    const key = p.positionType === 'v3-nft' ? p.tokenId : p.poolAddress;
+    if (!confirm(`Close Topaz ${p.positionType} ${key}?`)) return;
+    topazCloseBusy = key; lastErr = null; render();
+    try {
+      const body = p.positionType === 'v3-nft'
+        ? { positionType: 'v3-nft', tokenId: p.tokenId }
+        : { positionType: 'v2-lp', tokenA: p.tokenA, tokenB: p.tokenB, stable: !!p.stable, pair: p.poolAddress, gauge: p.gauge };
+      const r = await api("/api/admin/house/topaz/close", { method: "POST", body: JSON.stringify(body) });
+      topazResult = `✓ CLOSED · tx ${r.closeTx || r.unstakeTx || '—'}`;
+      await refresh();
+    } catch (e) {
+      topazResult = "✗ Close failed: " + (e.message || String(e));
+    } finally {
+      topazCloseBusy = null; render();
+    }
   }
 
   async function patch(body) {
@@ -401,6 +478,7 @@
           <div class="grid2-stack" style="margin-top:8px">
             ${dexBtn("pancake", "PancakeSwap (BSC)", true)}
             ${dexBtn("42", "42.space", true)}
+            ${dexBtn("topaz", "Topaz (BSC ve3,3)", true)}
             ${dexBtn("aster", "Aster DEX", false)}
             ${dexBtn("hyperliquid", "Hyperliquid L1", false)}
           </div>
@@ -451,6 +529,86 @@
             ${tradeBusy ? "Sending…" : "Send " + trade.side.toUpperCase()}
           </button>
           ${tradeResult ? `<div class="mono" style="margin-top:10px;font-size:11px;word-break:break-all;color:${tradeResult.startsWith("✓") ? "var(--green)" : "#ffb4b4"}">${esc(tradeResult)}</div>` : ""}
+        </section>
+
+        <section class="card">
+          <div class="label">Topaz DEX (BSC ve3,3) · positions (${topazPositions.length})</div>
+          ${topazPositions.length === 0
+            ? `<div style="font-size:12px;color:var(--text-dim);padding:8px 0">No open Topaz positions. Open one with the LP form below.</div>`
+            : `<div style="margin-top:8px">${topazPositions.map(p => `
+                <div class="pos-row">
+                  <div>
+                    <div class="sym">${p.positionType === 'v3-nft' ? `v3 NFT #${esc(p.tokenId)}` : `v2 LP ${p.stable ? 'stable' : 'volatile'}`} <span class="tag">topaz</span></div>
+                    <div class="addr mono">${esc(p.tokenA || '')}<br>${esc(p.tokenB || '')}</div>
+                  </div>
+                  <div>
+                    <div class="label" style="font-size:9px">Pool / pair</div>
+                    <div class="mono" style="font-size:10px;word-break:break-all">${esc(p.poolAddress)}</div>
+                  </div>
+                  <div>
+                    <div class="label" style="font-size:9px">${p.positionType === 'v3-nft' ? 'liquidity' : 'LP amount'}</div>
+                    <div class="mono">${esc(p.lpAmount || p.liquidity || '—')}</div>
+                  </div>
+                  <button class="red small" data-topaz-close="${esc(p.positionType === 'v3-nft' ? p.tokenId : p.poolAddress)}" ${topazCloseBusy === (p.positionType === 'v3-nft' ? p.tokenId : p.poolAddress) ? "disabled" : ""}>
+                    ${topazCloseBusy === (p.positionType === 'v3-nft' ? p.tokenId : p.poolAddress) ? "Closing…" : "CLOSE"}
+                  </button>
+                </div>`).join("")}</div>`}
+          ${topazResult ? `<div class="mono" style="margin-top:10px;font-size:11px;word-break:break-all;color:${topazResult.startsWith("✓") ? "var(--green)" : "#ffb4b4"}">${esc(topazResult)}</div>` : ""}
+        </section>
+
+        <section class="card">
+          <div class="label">Manual swap · Topaz</div>
+          <div style="font-size:11px;color:var(--text-dim);margin:4px 0 10px">Pre-filled: USDT → WBNB. Auto-detects volatile/stable pool unless forced below.</div>
+          <label class="field">Token IN
+            <input type="text" id="tz-tin" class="mono" value="${esc(topazSwap.tokenIn)}" placeholder="0x…" />
+          </label>
+          <label class="field" style="margin-top:8px">Token OUT
+            <input type="text" id="tz-tout" class="mono" value="${esc(topazSwap.tokenOut)}" placeholder="0x…" />
+          </label>
+          <div class="grid2" style="margin-top:8px">
+            <label class="field">Amount IN (decimal)
+              <input type="text" id="tz-amt" class="mono" value="${esc(topazSwap.amountIn)}" placeholder="10" />
+            </label>
+            <label class="field">Slippage (%)
+              <input type="text" id="tz-slip" class="mono" value="${esc(topazSwap.slippage)}" placeholder="1" />
+            </label>
+          </div>
+          <label class="field" style="margin-top:8px">Pool type
+            <select id="tz-stable" class="mono">
+              <option value=""      ${topazSwap.stable === ""      ? "selected" : ""}>auto (try volatile then stable)</option>
+              <option value="false" ${topazSwap.stable === "false" ? "selected" : ""}>force volatile (xy=k)</option>
+              <option value="true"  ${topazSwap.stable === "true"  ? "selected" : ""}>force stable (x³y+xy³)</option>
+            </select>
+          </label>
+          <button class="primary" id="tz-send-swap" style="margin-top:12px;width:100%" ${topazBusy ? "disabled" : ""}>
+            ${topazBusy ? "Sending…" : "Send Topaz SWAP"}
+          </button>
+        </section>
+
+        <section class="card">
+          <div class="label">Open LP position · Topaz v2</div>
+          <div style="font-size:11px;color:var(--text-dim);margin:4px 0 10px">Provides liquidity 50/50 and auto-stakes the minted LP in the pool's gauge (if one exists) to earn TOPAZ emissions + trading fees.</div>
+          <label class="field">Token A
+            <input type="text" id="tz-lp-ta" class="mono" value="${esc(topazLp.tokenA)}" placeholder="0x…" />
+          </label>
+          <label class="field" style="margin-top:8px">Token B
+            <input type="text" id="tz-lp-tb" class="mono" value="${esc(topazLp.tokenB)}" placeholder="0x…" />
+          </label>
+          <div class="grid2" style="margin-top:8px">
+            <label class="field">Amount A (decimal)
+              <input type="text" id="tz-lp-amta" class="mono" value="${esc(topazLp.amountA)}" placeholder="10" />
+            </label>
+            <label class="field">Amount B (decimal)
+              <input type="text" id="tz-lp-amtb" class="mono" value="${esc(topazLp.amountB)}" placeholder="0.05" />
+            </label>
+          </div>
+          <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-dim);margin-top:10px">
+            <input type="checkbox" id="tz-lp-stable" ${topazLp.stable ? "checked" : ""} style="width:auto;margin:0" />
+            Stable pool (x³y+xy³ — same-class assets like USDT/USDC)
+          </label>
+          <button class="primary" id="tz-send-lp" style="margin-top:12px;width:100%" ${topazBusy ? "disabled" : ""}>
+            ${topazBusy ? "Sending…" : "Open Topaz LP"}
+          </button>
         </section>
 
         <section class="card">
@@ -508,6 +666,27 @@
 
     document.querySelectorAll("[data-close]").forEach(b => {
       b.onclick = () => closePosition(b.dataset.close, b.dataset.sym);
+    });
+
+    // Topaz handlers
+    const tzTin  = $("tz-tin");  if (tzTin)  tzTin.oninput  = () => { topazSwap.tokenIn  = tzTin.value;  };
+    const tzTout = $("tz-tout"); if (tzTout) tzTout.oninput = () => { topazSwap.tokenOut = tzTout.value; };
+    const tzAmt  = $("tz-amt");  if (tzAmt)  tzAmt.oninput  = () => { topazSwap.amountIn = tzAmt.value;  };
+    const tzSlip = $("tz-slip"); if (tzSlip) tzSlip.oninput = () => { topazSwap.slippage = tzSlip.value; };
+    const tzSt   = $("tz-stable"); if (tzSt) tzSt.onchange  = () => { topazSwap.stable   = tzSt.value;   };
+    const tzSendSwap = $("tz-send-swap"); if (tzSendSwap) tzSendSwap.onclick = sendTopazSwap;
+    const tzLpTa = $("tz-lp-ta");  if (tzLpTa) tzLpTa.oninput = () => { topazLp.tokenA  = tzLpTa.value; };
+    const tzLpTb = $("tz-lp-tb");  if (tzLpTb) tzLpTb.oninput = () => { topazLp.tokenB  = tzLpTb.value; };
+    const tzLpA  = $("tz-lp-amta"); if (tzLpA) tzLpA.oninput  = () => { topazLp.amountA = tzLpA.value; };
+    const tzLpB  = $("tz-lp-amtb"); if (tzLpB) tzLpB.oninput  = () => { topazLp.amountB = tzLpB.value; };
+    const tzLpSt = $("tz-lp-stable"); if (tzLpSt) tzLpSt.onchange = () => { topazLp.stable = tzLpSt.checked; };
+    const tzSendLp = $("tz-send-lp"); if (tzSendLp) tzSendLp.onclick = sendTopazLp;
+    document.querySelectorAll("[data-topaz-close]").forEach(b => {
+      b.onclick = () => {
+        const key = b.dataset.topazClose;
+        const p = topazPositions.find(x => (x.positionType === 'v3-nft' ? x.tokenId : x.poolAddress) === key);
+        if (p) closeTopazPosition(p);
+      };
     });
 
     const ti = $("track-input");

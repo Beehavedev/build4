@@ -16,6 +16,24 @@
 
 import { ethers } from 'ethers'
 
+// ─── BSC mainnet canonical addresses (from topazdex/agent-skill SKILL.md) ─
+// These are baked in so the integration works out of the box. Env vars
+// still take precedence — set TOPAZ_<NAME> to override any of these.
+const BSC_DEFAULTS = {
+  TOPAZ_ROUTER:        '0x1E98c8226e7d452e1888e3d3d2F929346321c6c3',
+  TOPAZ_NPM:           '0xf8c30c3C362941C23025f2eA30B066A73C982f63',
+  TOPAZ_VOTER:         '0x2F80F810a114223AC69E34E84E735CaD515dAD67',
+  TOPAZ_MIXED_QUOTER:  '0x47c3570b90e7234FE695Ad5F1bE69E21fe1a9ee2',
+  TOPAZ_TOKEN:         '0xdf002282C1474C9592780618Adda7EaA99998Abd',
+  TOPAZ_USDT_TOKEN:    '0x55d398326f99059fF775485246999027B3197955',
+  TOPAZ_USDC_TOKEN:    '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d',
+  TOPAZ_WBNB:          '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c',
+} as const
+const SUBGRAPH_DEFAULTS = {
+  TOPAZ_SUBGRAPH_V2_URL: 'https://api.goldsky.com/api/public/project_cmgzljqwl006c5np2gnao4li4/subgraphs/topaz-v2/v0.0.3/gn',
+  TOPAZ_SUBGRAPH_V3_URL: 'https://api.goldsky.com/api/public/project_cmgzljqwl006c5np2gnao4li4/subgraphs/topaz-v3/v0.0.1/gn',
+} as const
+
 export interface TopazConfig {
   enabled: boolean
   // CSV of Agent.id values explicitly allow-listed for Topaz dispatch.
@@ -63,16 +81,25 @@ export interface TopazConfig {
   usdcToken: string | null
 }
 
-function pickAddress(envName: string): string | null {
+function pickAddress(envName: keyof typeof BSC_DEFAULTS | string): string | null {
   const raw = (process.env[envName] ?? '').trim()
-  if (!raw) return null
-  if (!ethers.isAddress(raw)) {
-    throw new Error(
-      `[topaz] env ${envName}=${raw} is not a valid EVM address. ` +
-        `Set it to the BSC mainnet contract address from the topazdex/agent-skill repo, or unset it entirely.`,
-    )
+  if (raw) {
+    if (!ethers.isAddress(raw)) {
+      throw new Error(
+        `[topaz] env ${envName}=${raw} is not a valid EVM address. ` +
+          `Set it to the BSC mainnet contract address from the topazdex/agent-skill repo, or unset it entirely.`,
+      )
+    }
+    return ethers.getAddress(raw)
   }
-  return ethers.getAddress(raw)
+  const fallback = (BSC_DEFAULTS as Record<string, string>)[envName as string]
+  return fallback ? ethers.getAddress(fallback) : null
+}
+
+function pickUrl(envName: keyof typeof SUBGRAPH_DEFAULTS): string | null {
+  const raw = (process.env[envName] ?? '').trim()
+  if (raw) return raw
+  return SUBGRAPH_DEFAULTS[envName] ?? null
 }
 
 function parseCsvSet(envName: string): ReadonlySet<string> {
@@ -104,8 +131,8 @@ export function getTopazConfig(): TopazConfig {
     voter:         pickAddress('TOPAZ_VOTER'),
     mixedQuoter:   pickAddress('TOPAZ_MIXED_QUOTER'),
     topazToken:    pickAddress('TOPAZ_TOKEN'),
-    subgraphV2Url: (process.env.TOPAZ_SUBGRAPH_V2_URL ?? '').trim() || null,
-    subgraphV3Url: (process.env.TOPAZ_SUBGRAPH_V3_URL ?? '').trim() || null,
+    subgraphV2Url: pickUrl('TOPAZ_SUBGRAPH_V2_URL'),
+    subgraphV3Url: pickUrl('TOPAZ_SUBGRAPH_V3_URL'),
     maxTradeUsdt: parsePositiveNumber('TOPAZ_MAX_TRADE_USDT', 50),
     defaultSlippageBps: Math.max(
       10,

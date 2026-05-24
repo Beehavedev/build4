@@ -9345,6 +9345,11 @@ async function main() {
       getHouseWalletAddress,
       getHousePositions,
       trackHouseToken,
+      houseTopazSwap,
+      houseTopazOpenLpV2,
+      houseTopazCloseLpV2,
+      houseTopazCloseV3,
+      getHouseTopazPositions,
     } = await import('./services/houseAgent')
 
     app.get('/api/admin/house/state', requireAdmin, async (_req, res) => {
@@ -9427,7 +9432,7 @@ async function main() {
         if (mode !== undefined && !['idle', 'autotrade', 'campaign'].includes(mode)) {
           return res.status(400).json({ ok: false, error: 'invalid mode' })
         }
-        if (dex !== undefined && !['pancake', 'aster', 'hyperliquid', '42'].includes(dex)) {
+        if (dex !== undefined && !['pancake', 'aster', 'hyperliquid', '42', 'topaz'].includes(dex)) {
           return res.status(400).json({ ok: false, error: 'invalid dex' })
         }
         const next = await setHouseConfig({ enabled, mode, dex, campaignId, config })
@@ -9479,6 +9484,62 @@ async function main() {
       } catch (err: any) {
         res.status(500).json({ ok: false, error: err?.message || String(err) })
       }
+    })
+
+    // ── Topaz DEX (BSC ve(3,3)) ────────────────────────────────────────
+    app.get('/api/admin/house/topaz/positions', requireAdmin, async (_req, res) => {
+      try { res.json({ ok: true, positions: await getHouseTopazPositions() }) }
+      catch (err: any) { res.status(500).json({ ok: false, error: err?.message || String(err) }) }
+    })
+
+    app.post('/api/admin/house/topaz/swap', requireAdmin, async (req, res) => {
+      try {
+        const { tokenIn, tokenOut, amountIn, slippagePct, stable } = req.body ?? {}
+        if (typeof tokenIn !== 'string'  || !/^0x[a-fA-F0-9]{40}$/.test(tokenIn))  return res.status(400).json({ ok: false, error: 'invalid tokenIn' })
+        if (typeof tokenOut !== 'string' || !/^0x[a-fA-F0-9]{40}$/.test(tokenOut)) return res.status(400).json({ ok: false, error: 'invalid tokenOut' })
+        if (typeof amountIn !== 'string' || !/^\d+(\.\d+)?$/.test(amountIn))       return res.status(400).json({ ok: false, error: 'invalid amountIn (decimal string)' })
+        const r = await houseTopazSwap({
+          tokenIn, tokenOut, amountIn,
+          slippagePct: typeof slippagePct === 'number' ? slippagePct : undefined,
+          stable:      typeof stable === 'boolean' ? stable : undefined,
+        })
+        res.json(r)
+      } catch (err: any) { res.status(500).json({ ok: false, error: err?.message || String(err) }) }
+    })
+
+    app.post('/api/admin/house/topaz/lp', requireAdmin, async (req, res) => {
+      try {
+        const { tokenA, tokenB, stable, amountADesired, amountBDesired } = req.body ?? {}
+        if (typeof tokenA !== 'string' || !/^0x[a-fA-F0-9]{40}$/.test(tokenA)) return res.status(400).json({ ok: false, error: 'invalid tokenA' })
+        if (typeof tokenB !== 'string' || !/^0x[a-fA-F0-9]{40}$/.test(tokenB)) return res.status(400).json({ ok: false, error: 'invalid tokenB' })
+        if (typeof stable !== 'boolean') return res.status(400).json({ ok: false, error: 'stable must be boolean' })
+        if (typeof amountADesired !== 'string' || !/^\d+(\.\d+)?$/.test(amountADesired)) return res.status(400).json({ ok: false, error: 'invalid amountADesired' })
+        if (typeof amountBDesired !== 'string' || !/^\d+(\.\d+)?$/.test(amountBDesired)) return res.status(400).json({ ok: false, error: 'invalid amountBDesired' })
+        const r = await houseTopazOpenLpV2({ tokenA, tokenB, stable, amountADesired, amountBDesired })
+        res.json(r)
+      } catch (err: any) { res.status(500).json({ ok: false, error: err?.message || String(err) }) }
+    })
+
+    app.post('/api/admin/house/topaz/close', requireAdmin, async (req, res) => {
+      try {
+        const { positionType } = req.body ?? {}
+        if (positionType === 'v2-lp') {
+          const { tokenA, tokenB, stable, pair, gauge } = req.body ?? {}
+          if (typeof tokenA !== 'string' || !/^0x[a-fA-F0-9]{40}$/.test(tokenA)) return res.status(400).json({ ok: false, error: 'invalid tokenA' })
+          if (typeof tokenB !== 'string' || !/^0x[a-fA-F0-9]{40}$/.test(tokenB)) return res.status(400).json({ ok: false, error: 'invalid tokenB' })
+          if (typeof pair !== 'string'   || !/^0x[a-fA-F0-9]{40}$/.test(pair))   return res.status(400).json({ ok: false, error: 'invalid pair' })
+          if (typeof stable !== 'boolean') return res.status(400).json({ ok: false, error: 'stable must be boolean' })
+          const r = await houseTopazCloseLpV2({ tokenA, tokenB, stable, pair, gauge: typeof gauge === 'string' ? gauge : null })
+          res.json(r)
+        } else if (positionType === 'v3-nft') {
+          const { tokenId } = req.body ?? {}
+          if (typeof tokenId !== 'string' || !/^\d+$/.test(tokenId)) return res.status(400).json({ ok: false, error: 'invalid tokenId' })
+          const r = await houseTopazCloseV3(tokenId)
+          res.json(r)
+        } else {
+          res.status(400).json({ ok: false, error: 'positionType must be v2-lp or v3-nft' })
+        }
+      } catch (err: any) { res.status(500).json({ ok: false, error: err?.message || String(err) }) }
     })
 
     app.get('/api/admin/house/feed', requireAdmin, async (req, res) => {
