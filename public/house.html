@@ -23,7 +23,7 @@
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     font-size: 14px; min-height: 100vh;
   }
-  .wrap { max-width: 720px; margin: 0 auto; padding: 20px 16px 48px; }
+  .wrap { max-width: 820px; margin: 0 auto; padding: 20px 16px 48px; }
   h1 { font-size: 22px; margin: 4px 0 18px; font-weight: 700; }
   .card {
     background: var(--bg-card); border: 1px solid var(--border);
@@ -38,6 +38,7 @@
   .mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
   .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   .grid2-stack { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
   button {
     border: none; border-radius: 8px; cursor: pointer; font-weight: 600;
     font-size: 13px; padding: 10px 14px;
@@ -49,6 +50,7 @@
   button.green   { background: var(--green); color: #fff; }
   button.red     { background: var(--red); color: #fff; }
   button.gray    { background: #5a5a5a; color: #fff; }
+  button.small   { padding: 6px 10px; font-size: 12px; }
   button.choice {
     text-align: left; padding: 10px 12px;
     border: 1px solid var(--border); background: transparent;
@@ -74,11 +76,31 @@
     letter-spacing: 0.5px; font-weight: 600;
   }
   .tag.purple { background: rgba(118,69,217,0.18); color: #c2a3ff; border-color: rgba(118,69,217,0.4); }
+  .tag.green  { background: rgba(28,180,106,0.18); color: #7ee0a8; border-color: rgba(28,180,106,0.4); }
+  .tag.red    { background: rgba(208,78,78,0.18); color: #ffb4b4; border-color: rgba(208,78,78,0.4); }
   .feed-row {
     padding: 8px; border-radius: 6px; background: var(--bg-elev);
     border: 1px solid var(--border); font-size: 11px; margin-bottom: 6px;
   }
   .feed-meta { display: flex; gap: 8px; align-items: center; margin-bottom: 4px; }
+  .pos-row {
+    display: grid; grid-template-columns: 1.4fr 1.2fr 1fr auto;
+    gap: 8px; align-items: center;
+    padding: 10px; border-radius: 8px;
+    background: var(--bg-elev); border: 1px solid var(--border);
+    margin-bottom: 6px; font-size: 12px;
+  }
+  .pos-row .sym { font-weight: 700; font-size: 13px; }
+  .pos-row .addr { font-size: 10px; color: var(--text-dim); }
+  .stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; }
+  .stat { background: var(--bg-elev); border: 1px solid var(--border); border-radius: 8px; padding: 10px; }
+  .stat .v { font-size: 18px; font-weight: 700; margin-top: 2px; }
+  .stat .l { font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; }
+  .venue-tab {
+    padding: 6px 12px; font-size: 12px; border: 1px solid var(--border);
+    border-radius: 6px; background: transparent; cursor: pointer;
+  }
+  .venue-tab.active { background: rgba(118,69,217,0.18); border-color: var(--purple); color: #c2a3ff; }
   .login-wrap {
     min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 16px;
   }
@@ -93,15 +115,21 @@
   const $ = (id) => document.getElementById(id);
   const root = $("root");
 
-  let state = null;       // server state
+  let state = null;
   let feed = [];
+  let positions = [];
+  let bnbBalance = null;
   let walletReady = false;
   let lastErr = null;
   let busy = false;
   let tradeBusy = false;
+  let closeBusyToken = null;
   let tradeResult = null;
   let configDraft = {};
-  let trade = { side: "buy", token: "", amount: "0.01", slippage: "100" };
+  // trade.slippage is in PERCENT (e.g. "1" = 1%)
+  let trade = { side: "buy", token: "", amount: "0.01", slippage: "1", sellAll: false };
+  let trackInput = "";
+  let trackBusy = false;
 
   function getToken() { return localStorage.getItem(TOKEN_KEY) || ""; }
   function setToken(t) {
@@ -127,7 +155,10 @@
   async function refresh() {
     try {
       const r = await api("/api/admin/house/state");
-      state = r.state; feed = r.feed || []; walletReady = !!r.walletReady;
+      state = r.state; feed = r.feed || [];
+      positions = r.positions || [];
+      bnbBalance = r.bnbBalance ?? null;
+      walletReady = !!r.walletReady;
       configDraft = Object.assign({}, state.config || {}, configDraft);
       lastErr = null;
     } catch (e) {
@@ -146,18 +177,37 @@
     finally { busy = false; }
   }
 
+  function fmt(n, max = 6) {
+    if (n == null) return "—";
+    const x = Number(n);
+    if (!isFinite(x)) return String(n);
+    if (x === 0) return "0";
+    if (x < 0.0001) return x.toExponential(2);
+    return x.toLocaleString(undefined, { maximumFractionDigits: max });
+  }
+
   async function sendTrade() {
     tradeBusy = true; tradeResult = null; lastErr = null; render();
     try {
+      const slippagePct = parseFloat(trade.slippage);
+      if (!isFinite(slippagePct) || slippagePct <= 0) throw new Error("Slippage must be a positive number (e.g. 1 for 1%)");
       const body = {
         dex: "pancake",
         side: trade.side,
         tokenAddress: trade.token.trim(),
-        amount: trade.amount.trim(),
-        slippageBps: parseInt(trade.slippage, 10) || 100,
+        slippagePct,
       };
+      if (trade.side === "sell" && trade.sellAll) {
+        body.sellAll = true;
+      } else {
+        body.amount = trade.amount.trim();
+      }
       const r = await api("/api/admin/house/trade", { method: "POST", body: JSON.stringify(body) });
-      tradeResult = "✓ " + trade.side.toUpperCase() + " sent · tx " + r.txHash;
+      const d = r.details || {};
+      const summary = trade.side === "buy"
+        ? `BUY · spent ${d.bnbSpent || trade.amount} BNB`
+        : `SELL · sold ${d.tokensSold || ""} ${d.symbol || ""} → ~${fmt(d.estBnbReceived)} BNB`;
+      tradeResult = "✓ " + summary + "  ·  tx " + r.txHash;
       await refresh();
     } catch (e) {
       tradeResult = "✗ " + (e.message || String(e));
@@ -166,13 +216,30 @@
     }
   }
 
+  async function closePosition(tokenAddress, symbol) {
+    if (!confirm(`Sell ALL ${symbol} for BNB?`)) return;
+    closeBusyToken = tokenAddress; lastErr = null; render();
+    try {
+      const slippagePct = parseFloat(trade.slippage) || 1;
+      const r = await api("/api/admin/house/close", {
+        method: "POST",
+        body: JSON.stringify({ tokenAddress, slippagePct }),
+      });
+      const d = r.details || {};
+      tradeResult = `✓ CLOSED ${symbol} · ~${fmt(d.estBnbReceived)} BNB · tx ${r.txHash}`;
+      await refresh();
+    } catch (e) {
+      tradeResult = "✗ Close failed: " + (e.message || String(e));
+    } finally {
+      closeBusyToken = null; render();
+    }
+  }
+
   function attemptLogin(token) {
     setToken(token);
     state = null; lastErr = null;
     refresh();
   }
-
-  // ---- Rendering -----------------------------------------------------------
 
   const esc = (s) => String(s == null ? "" : s)
     .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
@@ -188,8 +255,7 @@
           ${lastErr ? `<div class="err" style="margin-top:10px">${esc(lastErr)}</div>` : ""}
           <button class="primary" id="login-btn" style="width:100%; margin-top:12px">Unlock</button>
           <div style="font-size:11px;color:var(--text-dim);margin-top:10px;line-height:1.5">
-            Standalone admin panel — no Telegram auth, no user collision.
-            Token is the server's ADMIN_TOKEN secret. Stored in this browser only.
+            Standalone admin panel. Token is the server's ADMIN_TOKEN secret. Stored in this browser only.
           </div>
         </div>
       </div>`;
@@ -209,13 +275,34 @@
     </button>`;
   }
 
+  function positionRow(p) {
+    const busyThis = closeBusyToken === p.tokenAddress;
+    return `<div class="pos-row">
+      <div>
+        <div class="sym">${esc(p.symbol)} <span class="tag">${esc(p.venue)}</span></div>
+        <div class="addr mono">${esc(p.tokenAddress)}</div>
+      </div>
+      <div>
+        <div class="label" style="font-size:9px">Held</div>
+        <div class="mono">${fmt(p.balance)}</div>
+      </div>
+      <div>
+        <div class="label" style="font-size:9px">Est. value</div>
+        <div class="mono">${p.quoteError ? `<span style="color:#ffb4b4">no quote</span>` : `~${fmt(p.estBnbValue)} BNB`}</div>
+      </div>
+      <button class="red small" data-close="${esc(p.tokenAddress)}" data-sym="${esc(p.symbol)}" ${busyThis ? "disabled" : ""}>
+        ${busyThis ? "Closing…" : "CLOSE"}
+      </button>
+    </div>`;
+  }
+
   function feedRow(r) {
     return `<div class="feed-row">
       <div class="feed-meta">
         <span class="mono" style="color:var(--text-dim)">${esc(new Date(r.createdAt).toLocaleTimeString())}</span>
         ${r.dex ? `<span class="tag">${esc(r.dex)}</span>` : ""}
         <span class="tag">${esc(r.kind)}</span>
-        ${r.decision ? `<span class="tag purple">${esc(r.decision)}</span>` : ""}
+        ${r.decision ? `<span class="tag ${r.decision === 'FILLED' ? 'green' : r.decision === 'SELL' ? 'red' : 'purple'}">${esc(r.decision)}</span>` : ""}
       </div>
       <div>${esc(r.reasoning)}</div>
       ${r.txHash ? `<div class="mono" style="font-size:10px;color:var(--text-dim);margin-top:4px;word-break:break-all">tx ${esc(r.txHash)}</div>` : ""}
@@ -224,20 +311,19 @@
 
   function panelView() {
     if (!state) {
-      return `<div class="wrap">
-        ${lastErr ? `<div class="err">${esc(lastErr)}</div>` : "Loading…"}
-      </div>`;
+      return `<div class="wrap">${lastErr ? `<div class="err">${esc(lastErr)}</div>` : "Loading…"}</div>`;
     }
     const cfg = configDraft;
-    const numField = (label, key, step) => `
-      <label class="field">${label}
+    const numField = (label, key, step, hint) => `
+      <label class="field">${label}${hint ? ` <span style="color:var(--text-dim);font-size:10px">· ${hint}</span>` : ""}
         <input type="number" step="${step}" data-cfg="${key}"
                value="${cfg[key] == null ? "" : esc(cfg[key])}" class="mono" />
       </label>`;
-    const textField = (label, key) => `
-      <label class="field">${label}
-        <input type="text" data-cfg-str="${key}" value="${esc(cfg[key] || "")}" />
-      </label>`;
+
+    // Pancake-only sell hint
+    const pcsPositions = positions.filter(p => p.venue === 'pancake');
+    const otherVenues = ['aster', 'hyperliquid', '42', 'polymarket'];
+
     return `
       <div class="wrap">
         <div class="between" style="margin-bottom:10px">
@@ -248,18 +334,49 @@
 
         <section class="card">
           <div class="between">
-            <div>
-              <div class="label">Wallet</div>
-              <div class="mono" style="margin-top:2px;word-break:break-all">${esc(state.walletAddress || "—")}</div>
+            <div style="min-width:0;flex:1">
+              <div class="label">Wallet (BSC)</div>
+              <div class="mono" style="margin-top:2px;word-break:break-all;font-size:12px">${esc(state.walletAddress || "—")}</div>
               ${!walletReady ? `<div style="font-size:11px;color:#ffb4b4;margin-top:4px">⚠ HOUSE_AGENT_PRIVATE_KEY not set on server</div>` : ""}
             </div>
             <button id="toggle" class="${state.enabled ? "green" : "gray"}" ${busy || !walletReady ? "disabled" : ""}>
               ${state.enabled ? "ENABLED" : "DISABLED"}
             </button>
           </div>
+          <div class="stat-grid">
+            <div class="stat">
+              <div class="l">BNB balance</div>
+              <div class="v mono">${fmt(bnbBalance, 5)}</div>
+            </div>
+            <div class="stat">
+              <div class="l">Open positions</div>
+              <div class="v mono">${positions.length}</div>
+            </div>
+            <div class="stat">
+              <div class="l">Mode</div>
+              <div class="v" style="font-size:14px;text-transform:uppercase">${esc(state.mode)}</div>
+            </div>
+          </div>
           <div style="margin-top:10px;font-size:11px;color:var(--text-dim)">
             Last tick: ${state.lastTickAt ? esc(new Date(state.lastTickAt).toLocaleString()) : "never"}
             ${state.lastTickStatus ? " · " + esc(state.lastTickStatus) : ""}
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="label">Open positions</div>
+          <div style="margin:8px 0 6px;display:flex;gap:6px;flex-wrap:wrap">
+            <span class="venue-tab active">PancakeSwap (${pcsPositions.length})</span>
+            ${otherVenues.map(v => `<span class="venue-tab" title="not wired yet" style="opacity:.5">${v} (soon)</span>`).join("")}
+          </div>
+          ${pcsPositions.length === 0
+            ? `<div style="font-size:12px;color:var(--text-dim);padding:8px 0">No open Pancake positions tracked. Use "Track token" below if you bought one before the panel existed.</div>`
+            : pcsPositions.map(positionRow).join("")}
+          <div style="display:flex;gap:6px;margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">
+            <input type="text" id="track-input" class="mono" placeholder="0x… token address to track" value="${esc(trackInput)}" />
+            <button class="primary small" id="track-btn" ${trackBusy || !trackInput ? "disabled" : ""}>
+              ${trackBusy ? "…" : "Track"}
+            </button>
           </div>
         </section>
 
@@ -285,12 +402,10 @@
         <section class="card">
           <div class="label">Trading config</div>
           <div class="grid2" style="margin-top:8px">
-            ${numField("Size (BNB)", "sizeBnb", "0.001")}
-            ${numField("Slippage (bps)", "slippageBps", "10")}
-            ${numField("Drawdown cap (%)", "drawdownCapPct", "1")}
+            ${numField("Size (BNB)", "sizeBnb", "0.001", "default trade size")}
+            ${numField("Slippage (bps)", "slippageBps", "10", "stored as bps · 100 = 1%")}
             ${numField("Max open positions", "maxOpenPositions", "1")}
             ${numField("Max trades / hour", "maxTradesPerHour", "1")}
-            ${textField("Persona", "persona")}
           </div>
           <button class="primary" id="save-cfg" style="margin-top:12px" ${busy ? "disabled" : ""}>Save config</button>
         </section>
@@ -304,16 +419,28 @@
           <label class="field">Token address (0x…)
             <input type="text" id="tr-token" class="mono" value="${esc(trade.token)}" placeholder="0x…" />
           </label>
+          ${trade.side === "sell" ? `
+            <div style="margin-top:8px">
+              <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-dim)">
+                <input type="checkbox" id="tr-sellall" ${trade.sellAll ? "checked" : ""} style="width:auto;margin:0" />
+                Sell ALL my balance of this token
+              </label>
+            </div>
+          ` : ""}
           <div class="grid2" style="margin-top:8px">
-            <label class="field">${trade.side === "buy" ? "BNB amount" : "Token wei amount"}
-              <input type="text" id="tr-amount" class="mono" value="${esc(trade.amount)}" />
+            <label class="field">${trade.side === "buy" ? "BNB to spend" : "Token amount"}
+              <input type="text" id="tr-amount" class="mono"
+                     value="${esc(trade.amount)}"
+                     placeholder="${trade.side === "buy" ? "0.05" : "1234.5"}"
+                     ${trade.side === "sell" && trade.sellAll ? "disabled" : ""} />
             </label>
-            <label class="field">Slippage (bps)
-              <input type="text" id="tr-slip" class="mono" value="${esc(trade.slippage)}" />
+            <label class="field">Slippage (%)
+              <input type="text" id="tr-slip" class="mono" value="${esc(trade.slippage)}" placeholder="1" />
             </label>
           </div>
           <button class="${trade.side === "buy" ? "green" : "red"}" id="send-trade"
-                  style="margin-top:12px;width:100%" ${tradeBusy || !trade.token || !trade.amount ? "disabled" : ""}>
+                  style="margin-top:12px;width:100%"
+                  ${tradeBusy || !trade.token || (trade.side === "buy" && !trade.amount) || (trade.side === "sell" && !trade.sellAll && !trade.amount) ? "disabled" : ""}>
             ${tradeBusy ? "Sending…" : "Send " + trade.side.toUpperCase()}
           </button>
           ${tradeResult ? `<div class="mono" style="margin-top:10px;font-size:11px;word-break:break-all;color:${tradeResult.startsWith("✓") ? "var(--green)" : "#ffb4b4"}">${esc(tradeResult)}</div>` : ""}
@@ -322,7 +449,7 @@
         <section class="card">
           <div class="label">Brain feed · last ${feed.length}</div>
           ${feed.length === 0
-            ? `<div style="font-size:12px;color:var(--text-dim);margin-top:8px">No activity yet. Enable + send a trade to populate.</div>`
+            ? `<div style="font-size:12px;color:var(--text-dim);margin-top:8px">No activity yet.</div>`
             : `<div style="margin-top:8px">${feed.map(feedRow).join("")}</div>`}
         </section>
       </div>`;
@@ -339,7 +466,6 @@
     }
     root.innerHTML = panelView();
 
-    // Wire panel handlers
     const logout = $("logout"); if (logout) logout.onclick = () => { setToken(""); render(); };
     const tgl = $("toggle"); if (tgl) tgl.onclick = () => patch({ enabled: !state.enabled });
 
@@ -356,27 +482,58 @@
         configDraft[inp.dataset.cfg] = v === "" ? undefined : Number(v);
       };
     });
-    document.querySelectorAll("[data-cfg-str]").forEach(inp => {
-      inp.oninput = () => { configDraft[inp.dataset.cfgStr] = inp.value; };
-    });
     const save = $("save-cfg"); if (save) save.onclick = () => patch({ config: configDraft });
 
     document.querySelectorAll("[data-side]").forEach(b => {
-      b.onclick = () => { trade.side = b.dataset.side; render(); };
+      b.onclick = () => {
+        trade.side = b.dataset.side;
+        if (trade.side === "buy") { trade.sellAll = false; trade.amount = trade.amount || "0.01"; }
+        render();
+      };
     });
+    const sa = $("tr-sellall");
+    if (sa) sa.onchange = () => { trade.sellAll = sa.checked; render(); };
+
     const tt = $("tr-token"); if (tt) tt.oninput = () => { trade.token = tt.value; updateTradeBtn(); };
     const ta = $("tr-amount"); if (ta) ta.oninput = () => { trade.amount = ta.value; updateTradeBtn(); };
     const ts = $("tr-slip"); if (ts) ts.oninput = () => { trade.slippage = ts.value; };
     const sb = $("send-trade"); if (sb) sb.onclick = sendTrade;
+
+    document.querySelectorAll("[data-close]").forEach(b => {
+      b.onclick = () => closePosition(b.dataset.close, b.dataset.sym);
+    });
+
+    const ti = $("track-input");
+    if (ti) ti.oninput = () => {
+      trackInput = ti.value;
+      const tb = $("track-btn"); if (tb) tb.disabled = trackBusy || !trackInput;
+    };
+    const tb = $("track-btn");
+    if (tb) tb.onclick = async () => {
+      if (!trackInput) return;
+      trackBusy = true; render();
+      try {
+        await api("/api/admin/house/track", { method: "POST", body: JSON.stringify({ tokenAddress: trackInput.trim() }) });
+        trackInput = "";
+        await refresh();
+      } catch (e) {
+        lastErr = e.message || String(e);
+      } finally {
+        trackBusy = false; render();
+      }
+    };
   }
 
   function updateTradeBtn() {
     const b = $("send-trade");
     if (!b) return;
-    b.disabled = tradeBusy || !trade.token || !trade.amount;
+    const ok = trade.token && (
+      (trade.side === "buy" && trade.amount) ||
+      (trade.side === "sell" && (trade.sellAll || trade.amount))
+    );
+    b.disabled = tradeBusy || !ok;
   }
 
-  // ---- Init ----------------------------------------------------------------
   render();
   if (getToken()) refresh();
   setInterval(() => { if (getToken() && state) refresh(); }, 5000);

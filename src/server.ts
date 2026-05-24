@@ -9343,6 +9343,8 @@ async function main() {
       houseManualTrade,
       getHouseBrainFeed,
       getHouseWalletAddress,
+      getHousePositions,
+      trackHouseToken,
     } = await import('./services/houseAgent')
 
     app.get('/api/admin/house/state', requireAdmin, async (_req, res) => {
@@ -9353,7 +9355,56 @@ async function main() {
         if (!walletAddress) {
           try { walletAddress = getHouseWalletAddress(); walletReady = true } catch { walletReady = false }
         }
-        res.json({ ok: true, state: { ...state, walletAddress }, walletReady, feed })
+        let positions: any[] = []
+        try { if (walletReady) positions = await getHousePositions() } catch (e: any) {
+          console.warn('[house/state] positions failed:', e?.message)
+        }
+        // BNB balance of house wallet for convenience
+        let bnbBalance: string | null = null
+        if (walletReady && walletAddress) {
+          try {
+            const { buildBscProvider } = await import('./services/bscProvider')
+            const { ethers } = await import('ethers')
+            const bal = await buildBscProvider(process.env.BSC_RPC_URL).getBalance(walletAddress)
+            bnbBalance = ethers.formatEther(bal)
+          } catch {}
+        }
+        res.json({ ok: true, state: { ...state, walletAddress }, walletReady, bnbBalance, positions, feed })
+      } catch (err: any) {
+        res.status(500).json({ ok: false, error: err?.message || String(err) })
+      }
+    })
+
+    app.get('/api/admin/house/positions', requireAdmin, async (_req, res) => {
+      try { res.json({ ok: true, positions: await getHousePositions() }) }
+      catch (err: any) { res.status(500).json({ ok: false, error: err?.message || String(err) }) }
+    })
+
+    app.post('/api/admin/house/track', requireAdmin, async (req, res) => {
+      try {
+        const { tokenAddress } = req.body ?? {}
+        if (typeof tokenAddress !== 'string' || !/^0x[a-fA-F0-9]{40}$/.test(tokenAddress)) {
+          return res.status(400).json({ ok: false, error: 'invalid tokenAddress' })
+        }
+        await trackHouseToken(tokenAddress)
+        res.json({ ok: true, positions: await getHousePositions() })
+      } catch (err: any) {
+        res.status(500).json({ ok: false, error: err?.message || String(err) })
+      }
+    })
+
+    app.post('/api/admin/house/close', requireAdmin, async (req, res) => {
+      try {
+        const { tokenAddress, slippagePct, slippageBps } = req.body ?? {}
+        if (typeof tokenAddress !== 'string' || !/^0x[a-fA-F0-9]{40}$/.test(tokenAddress)) {
+          return res.status(400).json({ ok: false, error: 'invalid tokenAddress' })
+        }
+        const r = await houseManualTrade({
+          dex: 'pancake', side: 'sell', tokenAddress, sellAll: true,
+          slippagePct: typeof slippagePct === 'number' ? slippagePct : undefined,
+          slippageBps: typeof slippageBps === 'number' ? slippageBps : undefined,
+        })
+        res.json(r)
       } catch (err: any) {
         res.status(500).json({ ok: false, error: err?.message || String(err) })
       }
@@ -9398,22 +9449,21 @@ async function main() {
 
     app.post('/api/admin/house/trade', requireAdmin, async (req, res) => {
       try {
-        const { dex, side, tokenAddress, amount, slippageBps } = req.body ?? {}
+        const { dex, side, tokenAddress, amount, sellAll, slippagePct, slippageBps } = req.body ?? {}
         if (dex !== 'pancake') return res.status(400).json({ ok: false, error: `dex '${dex}' not wired` })
         if (!['buy', 'sell'].includes(side)) return res.status(400).json({ ok: false, error: 'invalid side' })
         if (typeof tokenAddress !== 'string' || !/^0x[a-fA-F0-9]{40}$/.test(tokenAddress)) {
           return res.status(400).json({ ok: false, error: 'invalid tokenAddress' })
         }
-        if (typeof amount !== 'string' || !/^\d+(\.\d+)?$/.test(amount)) {
+        if (amount !== undefined && (typeof amount !== 'string' || !/^\d+(\.\d+)?$/.test(amount))) {
           return res.status(400).json({ ok: false, error: 'amount must be a positive decimal string' })
         }
-        if (slippageBps !== undefined) {
-          if (typeof slippageBps !== 'number' || !Number.isFinite(slippageBps)
-              || !Number.isInteger(slippageBps) || slippageBps < 1 || slippageBps > 2000) {
-            return res.status(400).json({ ok: false, error: 'slippageBps must be integer 1..2000' })
-          }
-        }
-        const r = await houseManualTrade({ dex, side, tokenAddress, amount, slippageBps })
+        const r = await houseManualTrade({
+          dex, side, tokenAddress, amount,
+          sellAll: side === 'sell' ? !!sellAll : undefined,
+          slippagePct: typeof slippagePct === 'number' ? slippagePct : undefined,
+          slippageBps: typeof slippageBps === 'number' ? slippageBps : undefined,
+        })
         res.json(r)
       } catch (err: any) {
         res.status(500).json({ ok: false, error: err?.message || String(err) })
