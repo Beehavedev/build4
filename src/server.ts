@@ -9542,6 +9542,16 @@ async function main() {
       } catch (err: any) { res.status(500).json({ ok: false, error: err?.message || String(err) }) }
     })
 
+    // Manual house Topaz brain tick (admin escape hatch — bypasses
+    // the 5-min interval so the operator can poke it on demand).
+    app.post('/api/admin/house/topaz/tick', requireAdmin, async (_req, res) => {
+      try {
+        const { tickHouseTopaz } = await import('./agents/houseTopazBrain')
+        const r = await tickHouseTopaz({ force: true })
+        res.json({ ok: true, ...r })
+      } catch (err: any) { res.status(500).json({ ok: false, error: err?.message || String(err) }) }
+    })
+
     app.get('/api/admin/house/feed', requireAdmin, async (req, res) => {
       try {
         const limit = parseInt(String(req.query.limit ?? '50'), 10) || 50

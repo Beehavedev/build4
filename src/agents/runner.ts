@@ -287,6 +287,34 @@ export function initRunner(bot: Bot) {
   // The agent itself enforces MIN_TICK_INTERVAL_MS, so this is idempotent.
   cron.schedule('*/5 * * * *', () => { void tickTopaz() }, { timezone: 'UTC' })
 
+  // ── House Topaz brain ─────────────────────────────────────────────────
+  // Autonomous Topaz brain for the singleton HOUSE wallet. Gated on
+  // HouseAgent.{enabled, mode='autotrade', dex='topaz'} — short-circuits
+  // cleanly when off, so the cron is safe to leave armed unconditionally.
+  // Same three-layer pattern as agent-side Topaz: 15s boot catch-up +
+  // 5min setInterval + */5 cron watchdog. MIN_TICK_INTERVAL_MS inside
+  // the brain makes overlapping fires idempotent (plus an in-process
+  // single-flight inflight guard).
+  const tickHouseTopazWrapped = async () => {
+    try {
+      const { tickHouseTopaz } = await import('./houseTopazBrain')
+      const r = await tickHouseTopaz()
+      if (r.ticked && r.reason !== 'min_interval') {
+        console.log(
+          `[houseTopazBrain] ticked=${r.ticked} ` +
+            `reason=${r.reason ?? '-'} ` +
+            `action=${r.decision?.action ?? '-'} ` +
+            `exec=${r.execution ?? '-'}`,
+        )
+      }
+    } catch (err) {
+      console.error('[houseTopazBrain] tick failed:', (err as Error).message)
+    }
+  }
+  setTimeout(tickHouseTopazWrapped, 20_000)
+  setInterval(tickHouseTopazWrapped, 300_000)
+  cron.schedule('*/5 * * * *', () => { void tickHouseTopazWrapped() }, { timezone: 'UTC' })
+
   // Module 4 — auto-expire stale launch approval requests. The agent's
   // pending-dedup gate refuses to propose new launches while any
   // pending_user_approval row sits open. Without a sweeper, an owner
