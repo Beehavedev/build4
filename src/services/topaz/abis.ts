@@ -50,6 +50,16 @@ export const ERC20_ABI = [
 // router — for mixed routes, quote via MixedRouteQuoterV1 and execute
 // via the v3 SwapRouter (separate ABI, deferred to Phase 2 until we
 // need it).
+// WBNB (canonical wrapped BNB on BSC) — supports `deposit()` payable to
+// wrap native BNB → WBNB, and `withdraw(uint256)` to unwrap. We need
+// these so the brain can auto-wrap on demand and the user only ever has
+// to fund the wallet with native BNB.
+export const WBNB_ABI = [
+  'function deposit() payable',
+  'function withdraw(uint256 wad)',
+  'function balanceOf(address) view returns (uint256)',
+] as const
+
 export const TOPAZ_ROUTER_ABI = [
   'function getAmountsOut(uint256 amountIn, tuple(address from, address to, bool stable)[] routes) view returns (uint256[] amounts)',
   'function swapExactTokensForTokens(uint256 amountIn, uint256 amountOutMin, tuple(address from, address to, bool stable)[] routes, address to, uint256 deadline) returns (uint256[] amounts)',

@@ -60,14 +60,23 @@ import {
   houseTopazCloseLpV2,
   type HouseTopazPosition,
 } from '../services/houseAgent'
-import { getTopGaugesByApr, getPoolStats, type RankedGauge } from '../services/topazTrading'
-import { ERC20_ABI } from '../services/topaz/abis'
+import {
+  getTopGaugesByApr,
+  getPoolStats,
+  runWithHouseSigner,
+  getMasterSigner,
+  type RankedGauge,
+} from '../services/topazTrading'
+import { ERC20_ABI, WBNB_ABI } from '../services/topaz/abis'
 import { buildBscProvider } from '../services/bscProvider'
 import { getPrice } from '../services/price'
 
 const MIN_TICK_INTERVAL_MS = 5 * 60_000
 const DEFAULT_PER_TRADE_USDT = 25
 const DEFAULT_DAILY_BUDGET_USDT = 100
+// Native BNB reserved on the house wallet for gas — never wrapped, never
+// spent on trades. ~0.01 BNB covers ~30+ Topaz swaps at typical BSC gas.
+const BNB_GAS_RESERVE_WEI = 10_000_000_000_000_000n // 0.01 BNB
 
 export type HouseTopazAction = 'SKIP' | 'SWAP' | 'OPEN_LP' | 'CLOSE_LP'
 
@@ -133,8 +142,20 @@ interface Anchor {
   address: string
   decimals: number
   priceUsd: number          // 1 for stables; live BNB/USD for WBNB
-  balanceWei: bigint        // house wallet balance, raw
-  balanceUsd: number        // balanceWei converted via priceUsd
+  // For USDT/USDC: raw ERC-20 balance. For WBNB: ERC-20 balance ONLY
+  // (not native). Use `spendableWei` below for sizing decisions.
+  balanceWei: bigint
+  // For USDT/USDC: == balanceWei. For WBNB: erc20 balance + (native BNB
+  // balance − gas reserve), so the brain treats native BNB as
+  // automatically-wrappable inventory. The dispatch path calls
+  // ensureWbnbWrapped() to materialize the extra WBNB on-chain just
+  // before the trade, so the user only ever needs to fund native BNB.
+  spendableWei: bigint
+  // USD equivalent of spendableWei via priceUsd.
+  balanceUsd: number
+  // For WBNB only: how much native BNB is available to wrap (already
+  // net of BNB_GAS_RESERVE_WEI). Zero for stables.
+  nativeBnbAvailableWei: bigint
 }
 
 async function buildAnchors(
@@ -169,6 +190,15 @@ async function buildAnchors(
     { sym: 'USDC', addr: cfg.usdcToken, price: 1, trusted: true },
     { sym: 'WBNB', addr: cfg.wbnbToken, price: bnbUsd, trusted: bnbPriceTrusted && bnbUsd > 0 },
   ]
+  // Native BNB balance — fetched once and folded into the WBNB anchor.
+  // We never spend the gas reserve; everything above it is treated as
+  // wrappable inventory (auto-wrapped just-in-time at dispatch).
+  let nativeBnbWei = 0n
+  try { nativeBnbWei = await provider.getBalance(house) } catch { /* leave 0 */ }
+  const nativeBnbSpendableWei = nativeBnbWei > BNB_GAS_RESERVE_WEI
+    ? (nativeBnbWei - BNB_GAS_RESERVE_WEI)
+    : 0n
+
   for (const spec of anchorSpecs) {
     if (!spec.addr || !spec.trusted) continue
     try {
@@ -178,18 +208,55 @@ async function buildAnchors(
         erc.decimals().catch(() => 18) as Promise<bigint | number>,
       ])
       const decimals = Number(decRaw)
-      const human = Number(ethers.formatUnits(balRaw, decimals))
+      const isWbnb = spec.sym === 'WBNB'
+      const extraWei = isWbnb ? nativeBnbSpendableWei : 0n
+      const spendableWei = balRaw + extraWei
+      const human = Number(ethers.formatUnits(spendableWei, decimals))
       out.push({
         symbol: spec.sym,
         address: ethers.getAddress(spec.addr),
         decimals,
         priceUsd: spec.price,
         balanceWei: balRaw,
+        spendableWei,
         balanceUsd: human * spec.price,
+        nativeBnbAvailableWei: extraWei,
       })
     } catch { /* skip this anchor on read failure */ }
   }
   return out
+}
+
+/**
+ * Auto-wrap native BNB → WBNB on demand so the user only ever has to
+ * fund the house wallet with native BNB. Called immediately before a
+ * SWAP / OPEN_LP that uses WBNB as its anchor, and only if the current
+ * WBNB ERC-20 balance is short of what the trade needs. Fail-closed:
+ * if the wrap tx reverts or the post-wrap balance is still short,
+ * throws so the dispatcher logs an exec_failed.
+ */
+async function ensureWbnbWrapped(neededWei: bigint, wbnbAddr: string): Promise<void> {
+  await runWithHouseSigner(async () => {
+    const { signer, address: house } = await getMasterSigner()
+    const wbnb = new ethers.Contract(wbnbAddr, WBNB_ABI, signer)
+    const have = (await wbnb.balanceOf(house)) as bigint
+    if (have >= neededWei) return
+    const shortfallWei = neededWei - have
+    const provider = signer.provider!
+    const nativeBal = await provider.getBalance(house)
+    if (nativeBal < shortfallWei + BNB_GAS_RESERVE_WEI) {
+      throw new Error(
+        `wbnb_wrap_insufficient_native: shortfall=${ethers.formatEther(shortfallWei)} ` +
+        `native=${ethers.formatEther(nativeBal)} (gas reserve ${ethers.formatEther(BNB_GAS_RESERVE_WEI)})`,
+      )
+    }
+    const tx = await wbnb.deposit({ value: shortfallWei })
+    await tx.wait(1)
+    const after = (await wbnb.balanceOf(house)) as bigint
+    if (after < neededWei) {
+      throw new Error(`wbnb_wrap_post_check_failed: have=${ethers.formatEther(after)} need=${ethers.formatEther(neededWei)}`)
+    }
+  })
 }
 
 function findAnchor(anchors: Anchor[], addr: string | null): Anchor | null {
@@ -246,6 +313,8 @@ async function checkGuard(
     if (!decision.tokenIn || !decision.tokenOut) return { ok: false, reason: 'swap_missing_tokens' }
     const anchor = findAnchor(anchors, decision.tokenIn)
     if (!anchor) return { ok: false, reason: 'swap_tokenIn_not_anchor' }
+    // balanceUsd already reflects spendableWei, which for WBNB folds in
+    // wrappable native BNB net of the gas reserve.
     if (anchor.balanceUsd < decision.amountUsdt) {
       return { ok: false, reason: `insufficient_${anchor.symbol}:$${anchor.balanceUsd.toFixed(2)}<$${decision.amountUsdt}` }
     }
@@ -329,7 +398,14 @@ async function tickInner(opts: { force?: boolean }): Promise<{
 
   // ── Prompt ────────────────────────────────────────────────────────────
   const anchorLines = anchors
-    .map((a) => `  - ${a.symbol} ${a.address}  balance=${a.balanceUsd.toFixed(2)}$  px=${a.priceUsd.toFixed(2)}`)
+    .map((a) => {
+      const base = `  - ${a.symbol} ${a.address}  balance=${a.balanceUsd.toFixed(2)}$  px=${a.priceUsd.toFixed(2)}`
+      if (a.symbol === 'WBNB' && a.nativeBnbAvailableWei > 0n) {
+        const wrappable = Number(ethers.formatEther(a.nativeBnbAvailableWei))
+        return base + ` (incl. ${wrappable.toFixed(4)} native BNB — auto-wrapped on demand)`
+      }
+      return base
+    })
     .join('\n')
   const anchorAddrs = anchors.map((a) => a.address).join(',')
 
@@ -414,6 +490,14 @@ async function tickInner(opts: { force?: boolean }): Promise<{
       const anchor = findAnchor(anchors, decision.tokenIn)!  // checkGuard verified
       const amountInHuman = (decision.amountUsdt / anchor.priceUsd)
         .toFixed(Math.min(anchor.decimals, 8))
+      // If anchor is WBNB and ERC-20 balance is short, auto-wrap the
+      // shortfall from native BNB. User funds the wallet with BNB only.
+      if (anchor.symbol === 'WBNB') {
+        const needWei = ethers.parseUnits(amountInHuman, anchor.decimals)
+        if (anchor.balanceWei < needWei) {
+          await ensureWbnbWrapped(needWei, anchor.address)
+        }
+      }
       const r = await houseTopazSwap({
         tokenIn: anchor.address,
         tokenOut: decision.tokenOut!,
@@ -445,10 +529,15 @@ async function tickInner(opts: { force?: boolean }): Promise<{
         halfAnchorHuman.toFixed(Math.min(anchor.decimals, 8)),
         anchor.decimals,
       )
-      if (halfAnchorWei > anchor.balanceWei) {
+      if (halfAnchorWei > anchor.spendableWei) {
         const need = ethers.formatUnits(halfAnchorWei, anchor.decimals)
-        const have = ethers.formatUnits(anchor.balanceWei, anchor.decimals)
+        const have = ethers.formatUnits(anchor.spendableWei, anchor.decimals)
         throw new Error(`open_lp_insufficient_${anchor.symbol}:need=${need} have=${have}`)
+      }
+      // Auto-wrap native BNB → WBNB if the LP anchor side is WBNB and
+      // the ERC-20 balance alone is short of the required half.
+      if (anchor.symbol === 'WBNB' && anchor.balanceWei < halfAnchorWei) {
+        await ensureWbnbWrapped(halfAnchorWei, anchor.address)
       }
       // otherAmt = halfAnchor * otherReserve / anchorReserve (raw units of "other")
       const otherAmtWei = (halfAnchorWei * otherReserve) / anchorReserve
