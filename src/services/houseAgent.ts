@@ -33,7 +33,73 @@ import {
   claimGaugeRewards as topazClaimGaugeRewards,
 } from './topazTrading'
 import { getTopazConfig } from './topaz'
-import { TOPAZ_ROUTER_ABI, ERC20_ABI } from './topaz/abis'
+import { TOPAZ_ROUTER_ABI, ERC20_ABI, WBNB_ABI } from './topaz/abis'
+import { getPrice } from './price'
+
+// ── Anchor helpers (USDT/USDC/WBNB) ────────────────────────────────────
+// Mirrors the brain's anchor concept but in this lower-level wrapper.
+// Used so OPEN_LP can stamp entryUsd into the log and CLOSE_LP can pick
+// the right side to auto-sell into. WBNB price comes from the BNB/USD
+// oracle; stables are pinned 1:1.
+type AnchorSymbol = 'USDT' | 'USDC' | 'WBNB'
+
+interface AnchorInfo { symbol: AnchorSymbol; address: string; priceUsd: number }
+
+function buildAnchorAddrMap(cfg: ReturnType<typeof getTopazConfig>): Record<string, AnchorSymbol> {
+  const m: Record<string, AnchorSymbol> = {}
+  if (cfg.usdtToken) m[cfg.usdtToken.toLowerCase()] = 'USDT'
+  if (cfg.usdcToken) m[cfg.usdcToken.toLowerCase()] = 'USDC'
+  if (cfg.wbnbToken) m[cfg.wbnbToken.toLowerCase()] = 'WBNB'
+  return m
+}
+
+async function getAnchorPriceUsd(sym: AnchorSymbol): Promise<number> {
+  if (sym === 'USDT' || sym === 'USDC') return 1
+  try { const p = await getPrice('BNB'); return p?.price > 0 ? p.price : 0 } catch { return 0 }
+}
+
+/** Identify which side (if any) of a token pair is an anchor. */
+async function detectAnchorSide(
+  cfg: ReturnType<typeof getTopazConfig>,
+  tokenA: string,
+  tokenB: string,
+): Promise<{ anchor: AnchorInfo; anchorIsA: boolean; nonAnchorAddr: string } | null> {
+  const map = buildAnchorAddrMap(cfg)
+  const aSym = map[tokenA.toLowerCase()]
+  const bSym = map[tokenB.toLowerCase()]
+  if (aSym) {
+    const px = await getAnchorPriceUsd(aSym)
+    if (!(px > 0)) return null
+    return { anchor: { symbol: aSym, address: ethers.getAddress(tokenA), priceUsd: px }, anchorIsA: true, nonAnchorAddr: ethers.getAddress(tokenB) }
+  }
+  if (bSym) {
+    const px = await getAnchorPriceUsd(bSym)
+    if (!(px > 0)) return null
+    return { anchor: { symbol: bSym, address: ethers.getAddress(tokenB), priceUsd: px }, anchorIsA: false, nonAnchorAddr: ethers.getAddress(tokenA) }
+  }
+  return null
+}
+
+/** Look up the most recent OPEN_LP HouseLog row for a given pair to read entryUsd. */
+async function lookupEntryUsdForPair(pair: string): Promise<number | null> {
+  try {
+    const rows = await db.$queryRawUnsafe<Array<{ entry: string | null }>>(
+      `SELECT (meta->>'entryUsd')::text AS entry
+         FROM "HouseLog"
+        WHERE dex = 'topaz'
+          AND decision IN ('FILLED','OPEN_LP')
+          AND meta ? 'entryUsd'
+          AND LOWER(meta->>'pair') = LOWER($1)
+        ORDER BY "createdAt" DESC
+        LIMIT 1`,
+      pair,
+    )
+    const v = rows[0]?.entry
+    if (!v) return null
+    const n = Number(v)
+    return Number.isFinite(n) && n > 0 ? n : null
+  } catch { return null }
+}
 
 const ERC20_MINI_ABI = [
   'function balanceOf(address) view returns (uint256)',
@@ -519,11 +585,26 @@ export async function houseTopazOpenLpV2(input: HouseTopazOpenLpV2Input): Promis
   const routerCtr = new ethers.Contract(cfg.router, TOPAZ_ROUTER_ABI, provider)
   const pair = (await routerCtr.pairFor(tokenA, tokenB, input.stable)) as string
 
+  // Stamp the USD entry cost so CLOSE_LP can compute realized PnL later.
+  // If one side is an anchor (USDT/USDC/WBNB), entryUsd = anchorAmount × 2
+  // × anchorPrice (LPs enter balanced, so each side equals half the
+  // notional). Non-anchor pools (rare — brain refuses them) get null
+  // and the close path will skip PnL computation rather than guess.
+  const anchorSide = await detectAnchorSide(cfg, tokenA, tokenB)
+  let entryUsd: number | null = null
+  if (anchorSide) {
+    const anchorAmtStr = anchorSide.anchorIsA ? input.amountADesired : input.amountBDesired
+    const anchorAmt = Number(anchorAmtStr)
+    if (Number.isFinite(anchorAmt) && anchorAmt > 0) {
+      entryUsd = Number((anchorAmt * 2 * anchorSide.anchor.priceUsd).toFixed(6))
+    }
+  }
+
   await logHouseBrain({
     dex: 'topaz', kind: 'trade',
     reasoning: `manual OPEN_LP_V2 ${input.amountADesired} ${tokenA.slice(0,10)}… + ${input.amountBDesired} ${tokenB.slice(0,10)}… (${input.stable ? 'stable' : 'volatile'})`,
     decision: 'OPEN_LP',
-    meta: { tokenA, tokenB, stable: input.stable, amountA: input.amountADesired, amountB: input.amountBDesired, pair },
+    meta: { tokenA, tokenB, stable: input.stable, amountA: input.amountADesired, amountB: input.amountBDesired, pair, entryUsd },
   })
 
   return await runWithHouseSigner(async () => {
@@ -567,7 +648,7 @@ export async function houseTopazOpenLpV2(input: HouseTopazOpenLpV2Input): Promis
         tokenA, tokenB, stable: input.stable, pair, positionType: 'v2-lp',
         lpAmount: minted.toString(), staked, stakeTx,
         amountA: input.amountADesired, amountB: input.amountBDesired,
-        topazPosition: true,
+        topazPosition: true, entryUsd,
       },
     })
     return { ok: true, txHash: addR.txHash ?? null, staked, lpAmount: ethers.formatUnits(minted, 18), pair }
@@ -575,9 +656,31 @@ export async function houseTopazOpenLpV2(input: HouseTopazOpenLpV2Input): Promis
 }
 
 /**
- * Close a v2 LP position opened from the house panel. Unstakes from the
- * gauge (if staked), claims any pending TOPAZ emissions, then burns the LP.
- * `pair` + `lpAmount` come from the OPEN_LP HouseLog meta.
+ * Close a v2 LP position opened from the house panel.
+ * Pipeline:
+ *   1. Unstake from gauge (hard-fail if it errors, so we never burn a
+ *      staked LP and silently leave funds locked).
+ *   2. Claim TOPAZ emissions (best-effort; can revert when nothing
+ *      accrued). Captures `topazClaimedWei` via balance delta.
+ *   3. removeLiquidity (slippage-bounded against current reserves).
+ *      Captures `tokenAReceivedWei` / `tokenBReceivedWei` via balance
+ *      delta on the wallet.
+ *   4. Auto-sell the non-anchor leg back into the anchor token via
+ *      Topaz router (3% slippage). E.g. for a CAKE/WBNB LP closed
+ *      against the WBNB anchor, CAKE gets swapped to WBNB so the
+ *      whole position collapses to anchor + emissions.
+ *   5. Auto-sell TOPAZ emissions → WBNB → native BNB (3% slippage,
+ *      then WBNB.withdraw to unwrap). User keeps gains in native BNB
+ *      so the wallet doesn't accumulate volatile reward token.
+ *   6. Compute and log full PnL: proceedsUsd (anchor + emissions),
+ *      entryUsd (looked up from the matching OPEN_LP log on this pair),
+ *      pnlUsd, and a `pnlBreakdown` split into `feesAndIl` vs
+ *      `emissions`.
+ *
+ * Each auto-sell step is wrapped in try/catch — a missing route or
+ * thin liquidity for the non-anchor token / TOPAZ doesn't fail the
+ * whole close; the unsold token just stays in the wallet and the log
+ * records `autoSell*Failed` with the reason.
  */
 export async function houseTopazCloseLpV2(input: {
   tokenA: string; tokenB: string; stable: boolean; pair: string; gauge?: string | null
@@ -585,11 +688,27 @@ export async function houseTopazCloseLpV2(input: {
   const tokenA = ethers.getAddress(input.tokenA)
   const tokenB = ethers.getAddress(input.tokenB)
   const pair = ethers.getAddress(input.pair)
+  const CLOSE_SLIPPAGE_BPS = 300 // 3% — operator-set for closing legs
 
   return await runWithHouseSigner(async () => {
     const { signer, address: house } = await getMasterSigner()
+    const cfg = getTopazConfig()
     let unstakeTx: string | null = null
 
+    // ── Pre-flight snapshots so every subsequent on-chain action can be
+    //    valued via balance deltas (not on-chain quotes the LLM might
+    //    misread). Anchor side is determined from the pool's tokens.
+    const anchorSide = await detectAnchorSide(cfg, tokenA, tokenB)
+    const tokenADec = await readDecimals(signer.provider!, tokenA)
+    const tokenBDec = await readDecimals(signer.provider!, tokenB)
+    const tokenACtr = new ethers.Contract(tokenA, ERC20_ABI, signer)
+    const tokenBCtr = new ethers.Contract(tokenB, ERC20_ABI, signer)
+    const topazAddr = cfg.topazToken
+    const topazCtr  = topazAddr ? new ethers.Contract(topazAddr, ERC20_ABI, signer) : null
+    const topazDec  = topazCtr ? await readDecimals(signer.provider!, topazAddr!) : 18
+
+    // ── 1) Unstake (+ 2) Claim TOPAZ) ─────────────────────────────────────
+    const topazBeforeClaim = topazCtr ? (await topazCtr.balanceOf(house)) as bigint : 0n
     const gauge = input.gauge ?? (await topazResolveGaugeForPool(pair))
     if (gauge) {
       const gaugeCtr = new ethers.Contract(gauge, ['function balanceOf(address) view returns (uint256)'], signer)
@@ -597,36 +716,31 @@ export async function houseTopazCloseLpV2(input: {
       if (staked > 0n) {
         const u = await topazUnstakeFromGauge({ gauge, kind: 'v2', lpAmount: staked })
         if (!u.ok) {
-          // Hard-fail rather than silently returning a "closed" status while
-          // LP is still staked (operator would think funds are out when
-          // they're actually still locked in the gauge). Code-review fix.
           await logHouseBrain({
             dex: 'topaz', kind: 'error',
-            reasoning: `CLOSE_LP_V2 unstake failed — refusing to proceed with burn while LP is still staked: ${u.error}`,
+            reasoning: `CLOSE_LP_V2 unstake failed — refusing to burn while LP still staked: ${u.error}`,
             decision: 'ERROR', meta: { pair, gauge, stakedAmount: staked.toString(), error: u.error },
           })
           throw new Error(u.error ?? 'topaz_unstake_failed')
         }
         unstakeTx = u.txHash ?? null
-        try { await topazClaimGaugeRewards({ gauge, kind: 'v2' }) } catch { /* best effort: claim can fail if no rewards accrued */ }
+        try { await topazClaimGaugeRewards({ gauge, kind: 'v2' }) } catch { /* no rewards accrued — fine */ }
       }
     }
+    const topazAfterClaim = topazCtr ? (await topazCtr.balanceOf(house)) as bigint : 0n
+    const topazClaimedWei = topazAfterClaim > topazBeforeClaim ? topazAfterClaim - topazBeforeClaim : 0n
 
+    // ── 3) removeLiquidity ────────────────────────────────────────────────
     const lpCtr = new ethers.Contract(pair, ERC20_ABI, signer)
     const lpBal = (await lpCtr.balanceOf(house)) as bigint
     if (lpBal <= 0n) {
       await logHouseBrain({
         dex: 'topaz', kind: 'info',
         reasoning: `CLOSE_LP_V2 nothing to burn (LP balance 0)`,
-        meta: { pair, unstakeTx },
+        meta: { pair, unstakeTx, topazClaimedWei: topazClaimedWei.toString() },
       })
       return { ok: true, closeTx: null, unstakeTx }
     }
-    // Compute slippage-bounded minOuts from current reserves so the burn
-    // is not exposed to sandwich attacks (code review found amountAMin=1n
-    // would let an attacker drain the entire exit). Caps slippage at
-    // cfg.maxSlippageBps (default 5% — same ceiling the brain uses).
-    const cfg = getTopazConfig()
     const pairCtr = new ethers.Contract(pair, [
       'function getReserves() view returns (uint256, uint256, uint256)',
       'function totalSupply() view returns (uint256)',
@@ -641,9 +755,13 @@ export async function houseTopazCloseLpV2(input: {
     const slipCap = cfg.maxSlippageBps
     const min0 = expected0 > 0n ? (expected0 * BigInt(10000 - slipCap)) / 10000n : 0n
     const min1 = expected1 > 0n ? (expected1 * BigInt(10000 - slipCap)) / 10000n : 0n
-    const aIsToken0 = ethers.getAddress(tokenA).toLowerCase() === token0.toLowerCase()
+    const aIsToken0 = tokenA.toLowerCase() === token0.toLowerCase()
     const amountAMin = aIsToken0 ? min0 : min1
     const amountBMin = aIsToken0 ? min1 : min0
+
+    const tokenABeforeBurn = (await tokenACtr.balanceOf(house)) as bigint
+    const tokenBBeforeBurn = (await tokenBCtr.balanceOf(house)) as bigint
+
     const rm = await topazRemoveV2Liquidity({
       tokenA, tokenB, stable: input.stable, liquidity: lpBal, amountAMin, amountBMin,
     })
@@ -655,11 +773,151 @@ export async function houseTopazCloseLpV2(input: {
       })
       throw new Error(rm.error ?? 'topaz_remove_v2_liquidity_failed')
     }
+    const tokenAAfterBurn = (await tokenACtr.balanceOf(house)) as bigint
+    const tokenBAfterBurn = (await tokenBCtr.balanceOf(house)) as bigint
+    const tokenAReceivedWei = tokenAAfterBurn - tokenABeforeBurn
+    const tokenBReceivedWei = tokenBAfterBurn - tokenBBeforeBurn
+
+    // ── 4) Auto-sell the non-anchor leg → anchor (3% slippage) ────────────
+    let autoSellLegTx: string | null = null
+    let autoSellLegError: string | null = null
+    let anchorFromLegWei = 0n // raw anchor-token wei received from leg sale
+    if (anchorSide) {
+      const nonAnchorAddr = anchorSide.nonAnchorAddr
+      const nonAnchorReceivedWei = anchorSide.anchorIsA ? tokenBReceivedWei : tokenAReceivedWei
+      const anchorAddr = anchorSide.anchor.address
+      const anchorCtr  = anchorSide.anchorIsA ? tokenACtr : tokenBCtr
+      if (nonAnchorReceivedWei > 0n) {
+        try {
+          const anchorBefore = (await anchorCtr.balanceOf(house)) as bigint
+          const swapR = await topazSwap({
+            tokenIn: nonAnchorAddr,
+            tokenOut: anchorAddr,
+            amountIn: nonAnchorReceivedWei,
+            route: { kind: 'v2', hops: [{ from: nonAnchorAddr, to: anchorAddr, stable: input.stable }] },
+            slippageBps: CLOSE_SLIPPAGE_BPS,
+          })
+          if (!swapR.ok) throw new Error(swapR.error ?? 'auto_sell_leg_swap_failed')
+          autoSellLegTx = swapR.txHash ?? null
+          const anchorAfter = (await anchorCtr.balanceOf(house)) as bigint
+          anchorFromLegWei = anchorAfter > anchorBefore ? anchorAfter - anchorBefore : 0n
+        } catch (e) {
+          autoSellLegError = (e as Error).message.slice(0, 180)
+          // Non-fatal — operator will see autoSellLegError in the log and
+          // the unsold token remains in the wallet for manual handling.
+        }
+      }
+    }
+
+    // ── 5) Auto-sell TOPAZ emissions → WBNB → native BNB (3% slippage) ───
+    let topazSellTx: string | null = null
+    let topazUnwrapTx: string | null = null
+    let topazSellError: string | null = null
+    let wbnbFromTopazWei = 0n
+    if (topazClaimedWei > 0n && topazAddr && cfg.wbnbToken) {
+      const wbnbAddr = cfg.wbnbToken
+      try {
+        const wbnbCtr = new ethers.Contract(wbnbAddr, ERC20_ABI, signer)
+        const wbnbBefore = (await wbnbCtr.balanceOf(house)) as bigint
+        // Try volatile pool first; fall back to stable if volatile route missing.
+        let lastErr: unknown = null
+        for (const stable of [false, true]) {
+          try {
+            const sr = await topazSwap({
+              tokenIn: topazAddr,
+              tokenOut: wbnbAddr,
+              amountIn: topazClaimedWei,
+              route: { kind: 'v2', hops: [{ from: topazAddr, to: wbnbAddr, stable }] },
+              slippageBps: CLOSE_SLIPPAGE_BPS,
+            })
+            if (sr.ok) { topazSellTx = sr.txHash ?? null; lastErr = null; break }
+            lastErr = new Error(sr.error ?? 'topaz_sell_failed')
+          } catch (e) { lastErr = e }
+        }
+        if (lastErr) throw lastErr
+        const wbnbAfter = (await wbnbCtr.balanceOf(house)) as bigint
+        wbnbFromTopazWei = wbnbAfter > wbnbBefore ? wbnbAfter - wbnbBefore : 0n
+        // Unwrap WBNB → native BNB so the user holds BNB, not WBNB.
+        if (wbnbFromTopazWei > 0n) {
+          const wbnbW = new ethers.Contract(wbnbAddr, WBNB_ABI, signer)
+          const tx = await wbnbW.withdraw(wbnbFromTopazWei)
+          const receipt = await tx.wait(1)
+          topazUnwrapTx = receipt?.hash ?? tx.hash ?? null
+        }
+      } catch (e) {
+        topazSellError = (e as Error).message.slice(0, 180)
+        // Non-fatal — TOPAZ stays in the wallet.
+      }
+    }
+
+    // ── 6) Valuation + PnL ────────────────────────────────────────────────
+    const bnbPriceUsd = await getAnchorPriceUsd('WBNB')
+
+    // Anchor-side proceeds = what came straight from the burn on the
+    // anchor side, plus what we received auto-selling the other leg.
+    let anchorProceedsUsd = 0
+    if (anchorSide) {
+      const anchorFromBurnWei = anchorSide.anchorIsA ? tokenAReceivedWei : tokenBReceivedWei
+      const anchorTotalWei = anchorFromBurnWei + anchorFromLegWei
+      const anchorDec = anchorSide.anchorIsA ? tokenADec : tokenBDec
+      const anchorHuman = Number(ethers.formatUnits(anchorTotalWei, anchorDec))
+      anchorProceedsUsd = anchorHuman * anchorSide.anchor.priceUsd
+    }
+    // Emissions valued by actual WBNB received × BNB price (the unwrap
+    // is 1:1, so WBNB amount == BNB amount we now hold).
+    const emissionsBnbHuman = Number(ethers.formatEther(wbnbFromTopazWei))
+    const emissionsUsd = bnbPriceUsd > 0 ? emissionsBnbHuman * bnbPriceUsd : 0
+
+    const proceedsUsd = anchorProceedsUsd + emissionsUsd
+    const entryUsd = await lookupEntryUsdForPair(pair)
+    const pnlUsd = entryUsd != null ? proceedsUsd - entryUsd : null
+    const feesAndIlUsd = entryUsd != null ? anchorProceedsUsd - entryUsd : null
+
+    const pnlStr = pnlUsd != null
+      ? `${pnlUsd >= 0 ? '+' : ''}$${pnlUsd.toFixed(2)}`
+      : 'pnl_unknown (no entryUsd)'
+
     await logHouseBrain({
       dex: 'topaz', kind: 'trade',
-      reasoning: `CLOSE_LP_V2 burned ${ethers.formatUnits(lpBal, 18)} LP · unstake=${unstakeTx ? 'yes' : 'no'}`,
+      reasoning:
+        `CLOSE_LP_V2 burned ${ethers.formatUnits(lpBal, 18)} LP · ` +
+        `proceeds=$${proceedsUsd.toFixed(2)} (anchor $${anchorProceedsUsd.toFixed(2)} + emissions $${emissionsUsd.toFixed(2)}) · ` +
+        `entry=${entryUsd != null ? '$' + entryUsd.toFixed(2) : 'n/a'} · pnl=${pnlStr}`,
       decision: 'CLOSE', txHash: rm.txHash ?? null,
-      meta: { pair, lpBurned: ethers.formatUnits(lpBal, 18), unstakeTx, topazPositionClosed: true },
+      meta: {
+        pair,
+        lpBurned: ethers.formatUnits(lpBal, 18),
+        unstakeTx,
+        topazPositionClosed: true,
+        // Raw amounts received from the burn
+        tokenAReceived: ethers.formatUnits(tokenAReceivedWei, tokenADec),
+        tokenBReceived: ethers.formatUnits(tokenBReceivedWei, tokenBDec),
+        // Auto-sell non-anchor leg
+        anchorSymbol: anchorSide?.anchor.symbol ?? null,
+        autoSellLegTx,
+        autoSellLegError,
+        anchorFromLeg: anchorSide ? ethers.formatUnits(
+          anchorFromLegWei,
+          anchorSide.anchorIsA ? tokenADec : tokenBDec,
+        ) : null,
+        // TOPAZ emissions sell + unwrap
+        topazClaimed: ethers.formatUnits(topazClaimedWei, topazDec),
+        topazSellTx,
+        topazUnwrapTx,
+        topazSellError,
+        emissionsBnb: ethers.formatEther(wbnbFromTopazWei),
+        // P&L (USD)
+        entryUsd,
+        proceedsUsd: Number(proceedsUsd.toFixed(6)),
+        anchorProceedsUsd: Number(anchorProceedsUsd.toFixed(6)),
+        emissionsUsd: Number(emissionsUsd.toFixed(6)),
+        pnlUsd: pnlUsd != null ? Number(pnlUsd.toFixed(6)) : null,
+        pnlBreakdown: pnlUsd != null ? {
+          feesAndIl: Number((feesAndIlUsd ?? 0).toFixed(6)),
+          emissions: Number(emissionsUsd.toFixed(6)),
+        } : null,
+        closeSlippageBps: CLOSE_SLIPPAGE_BPS,
+      },
     })
     return { ok: true, closeTx: rm.txHash ?? null, unstakeTx }
   })
