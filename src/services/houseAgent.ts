@@ -596,8 +596,19 @@ export async function houseTopazCloseLpV2(input: {
       const staked = (await gaugeCtr.balanceOf(house)) as bigint
       if (staked > 0n) {
         const u = await topazUnstakeFromGauge({ gauge, kind: 'v2', lpAmount: staked })
-        if (u.ok) unstakeTx = u.txHash ?? null
-        try { await topazClaimGaugeRewards({ gauge, kind: 'v2' }) } catch { /* best effort */ }
+        if (!u.ok) {
+          // Hard-fail rather than silently returning a "closed" status while
+          // LP is still staked (operator would think funds are out when
+          // they're actually still locked in the gauge). Code-review fix.
+          await logHouseBrain({
+            dex: 'topaz', kind: 'error',
+            reasoning: `CLOSE_LP_V2 unstake failed — refusing to proceed with burn while LP is still staked: ${u.error}`,
+            decision: 'ERROR', meta: { pair, gauge, stakedAmount: staked.toString(), error: u.error },
+          })
+          throw new Error(u.error ?? 'topaz_unstake_failed')
+        }
+        unstakeTx = u.txHash ?? null
+        try { await topazClaimGaugeRewards({ gauge, kind: 'v2' }) } catch { /* best effort: claim can fail if no rewards accrued */ }
       }
     }
 
