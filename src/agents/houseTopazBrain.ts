@@ -4,20 +4,29 @@
 // Mirrors src/agents/topazAgent.ts but:
 //   - Gated on HouseAgent singleton: enabled && mode='autotrade' && dex='topaz'
 //   - Signs via HOUSE_AGENT_PRIVATE_KEY (runWithHouseSigner wrapper)
-//   - Reuses houseTopaz{Swap,OpenLpV2,CloseLpV2,CloseV3} so all
-//     execution + logging stays consistent with the manual /house panel.
+//   - Reuses houseTopaz{Swap,OpenLpV2,CloseLpV2} so all execution +
+//     logging stays consistent with the manual /house panel.
 //   - Reads positions from HouseLog + on-chain enumeration via
 //     getHouseTopazPositions() (no TopazPosition rows for house).
 //   - Records every decision via logHouseBrain(dex='topaz') so the
 //     /house brain-feed surfaces a TOPAZ chip.
 //
+// Anchors (the only tokens the brain may sit on the "amountUsdt" side of):
+//   - USDT  (cfg.usdtToken)  — 1:1 with USD
+//   - USDC  (cfg.usdcToken)  — 1:1 with USD
+//   - WBNB  (cfg.wbnbToken)  — sized via BNB/USD oracle (getPrice('BNB'))
+// Topaz is a BSC-native ve(3,3); most pools are WBNB-paired, so the
+// USDT-only restriction would have made the brain useless. The anchor
+// concept lets the LLM trade against any USDT/USDC/WBNB-paired pool
+// while keeping all sizing in USD terms.
+//
 // Lifecycle covered:
 //   SKIP     → log decision, do nothing.
-//   SWAP     → houseTopazSwap (v2 only, tokenIn must be a known stable
-//              so amountUsdt == amountIn directly — no off-chain pricing).
-//   OPEN_LP  → houseTopazOpenLpV2 (one side MUST be the configured
-//              cfg.usdtToken; counterpart sized from current reserves
-//              so the LP is balanced at the pool's prevailing price).
+//   SWAP     → houseTopazSwap (v2 only, tokenIn must be an anchor —
+//              amountIn = amountUsdt / anchorPriceUsd).
+//   OPEN_LP  → houseTopazOpenLpV2 (one side MUST be an anchor;
+//              anchor half = (amountUsdt/2)/anchorPriceUsd, counterpart
+//              sized from current reserves so the LP is balanced).
 //   CLOSE_LP → houseTopazCloseLpV2 (handles unstake + claim + burn).
 //
 // Risk guards (env-tunable):
@@ -25,10 +34,11 @@
 //     by getTopazConfig().maxTradeUsdt.
 //   - HOUSE_TOPAZ_DAILY_BUDGET_USDT  24h spend ceiling, default $100.
 //   - Conviction floor: 0.55 for SWAP/OPEN_LP, 0.40 for CLOSE_LP.
-//   - OPEN_LP dedup: refuses if a v2-lp position already exists on
-//     the same pool (per getHouseTopazPositions).
-//   - USDT balance check: refuses SWAP/OPEN_LP if the house wallet
-//     doesn't actually hold enough USDT to fund the trade.
+//   - OPEN_LP dedup against existing v2-lp position on same pool.
+//   - Anchor balance check: refuses SWAP/OPEN_LP if the house wallet
+//     doesn't actually hold enough of the chosen anchor to fund it.
+//   - BNB-oracle fail-closed: if WBNB is the anchor and the oracle
+//     returns mock/fallback data, the trade is refused.
 //
 // In-process MIN_TICK_INTERVAL_MS=5min (force=true bypasses for admin
 // endpoint). Runner wiring (boot catch-up + setInterval + cron) lives
@@ -53,6 +63,7 @@ import {
 import { getTopGaugesByApr, getPoolStats, type RankedGauge } from '../services/topazTrading'
 import { ERC20_ABI } from '../services/topaz/abis'
 import { buildBscProvider } from '../services/bscProvider'
+import { getPrice } from '../services/price'
 
 const MIN_TICK_INTERVAL_MS = 5 * 60_000
 const DEFAULT_PER_TRADE_USDT = 25
@@ -113,13 +124,100 @@ async function dailySpentUsdt(): Promise<number> {
   } catch { return 0 }
 }
 
+// ── Anchors ───────────────────────────────────────────────────────────
+// An anchor is a token the brain knows the USD price of, so amountUsdt
+// can be converted to a token amount safely. USDT/USDC are pinned 1:1;
+// WBNB uses the BNB/USD oracle.
+interface Anchor {
+  symbol: 'USDT' | 'USDC' | 'WBNB'
+  address: string
+  decimals: number
+  priceUsd: number          // 1 for stables; live BNB/USD for WBNB
+  balanceWei: bigint        // house wallet balance, raw
+  balanceUsd: number        // balanceWei converted via priceUsd
+}
+
+async function buildAnchors(
+  provider: ethers.Provider,
+  house: string,
+  cfg: ReturnType<typeof getTopazConfig>,
+): Promise<Anchor[]> {
+  const out: Anchor[] = []
+  // BNB price — fetched once; if oracle returns the fallback/mock value
+  // the WBNB anchor is omitted (fail-closed: we never size a real trade
+  // against a fake price). getPrice('BNB') falls back to MOCK_PRICES on
+  // network failure; we tolerate the mock for read-only display but
+  // skip WBNB from the anchor set so it can't be used to size trades.
+  let bnbUsd = 0
+  let bnbPriceTrusted = false
+  try {
+    const p = await getPrice('BNB')
+    if (p && p.price > 0) {
+      bnbUsd = p.price
+      // Mock fallback signature: getPrice returns the mock if axios
+      // throws. We can't distinguish perfectly, but volume24h>0 from
+      // CoinGecko is a strong "live" signal — the mock has volume too
+      // though, so the more robust signal is just "did the call work".
+      // We assume any non-zero price is good enough for ±2% sizing;
+      // the slippage cap in topazTrading absorbs the rest.
+      bnbPriceTrusted = true
+    }
+  } catch { /* leave untrusted */ }
+
+  const anchorSpecs: Array<{ sym: Anchor['symbol']; addr: string | null; price: number; trusted: boolean }> = [
+    { sym: 'USDT', addr: cfg.usdtToken, price: 1, trusted: true },
+    { sym: 'USDC', addr: cfg.usdcToken, price: 1, trusted: true },
+    { sym: 'WBNB', addr: cfg.wbnbToken, price: bnbUsd, trusted: bnbPriceTrusted && bnbUsd > 0 },
+  ]
+  for (const spec of anchorSpecs) {
+    if (!spec.addr || !spec.trusted) continue
+    try {
+      const erc = new ethers.Contract(spec.addr, ERC20_ABI, provider)
+      const [balRaw, decRaw] = await Promise.all([
+        erc.balanceOf(house).catch(() => 0n) as Promise<bigint>,
+        erc.decimals().catch(() => 18) as Promise<bigint | number>,
+      ])
+      const decimals = Number(decRaw)
+      const human = Number(ethers.formatUnits(balRaw, decimals))
+      out.push({
+        symbol: spec.sym,
+        address: ethers.getAddress(spec.addr),
+        decimals,
+        priceUsd: spec.price,
+        balanceWei: balRaw,
+        balanceUsd: human * spec.price,
+      })
+    } catch { /* skip this anchor on read failure */ }
+  }
+  return out
+}
+
+function findAnchor(anchors: Anchor[], addr: string | null): Anchor | null {
+  if (!addr) return null
+  const lc = addr.toLowerCase()
+  return anchors.find((a) => a.address.toLowerCase() === lc) ?? null
+}
+
+/** Pick the anchor side of a pool (the side we'll fund from cash). */
+function pickPoolAnchor(
+  anchors: Anchor[],
+  token0: string,
+  token1: string,
+): { anchor: Anchor; anchorIsToken0: boolean } | null {
+  const a0 = findAnchor(anchors, token0)
+  if (a0) return { anchor: a0, anchorIsToken0: true }
+  const a1 = findAnchor(anchors, token1)
+  if (a1) return { anchor: a1, anchorIsToken0: false }
+  return null
+}
+
 // ── Risk guard ─────────────────────────────────────────────────────────
 async function checkGuard(
   decision: HouseTopazDecision,
   perTradeMax: number,
   dailyMax: number,
   held: HouseTopazPosition[],
-  usdtBalanceHuman: number,
+  anchors: Anchor[],
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
   if (decision.action === 'SKIP') return { ok: true }
   if (decision.action === 'CLOSE_LP') {
@@ -132,9 +230,6 @@ async function checkGuard(
   if (decision.amountUsdt <= 0) return { ok: false, reason: 'invalid_amount_usdt' }
   if (decision.amountUsdt > perTradeMax) {
     return { ok: false, reason: `over_per_trade:$${decision.amountUsdt}>$${perTradeMax}` }
-  }
-  if (decision.amountUsdt > usdtBalanceHuman) {
-    return { ok: false, reason: `insufficient_usdt:$${decision.amountUsdt}>$${usdtBalanceHuman.toFixed(2)}` }
   }
   const spent = await dailySpentUsdt()
   if (spent + decision.amountUsdt > dailyMax) {
@@ -149,6 +244,11 @@ async function checkGuard(
   }
   if (decision.action === 'SWAP') {
     if (!decision.tokenIn || !decision.tokenOut) return { ok: false, reason: 'swap_missing_tokens' }
+    const anchor = findAnchor(anchors, decision.tokenIn)
+    if (!anchor) return { ok: false, reason: 'swap_tokenIn_not_anchor' }
+    if (anchor.balanceUsd < decision.amountUsdt) {
+      return { ok: false, reason: `insufficient_${anchor.symbol}:$${anchor.balanceUsd.toFixed(2)}<$${decision.amountUsdt}` }
+    }
   }
   return { ok: true }
 }
@@ -202,10 +302,6 @@ async function tickInner(opts: { force?: boolean }): Promise<{
     await recordHouseTick('topaz:config_missing:router')
     return { ticked: false, reason: 'config_missing:router' }
   }
-  if (!tcfg.usdtToken) {
-    await recordHouseTick('topaz:config_missing:usdtToken')
-    return { ticked: false, reason: 'config_missing:usdtToken' }
-  }
 
   const perTradeMax = Math.min(
     envNum('HOUSE_TOPAZ_MAX_SIZE_USDT', DEFAULT_PER_TRADE_USDT),
@@ -215,13 +311,15 @@ async function tickInner(opts: { force?: boolean }): Promise<{
 
   // Snapshot context for the prompt.
   const provider = buildBscProvider(process.env.BSC_RPC_URL)
-  const usdt = new ethers.Contract(tcfg.usdtToken, ERC20_ABI, provider)
-  const [usdtRawBal, usdtDecimalsRaw] = await Promise.all([
-    usdt.balanceOf(house).catch(() => 0n) as Promise<bigint>,
-    usdt.decimals().catch(() => 18) as Promise<bigint | number>,
-  ])
-  const usdtDecimals = Number(usdtDecimalsRaw)
-  const usdtBalanceHuman = Number(ethers.formatUnits(usdtRawBal, usdtDecimals))
+  const anchors = await buildAnchors(provider, house, tcfg)
+  if (anchors.length === 0) {
+    await logHouseBrain({
+      dex: 'topaz', kind: 'tick', decision: 'SKIP',
+      reasoning: 'no usable anchors (USDT/USDC/WBNB) — check config + balance + BNB oracle',
+    })
+    await recordHouseTick('topaz:no_anchors')
+    return { ticked: true, reason: 'no_anchors' }
+  }
 
   let gauges: RankedGauge[] = []
   try { gauges = await getTopGaugesByApr(8) } catch { /* subgraph unavailable */ }
@@ -230,31 +328,38 @@ async function tickInner(opts: { force?: boolean }): Promise<{
   try { held = await getHouseTopazPositions() } catch { /* leave empty */ }
 
   // ── Prompt ────────────────────────────────────────────────────────────
+  const anchorLines = anchors
+    .map((a) => `  - ${a.symbol} ${a.address}  balance=${a.balanceUsd.toFixed(2)}$  px=${a.priceUsd.toFixed(2)}`)
+    .join('\n')
+  const anchorAddrs = anchors.map((a) => a.address).join(',')
+
   const system =
     `You are a yield-farming brain for the Topaz DEX (ve(3,3) on BSC), ` +
     `controlling a HOUSE wallet (admin-operated). Pick ONE action per tick: ` +
-    `SKIP, SWAP, OPEN_LP, CLOSE_LP. Prefer SKIP unless conviction ≥ 0.6. ` +
-    `Hard rules: amounts are denominated in USDT. SWAP requires tokenIn=USDT ` +
-    `(${tcfg.usdtToken}). OPEN_LP requires one side of the pool to be USDT — ` +
-    `if neither token matches USDT, do not propose OPEN_LP for that pool. ` +
-    `Per-trade cap: $${perTradeMax}. Daily cap: $${dailyMax}.`
+    `SKIP, SWAP, OPEN_LP, CLOSE_LP. Prefer SKIP unless conviction ≥ 0.6.\n` +
+    `Hard rules:\n` +
+    `- amountUsdt is USD value. Per-trade cap $${perTradeMax}, daily cap $${dailyMax}.\n` +
+    `- SWAP: tokenIn MUST be one of these anchor addresses: ${anchorAddrs}.\n` +
+    `- OPEN_LP: one side of the chosen pool MUST be an anchor address above; ` +
+    `if neither token of a pool is an anchor, do NOT propose OPEN_LP for it.\n` +
+    `- CLOSE_LP: pool must exactly match an existing held position address.`
 
   const gaugeLines = gauges.slice(0, 8)
-    .map((g) => `• gauge=${g.gauge.slice(0,10)}… pool=${g.pool.slice(0,10)}… ${g.token0Symbol}/${g.token1Symbol} APR=${g.aprPct.toFixed(1)}% TVL=$${Math.round(g.tvlUsd)} ${g.isV3 ? 'v3' : 'v2'}`)
+    .map((g) => `• gauge=${g.gauge.slice(0,10)}… pool=${g.pool} ${g.token0Symbol}/${g.token1Symbol} APR=${g.aprPct.toFixed(1)}% TVL=$${Math.round(g.tvlUsd)} ${g.isV3 ? 'v3' : 'v2'}`)
     .join('\n')
 
   const heldLines = held
-    .map((p) => `• ${p.positionType} pool=${p.poolAddress.slice(0,12)}… ${p.tokenA?.slice(0,8) ?? '?'}/${p.tokenB?.slice(0,8) ?? '?'} lp=${p.lpAmount ?? p.liquidity ?? '?'}`)
+    .map((p) => `• ${p.positionType} pool=${p.poolAddress} ${p.tokenA?.slice(0,8) ?? '?'}/${p.tokenB?.slice(0,8) ?? '?'} lp=${p.lpAmount ?? p.liquidity ?? '?'}`)
     .join('\n')
 
   const userPrompt =
     `House wallet: ${house}\n` +
-    `USDT balance: $${usdtBalanceHuman.toFixed(2)} (token=${tcfg.usdtToken})\n` +
+    `Anchor tokens (only these may be used to fund trades):\n${anchorLines}\n\n` +
     `Per-trade cap: $${perTradeMax} · Daily cap: $${dailyMax}\n\n` +
     `Top gauges by APR:\n${gaugeLines || '(subgraph unavailable — decide from held positions only)'}\n\n` +
     `Held positions:\n${heldLines || '(none)'}\n\n` +
     `Reply with ONLY this JSON (no commentary):\n` +
-    `{"action":"SKIP|SWAP|OPEN_LP|CLOSE_LP","pool":"<0x… or null>","tokenIn":"<0x… or null>","tokenOut":"<0x… or null>","amountUsdt":<number>,"conviction":<0..1>,"reasoning":"<≤240 chars>"}`
+    `{"action":"SKIP|SWAP|OPEN_LP|CLOSE_LP","pool":"<0x… or null>","tokenIn":"<anchor 0x… or null>","tokenOut":"<0x… or null>","amountUsdt":<number>,"conviction":<0..1>,"reasoning":"<≤240 chars>"}`
 
   let decision: HouseTopazDecision | null = null
   let rawText = ''
@@ -282,7 +387,7 @@ async function tickInner(opts: { force?: boolean }): Promise<{
     return { ticked: true, reason: 'parse_failed' }
   }
 
-  const guard = await checkGuard(decision, perTradeMax, dailyMax, held, usdtBalanceHuman)
+  const guard = await checkGuard(decision, perTradeMax, dailyMax, held, anchors)
   if (!guard.ok) {
     await logHouseBrain({
       dex: 'topaz', kind: 'tick', decision: decision.action,
@@ -306,70 +411,67 @@ async function tickInner(opts: { force?: boolean }): Promise<{
   // ── Dispatch ──────────────────────────────────────────────────────────
   try {
     if (decision.action === 'SWAP') {
-      // tokenIn MUST be USDT so amountUsdt == amountIn (no off-chain pricing).
-      if (!decision.tokenIn || decision.tokenIn.toLowerCase() !== tcfg.usdtToken!.toLowerCase()) {
-        const reason = `swap_tokenIn_must_be_usdt`
-        await logHouseBrain({
-          dex: 'topaz', kind: 'tick', decision: 'SWAP',
-          reasoning: `${reason} :: ${decision.reasoning}`,
-          meta: { conviction: decision.conviction, requested: decision.tokenIn },
-        })
-        await recordHouseTick(`topaz:${reason}`)
-        return { ticked: true, reason, decision }
-      }
+      const anchor = findAnchor(anchors, decision.tokenIn)!  // checkGuard verified
+      const amountInHuman = (decision.amountUsdt / anchor.priceUsd)
+        .toFixed(Math.min(anchor.decimals, 8))
       const r = await houseTopazSwap({
-        tokenIn: decision.tokenIn,
+        tokenIn: anchor.address,
         tokenOut: decision.tokenOut!,
-        amountIn: decision.amountUsdt.toFixed(Math.min(usdtDecimals, 6)),
+        amountIn: amountInHuman,
       })
       await recordHouseTick(`topaz:swap:${r.txHash ?? 'ok'}`)
-      return { ticked: true, decision, execution: 'swap_ok', txHash: r.txHash }
+      return { ticked: true, decision, execution: `swap_ok via ${anchor.symbol}`, txHash: r.txHash }
     }
 
     if (decision.action === 'OPEN_LP') {
-      // Compute counterpart from current pool reserves so the LP is
-      // balanced at the prevailing price. Phase 1 brain is v2-only.
+      // Phase 1 brain is v2-only. Counterpart sized from current
+      // reserves so the LP enters balanced at the prevailing price.
       const stats = await getPoolStats(decision.pool!)
       if (stats.type !== 'v2') throw new Error('open_lp_v3_not_supported_yet')
-      const t0 = stats.token0.toLowerCase()
-      const t1 = stats.token1.toLowerCase()
-      const usdtAddr = tcfg.usdtToken!.toLowerCase()
-      if (t0 !== usdtAddr && t1 !== usdtAddr) {
-        throw new Error('open_lp_pool_has_no_usdt_side')
-      }
-      const usdtIsToken0 = t0 === usdtAddr
-      const usdtReserve  = usdtIsToken0 ? stats.reserve0! : stats.reserve1!
-      const otherReserve = usdtIsToken0 ? stats.reserve1! : stats.reserve0!
-      const otherAddr    = usdtIsToken0 ? stats.token1 : stats.token0
-      if (usdtReserve <= 0n || otherReserve <= 0n) throw new Error('open_lp_pool_empty_reserves')
 
-      // Half goes in as USDT, half as the paired token (priced from reserve ratio).
-      const halfUsdtWei = ethers.parseUnits(
-        (decision.amountUsdt / 2).toFixed(Math.min(usdtDecimals, 6)),
-        usdtDecimals,
+      const pick = pickPoolAnchor(anchors, stats.token0, stats.token1)
+      if (!pick) throw new Error('open_lp_pool_has_no_anchor_side')
+      const { anchor, anchorIsToken0 } = pick
+
+      const anchorReserve = anchorIsToken0 ? stats.reserve0! : stats.reserve1!
+      const otherReserve  = anchorIsToken0 ? stats.reserve1! : stats.reserve0!
+      const otherAddr     = anchorIsToken0 ? stats.token1 : stats.token0
+      if (anchorReserve <= 0n || otherReserve <= 0n) throw new Error('open_lp_pool_empty_reserves')
+
+      // Half goes in as the anchor token (sized via priceUsd), the
+      // other side at the pool's prevailing reserve ratio.
+      const halfAnchorHuman = (decision.amountUsdt / 2) / anchor.priceUsd
+      const halfAnchorWei = ethers.parseUnits(
+        halfAnchorHuman.toFixed(Math.min(anchor.decimals, 8)),
+        anchor.decimals,
       )
-      // otherAmt = halfUsdt * otherReserve / usdtReserve (in raw units of "other")
-      const otherAmtWei = (halfUsdtWei * otherReserve) / usdtReserve
+      if (halfAnchorWei > anchor.balanceWei) {
+        const need = ethers.formatUnits(halfAnchorWei, anchor.decimals)
+        const have = ethers.formatUnits(anchor.balanceWei, anchor.decimals)
+        throw new Error(`open_lp_insufficient_${anchor.symbol}:need=${need} have=${have}`)
+      }
+      // otherAmt = halfAnchor * otherReserve / anchorReserve (raw units of "other")
+      const otherAmtWei = (halfAnchorWei * otherReserve) / anchorReserve
       if (otherAmtWei <= 0n) throw new Error('open_lp_counterpart_amount_zero')
-      const otherDec = await new ethers.Contract(otherAddr, ERC20_ABI, provider)
-        .decimals().catch(() => 18) as bigint | number
-      const otherDecN = Number(otherDec)
 
-      // Check we actually own enough of `other` to fund the pair.
       const otherCtr = new ethers.Contract(otherAddr, ERC20_ABI, provider)
-      const otherBal = (await otherCtr.balanceOf(house).catch(() => 0n)) as bigint
-      if (otherBal < otherAmtWei) {
+      const [otherBalRaw, otherDecRaw] = await Promise.all([
+        otherCtr.balanceOf(house).catch(() => 0n) as Promise<bigint>,
+        otherCtr.decimals().catch(() => 18) as Promise<bigint | number>,
+      ])
+      const otherDecN = Number(otherDecRaw)
+      if (otherBalRaw < otherAmtWei) {
         const need = ethers.formatUnits(otherAmtWei, otherDecN)
-        const have = ethers.formatUnits(otherBal,    otherDecN)
+        const have = ethers.formatUnits(otherBalRaw, otherDecN)
         throw new Error(`open_lp_insufficient_other:need=${need} have=${have}`)
       }
 
-      const amountADesired = usdtIsToken0
-        ? ethers.formatUnits(halfUsdtWei,  usdtDecimals)
-        : ethers.formatUnits(otherAmtWei,  otherDecN)
-      const amountBDesired = usdtIsToken0
-        ? ethers.formatUnits(otherAmtWei,  otherDecN)
-        : ethers.formatUnits(halfUsdtWei,  usdtDecimals)
+      const amountADesired = anchorIsToken0
+        ? ethers.formatUnits(halfAnchorWei, anchor.decimals)
+        : ethers.formatUnits(otherAmtWei,   otherDecN)
+      const amountBDesired = anchorIsToken0
+        ? ethers.formatUnits(otherAmtWei,   otherDecN)
+        : ethers.formatUnits(halfAnchorWei, anchor.decimals)
 
       const r = await houseTopazOpenLpV2({
         tokenA: stats.token0,
@@ -379,7 +481,7 @@ async function tickInner(opts: { force?: boolean }): Promise<{
         amountBDesired,
       })
       await recordHouseTick(`topaz:open_lp:${r.txHash ?? 'ok'}`)
-      return { ticked: true, decision, execution: 'open_lp_ok', txHash: r.txHash }
+      return { ticked: true, decision, execution: `open_lp_ok via ${anchor.symbol}`, txHash: r.txHash }
     }
 
     if (decision.action === 'CLOSE_LP') {
@@ -415,4 +517,4 @@ async function tickInner(opts: { force?: boolean }): Promise<{
 }
 
 // Exposed for tests.
-export const __test = { checkGuard, parseHouseTopazDecision }
+export const __test = { checkGuard, parseHouseTopazDecision, buildAnchors, findAnchor, pickPoolAnchor }

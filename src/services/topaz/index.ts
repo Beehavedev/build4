@@ -79,6 +79,11 @@ export interface TopazConfig {
   // raw token amounts and leave exitValueUsdt NULL (no fake pricing).
   usdtToken: string | null
   usdcToken: string | null
+  // WBNB on BSC. Most Topaz pools are WBNB-paired (it's a BSC-native
+  // ve(3,3)), so the brain treats WBNB as a valid USD-anchor alongside
+  // USDT/USDC — sizing converts amountUsdt to amountInWbnb via the
+  // BNB/USD oracle at trade time.
+  wbnbToken: string | null
 }
 
 function pickAddress(envName: keyof typeof BSC_DEFAULTS | string): string | null {
@@ -148,6 +153,7 @@ export function getTopazConfig(): TopazConfig {
     ),
     usdtToken: pickAddress('TOPAZ_USDT_TOKEN'),
     usdcToken: pickAddress('TOPAZ_USDC_TOKEN'),
+    wbnbToken: pickAddress('TOPAZ_WBNB'),
   })
   return cached
 }
