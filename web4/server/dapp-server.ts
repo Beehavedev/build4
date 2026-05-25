@@ -249,6 +249,89 @@ app.post("/api/web4/logout", (_req, res) => {
 
 app.get("/api/health", (_req, res) => res.json({ ok: true, service: "build4-dapp" }));
 
+// ── /web-api/* — venue surface for the WalletConnect dApp ─────────────
+// Phase 1: lightweight status surface so the web UI can render all 7 venue
+// chips with their config / readiness. Per-user provisioning (HL agent
+// wallet, Aster API key, Polymarket Safe) is the next milestone and lives
+// behind getSession(req). Reads here are intentionally session-gated even
+// though they expose no secrets — keeps the surface area tight.
+app.get("/web-api/venues/status", async (req, res) => {
+  const session = await getSession(req);
+  if (!session) return res.status(401).json({ error: "not authenticated" });
+  const env = process.env;
+  const truthy = (k: string) => (env[k] ?? "").toLowerCase() === "true";
+  const present = (k: string) => !!(env[k] ?? "").trim();
+  res.json({
+    ok: true,
+    address: session.address,
+    venues: [
+      {
+        id: "aster",
+        name: "Aster DEX",
+        kind: "perp",
+        chain: "BSC",
+        configured: present("ASTER_API_KEY") || present("ASTER_BROKER_PK"),
+        provisioned: false,
+        nextStep: "Generate Aster API key (Phase 2)",
+      },
+      {
+        id: "hyperliquid",
+        name: "Hyperliquid L1",
+        kind: "perp",
+        chain: "Hyperliquid",
+        configured: present("HL_BROKER_AGENT_KEY") || true,
+        provisioned: false,
+        nextStep: "Generate HL agent wallet (Phase 2)",
+      },
+      {
+        id: "fortytwo",
+        name: "42.space",
+        kind: "prediction",
+        chain: "BSC",
+        configured: true,
+        provisioned: false,
+        nextStep: "Bind BSC custodial wallet (Phase 2)",
+      },
+      {
+        id: "polymarket",
+        name: "Polymarket",
+        kind: "prediction",
+        chain: "Polygon",
+        configured: present("POLY_BUILDER_API_KEY") && present("POLY_BUILDER_SECRET") && present("POLY_BUILDER_PASSPHRASE") && present("POLY_BUILDER_CODE"),
+        provisioned: false,
+        nextStep: "Deploy gasless Gnosis Safe (Phase 2)",
+      },
+      {
+        id: "fourmeme",
+        name: "four.meme",
+        kind: "launchpad",
+        chain: "BSC",
+        configured: truthy("FOUR_MEME_ENABLED") || truthy("FOUR_MEME_LAUNCH_ENABLED"),
+        provisioned: false,
+        nextStep: "Launch via bot for now",
+      },
+      {
+        id: "pancakeswap",
+        name: "PancakeSwap",
+        kind: "spot",
+        chain: "BSC",
+        configured: true,
+        provisioned: false,
+        nextStep: "Per-user swap routing (Phase 2)",
+      },
+      {
+        id: "topaz",
+        name: "Topaz",
+        kind: "spot+lp",
+        chain: "BSC",
+        configured: truthy("TOPAZ_ENABLED"),
+        provisioned: false,
+        nextStep: "Phase 1 master-wallet-only; use mini-app",
+      },
+    ],
+  });
+});
+
 app.use(express.static(STATIC_DIR, { index: false, maxAge: "1h" }));
 
 app.use((req: Request, res: Response, next: NextFunction) => {

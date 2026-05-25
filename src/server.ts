@@ -5231,6 +5231,208 @@ app.get('/api/admin/topaz/state', requireAdmin, async (req, res) => {
   }
 })
 
+// ── Public TOPAZ surface (mini-app + web dApp) ─────────────────────────
+// Phase 1 is master-wallet-only on the WRITE path: all writes execute
+// from TOPAZ_MASTER_WALLET_ID regardless of caller, so write endpoints
+// are admin-gated. Reads are open to any authed Telegram user because
+// they only expose public on-chain data + the master wallet's positions
+// (already public information on BSCScan).
+app.get('/api/topaz/state', requireTgUser, async (_req, res) => {
+  try {
+    const { getTopazConfig } = await import('./services/topaz')
+    const cfg = getTopazConfig()
+    let masterAddress: string | null = null
+    let masterError: string | null = null
+    if (cfg.enabled && cfg.masterWalletId) {
+      try {
+        const { getMasterSigner } = await import('./services/topazTrading')
+        const m = await getMasterSigner()
+        masterAddress = m.address
+      } catch (e) {
+        masterError = (e as Error).message
+      }
+    }
+    res.json({
+      ok: true,
+      enabled: cfg.enabled,
+      phase: 1,
+      writesGated: 'admin-only',
+      masterWallet: { address: masterAddress, error: masterError },
+      config: {
+        router: cfg.router, npm: cfg.npm, voter: cfg.voter,
+        topazToken: cfg.topazToken,
+        maxTradeUsdt: cfg.maxTradeUsdt,
+        defaultSlippageBps: cfg.defaultSlippageBps,
+      },
+    })
+  } catch (err) {
+    res.status(500).json({ ok: false, error: (err as Error).message })
+  }
+})
+
+app.get('/api/topaz/gauges', requireTgUser, async (req, res) => {
+  try {
+    const limit = Math.max(1, Math.min(50, Number(req.query.limit) || 10))
+    const { getTopGaugesByApr } = await import('./services/topazTrading')
+    const gauges = await getTopGaugesByApr(limit)
+    res.json({ ok: true, gauges })
+  } catch (err) {
+    res.status(500).json({ ok: false, error: (err as Error).message })
+  }
+})
+
+app.get('/api/topaz/positions', requireTgUser, async (_req, res) => {
+  try {
+    const { getTopazConfig } = await import('./services/topaz')
+    const cfg = getTopazConfig()
+    if (!cfg.enabled || !cfg.masterWalletId) {
+      return res.json({ ok: true, positions: [], note: 'topaz not enabled' })
+    }
+    const { getMasterSigner, listOpenLpPositions } = await import('./services/topazTrading')
+    const { address } = await getMasterSigner()
+    const positions = await listOpenLpPositions(address)
+    // Convert bigints for JSON
+    const safe = positions.map(p => ({
+      ...p, tokenId: p.tokenId.toString(), liquidity: p.liquidity.toString(),
+    }))
+    res.json({ ok: true, masterWallet: address, positions: safe })
+  } catch (err) {
+    res.status(500).json({ ok: false, error: (err as Error).message })
+  }
+})
+
+app.get('/api/topaz/pool', requireTgUser, async (req, res) => {
+  try {
+    const addr = String(req.query.address || '')
+    if (!addr) return res.status(400).json({ ok: false, error: 'address required' })
+    const { getPoolStats } = await import('./services/topazTrading')
+    const stats = await getPoolStats(addr)
+    res.json({
+      ok: true,
+      pool: {
+        ...stats,
+        reserve0: stats.reserve0?.toString(),
+        reserve1: stats.reserve1?.toString(),
+        sqrtPriceX96: stats.sqrtPriceX96?.toString(),
+        liquidity: stats.liquidity?.toString(),
+      },
+    })
+  } catch (err) {
+    res.status(400).json({ ok: false, error: (err as Error).message })
+  }
+})
+
+app.post('/api/topaz/quote', requireTgUser, async (req, res) => {
+  try {
+    const { tokenIn, tokenOut, amountIn, hops, stable } = req.body || {}
+    if (!tokenIn || !tokenOut || !amountIn) {
+      return res.status(400).json({ ok: false, error: 'tokenIn, tokenOut, amountIn required' })
+    }
+    const { quoteSwap } = await import('./services/topazTrading')
+    const route = {
+      kind: 'v2' as const,
+      hops: hops ?? [{ from: tokenIn, to: tokenOut, stable: !!stable }],
+    }
+    const q = await quoteSwap(tokenIn, tokenOut, BigInt(amountIn), route)
+    res.json({ ok: true, amountOut: q.amountOut.toString(), route: q.route })
+  } catch (err) {
+    res.status(400).json({ ok: false, error: (err as Error).message })
+  }
+})
+
+// ── WRITE endpoints (admin only, Phase 1 master-wallet-only) ────────────
+app.post('/api/topaz/swap', requireAdmin, async (req, res) => {
+  try {
+    const { tokenIn, tokenOut, amountIn, hops, stable, slippageBps } = req.body || {}
+    if (!tokenIn || !tokenOut || !amountIn) {
+      return res.status(400).json({ ok: false, error: 'tokenIn, tokenOut, amountIn required' })
+    }
+    const { swap } = await import('./services/topazTrading')
+    const r = await swap({
+      tokenIn, tokenOut, amountIn: BigInt(amountIn),
+      route: { kind: 'v2', hops: hops ?? [{ from: tokenIn, to: tokenOut, stable: !!stable }] },
+      slippageBps,
+    })
+    res.json({
+      ...r,
+      amountOut: r.amountOut?.toString(),
+      amountOutMin: r.amountOutMin?.toString(),
+    })
+  } catch (err) {
+    res.status(500).json({ ok: false, error: (err as Error).message })
+  }
+})
+
+app.post('/api/topaz/lp/add', requireAdmin, async (req, res) => {
+  try {
+    const { tokenA, tokenB, stable, amountADesired, amountBDesired, slippageBps } = req.body || {}
+    if (!tokenA || !tokenB || !amountADesired || !amountBDesired) {
+      return res.status(400).json({ ok: false, error: 'tokenA, tokenB, amounts required' })
+    }
+    const { addV2Liquidity } = await import('./services/topazTrading')
+    const r = await addV2Liquidity({
+      tokenA, tokenB, stable: !!stable,
+      amountADesired: BigInt(amountADesired),
+      amountBDesired: BigInt(amountBDesired),
+      slippageBps,
+    })
+    res.json(r)
+  } catch (err) {
+    res.status(500).json({ ok: false, error: (err as Error).message })
+  }
+})
+
+app.post('/api/topaz/lp/remove', requireAdmin, async (req, res) => {
+  try {
+    const { tokenA, tokenB, stable, liquidity, amountAMin, amountBMin } = req.body || {}
+    if (!tokenA || !tokenB || !liquidity || !amountAMin || !amountBMin) {
+      return res.status(400).json({ ok: false, error: 'tokenA, tokenB, liquidity, minAmounts required' })
+    }
+    const { removeV2Liquidity } = await import('./services/topazTrading')
+    const r = await removeV2Liquidity({
+      tokenA, tokenB, stable: !!stable,
+      liquidity: BigInt(liquidity),
+      amountAMin: BigInt(amountAMin),
+      amountBMin: BigInt(amountBMin),
+    })
+    res.json(r)
+  } catch (err) {
+    res.status(500).json({ ok: false, error: (err as Error).message })
+  }
+})
+
+app.post('/api/topaz/v3/mint', requireAdmin, async (req, res) => {
+  try {
+    const { pool, tickLower, tickUpper, amount0Desired, amount1Desired, slippageBps, intendsToFarm } = req.body || {}
+    if (!pool || tickLower === undefined || tickUpper === undefined) {
+      return res.status(400).json({ ok: false, error: 'pool, tickLower, tickUpper required' })
+    }
+    const { mintV3Position } = await import('./services/topazTrading')
+    const r = await mintV3Position({
+      pool, tickLower: Number(tickLower), tickUpper: Number(tickUpper),
+      amount0Desired: BigInt(amount0Desired ?? 0),
+      amount1Desired: BigInt(amount1Desired ?? 0),
+      slippageBps,
+      intendsToFarm: !!intendsToFarm,
+    })
+    res.json({ ...r, tokenId: r.tokenId?.toString(), liquidity: r.liquidity?.toString() })
+  } catch (err) {
+    res.status(500).json({ ok: false, error: (err as Error).message })
+  }
+})
+
+app.post('/api/topaz/v3/burn', requireAdmin, async (req, res) => {
+  try {
+    const { tokenId } = req.body || {}
+    if (!tokenId) return res.status(400).json({ ok: false, error: 'tokenId required' })
+    const { burnV3Position } = await import('./services/topazTrading')
+    const r = await burnV3Position(BigInt(tokenId))
+    res.json(r)
+  } catch (err) {
+    res.status(500).json({ ok: false, error: (err as Error).message })
+  }
+})
+
 // Force a real, on-chain prediction-market trade RIGHT NOW for partnership
 // demos. Picks the highest-volume live 42.space market, reads its outcomes
 // on-chain, picks the highest-implied-probability outcome (most liquid side),

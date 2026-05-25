@@ -7,6 +7,10 @@ channel = "stable-24_05"
 packages = ["freetype", "glibcLocales"]
 
 [[ports]]
+localPort = 3000
+externalPort = 3003
+
+[[ports]]
 localPort = 5000
 externalPort = 80
 
@@ -119,12 +123,12 @@ name = "Green site preview"
 author = "agent"
 
 [workflows.workflow.metadata]
-outputType = "webview"
+outputType = "console"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "cd build4io-site && (test -d node_modules || npm install --no-audit --no-fund) && PORT=5000 npm run dev"
-waitForPort = 5000
+args = "cd build4io-site && (test -d node_modules || npm install --no-audit --no-fund) && PORT=3000 npm run dev"
+waitForPort = 3000
 
 [userenv]
 

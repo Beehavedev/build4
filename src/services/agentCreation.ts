@@ -136,7 +136,14 @@ export async function createAgentForUser(opts: {
   // The runner expands per (agent, venue) and the trading agent writes
   // a brain-feed row per tick per venue, so the user sees decisions on
   // every venue from the very first tick after the agent is created.
-  const venues: string[] = ['aster', 'hyperliquid', 'fortytwo', 'polymarket']
+  // 2026-05-25 — expanded defaults so new agents light up every venue chip
+  // in the brain feed on tick #1. Caveats handled at runner-time:
+  //   • topaz: only actually trades if TOPAZ_AGENT_ALLOWLIST contains the
+  //     agent id (Phase 1 is master-wallet-only); otherwise the venue chip
+  //     shows SKIP rows.
+  //   • fourmeme / pancakeswap: only activate if their respective env
+  //     gates (FOUR_MEME_ENABLED, PANCAKE_AGENT_FORCE in dev) are on.
+  const venues: string[] = ['aster', 'hyperliquid', 'fortytwo', 'polymarket', 'fourmeme', 'pancakeswap', 'topaz']
 
   // Concurrency-safe name + create. The name uniqueness check + create is
   // a TOCTOU race when many users onboard at once — two workers can both

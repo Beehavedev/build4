@@ -4,7 +4,56 @@ import { WalletConnector } from "@/components/wallet-connector";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle2, Loader2, LogOut, Wallet, ShieldCheck, Zap, Database, AlertCircle } from "lucide-react";
+import { CheckCircle2, Loader2, LogOut, Wallet, ShieldCheck, Zap, Database, AlertCircle, Circle } from "lucide-react";
+
+interface VenueRow {
+  id: string;
+  name: string;
+  kind: string;
+  chain: string;
+  configured: boolean;
+  provisioned: boolean;
+  nextStep: string;
+}
+function VenueDashboard() {
+  const [venues, setVenues] = useState<VenueRow[] | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  useEffect(() => {
+    fetch("/web-api/venues/status", { credentials: "include" })
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`status ${r.status}`);
+        return r.json();
+      })
+      .then((j) => setVenues(j.venues || []))
+      .catch((e) => setErr(e?.message || "load failed"));
+  }, []);
+  if (err) return <div className="text-xs text-red-500" data-testid="text-venues-error">{err}</div>;
+  if (!venues) return <div className="text-xs text-muted-foreground flex items-center gap-2"><Loader2 className="w-3 h-3 animate-spin" />Loading venues…</div>;
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2" data-testid="grid-venues">
+      {venues.map((v) => (
+        <div
+          key={v.id}
+          data-testid={`row-venue-${v.id}`}
+          className="border border-border rounded-md p-3 bg-muted/30"
+        >
+          <div className="flex items-center justify-between">
+            <div className="font-semibold text-sm">{v.name}</div>
+            {v.configured ? (
+              <CheckCircle2 className="w-4 h-4 text-green-500" />
+            ) : (
+              <Circle className="w-4 h-4 text-muted-foreground" />
+            )}
+          </div>
+          <div className="text-[10px] uppercase text-muted-foreground mt-1 font-mono">
+            {v.kind} · {v.chain}
+          </div>
+          <div className="text-xs text-muted-foreground mt-2">{v.nextStep}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 interface MeResponse {
   authenticated: boolean;
@@ -229,19 +278,21 @@ export default function AppPage() {
           )}
         </Card>
 
-        {/* Step 4 — Trading dashboard (placeholder) */}
+        {/* Step 4 — Venue dashboard */}
         <Card className={`mb-8 ${!sameWallet ? "opacity-50" : ""}`} data-testid="card-step-dashboard">
           <CardHeader className="flex-row items-start gap-3 space-y-0">
             <div className="mt-1">
               <Database className="w-5 h-5 text-muted-foreground" />
             </div>
             <div className="flex-1">
-              <CardTitle className="text-base">4. Open trading dashboard</CardTitle>
+              <CardTitle className="text-base">4. Trading venues</CardTitle>
               <p className="text-sm text-muted-foreground mt-1">
-                Same UI as the Telegram mini-app — positions, trades, agents, Polymarket. Reads from the same Postgres.
+                All 7 BUILD4 venues. Phase 1 surfaces configuration + readiness; per-user provisioning (Aster API key,
+                HL agent wallet, Polymarket Safe) ships in Phase 2.
               </p>
             </div>
           </CardHeader>
+          {sameWallet && <CardContent><VenueDashboard /></CardContent>}
         </Card>
 
         {sameWallet && (
