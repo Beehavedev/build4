@@ -1,0 +1,138 @@
+Four.meme AMA Script - Trading Smarter with Bots & Agents: Practical Strategies from AI Sprint Winners
+1. Opening, 3 min
+Welcome everyone to today’s AMA hosted by Four.meme.
+Today’s session is:
+Trading Smarter with Bots & Agents: Practical Strategies from AI Sprint Winners
+Bots and agents are becoming part of the trading stack, but the real value is not just knowing what they are. The real value is knowing how to use them properly.
+So today’s AMA is designed as a practical session.
+We are bringing together Four.meme AI Sprint winners to share useful trading knowledge, product workflows, and strategy lessons that users can apply when thinking about discovery, execution, social signals, automation, and decision-making on BNB Chain.
+The goal is simple:
+How can users use bots, agents, and AI-powered tools to trade better?
+We’ll keep this practical. Each team will share one useful workflow or strategy, explain where their product fits, and highlight what users should be careful about.
+As always, this is not financial advice. Please do your own research, understand the risks, and never blindly rely on any tool for trading decisions.
+Let’s begin with quick introductions.
+2. Team Introductions, 7 min
+Each team gets 60 to 75 seconds.
+Host:
+Please introduce your project briefly:
+What does your product do?
+What trading problem does it help users solve?
+What is one practical thing users can learn from your team today?
+Host transition:
+Thank you everyone. Now before we get into the strategy lessons, let’s quickly clarify the language around bots and agents.
+
+3. Quick Context: Bots vs Agents, 5 min
+Host:
+Many users have heard about trading bots before. Now the market is also talking about AI agents.
+So let’s make this simple and practical.
+Question: All Teams
+From a trader’s perspective, what is one practical difference between a bot and an agent?
+Keep this to one sentence each.
+Host summary after answers:
+A simple way to think about it is:
+Bots are useful for clear tasks, alerts, and execution.
+ Agents can be more useful for context, filtering, decision support, and multi-step workflows.
+But the real question is how users can apply these tools in real trading situations. So let’s move into each team’s strategy lesson.
+4. Team Strategy Lessons, 35 mins.
+Segment 1: Build4
+Lesson: Turning Market Signals into Better Execution
+Host:
+Build4, let’s start with execution.
+Many traders see opportunities but struggle with timing, friction, or knowing what action to take next.
+Could you teach users one practical workflow for moving from a market signal to a better trading decision or execution flow?
+(For team to read) Please cover:
+What signal or situation should the user start with?
+What should the user check before acting?
+Where can bots or agents help?
+Where should the user stay in control?
+What mistake should users avoid?
+Optional follow-up:
+What is one execution habit that separates better traders from impulsive traders?
+
+Segment 2: ClipX
+Lesson: Reading Social Signals Without Getting Trapped by Noise
+Host:
+ClipX, your team is very relevant to social signal discovery.
+A lot of traders watch X, CT, KOL posts, replies, and viral narratives, but not all attention is good alpha.
+Could you teach users how to think about social signals more intelligently?
+(For team to read) Please cover:
+What social signals are actually useful?
+How can users tell the difference between organic momentum and noise?
+How does AI help process social signals?
+What should users verify before trading from a tweet or social trend?
+What is one social trading mistake users should avoid?
+Optional follow-up:
+Is it better to be early, or better to be accurate?
+
+Segment 3: 4lpha AI
+Lesson: Filtering Too Much Information into Actionable Alpha
+Host:
+4lpha AI, most traders are overloaded with information: token launches, charts, CT, Telegram groups, alerts, influencers, and market data.
+Could you teach users a practical framework for filtering noise into useful trading signals?
+(For team to read) Please cover:
+What should users pay attention to first?
+What signals are usually overrated?
+What signals are underrated?
+How can AI help prioritize opportunities?
+Where does human judgment still matter?
+Optional follow-up:
+What is one simple checklist users can apply before acting on a signal?
+
+Segment 4: elizaOK
+Lesson: How AI Agents Can Support Treasury-Based Trading Strategies
+Host question:
+elizaOK, your project seems to focus on AI agents that identify opportunities and execute positions through a treasury model, while holders receive BNB rewards. Could you walk us through how users should understand this type of agent-assisted trading model?
+(For team to read) Please cover: 
+How does your AI agent identify trading opportunities?
+What does the treasury actually do in the trading flow?
+What role does the user play if they are not actively managing positions?
+How is this different from users running their own trading bot?
+What risks should users understand when relying on treasury-powered agents?
+How do you think about security and execution when users are not directly managing trades?
+Segment 5: Clawdyland
+Lesson: What Autonomous Agents Can and Cannot Do for Traders
+Host:
+Clawdyland, your angle helps us think about more autonomous agents and agent behavior.
+Could you teach users how to think about the role of autonomous agents in trading or market participation?
+(For team to read) Please cover:
+What can an autonomous agent realistically help with today?
+What should users not expect agents to do yet?
+Why do memory, identity, or continuity matter for agents?
+Where can autonomous agents improve user decision-making?
+What risks should users keep in mind?
+Optional follow-up:
+In the future, will users trade through agents directly, or will agents mostly support users behind the scenes?
+
+5. Lightning Answers From each Project, 7 min
+Fast group round. Keep each answer short.
+Question 1: All Teams
+What is one trading task users should automate first?
+Examples:
+discovery
+alerts
+watchlists
+signal filtering
+execution support
+tracking
+Question 2: All Teams
+What is one trading task users should not fully automate?
+Examples:
+final trade approval
+wallet permissions
+position sizing
+risk limits
+emotional decision-making
+Question 3: All Teams
+What is one piece of advice for users trying bots or agents for the first time?
+
+6. Closing, 3 min
+Host:
+That brings us to the end of today’s AMA:
+Today’s discussion focused on how users can use bots, agents, and AI-powered tools more effectively in trading.
+We covered how to move from signal to execution, how to read social signals more carefully, how to filter noise into useful alpha, how to use Telegram-native tools responsibly, and how to think about autonomous agents without overestimating what they can do today.
+The main takeaway is simple:
+Bots and agents can help users trade smarter, but they should support user judgment, not replace it completely.
+For Four.meme, this AMA is part of our broader effort to support AI-native builders, practical trading tools, and new user experiences on BNB Chain.
+Thank you to all the teams for sharing their knowledge, and thank you to everyone who joined us live.
+Follow Four.meme for more AI Sprint winner sessions, ecosystem updates, and future discussions on AI, trading, and meme markets.
+
