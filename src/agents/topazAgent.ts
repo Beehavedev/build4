@@ -377,6 +377,8 @@ async function tickOneAgent(
         tokenIn: decision.tokenIn, tokenOut: decision.tokenOut,
         amountIn: BigInt(Math.floor(decision.amountUsdt * 1e18)),
         route: { kind: 'v2', hops: [{ from: decision.tokenIn, to: decision.tokenOut, stable: !!stats.stable }] },
+        // Broker spread fee on agent-initiated Topaz swaps.
+        feeCtx: { userId: agent.userId, agentId: agent.id, venue: 'topaz', side: 'buy' },
       })
       if (!r.ok) throw new Error(r.error ?? 'swap_failed')
       execution = `swap_ok:${r.txHash}`

@@ -1241,11 +1241,13 @@ app.post("/web-api/fourmeme/buy", async (req, res) => {
       const { pancakeBuyTokenWithBnb } = await import("../../src/services/pancakeSwapTrading");
       const r = await pancakeBuyTokenWithBnb(privateKey, String(tokenAddress), bnbWei, {
         slippageBps: slippageBps != null ? Number(slippageBps) : undefined,
+        feeCtx: { userId: user.id, venue: "pancake", side: "buy" },
       });
       return res.json({ ok: true, venue: r.venue, txHash: r.txHash, tokenAddress: r.tokenAddress });
     }
     const r = await buyTokenWithBnb(privateKey, String(tokenAddress), bnbWei, {
       slippageBps: slippageBps != null ? Number(slippageBps) : undefined,
+      feeCtx: { userId: user.id, venue: "fourmeme", side: "buy" },
     });
     res.json({ ok: true, venue: "fourMemeCurve", txHash: r.txHash, tokenAddress: r.tokenAddress });
   } catch (e: any) {
@@ -1276,11 +1278,13 @@ app.post("/web-api/fourmeme/sell", async (req, res) => {
       const { pancakeSellTokenForBnb } = await import("../../src/services/pancakeSwapTrading");
       const r = await pancakeSellTokenForBnb(privateKey, String(tokenAddress), tokensWei, {
         slippageBps: slippageBps != null ? Number(slippageBps) : undefined,
+        feeCtx: { userId: user.id, venue: "pancake", side: "sell" },
       });
       return res.json({ ok: true, venue: r.venue, txHash: r.txHash, approvalTxHash: r.approvalTxHash });
     }
     const r = await sellTokenForBnb(privateKey, String(tokenAddress), tokensWei, {
       slippageBps: slippageBps != null ? Number(slippageBps) : undefined,
+      feeCtx: { userId: user.id, venue: "fourmeme", side: "sell" },
     });
     res.json({ ok: true, venue: "fourMemeCurve", txHash: r.txHash });
   } catch (e: any) {
@@ -1380,6 +1384,7 @@ app.post("/web-api/topaz/swap", async (req, res) => {
       route: { kind: "v2", hops: [{ from: tokenIn, to: tokenOut, stable: !!isStable }] },
       slippageBps: slippageBps != null ? Number(slippageBps) : undefined,
       userId: user.id,
+      feeCtx: { userId: user.id, venue: "topaz", side: "buy" },
     });
     res.json({
       ...r,

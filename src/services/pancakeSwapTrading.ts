@@ -164,6 +164,8 @@ export async function pancakeQuoteSell(
 
 // ── Trades (signing required) ─────────────────────────────────────────
 
+import { chargeBnbFee, type FeeContext } from './brokerFees'
+
 export interface PancakeBuyResult {
   txHash: string
   tokenAddress: string
@@ -174,6 +176,8 @@ export interface PancakeBuyResult {
   blockNumber?: number
   gasUsedWei?: bigint
   venue: 'pancakeV2'
+  brokerFeeWei?: bigint
+  brokerFeeTxHash?: string | null
 }
 
 // Hard ceiling for ANY caller path (manual API, four.meme→Pancake graduation
@@ -194,33 +198,46 @@ export async function pancakeBuyTokenWithBnb(
   privateKey: string,
   tokenAddress: string,
   bnbWei: bigint,
-  opts: { slippageBps?: number; gasLimit?: bigint } = {},
+  opts: { slippageBps?: number; gasLimit?: bigint; feeCtx?: FeeContext } = {},
 ): Promise<PancakeBuyResult> {
   if (bnbWei <= 0n) throw new Error('bnbWei must be > 0')
   const slippageBps = clampPancakeSlippage(opts)
   const addr = ethers.getAddress(tokenAddress)
   const signer = new ethers.Wallet(privateKey, provider())
 
-  const quote = await pancakeQuoteBuy(addr, bnbWei)
+  // Broker spread fee: pre-deduct from input BNB (fail-closed).
+  let netBnbWei = bnbWei
+  let brokerFeeWei = 0n
+  let brokerFeeTxHash: string | null = null
+  if (opts.feeCtx) {
+    const r = await chargeBnbFee(privateKey, bnbWei, { ...opts.feeCtx, venue: 'pancake', side: 'buy' })
+    netBnbWei = r.netWei
+    brokerFeeWei = r.feeWei
+    brokerFeeTxHash = r.feeTxHash
+  }
+
+  const quote = await pancakeQuoteBuy(addr, netBnbWei)
   const minOut = applySlippageDown(quote.estimatedAmountWei, slippageBps)
   if (minOut <= 0n) throw new Error('Computed minOut <= 0; refusing to broadcast')
 
   const path = [WBNB_BSC, addr]
   const tx = await router(signer).swapExactETHForTokensSupportingFeeOnTransferTokens(
     minOut, path, await signer.getAddress(), deadline(),
-    { value: bnbWei, gasLimit: opts.gasLimit },
+    { value: netBnbWei, gasLimit: opts.gasLimit },
   )
   const receipt = await tx.wait()
   return {
     txHash: tx.hash,
     tokenAddress: addr,
-    bnbSpentWei: bnbWei,
+    bnbSpentWei: netBnbWei,
     estimatedTokensWei: quote.estimatedAmountWei,
     minTokensWei: minOut,
     slippageBps,
     blockNumber: receipt?.blockNumber,
     gasUsedWei: receipt?.gasUsed ? BigInt(receipt.gasUsed) : undefined,
     venue: 'pancakeV2',
+    brokerFeeWei,
+    brokerFeeTxHash,
   }
 }
 
@@ -235,6 +252,8 @@ export interface PancakeSellResult {
   blockNumber?: number
   gasUsedWei?: bigint
   venue: 'pancakeV2'
+  brokerFeeWei?: bigint
+  brokerFeeTxHash?: string | null
 }
 
 /**
@@ -251,7 +270,7 @@ export async function pancakeSellTokenForBnb(
   privateKey: string,
   tokenAddress: string,
   tokenAmountWei: bigint,
-  opts: { slippageBps?: number; gasLimit?: bigint } = {},
+  opts: { slippageBps?: number; gasLimit?: bigint; feeCtx?: FeeContext } = {},
 ): Promise<PancakeSellResult> {
   if (tokenAmountWei <= 0n) throw new Error('tokenAmountWei must be > 0')
   const slippageBps = clampPancakeSlippage(opts)
@@ -278,6 +297,18 @@ export async function pancakeSellTokenForBnb(
     { gasLimit: opts.gasLimit },
   )
   const receipt = await tx.wait()
+
+  // Broker spread fee: post-deduct from output BNB (fail-closed). Use
+  // the quoted output as the basis — actual is within slippage so the
+  // bps-level error is acceptable for a 30bps fee. Skipped if quote
+  // somehow returned 0 (refuse to take more than we should).
+  let brokerFeeWei = 0n
+  let brokerFeeTxHash: string | null = null
+  if (opts.feeCtx && quote.estimatedBnbWei > 0n) {
+    const r = await chargeBnbFee(privateKey, quote.estimatedBnbWei, { ...opts.feeCtx, venue: 'pancake', side: 'sell' })
+    brokerFeeWei = r.feeWei
+    brokerFeeTxHash = r.feeTxHash
+  }
   return {
     txHash: tx.hash,
     tokenAddress: addr,
@@ -289,5 +320,7 @@ export async function pancakeSellTokenForBnb(
     blockNumber: receipt?.blockNumber,
     gasUsedWei: receipt?.gasUsed ? BigInt(receipt.gasUsed) : undefined,
     venue: 'pancakeV2',
+    brokerFeeWei,
+    brokerFeeTxHash,
   }
 }

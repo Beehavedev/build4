@@ -5368,6 +5368,8 @@ app.post('/api/topaz/swap', requireTgUser, async (req, res) => {
       route: { kind: 'v2', hops: hops ?? [{ from: tokenIn, to: tokenOut, stable: !!stable }] },
       slippageBps,
       userId: user.id,
+      // Broker spread fee (30 bps) on the input ERC20.
+      feeCtx: { userId: user.id, venue: 'topaz', side: 'buy' },
     })
     res.json({
       ...r,
@@ -5617,8 +5619,9 @@ app.post('/api/pancakeswap/swap', requireTgUser, async (req, res) => {
     const pk = decryptPrivateKey(w.encryptedPK, user.id)
 
     const { pancakeBuyTokenWithBnb, pancakeSellTokenForBnb } = await import('./services/pancakeSwapTrading')
+    const feeCtx = { userId: user.id, venue: 'pancake' as const, side: 'buy' as const }
     if (inIsBnb) {
-      const r = await pancakeBuyTokenWithBnb(pk, tokenOut, amountWei, { slippageBps: slipBps })
+      const r = await pancakeBuyTokenWithBnb(pk, tokenOut, amountWei, { slippageBps: slipBps, feeCtx })
       return res.json({
         ok: true,
         txHash: r.txHash,
@@ -5628,7 +5631,7 @@ app.post('/api/pancakeswap/swap', requireTgUser, async (req, res) => {
         venue: r.venue,
       })
     } else {
-      const r = await pancakeSellTokenForBnb(pk, tokenIn, amountWei, { slippageBps: slipBps })
+      const r = await pancakeSellTokenForBnb(pk, tokenIn, amountWei, { slippageBps: slipBps, feeCtx: { ...feeCtx, side: 'sell' } })
       return res.json({
         ok: true,
         txHash: r.txHash,
@@ -6613,6 +6616,7 @@ app.post('/api/fourmeme/buy', requireTgUser, async (req, res) => {
       const { pancakeBuyTokenWithBnb } = await import('./services/pancakeSwapTrading')
       const result = await pancakeBuyTokenWithBnb(privateKey, String(tokenAddress), bnbWei, {
         slippageBps: slippageBps != null ? Number(slippageBps) : undefined,
+        feeCtx: { userId: user.id, venue: 'pancake', side: 'buy' },
       })
       // Demo Day — Portfolio "Token Bags" parity: track this manual
       // buy in four_meme_holdings so it shows up alongside launches.
@@ -6635,6 +6639,7 @@ app.post('/api/fourmeme/buy', requireTgUser, async (req, res) => {
     }
     const result = await buyTokenWithBnb(privateKey, String(tokenAddress), bnbWei, {
       slippageBps: slippageBps != null ? Number(slippageBps) : undefined,
+      feeCtx: { userId: user.id, venue: 'fourmeme', side: 'buy' },
     })
     await recordFourMemeHoldingBuy({
       userId: user.id,
@@ -6679,6 +6684,7 @@ app.post('/api/fourmeme/sell', requireTgUser, async (req, res) => {
       const { pancakeSellTokenForBnb } = await import('./services/pancakeSwapTrading')
       const result = await pancakeSellTokenForBnb(privateKey, String(tokenAddress), tokensWei, {
         slippageBps: slippageBps != null ? Number(slippageBps) : undefined,
+        feeCtx: { userId: user.id, venue: 'pancake', side: 'sell' },
       })
       // Track proceeds in four_meme_holdings if we have a row for
       // this (user, token). Uses the EXPECTED bnb (estimatedBnbWei
@@ -6703,6 +6709,7 @@ app.post('/api/fourmeme/sell', requireTgUser, async (req, res) => {
     }
     const result = await sellTokenForBnb(privateKey, String(tokenAddress), tokensWei, {
       slippageBps: slippageBps != null ? Number(slippageBps) : undefined,
+      feeCtx: { userId: user.id, venue: 'fourmeme', side: 'sell' },
     })
     await recordFourMemeHoldingSell({
       userId: user.id,

@@ -1363,7 +1363,9 @@ export async function tickAllFourMemeTakeProfit(): Promise<TakeProfitSweepResult
 
       let sellRes: Awaited<ReturnType<typeof sellTokenForBnb>>
       try {
-        sellRes = await sellTokenForBnb(creds.privateKey, tokenAddr, balanceWei)
+        sellRes = await sellTokenForBnb(creds.privateKey, tokenAddr, balanceWei, {
+          feeCtx: { userId: row.userId, agentId: row.agentId ?? undefined, venue: 'fourmeme', side: 'sell' },
+        })
       } catch (e) {
         const msg = (e as Error).message
         console.warn(`[fourMemeTakeProfit] ${row.id}: sell failed:`, msg)
