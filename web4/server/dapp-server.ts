@@ -637,8 +637,16 @@ app.post("/web-api/aster/approve", async (req, res) => {
     if (!user) return res.status(403).json({ error: "no_linked_bot_account" });
     if (!wallet || !wallet.encryptedPK) return res.status(404).json({ error: "no_active_wallet" });
 
-    const builderAddress = process.env.ASTER_BUILDER_ADDRESS;
-    const feeRate = process.env.ASTER_BUILDER_FEE_RATE ?? "0.0001";
+    // ASTER_BUILDER_ADDRESS wins; else fall back to BROKER_FEE_WALLET so
+    // the 30 bps self-collected fee lands at the right address by default.
+    const { brokerFeeWallet } = await import("../../src/services/brokerFees");
+    let builderAddress: string | undefined = process.env.ASTER_BUILDER_ADDRESS;
+    if (!builderAddress) {
+      try { builderAddress = brokerFeeWallet(); } catch { /* leave undefined */ }
+    }
+    // Bumped 0.0001 → 0.003 (10 bps Aster Builder Program rate → 30 bps
+    // self-collected). Mirrors the bot handler in src/server.ts.
+    const feeRate = process.env.ASTER_BUILDER_FEE_RATE ?? "0.003";
     if (!builderAddress) return res.status(500).json({ error: "platform_no_builder" });
 
     const { decryptPrivateKey, encryptPrivateKey } = await import("../../src/services/wallet");
@@ -794,8 +802,14 @@ app.post("/web-api/aster/order", async (req, res) => {
       console.warn("[/web-api/aster/order] margin precheck failed (non-fatal):", e?.message);
     }
 
-    const builderAddress = process.env.ASTER_BUILDER_ADDRESS;
-    const feeRate = process.env.ASTER_BUILDER_FEE_RATE ?? "0.0001";
+    // Same defaults as the approve handler — BROKER_FEE_WALLET fallback,
+    // 30 bps self-collected rate.
+    const { brokerFeeWallet: _bfwOrder } = await import("../../src/services/brokerFees");
+    let builderAddress: string | undefined = process.env.ASTER_BUILDER_ADDRESS;
+    if (!builderAddress) {
+      try { builderAddress = _bfwOrder(); } catch { /* leave undefined */ }
+    }
+    const feeRate = process.env.ASTER_BUILDER_FEE_RATE ?? "0.003";
 
     const result = builderAddress
       ? await aster.placeOrderWithBuilderCode({
@@ -810,6 +824,22 @@ app.post("/web-api/aster/order", async (req, res) => {
   } catch (e: any) {
     const { friendlyAsterError } = await import("../../src/services/aster");
     const msg = friendlyAsterError(e);
+    // Lazy 30-bps re-approval (mirror of bot's /api/aster/order handler):
+    // existing users signed maxFeeRate=0.0001; first 0.003 order hits -4400.
+    // Fire-and-forget reapprove, tell the dApp to retry in ~5s.
+    const { isAsterFeeOverMaxError, reapproveAsterForUser } = await import("../../src/services/asterReapprove");
+    if (isAsterFeeOverMaxError(e)) {
+      console.warn(`[dapp-server] /web-api/aster/order fee-over-max for user=${user.id}; firing reapprove`);
+      reapproveAsterForUser(user as any).then(r => {
+        console.log(`[dapp-server] /web-api/aster/order auto-reapprove → success=${r.success} err=${r.error ?? 'none'}`);
+      }).catch(re => console.error("[dapp-server] /web-api/aster/order auto-reapprove threw:", re?.message));
+      return res.status(503).json({
+        error: "fee_terms_updated",
+        detail: "Fee terms updated to 0.30%. Re-approving your account now — please retry in a few seconds.",
+        retryAfterMs: 5000,
+        reapproving: true,
+      });
+    }
     console.error("[dapp-server] /web-api/aster/order:", msg, "(raw:", e?.message, ")");
     res.status(502).json({ error: "order_failed", detail: msg });
   }

@@ -1563,8 +1563,18 @@ app.post('/api/me/link-wallet/refresh', requireTgUser, async (req, res) => {
 app.post('/api/aster/approve', requireTgUser, async (req, res) => {
   const user = (req as any).user
   try {
-    const builderAddress = process.env.ASTER_BUILDER_ADDRESS
-    const feeRate        = process.env.ASTER_BUILDER_FEE_RATE ?? '0.0001'
+    // ASTER_BUILDER_ADDRESS env wins for backwards compat; otherwise fall
+    // back to BROKER_FEE_WALLET so a fresh deploy already routes the 30 bps
+    // self-collected broker fee to the right place without extra env wiring.
+    const { brokerFeeWallet } = await import('./services/brokerFees')
+    let builderAddress: string | undefined = process.env.ASTER_BUILDER_ADDRESS
+    if (!builderAddress) {
+      try { builderAddress = brokerFeeWallet() } catch { /* leave undefined */ }
+    }
+    // 30 bps self-collected fee (was 10 bps under the old Aster Builder
+    // Program defaults). This rate becomes the per-order feeRate AND the
+    // maxFeeRate the user signs in approveBuilder.
+    const feeRate        = process.env.ASTER_BUILDER_FEE_RATE ?? '0.003'
     if (!builderAddress) {
       return res.status(500).json({ success: false, error: 'Platform not configured (no builder)' })
     }
@@ -2329,8 +2339,13 @@ app.post('/api/aster/order', requireTgUser, async (req, res) => {
       console.warn('[API] /aster/order balance pre-check failed:', balErr?.message)
     }
 
-    const builderAddress = process.env.ASTER_BUILDER_ADDRESS
-    const feeRate        = process.env.ASTER_BUILDER_FEE_RATE ?? '0.0001'
+    // Same defaults as the onboarding handler — see /api/aster/approve.
+    const { brokerFeeWallet: _bfw } = await import('./services/brokerFees')
+    let builderAddress: string | undefined = process.env.ASTER_BUILDER_ADDRESS
+    if (!builderAddress) {
+      try { builderAddress = _bfw() } catch { /* leave undefined */ }
+    }
+    const feeRate        = process.env.ASTER_BUILDER_FEE_RATE ?? '0.003'
     const buySell        = side === 'LONG' ? 'BUY' : 'SELL'
 
     // Only attribute to the builder if THIS user has actually signed
@@ -2422,6 +2437,22 @@ app.post('/api/aster/order', requireTgUser, async (req, res) => {
     })
   } catch (err: any) {
     const msg = (await import('./services/aster')).friendlyAsterError(err)
+    // Lazy 30-bps re-approval: existing users onboarded under the old
+    // 0.0001 maxFeeRate will hit -4400 on their first 0.003 order. Fire
+    // reapproveAsterForUser in the background so their NEXT manual order
+    // clears, and surface a clear retry hint in the response.
+    const { isAsterFeeOverMaxError, reapproveAsterForUser } = await import('./services/asterReapprove')
+    if (isAsterFeeOverMaxError(err)) {
+      console.warn(`[API] /aster/order fee-over-max for user=${user.id}; firing reapprove`)
+      reapproveAsterForUser(user as any).then(r => {
+        console.log(`[API] /aster/order auto-reapprove → success=${r.success} builderEnrolled=${r.builderEnrolled ?? false} err=${r.error ?? 'none'}`)
+      }).catch(e => console.error('[API] /aster/order auto-reapprove threw:', e?.message))
+      return res.status(503).json({
+        error: 'Fee terms updated to 0.30%. Re-approving your account now — please retry in a few seconds.',
+        retryAfterMs: 5000,
+        reapproving: true,
+      })
+    }
     console.error('[API] /aster/order failed:', msg, '(raw:', err?.message, 'status:', err?.response?.status, ')')
     res.status(502).json({ error: msg })
   }

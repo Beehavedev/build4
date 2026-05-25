@@ -31,6 +31,36 @@ export interface ReapproveResult {
   error?: string
 }
 
+// Detect Aster's "fee rate exceeds builder-approved max" rejection. Used by
+// every Aster order path (autonomous agent + manual API + dApp API) to decide
+// whether to lazy-fire reapproveAsterForUser. Existing users onboarded under
+// the 0.0001 maxFeeRate will hit this on their first 0.003-bumped order.
+//
+// Detection strategy: prefer Aster's structured signals (code -4400 with
+// fee/max wording in the message) over loose text matching, then fall back
+// to known message fragments. Keep fallback narrow to avoid false positives
+// on unrelated rejects.
+export function isAsterFeeOverMaxError(err: any): boolean {
+  const respBody = err?.response?.data
+  const code = typeof respBody === 'object' && respBody !== null
+    ? Number((respBody as any).code)
+    : NaN
+  const msgFromBody = typeof respBody === 'object' && respBody !== null
+    ? String((respBody as any).msg ?? '')
+    : typeof respBody === 'string' ? respBody : ''
+  const combined = `${err?.message ?? ''} ${msgFromBody}`.toLowerCase()
+  // Structured: Aster fee-related rejections cluster around -4400. Require
+  // both the code AND a fee/max keyword so unrelated -4400s don't trigger.
+  if (code === -4400 && /\bfee\b|\bmax\b|builder/.test(combined)) return true
+  // Text-fallback: known phrasings observed in Aster responses. Narrowed
+  // to require BOTH a fee/max token AND an "exceed/over" verb to keep
+  // false positives off paths like "insufficient balance".
+  const hasFeeMaxToken = /maxfeerate|fee.?rate.*max|builder.*max.?fee|fee.*approved|builder.*approved/.test(combined)
+  const hasExceedVerb  = /exceed|over.*max|greater.*than/.test(combined)
+  if (hasFeeMaxToken && hasExceedVerb) return true
+  return false
+}
+
 // In-memory per-user lock. Prevents duplicate re-mints when multiple agents
 // owned by the same user tick simultaneously and all hit -1000 in the same
 // window. Without this, we'd register N fresh agent addresses against Aster
@@ -61,8 +91,19 @@ async function _runReapprove(user: {
   asterAgentAddress?: string | null
   asterOnboarded?: boolean
 }): Promise<ReapproveResult> {
-  const builderAddress = process.env.ASTER_BUILDER_ADDRESS
-  const feeRate = process.env.ASTER_BUILDER_FEE_RATE ?? '0.0001'
+  // Builder address: fall back to BROKER_FEE_WALLET so this works out of
+  // the box once the operator drops the Aster Builder Program and just
+  // wants their own fee-collection address on every order. ASTER_BUILDER_ADDRESS
+  // env still wins when set, for backwards compat with existing deployments.
+  const { brokerFeeWallet } = await import('./brokerFees')
+  let builderAddress = process.env.ASTER_BUILDER_ADDRESS
+  if (!builderAddress) {
+    try { builderAddress = brokerFeeWallet() } catch { /* leave undefined */ }
+  }
+  // Default feeRate bumped 0.0001 → 0.003 (10 bps program rate → 30 bps
+  // self-collected). This is the maxFeeRate the user signs in approveBuilder
+  // AND the per-order feeRate Aster credits to builderAddress on every fill.
+  const feeRate = process.env.ASTER_BUILDER_FEE_RATE ?? '0.003'
   if (!builderAddress) return { success: false, error: 'no_builder_configured' }
 
   const wallet = await db.wallet.findFirst({ where: { userId: user.id, isActive: true } })
