@@ -1,14 +1,25 @@
 import { db } from './db'
 
+// Dedupe tolerated-error log lines per process so a known, never-fixable
+// case (e.g. CREATE UNIQUE INDEX on Agent(LOWER(name)) failing because
+// pre-existing rows already collide) doesn't spam stdout on every boot.
+// First occurrence is still surfaced as a warning so a NEW dup error
+// stays visible to operators. Repeats become silent for the lifetime of
+// the process.
+const _toleratedSeen = new Set<string>()
+
 async function run(sql: string) {
   try {
     await db.$executeRawUnsafe(sql)
   } catch (err: any) {
     // Tolerate duplicate-key index creation failures (pre-existing dup data)
-    // and other "already-exists" style errors; log and continue.
+    // and other "already-exists" style errors; log once and continue.
     const msg = err?.meta?.message ?? err?.message ?? String(err)
     if (/duplicate|already exists|23505|42P07|42701/i.test(msg)) {
-      console.warn('[DB] Tolerated:', msg)
+      if (!_toleratedSeen.has(msg)) {
+        _toleratedSeen.add(msg)
+        console.warn('[DB] Tolerated (first seen this boot):', msg)
+      }
       return
     }
     throw err
