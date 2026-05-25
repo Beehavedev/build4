@@ -6,7 +6,7 @@ interface TopazState {
   enabled: boolean
   phase: number
   writesGated: string
-  masterWallet: { address: string | null; error: string | null }
+  userWallet: { address: string | null; error: string | null }
   config: {
     router: string | null
     npm: string | null
@@ -190,16 +190,16 @@ export default function Topaz() {
     <div data-testid="page-topaz" style={{ paddingTop: 16 }}>
       <h1 style={{ fontSize: 22, fontWeight: 700, margin: '0 0 12px' }}>TOPAZ</h1>
       <div style={{ fontSize: 12, color: '#9ca3af', marginBottom: 16 }}>
-        BSC ve(3,3) — spot swaps + LP farming. Phase 1: master-wallet-only.
+        BSC ve(3,3) — spot swaps + LP farming from your own wallet.
       </div>
 
-      {/* Master wallet card */}
+      {/* User wallet card */}
       <div style={card} data-testid="card-topaz-wallet">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
-            <div style={{ fontSize: 11, color: '#9ca3af', textTransform: 'uppercase' }}>Master Wallet</div>
-            <div style={{ fontSize: 13, fontFamily: 'monospace', marginTop: 4 }} data-testid="text-topaz-master">
-              {state?.masterWallet.address ? short(state.masterWallet.address) : '—'}
+            <div style={{ fontSize: 11, color: '#9ca3af', textTransform: 'uppercase' }}>Your Wallet</div>
+            <div style={{ fontSize: 13, fontFamily: 'monospace', marginTop: 4 }} data-testid="text-topaz-user-wallet">
+              {state?.userWallet.address ? short(state.userWallet.address) : '—'}
             </div>
           </div>
           <div style={{
@@ -209,9 +209,11 @@ export default function Topaz() {
             {state?.enabled ? 'ENABLED' : 'DISABLED'}
           </div>
         </div>
-        {state?.masterWallet.error && (
+        {state?.userWallet.error && (
           <div style={{ marginTop: 10, fontSize: 12, color: '#ef4444' }} data-testid="text-topaz-error">
-            {state.masterWallet.error}
+            {state.userWallet.error === 'no_bsc_wallet'
+              ? 'No active BSC wallet — set one up from the Wallet tab to trade on Topaz.'
+              : state.userWallet.error}
           </div>
         )}
         {stateErr && (
@@ -277,7 +279,7 @@ export default function Topaz() {
             <button data-testid="button-topaz-swap" onClick={doSwap} disabled={busy} style={btn(true)}>Swap</button>
           </div>
           <div style={{ marginTop: 8, fontSize: 11, color: '#6b7280' }}>
-            Swap executes from the master wallet (admin-gated).
+            Swap executes from your active BSC wallet.
           </div>
         </div>
       )}
@@ -350,7 +352,7 @@ export default function Topaz() {
           <div style={card}>
             <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 10 }}>Open v3 positions ({positions.length})</div>
             {positions.length === 0 && (
-              <div style={{ fontSize: 12, color: '#6b7280' }}>No open v3 positions on the master wallet.</div>
+              <div style={{ fontSize: 12, color: '#6b7280' }}>No open v3 positions on your wallet.</div>
             )}
             {positions.map(p => (
               <div key={p.tokenId} data-testid={`row-position-${p.tokenId}`} style={{

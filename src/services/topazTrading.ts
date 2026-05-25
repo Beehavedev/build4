@@ -130,6 +130,40 @@ export async function getMasterSigner(): Promise<{
   return { signer, address, cfg }
 }
 
+/**
+ * Resolve a signer for a specific Telegram user's active BSC custodial
+ * wallet. Phase 2: user-initiated mini-app trades flow through this
+ * helper so each user funds and signs from their own custody, while the
+ * autonomous agent path keeps using `getMasterSigner` (Phase 1).
+ */
+export async function getUserSigner(userId: string): Promise<{
+  signer: ethers.Wallet
+  address: string
+  cfg: TopazConfig
+}> {
+  const cfg = getTopazConfig()
+  const provider = activeDeps.buildProvider()
+  const w = await db.wallet.findFirst({
+    where: { userId, chain: 'BSC', isActive: true },
+  })
+  if (!w) throw new Error('topaz_user_wallet_not_found — no active BSC wallet for this user')
+  const { privateKey } = await activeDeps.loadWallet(w.id)
+  const signer = new ethers.Wallet(privateKey, provider)
+  return { signer, address: signer.address, cfg }
+}
+
+/**
+ * Unified signer resolver used by every write entry point. When the
+ * caller passes a `userId`, we sign from that user's BSC wallet; when
+ * omitted, we fall back to the master signer (autonomous agent path).
+ */
+export async function resolveSigner(
+  opts?: { userId?: string },
+): Promise<{ signer: ethers.Wallet; address: string; cfg: TopazConfig }> {
+  if (opts?.userId) return getUserSigner(opts.userId)
+  return getMasterSigner()
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────────
 
 function computeDeadline(cfg: TopazConfig, override?: number): number {
@@ -332,13 +366,16 @@ export async function swap(
     route: SwapRoute
     slippageBps?: number
     deadlineSec?: number
+    // Phase 2: when set, the trade signs from this user's BSC wallet
+    // instead of the master wallet. Omit for the autonomous agent path.
+    userId?: string
   },
 ): Promise<SwapResult> {
   try {
     if (args.route.kind !== 'v2') {
       throw new Error('topaz_mixed_swap_not_enabled_phase1')
     }
-    const { signer, address, cfg } = await getMasterSigner()
+    const { signer, address, cfg } = await resolveSigner({ userId: args.userId })
     const router = requireAddress(cfg, 'router')
 
     // Re-quote on-chain so the executor never trusts a stale price.
@@ -379,6 +416,7 @@ export interface AddV2LiquidityArgs {
   amountBDesired: bigint
   slippageBps?: number
   deadlineSec?: number
+  userId?: string
 }
 
 export interface AddV2LiquidityResult {
@@ -395,7 +433,7 @@ export async function addV2Liquidity(args: AddV2LiquidityArgs): Promise<AddV2Liq
     if (args.amountADesired <= 0n || args.amountBDesired <= 0n) {
       throw new Error('topaz_invalid_lp_amounts')
     }
-    const { signer, address, cfg } = await getMasterSigner()
+    const { signer, address, cfg } = await resolveSigner({ userId: args.userId })
     const router = requireAddress(cfg, 'router')
 
     // Verify the pair exists. pairFor is deterministic — if the pair
@@ -446,6 +484,7 @@ export interface RemoveV2LiquidityArgs {
   amountAMin: bigint
   amountBMin: bigint
   deadlineSec?: number
+  userId?: string
 }
 
 export async function removeV2Liquidity(args: RemoveV2LiquidityArgs): Promise<SwapResult> {
@@ -454,7 +493,7 @@ export async function removeV2Liquidity(args: RemoveV2LiquidityArgs): Promise<Sw
     if (args.amountAMin <= 0n || args.amountBMin <= 0n) {
       throw new Error('topaz_remove_lp_min_zero')
     }
-    const { signer, address, cfg } = await getMasterSigner()
+    const { signer, address, cfg } = await resolveSigner({ userId: args.userId })
     const router = requireAddress(cfg, 'router')
     const deadline = computeDeadline(cfg, args.deadlineSec)
     const pair = (await new ethers.Contract(router, TOPAZ_ROUTER_ABI, signer)
@@ -491,6 +530,7 @@ export interface MintV3PositionArgs {
   // fees and ZERO emissions until the price re-enters range.
   // The brain should set this to true for any farming position.
   intendsToFarm: boolean
+  userId?: string
 }
 
 export interface MintV3PositionResult {
@@ -509,7 +549,7 @@ export async function mintV3Position(args: MintV3PositionArgs): Promise<MintV3Po
     if (args.amount0Desired <= 0n && args.amount1Desired <= 0n) {
       throw new Error('topaz_v3_mint_zero_amounts')
     }
-    const { signer, address, cfg } = await getMasterSigner()
+    const { signer, address, cfg } = await resolveSigner({ userId: args.userId })
     const npm = requireAddress(cfg, 'npm')
 
     // Resolve pool stats + tickSpacing. getPoolStats throws if the pool
@@ -562,10 +602,14 @@ export async function mintV3Position(args: MintV3PositionArgs): Promise<MintV3Po
   }
 }
 
-export async function burnV3Position(tokenId: bigint, deadlineSec?: number): Promise<SwapResult> {
+export async function burnV3Position(
+  tokenId: bigint,
+  deadlineSec?: number,
+  opts?: { userId?: string },
+): Promise<SwapResult> {
   try {
     if (tokenId <= 0n) throw new Error('topaz_invalid_token_id')
-    const { signer, address, cfg } = await getMasterSigner()
+    const { signer, address, cfg } = await resolveSigner({ userId: opts?.userId })
     const npm = requireAddress(cfg, 'npm')
     const n = new ethers.Contract(npm, TOPAZ_NPM_ABI, signer)
 

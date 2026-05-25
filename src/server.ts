@@ -5232,32 +5232,35 @@ app.get('/api/admin/topaz/state', requireAdmin, async (req, res) => {
 })
 
 // ── Public TOPAZ surface (mini-app + web dApp) ─────────────────────────
-// Phase 1 is master-wallet-only on the WRITE path: all writes execute
-// from TOPAZ_MASTER_WALLET_ID regardless of caller, so write endpoints
-// are admin-gated. Reads are open to any authed Telegram user because
-// they only expose public on-chain data + the master wallet's positions
-// (already public information on BSCScan).
-app.get('/api/topaz/state', requireTgUser, async (_req, res) => {
+// Phase 2 (multi-user): all WRITES execute from the caller's own active
+// BSC custodial wallet — signer is resolved by Telegram user id via
+// `topazTrading.resolveSigner({ userId })`. The autonomous agent path
+// (which calls the same trading helpers with no userId) keeps using the
+// master wallet. Reads are open to any authed Telegram user.
+app.get('/api/topaz/state', requireTgUser, async (req, res) => {
   try {
+    const user = (req as any).user as { id: string } | undefined
     const { getTopazConfig } = await import('./services/topaz')
     const cfg = getTopazConfig()
-    let masterAddress: string | null = null
-    let masterError: string | null = null
-    if (cfg.enabled && cfg.masterWalletId) {
+    let userWalletAddress: string | null = null
+    let userWalletError: string | null = null
+    if (user?.id) {
       try {
-        const { getMasterSigner } = await import('./services/topazTrading')
-        const m = await getMasterSigner()
-        masterAddress = m.address
+        const w = await db.wallet.findFirst({
+          where: { userId: user.id, chain: 'BSC', isActive: true },
+        })
+        userWalletAddress = w?.address ?? null
+        if (!w) userWalletError = 'no_bsc_wallet'
       } catch (e) {
-        masterError = (e as Error).message
+        userWalletError = (e as Error).message
       }
     }
     res.json({
       ok: true,
       enabled: cfg.enabled,
-      phase: 1,
-      writesGated: 'admin-only',
-      masterWallet: { address: masterAddress, error: masterError },
+      phase: 2,
+      writesGated: 'user',
+      userWallet: { address: userWalletAddress, error: userWalletError },
       config: {
         router: cfg.router, npm: cfg.npm, voter: cfg.voter,
         topazToken: cfg.topazToken,
@@ -5281,21 +5284,28 @@ app.get('/api/topaz/gauges', requireTgUser, async (req, res) => {
   }
 })
 
-app.get('/api/topaz/positions', requireTgUser, async (_req, res) => {
+app.get('/api/topaz/positions', requireTgUser, async (req, res) => {
   try {
+    const user = (req as any).user as { id: string } | undefined
     const { getTopazConfig } = await import('./services/topaz')
     const cfg = getTopazConfig()
-    if (!cfg.enabled || !cfg.masterWalletId) {
+    if (!cfg.enabled) {
       return res.json({ ok: true, positions: [], note: 'topaz not enabled' })
     }
-    const { getMasterSigner, listOpenLpPositions } = await import('./services/topazTrading')
-    const { address } = await getMasterSigner()
-    const positions = await listOpenLpPositions(address)
+    if (!user?.id) {
+      return res.status(401).json({ ok: false, error: 'unauthorized' })
+    }
+    const w = await db.wallet.findFirst({
+      where: { userId: user.id, chain: 'BSC', isActive: true },
+    })
+    if (!w) return res.json({ ok: true, positions: [], note: 'no_bsc_wallet' })
+    const { listOpenLpPositions } = await import('./services/topazTrading')
+    const positions = await listOpenLpPositions(w.address)
     // Convert bigints for JSON
     const safe = positions.map(p => ({
       ...p, tokenId: p.tokenId.toString(), liquidity: p.liquidity.toString(),
     }))
-    res.json({ ok: true, masterWallet: address, positions: safe })
+    res.json({ ok: true, userWallet: w.address, positions: safe })
   } catch (err) {
     res.status(500).json({ ok: false, error: (err as Error).message })
   }
@@ -5340,9 +5350,14 @@ app.post('/api/topaz/quote', requireTgUser, async (req, res) => {
   }
 })
 
-// ── WRITE endpoints (admin only, Phase 1 master-wallet-only) ────────────
-app.post('/api/topaz/swap', requireAdmin, async (req, res) => {
+// ── WRITE endpoints (Phase 2: per-user wallets) ─────────────────────────
+// Each write signs from the caller's own active BSC custodial wallet,
+// resolved by `userId` in topazTrading.resolveSigner. The autonomous
+// agent path (no userId) keeps using the master wallet.
+app.post('/api/topaz/swap', requireTgUser, async (req, res) => {
   try {
+    const user = (req as any).user as { id: string } | undefined
+    if (!user?.id) return res.status(401).json({ ok: false, error: 'unauthorized' })
     const { tokenIn, tokenOut, amountIn, hops, stable, slippageBps } = req.body || {}
     if (!tokenIn || !tokenOut || !amountIn) {
       return res.status(400).json({ ok: false, error: 'tokenIn, tokenOut, amountIn required' })
@@ -5352,6 +5367,7 @@ app.post('/api/topaz/swap', requireAdmin, async (req, res) => {
       tokenIn, tokenOut, amountIn: BigInt(amountIn),
       route: { kind: 'v2', hops: hops ?? [{ from: tokenIn, to: tokenOut, stable: !!stable }] },
       slippageBps,
+      userId: user.id,
     })
     res.json({
       ...r,
@@ -5363,8 +5379,10 @@ app.post('/api/topaz/swap', requireAdmin, async (req, res) => {
   }
 })
 
-app.post('/api/topaz/lp/add', requireAdmin, async (req, res) => {
+app.post('/api/topaz/lp/add', requireTgUser, async (req, res) => {
   try {
+    const user = (req as any).user as { id: string } | undefined
+    if (!user?.id) return res.status(401).json({ ok: false, error: 'unauthorized' })
     const { tokenA, tokenB, stable, amountADesired, amountBDesired, slippageBps } = req.body || {}
     if (!tokenA || !tokenB || !amountADesired || !amountBDesired) {
       return res.status(400).json({ ok: false, error: 'tokenA, tokenB, amounts required' })
@@ -5375,6 +5393,7 @@ app.post('/api/topaz/lp/add', requireAdmin, async (req, res) => {
       amountADesired: BigInt(amountADesired),
       amountBDesired: BigInt(amountBDesired),
       slippageBps,
+      userId: user.id,
     })
     res.json(r)
   } catch (err) {
@@ -5382,8 +5401,10 @@ app.post('/api/topaz/lp/add', requireAdmin, async (req, res) => {
   }
 })
 
-app.post('/api/topaz/lp/remove', requireAdmin, async (req, res) => {
+app.post('/api/topaz/lp/remove', requireTgUser, async (req, res) => {
   try {
+    const user = (req as any).user as { id: string } | undefined
+    if (!user?.id) return res.status(401).json({ ok: false, error: 'unauthorized' })
     const { tokenA, tokenB, stable, liquidity, amountAMin, amountBMin } = req.body || {}
     if (!tokenA || !tokenB || !liquidity || !amountAMin || !amountBMin) {
       return res.status(400).json({ ok: false, error: 'tokenA, tokenB, liquidity, minAmounts required' })
@@ -5394,6 +5415,7 @@ app.post('/api/topaz/lp/remove', requireAdmin, async (req, res) => {
       liquidity: BigInt(liquidity),
       amountAMin: BigInt(amountAMin),
       amountBMin: BigInt(amountBMin),
+      userId: user.id,
     })
     res.json(r)
   } catch (err) {
@@ -5401,8 +5423,10 @@ app.post('/api/topaz/lp/remove', requireAdmin, async (req, res) => {
   }
 })
 
-app.post('/api/topaz/v3/mint', requireAdmin, async (req, res) => {
+app.post('/api/topaz/v3/mint', requireTgUser, async (req, res) => {
   try {
+    const user = (req as any).user as { id: string } | undefined
+    if (!user?.id) return res.status(401).json({ ok: false, error: 'unauthorized' })
     const { pool, tickLower, tickUpper, amount0Desired, amount1Desired, slippageBps, intendsToFarm } = req.body || {}
     if (!pool || tickLower === undefined || tickUpper === undefined) {
       return res.status(400).json({ ok: false, error: 'pool, tickLower, tickUpper required' })
@@ -5414,6 +5438,7 @@ app.post('/api/topaz/v3/mint', requireAdmin, async (req, res) => {
       amount1Desired: BigInt(amount1Desired ?? 0),
       slippageBps,
       intendsToFarm: !!intendsToFarm,
+      userId: user.id,
     })
     res.json({ ...r, tokenId: r.tokenId?.toString(), liquidity: r.liquidity?.toString() })
   } catch (err) {
@@ -5421,12 +5446,14 @@ app.post('/api/topaz/v3/mint', requireAdmin, async (req, res) => {
   }
 })
 
-app.post('/api/topaz/v3/burn', requireAdmin, async (req, res) => {
+app.post('/api/topaz/v3/burn', requireTgUser, async (req, res) => {
   try {
+    const user = (req as any).user as { id: string } | undefined
+    if (!user?.id) return res.status(401).json({ ok: false, error: 'unauthorized' })
     const { tokenId } = req.body || {}
     if (!tokenId) return res.status(400).json({ ok: false, error: 'tokenId required' })
     const { burnV3Position } = await import('./services/topazTrading')
-    const r = await burnV3Position(BigInt(tokenId))
+    const r = await burnV3Position(BigInt(tokenId), undefined, { userId: user.id })
     res.json(r)
   } catch (err) {
     res.status(500).json({ ok: false, error: (err as Error).message })

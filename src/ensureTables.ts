@@ -311,8 +311,13 @@ export async function ensureNewTables() {
   // agentCreation seeded it correctly — because the UPDATE clobbered
   // the column on the next boot. That's why new agents (e.g. Joey) were
   // showing the POLY chip OFF despite the creation code setting it ON.
+  // Phase 5 (2026-05-25): include 'topaz' now that Phase 2 multi-user
+  // rollout lets every user swap/farm on Topaz from their own wallet.
+  // Previously 'topaz' was deliberately excluded (Phase 1 was
+  // master-wallet-only); it's now safe to light up the chip on every
+  // agent by default, identical to the other 4 venues.
   await run(`UPDATE "Agent"
-             SET "enabledVenues" = ARRAY['aster', 'hyperliquid', 'fortytwo', 'polymarket']::TEXT[],
+             SET "enabledVenues" = ARRAY['aster', 'hyperliquid', 'fortytwo', 'polymarket', 'topaz']::TEXT[],
                  "venuesAutoExpanded" = true
              WHERE COALESCE("venuesAutoExpanded", false) = false`)
   await run(`CREATE UNIQUE INDEX IF NOT EXISTS "Agent_walletAddress_key" ON "Agent"("walletAddress") WHERE "walletAddress" IS NOT NULL`)
@@ -733,12 +738,10 @@ export async function ensureNewTables() {
   )`)
   await run(`CREATE INDEX IF NOT EXISTS "HouseLog_createdAt_idx" ON "HouseLog"("createdAt" DESC)`)
 
-  // ── Topaz DEX (BSC ve(3,3)) — Phase 1 schema additions ─────────────────
-  // Master-wallet-only Phase 1: per-agent toggles + position-tracking table.
-  // We intentionally do NOT add 'topaz' to the enabledVenues auto-expansion
-  // UPDATE above — Topaz is opt-in via TOPAZ_AGENT_ALLOWLIST until Phase 2
-  // multi-user rollout, and clobbering enabledVenues on every boot would
-  // override user-driven chip toggles.
+  // ── Topaz DEX (BSC ve(3,3)) — schema additions ─────────────────────────
+  // Per-agent toggles + position-tracking table. As of Phase 2 (multi-user
+  // rollout), 'topaz' is included in the enabledVenues auto-expansion
+  // UPDATE above so every agent surfaces the TOPAZ chip by default.
   await run(`ALTER TABLE "Agent" ADD COLUMN IF NOT EXISTS "topazEnabled" BOOLEAN NOT NULL DEFAULT false`)
   await run(`ALTER TABLE "Agent" ADD COLUMN IF NOT EXISTS "topazMaxSizeUsdt" DOUBLE PRECISION NOT NULL DEFAULT 50`)
   await run(`ALTER TABLE "Agent" ADD COLUMN IF NOT EXISTS "lastTopazTickAt" TIMESTAMP(3)`)
