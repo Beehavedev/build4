@@ -17,6 +17,7 @@ type RegisterState = "idle" | "registering" | "signing" | "ready" | "error";
 // longer be impersonated by spoofing the x-wallet-address header.
 async function ensureSiweSession(wallet: {
   address: string | null;
+  chainId: number | null;
   signMessage: (m: string) => Promise<string>;
 }): Promise<void> {
   // Already authed for this wallet? skip the prompt.
@@ -36,13 +37,20 @@ async function ensureSiweSession(wallet: {
   const issuedAt = new Date().toISOString();
   const expirationTime = new Date(Date.now() + 5 * 60 * 1000).toISOString();
   const domain = window.location.host;
+  // Chain ID must match the wallet's currently-active chain. WalletConnect v2
+  // sessions only authorize specific chains (see EthereumProvider.init chains/
+  // optionalChains in use-wallet.tsx) — signing a message that names a chain
+  // outside that allowlist makes the wallet reject the request with
+  // "Missing or invalid. request() chainId: eip155:<n>". Defaulting to 1 only
+  // as a last-resort fallback when chainId is unknown.
+  const chainId = wallet.chainId ?? 1;
   const message =
     `${domain} wants you to sign in with your Ethereum account:\n` +
     `${wallet.address}\n\n` +
     `Sign in to BUILD4 terminal. This will not trigger any transaction.\n\n` +
     `URI: ${window.location.origin}\n` +
     `Version: 1\n` +
-    `Chain ID: 1\n` +
+    `Chain ID: ${chainId}\n` +
     `Nonce: ${nonce}\n` +
     `Issued At: ${issuedAt}\n` +
     `Expiration Time: ${expirationTime}`;
