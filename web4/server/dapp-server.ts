@@ -232,7 +232,10 @@ app.post("/api/web4/siwe", async (req: Request, res: Response) => {
     res.json({ ok: true, address: lowered });
   } catch (err: any) {
     console.error("[dapp-server] /api/web4/siwe error:", err?.message || err);
-    res.status(401).json({ error: err?.message || "verification failed" });
+    res.status(401).json({
+      error: "verification_failed",
+      detail: process.env.NODE_ENV === "development" ? (err?.message ?? String(err)) : undefined,
+    });
   }
 });
 
@@ -357,7 +360,7 @@ app.get("/web-api/account/state", async (req, res) => {
     });
   } catch (e: any) {
     console.error("[dapp-server] /web-api/account/state:", e?.message || e);
-    res.status(500).json({ error: "lookup_failed", detail: e?.message ?? String(e) });
+    res.status(500).json({ error: "lookup_failed", detail: process.env.NODE_ENV === "development" ? (e?.message ?? String(e)) : undefined });
   }
 });
 
@@ -392,7 +395,7 @@ app.get("/web-api/polymarket/state", async (req, res) => {
     });
   } catch (e: any) {
     console.error("[dapp-server] /web-api/polymarket/state:", e?.message || e);
-    res.status(500).json({ error: "state_failed", detail: e?.message ?? String(e) });
+    res.status(500).json({ error: "state_failed", detail: process.env.NODE_ENV === "development" ? (e?.message ?? String(e)) : undefined });
   }
 });
 
@@ -413,7 +416,7 @@ app.post("/web-api/polymarket/setup", async (req, res) => {
     res.json({ ok: true, safe, allowance });
   } catch (e: any) {
     console.error("[dapp-server] /web-api/polymarket/setup:", e?.message || e);
-    res.status(500).json({ error: "setup_failed", detail: e?.message ?? String(e) });
+    res.status(500).json({ error: "setup_failed", detail: process.env.NODE_ENV === "development" ? (e?.message ?? String(e)) : undefined });
   }
 });
 
@@ -452,7 +455,7 @@ app.post("/web-api/polymarket/order", async (req, res) => {
     res.json(result);
   } catch (e: any) {
     console.error("[dapp-server] /web-api/polymarket/order:", e?.message || e);
-    res.status(500).json({ error: "order_failed", detail: e?.message ?? String(e) });
+    res.status(500).json({ error: "order_failed", detail: process.env.NODE_ENV === "development" ? (e?.message ?? String(e)) : undefined });
   }
 });
 
@@ -470,7 +473,7 @@ app.post("/web-api/polymarket/redeem", async (req, res) => {
     res.json(result);
   } catch (e: any) {
     console.error("[dapp-server] /web-api/polymarket/redeem:", e?.message || e);
-    res.status(500).json({ error: "redeem_failed", detail: e?.message ?? String(e) });
+    res.status(500).json({ error: "redeem_failed", detail: process.env.NODE_ENV === "development" ? (e?.message ?? String(e)) : undefined });
   }
 });
 
@@ -501,7 +504,7 @@ app.get("/web-api/fortytwo/state", async (req, res) => {
     });
   } catch (e: any) {
     console.error("[dapp-server] /web-api/fortytwo/state:", e?.message || e);
-    res.status(500).json({ error: "list_failed", detail: e?.message ?? String(e) });
+    res.status(500).json({ error: "list_failed", detail: process.env.NODE_ENV === "development" ? (e?.message ?? String(e)) : undefined });
   }
 });
 
@@ -531,7 +534,7 @@ app.post("/web-api/fortytwo/buy", async (req, res) => {
     res.json(result);
   } catch (e: any) {
     console.error("[dapp-server] /web-api/fortytwo/buy:", e?.message || e);
-    res.status(500).json({ error: "buy_failed", detail: e?.message ?? String(e) });
+    res.status(500).json({ error: "buy_failed", detail: process.env.NODE_ENV === "development" ? (e?.message ?? String(e)) : undefined });
   }
 });
 
@@ -549,7 +552,7 @@ app.post("/web-api/fortytwo/sell", async (req, res) => {
     if (!result.ok) return res.status(400).json(result);
     res.json(result);
   } catch (e: any) {
-    res.status(500).json({ error: "sell_failed", detail: e?.message ?? String(e) });
+    res.status(500).json({ error: "sell_failed", detail: process.env.NODE_ENV === "development" ? (e?.message ?? String(e)) : undefined });
   }
 });
 
@@ -564,7 +567,7 @@ app.post("/web-api/fortytwo/claim-all", async (req, res) => {
     const result = await claimAllUserResolved(user.id);
     res.json(result);
   } catch (e: any) {
-    res.status(500).json({ error: "claim_failed", detail: e?.message ?? String(e) });
+    res.status(500).json({ error: "claim_failed", detail: process.env.NODE_ENV === "development" ? (e?.message ?? String(e)) : undefined });
   }
 });
 
@@ -582,7 +585,7 @@ app.get("/web-api/fortytwo/positions", async (req, res) => {
     });
     res.json({ positions });
   } catch (e: any) {
-    res.status(500).json({ error: "list_failed", detail: e?.message ?? String(e) });
+    res.status(500).json({ error: "list_failed", detail: process.env.NODE_ENV === "development" ? (e?.message ?? String(e)) : undefined });
   }
 });
 
@@ -617,7 +620,7 @@ app.get("/web-api/aster/state", async (req, res) => {
       walletAddress: wallet?.address ?? null,
     });
   } catch (e: any) {
-    res.status(500).json({ error: "state_failed", detail: e?.message ?? String(e) });
+    res.status(500).json({ error: "state_failed", detail: process.env.NODE_ENV === "development" ? (e?.message ?? String(e)) : undefined });
   }
 });
 
@@ -726,7 +729,7 @@ app.post("/web-api/aster/approve", async (req, res) => {
     res.json({ ok: true, agentAddress: agentWallet.address });
   } catch (e: any) {
     console.error("[dapp-server] /web-api/aster/approve:", e?.message || e);
-    res.status(500).json({ error: "approve_failed", detail: e?.message ?? String(e) });
+    res.status(500).json({ error: "approve_failed", detail: process.env.NODE_ENV === "development" ? (e?.message ?? String(e)) : undefined });
   }
 });
 
@@ -829,7 +832,7 @@ app.post("/web-api/aster/orders/cancel", async (req, res) => {
     await aster.cancelOrder(String(symbol), Number(orderId), creds);
     res.json({ ok: true });
   } catch (e: any) {
-    res.status(502).json({ error: "cancel_failed", detail: e?.message ?? String(e) });
+    res.status(502).json({ error: "cancel_failed", detail: process.env.NODE_ENV === "development" ? (e?.message ?? String(e)) : undefined });
   }
 });
 
@@ -855,7 +858,7 @@ app.get("/web-api/aster/account", async (req, res) => {
     res.json({ onboarded: true, walletAddress: wallet.address, balance, positions });
   } catch (e: any) {
     console.error("[dapp-server] /web-api/aster/account:", e?.message || e);
-    res.status(502).json({ error: "account_failed", detail: e?.message ?? String(e) });
+    res.status(502).json({ error: "account_failed", detail: process.env.NODE_ENV === "development" ? (e?.message ?? String(e)) : undefined });
   }
 });
 
@@ -881,7 +884,7 @@ app.get("/web-api/hyperliquid/state", async (req, res) => {
       walletAddress: wallet?.address ?? null,
     });
   } catch (e: any) {
-    res.status(500).json({ error: "state_failed", detail: e?.message ?? String(e) });
+    res.status(500).json({ error: "state_failed", detail: process.env.NODE_ENV === "development" ? (e?.message ?? String(e)) : undefined });
   }
 });
 
@@ -948,7 +951,7 @@ app.post("/web-api/hyperliquid/approve", async (req, res) => {
     res.json({ ok: true, agentAddress });
   } catch (e: any) {
     console.error("[dapp-server] /web-api/hyperliquid/approve:", e?.message || e);
-    res.status(500).json({ error: "approve_failed", detail: e?.message ?? String(e) });
+    res.status(500).json({ error: "approve_failed", detail: process.env.NODE_ENV === "development" ? (e?.message ?? String(e)) : undefined });
   }
 });
 
@@ -989,7 +992,7 @@ app.post("/web-api/hyperliquid/order", async (req, res) => {
     res.json({ ok: true, order: result });
   } catch (e: any) {
     console.error("[dapp-server] /web-api/hyperliquid/order:", e?.message || e);
-    res.status(502).json({ error: "order_failed", detail: e?.message ?? String(e) });
+    res.status(502).json({ error: "order_failed", detail: process.env.NODE_ENV === "development" ? (e?.message ?? String(e)) : undefined });
   }
 });
 
@@ -1017,7 +1020,374 @@ app.get("/web-api/hyperliquid/account", async (req, res) => {
     });
   } catch (e: any) {
     console.error("[dapp-server] /web-api/hyperliquid/account:", e?.message || e);
-    res.status(502).json({ error: "account_failed", detail: e?.message ?? String(e) });
+    res.status(502).json({ error: "account_failed", detail: process.env.NODE_ENV === "development" ? (e?.message ?? String(e)) : undefined });
+  }
+});
+
+// ── four.meme: state, token info, positions, buy, sell ───────────────
+//
+// Mirrors the bot's /api/fourmeme/* surface for SIWE-authed web users.
+// All write paths decrypt the user's existing BSC custodial PK via
+// `loadUserBscPrivateKey(user.id)` (same key Aster/HL/42 already use),
+// so a single-signer model spans the entire dApp.
+//
+// `state` returns wallet + BNB balance + recent launches.
+// `positions` mirrors /api/fourmeme/positions (token_launches UNION
+// four_meme_holdings + live on-chain enrichment).
+// `token/:address` is a thin proxy to the public bot endpoint — no
+// session required because the bot's endpoint itself is public.
+// `buy`/`sell` route through the four.meme bonding curve, with the same
+// PancakeSwap V2 auto-fallback the bot uses for graduated tokens.
+
+app.get("/web-api/fourmeme/state", async (req, res) => {
+  const session = await requireSession(req, res); if (!session) return;
+  try {
+    const { user, wallet } = await lookupBotUser(session.address);
+    if (!user) return res.status(403).json({ error: "no_linked_bot_account" });
+    const hasBscWallet = Boolean(wallet?.address);
+    let bnbBalance: string | null = null;
+    if (wallet?.address) {
+      try {
+        const { getWalletBalances } = await import("../../src/services/wallet");
+        const bal = await getWalletBalances(wallet.address, "BSC");
+        bnbBalance = bal?.native ?? null;
+      } catch { /* non-fatal */ }
+    }
+    let recentLaunches: any[] = [];
+    try {
+      const { db } = await import("../../src/db");
+      recentLaunches = await db.$queryRaw<any[]>`
+        SELECT "id","token_name","token_symbol","token_address","tx_hash",
+               "launch_url","status","created_at"
+          FROM "token_launches"
+         WHERE "user_id" = ${user.id}
+         ORDER BY "created_at" DESC
+         LIMIT 10`;
+    } catch { /* table may not exist on fresh DBs */ }
+    res.json({
+      linked: true,
+      hasBscWallet,
+      walletAddress: wallet?.address ?? null,
+      bnbBalance,
+      recentLaunches,
+    });
+  } catch (e: any) {
+    res.status(500).json({ error: "state_failed", detail: process.env.NODE_ENV === "development" ? (e?.message ?? String(e)) : undefined });
+  }
+});
+
+app.get("/web-api/fourmeme/positions", async (req, res) => {
+  const session = await requireSession(req, res); if (!session) return;
+  try {
+    const { user } = await lookupBotUser(session.address);
+    if (!user) return res.status(403).json({ error: "no_linked_bot_account" });
+    const { db } = await import("../../src/db");
+    const { ethers } = await import("ethers");
+    const { buildBscProvider } = await import("../../src/services/bscProvider");
+    const { quoteSell, loadUserBscPrivateKey } = await import("../../src/services/fourMemeTrading");
+    const provider = buildBscProvider(process.env.BSC_RPC_URL);
+    let walletAddress: string | null = null;
+    try { walletAddress = (await loadUserBscPrivateKey(user.id)).address; } catch { /* no wallet */ }
+
+    type LaunchRow = { id: string; token_name: string; token_symbol: string; token_address: string | null; tx_hash: string | null; launch_url: string | null; image_url: string | null; initial_liquidity_bnb: string | null; status: string; sold_at: Date | null; sold_proceeds_bnb: string | null; sold_tx_hash: string | null; created_at: Date };
+    const launchRows = await db.$queryRaw<LaunchRow[]>`
+      SELECT "id","token_name","token_symbol","token_address","tx_hash",
+             "launch_url","image_url","initial_liquidity_bnb","status",
+             "sold_at","sold_proceeds_bnb","sold_tx_hash","created_at"
+        FROM "token_launches"
+       WHERE "user_id" = ${user.id} AND "token_address" IS NOT NULL
+       ORDER BY "created_at" DESC LIMIT 50`.catch(() => [] as LaunchRow[]);
+
+    type HoldingRow = { id: string; token_name: string | null; token_symbol: string | null; token_address: string; first_buy_tx: string | null; last_action_tx: string | null; total_bnb_in: string; total_bnb_out: string; first_buy_at: Date; last_action_at: Date };
+    const holdingRows = await db.$queryRaw<HoldingRow[]>`
+      SELECT "id","token_name","token_symbol","token_address",
+             "first_buy_tx","last_action_tx","total_bnb_in","total_bnb_out",
+             "first_buy_at","last_action_at"
+        FROM "four_meme_holdings"
+       WHERE "user_id" = ${user.id}
+       ORDER BY "last_action_at" DESC LIMIT 50`.catch(() => [] as HoldingRow[]);
+
+    const launchAddrs = new Set(launchRows.map(r => (r.token_address ?? "").toLowerCase()).filter(Boolean));
+    type Row = { kind: "launch"; r: LaunchRow } | { kind: "buy"; r: HoldingRow };
+    const rows: Row[] = [
+      ...launchRows.map(r => ({ kind: "launch" as const, r })),
+      ...holdingRows.filter(h => !launchAddrs.has(h.token_address.toLowerCase())).map(r => ({ kind: "buy" as const, r })),
+    ];
+    const ERC20 = ["function balanceOf(address) view returns (uint256)"];
+    const positions = await Promise.all(rows.map(async (row) => {
+      const isLaunch = row.kind === "launch";
+      const r = row.r;
+      const tokenAddr = (isLaunch ? (r as LaunchRow).token_address : (r as HoldingRow).token_address)!;
+      const tokenName = isLaunch ? (r as LaunchRow).token_name : ((r as HoldingRow).token_name ?? `${tokenAddr.slice(0,6)}…${tokenAddr.slice(-4)}`);
+      const tokenSymbol = isLaunch ? (r as LaunchRow).token_symbol : ((r as HoldingRow).token_symbol ?? "");
+      const entryBnb = isLaunch
+        ? ((r as LaunchRow).initial_liquidity_bnb ? Number((r as LaunchRow).initial_liquidity_bnb) : null)
+        : Number((r as HoldingRow).total_bnb_in);
+      let balanceTokens: number | null = null;
+      let currentValueBnb: number | null = null;
+      let pnlBnb: number | null = null;
+      let error: string | null = null;
+      if (walletAddress) {
+        try {
+          const erc20 = new ethers.Contract(tokenAddr, ERC20, provider);
+          const balanceWei = BigInt(await erc20.balanceOf(walletAddress));
+          balanceTokens = Number(ethers.formatUnits(balanceWei, 18));
+          if (balanceWei > 0n) {
+            try {
+              const q = await quoteSell(tokenAddr, balanceWei);
+              currentValueBnb = Number(ethers.formatEther(q.fundsWei));
+              if (entryBnb != null) pnlBnb = currentValueBnb - entryBnb;
+            } catch (e: any) { error = `quote:${e?.shortMessage ?? e?.message ?? "failed"}`.slice(0, 100); }
+          }
+        } catch (e: any) { error = `bal:${e?.shortMessage ?? e?.message ?? "rpc"}`.slice(0, 100); }
+      }
+      return {
+        id: r.id, tokenName, tokenSymbol, tokenAddress: tokenAddr,
+        source: isLaunch ? "launch" : "buy",
+        entryBnb, balanceTokens, currentValueBnb, pnlBnb, error,
+      };
+    }));
+    res.json({ walletAddress, positions });
+  } catch (e: any) {
+    res.status(500).json({ error: "positions_failed", detail: process.env.NODE_ENV === "development" ? (e?.message ?? String(e)) : undefined });
+  }
+});
+
+// Token info — public (matches bot's /api/fourmeme/token/:address).
+app.get("/web-api/fourmeme/token/:address", async (req, res) => {
+  try {
+    const { isFourMemeEnabled, getTokenInfo, quoteBuyByBnb, quoteSell } =
+      await import("../../src/services/fourMemeTrading");
+    if (!isFourMemeEnabled()) return res.status(503).json({ error: "FOUR_MEME_DISABLED" });
+    const addr = String(req.params.address ?? "");
+    let info: any;
+    try { info = await getTokenInfo(addr); }
+    catch {
+      const { pancakeGetTokenInfo } = await import("../../src/services/pancakeSwapTrading");
+      info = await pancakeGetTokenInfo(addr);
+      info.minTradingFeeWei = 0n; info.offersWei = 0n; info.maxOffersWei = 0n;
+      info.fundsWei = 0n; info.maxFundsWei = 0n; info.fillPct = 1;
+    }
+    const out: any = {
+      info: {
+        ...info,
+        lastPriceWei: info.lastPriceWei?.toString?.() ?? "0",
+        minTradingFeeWei: info.minTradingFeeWei.toString(),
+        offersWei: info.offersWei.toString(),
+        maxOffersWei: info.maxOffersWei.toString(),
+        fundsWei: info.fundsWei.toString(),
+        maxFundsWei: info.maxFundsWei.toString(),
+      },
+      venue: info.graduatedToPancake ? "pancakeV2" : "fourMemeCurve",
+    };
+    const bnb = req.query.bnb ? String(req.query.bnb) : "";
+    const sell = req.query.sell ? String(req.query.sell) : "";
+    if (bnb) {
+      const { ethers } = await import("ethers");
+      const bnbWei = ethers.parseEther(bnb);
+      if (info.graduatedToPancake) {
+        const { pancakeQuoteBuy } = await import("../../src/services/pancakeSwapTrading");
+        const q = await pancakeQuoteBuy(addr, bnbWei);
+        out.buyQuote = { estimatedAmountWei: q.estimatedAmountWei.toString(), amountMsgValueWei: q.amountInWei.toString() };
+      } else {
+        const q = await quoteBuyByBnb(addr, bnbWei);
+        out.buyQuote = {
+          estimatedAmountWei: q.estimatedAmountWei.toString(),
+          estimatedCostWei: q.estimatedCostWei.toString(),
+          estimatedFeeWei: q.estimatedFeeWei.toString(),
+          amountMsgValueWei: q.amountMsgValueWei.toString(),
+          amountFundsWei: q.amountFundsWei.toString(),
+        };
+      }
+    }
+    if (sell) {
+      const { ethers } = await import("ethers");
+      const tokensWei = ethers.parseUnits(sell, 18);
+      if (info.graduatedToPancake) {
+        const { pancakeQuoteSell } = await import("../../src/services/pancakeSwapTrading");
+        const q = await pancakeQuoteSell(addr, tokensWei);
+        out.sellQuote = { fundsWei: q.estimatedBnbWei.toString(), feeWei: "0" };
+      } else {
+        const q = await quoteSell(addr, tokensWei);
+        out.sellQuote = { fundsWei: q.fundsWei.toString(), feeWei: q.feeWei.toString() };
+      }
+    }
+    res.json(out);
+  } catch (e: any) {
+    res.status(400).json({ error: "token_info_failed", detail: process.env.NODE_ENV === "development" ? (e?.message ?? String(e)) : undefined });
+  }
+});
+
+app.post("/web-api/fourmeme/buy", async (req, res) => {
+  const session = await requireSession(req, res); if (!session) return;
+  try {
+    const { user } = await lookupBotUser(session.address);
+    if (!user) return res.status(403).json({ error: "no_linked_bot_account" });
+    const { isFourMemeEnabled, buyTokenWithBnb, loadUserBscPrivateKey, getTokenInfo } =
+      await import("../../src/services/fourMemeTrading");
+    if (!isFourMemeEnabled()) return res.status(503).json({ error: "FOUR_MEME_DISABLED" });
+    const { tokenAddress, bnbAmount, slippageBps } = req.body ?? {};
+    if (!tokenAddress || !bnbAmount) return res.status(400).json({ error: "tokenAddress+bnbAmount required" });
+    const { ethers } = await import("ethers");
+    const bnbWei = ethers.parseEther(String(bnbAmount));
+    const { privateKey } = await loadUserBscPrivateKey(user.id);
+    let info: any;
+    try { info = await getTokenInfo(String(tokenAddress)); }
+    catch {
+      const { pancakeGetTokenInfo } = await import("../../src/services/pancakeSwapTrading");
+      info = await pancakeGetTokenInfo(String(tokenAddress));
+    }
+    if (info.graduatedToPancake) {
+      const { pancakeBuyTokenWithBnb } = await import("../../src/services/pancakeSwapTrading");
+      const r = await pancakeBuyTokenWithBnb(privateKey, String(tokenAddress), bnbWei, {
+        slippageBps: slippageBps != null ? Number(slippageBps) : undefined,
+      });
+      return res.json({ ok: true, venue: r.venue, txHash: r.txHash, tokenAddress: r.tokenAddress });
+    }
+    const r = await buyTokenWithBnb(privateKey, String(tokenAddress), bnbWei, {
+      slippageBps: slippageBps != null ? Number(slippageBps) : undefined,
+    });
+    res.json({ ok: true, venue: "fourMemeCurve", txHash: r.txHash, tokenAddress: r.tokenAddress });
+  } catch (e: any) {
+    res.status(400).json({ error: "buy_failed", detail: process.env.NODE_ENV === "development" ? (e?.message ?? String(e)) : undefined, code: e?.code });
+  }
+});
+
+app.post("/web-api/fourmeme/sell", async (req, res) => {
+  const session = await requireSession(req, res); if (!session) return;
+  try {
+    const { user } = await lookupBotUser(session.address);
+    if (!user) return res.status(403).json({ error: "no_linked_bot_account" });
+    const { isFourMemeEnabled, sellTokenForBnb, loadUserBscPrivateKey, getTokenInfo } =
+      await import("../../src/services/fourMemeTrading");
+    if (!isFourMemeEnabled()) return res.status(503).json({ error: "FOUR_MEME_DISABLED" });
+    const { tokenAddress, tokenAmount, slippageBps } = req.body ?? {};
+    if (!tokenAddress || !tokenAmount) return res.status(400).json({ error: "tokenAddress+tokenAmount required" });
+    const { ethers } = await import("ethers");
+    const tokensWei = ethers.parseUnits(String(tokenAmount), 18);
+    const { privateKey } = await loadUserBscPrivateKey(user.id);
+    let info: any;
+    try { info = await getTokenInfo(String(tokenAddress)); }
+    catch {
+      const { pancakeGetTokenInfo } = await import("../../src/services/pancakeSwapTrading");
+      info = await pancakeGetTokenInfo(String(tokenAddress));
+    }
+    if (info.graduatedToPancake) {
+      const { pancakeSellTokenForBnb } = await import("../../src/services/pancakeSwapTrading");
+      const r = await pancakeSellTokenForBnb(privateKey, String(tokenAddress), tokensWei, {
+        slippageBps: slippageBps != null ? Number(slippageBps) : undefined,
+      });
+      return res.json({ ok: true, venue: r.venue, txHash: r.txHash, approvalTxHash: r.approvalTxHash });
+    }
+    const r = await sellTokenForBnb(privateKey, String(tokenAddress), tokensWei, {
+      slippageBps: slippageBps != null ? Number(slippageBps) : undefined,
+    });
+    res.json({ ok: true, venue: "fourMemeCurve", txHash: r.txHash });
+  } catch (e: any) {
+    res.status(400).json({ error: "sell_failed", detail: process.env.NODE_ENV === "development" ? (e?.message ?? String(e)) : undefined, code: e?.code });
+  }
+});
+
+// ── Topaz: state, gauges, quote, swap (Phase 2 per-user signer) ──────
+//
+// Phase 1 of Topaz was master-wallet-only; Phase 2 (this dApp surface)
+// passes `userId: user.id` to `swap()` so each user signs from their
+// own custodial BSC wallet via `getUserSigner(user.id)`. Quote is
+// read-only. State enumerates the user's NPM v3 positions via
+// `listOpenLpPositions(wallet)`. Gauges use the Goldsky subgraph and
+// are technically public, but we gate them anyway for consistency.
+
+app.get("/web-api/topaz/state", async (req, res) => {
+  const session = await requireSession(req, res); if (!session) return;
+  try {
+    const { user, wallet } = await lookupBotUser(session.address);
+    if (!user) return res.status(403).json({ error: "no_linked_bot_account" });
+    const { getTopazConfig } = await import("../../src/services/topaz");
+    const cfg = getTopazConfig();
+    let bnbBalance: string | null = null;
+    let usdtBalance: string | null = null;
+    if (wallet?.address) {
+      try {
+        const { getWalletBalances } = await import("../../src/services/wallet");
+        const bal = await getWalletBalances(wallet.address, "BSC");
+        bnbBalance = bal?.native ?? null;
+        usdtBalance = bal?.usdt ?? null;
+      } catch { /* non-fatal */ }
+    }
+    let positions: any[] = [];
+    if (cfg.enabled && wallet?.address) {
+      try {
+        const { listOpenLpPositions } = await import("../../src/services/topazTrading");
+        const raw = await listOpenLpPositions(wallet.address);
+        positions = raw.map(p => ({ ...p, tokenId: p.tokenId.toString(), liquidity: p.liquidity.toString() }));
+      } catch (e: any) {
+        console.warn("[/web-api/topaz/state] listOpenLpPositions:", e?.message);
+      }
+    }
+    res.json({
+      enabled: cfg.enabled,
+      walletAddress: wallet?.address ?? null,
+      bnbBalance, usdtBalance,
+      positions,
+      config: {
+        wbnb: cfg.wbnbToken,
+        usdt: cfg.usdtToken,
+        defaultSlippageBps: cfg.defaultSlippageBps,
+        maxTradeUsdt: cfg.maxTradeUsdt,
+      },
+    });
+  } catch (e: any) {
+    res.status(500).json({ error: "state_failed", detail: process.env.NODE_ENV === "development" ? (e?.message ?? String(e)) : undefined });
+  }
+});
+
+app.get("/web-api/topaz/gauges", async (req, res) => {
+  const session = await requireSession(req, res); if (!session) return;
+  try {
+    const limit = Math.max(1, Math.min(50, Number(req.query.limit) || 10));
+    const { getTopGaugesByApr } = await import("../../src/services/topazTrading");
+    const gauges = await getTopGaugesByApr(limit);
+    res.json({ gauges });
+  } catch (e: any) {
+    res.status(500).json({ error: "gauges_failed", detail: process.env.NODE_ENV === "development" ? (e?.message ?? String(e)) : undefined });
+  }
+});
+
+app.post("/web-api/topaz/quote", async (req, res) => {
+  const session = await requireSession(req, res); if (!session) return;
+  try {
+    const { tokenIn, tokenOut, amountIn, isStable } = req.body ?? {};
+    if (!tokenIn || !tokenOut || !amountIn) return res.status(400).json({ error: "tokenIn+tokenOut+amountIn required" });
+    const { quoteSwap } = await import("../../src/services/topazTrading");
+    const route = { kind: "v2" as const, hops: [{ from: tokenIn, to: tokenOut, stable: !!isStable }] };
+    const q = await quoteSwap(tokenIn, tokenOut, BigInt(amountIn), route);
+    res.json({ amountOut: q.amountOut.toString(), route: q.route });
+  } catch (e: any) {
+    res.status(400).json({ error: "quote_failed", detail: process.env.NODE_ENV === "development" ? (e?.message ?? String(e)) : undefined });
+  }
+});
+
+app.post("/web-api/topaz/swap", async (req, res) => {
+  const session = await requireSession(req, res); if (!session) return;
+  try {
+    const { user } = await lookupBotUser(session.address);
+    if (!user) return res.status(403).json({ error: "no_linked_bot_account" });
+    const { tokenIn, tokenOut, amountIn, slippageBps, isStable } = req.body ?? {};
+    if (!tokenIn || !tokenOut || !amountIn) return res.status(400).json({ error: "tokenIn+tokenOut+amountIn required" });
+    const { swap } = await import("../../src/services/topazTrading");
+    const r = await swap({
+      tokenIn, tokenOut, amountIn: BigInt(amountIn),
+      route: { kind: "v2", hops: [{ from: tokenIn, to: tokenOut, stable: !!isStable }] },
+      slippageBps: slippageBps != null ? Number(slippageBps) : undefined,
+      userId: user.id,
+    });
+    res.json({
+      ...r,
+      amountOut: r.amountOut?.toString(),
+      amountOutMin: r.amountOutMin?.toString(),
+    });
+  } catch (e: any) {
+    res.status(500).json({ error: "swap_failed", detail: process.env.NODE_ENV === "development" ? (e?.message ?? String(e)) : undefined });
   }
 });
 

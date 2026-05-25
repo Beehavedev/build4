@@ -176,6 +176,20 @@ export interface PancakeBuyResult {
   venue: 'pancakeV2'
 }
 
+// Hard ceiling for ANY caller path (manual API, four.meme→Pancake graduation
+// fallback, dApp). Even if a caller forgets to clamp, the executor refuses
+// to broadcast above this. Keep tighter than fourMemeTrading.MAX_SLIPPAGE_BPS
+// because Pancake routes have deep liquidity — high slippage = MEV exposure.
+export const PANCAKE_HARD_MAX_SLIPPAGE_BPS = 500
+
+function clampPancakeSlippage(opts?: { slippageBps?: number }): number {
+  const bps = resolveSlippageBps(opts)
+  if (bps > PANCAKE_HARD_MAX_SLIPPAGE_BPS) {
+    throw new Error(`slippageBps ${bps} exceeds Pancake hard cap ${PANCAKE_HARD_MAX_SLIPPAGE_BPS}`)
+  }
+  return bps
+}
+
 export async function pancakeBuyTokenWithBnb(
   privateKey: string,
   tokenAddress: string,
@@ -183,7 +197,7 @@ export async function pancakeBuyTokenWithBnb(
   opts: { slippageBps?: number; gasLimit?: bigint } = {},
 ): Promise<PancakeBuyResult> {
   if (bnbWei <= 0n) throw new Error('bnbWei must be > 0')
-  const slippageBps = resolveSlippageBps(opts)
+  const slippageBps = clampPancakeSlippage(opts)
   const addr = ethers.getAddress(tokenAddress)
   const signer = new ethers.Wallet(privateKey, provider())
 
@@ -240,7 +254,7 @@ export async function pancakeSellTokenForBnb(
   opts: { slippageBps?: number; gasLimit?: bigint } = {},
 ): Promise<PancakeSellResult> {
   if (tokenAmountWei <= 0n) throw new Error('tokenAmountWei must be > 0')
-  const slippageBps = resolveSlippageBps(opts)
+  const slippageBps = clampPancakeSlippage(opts)
   const addr = ethers.getAddress(tokenAddress)
   const signer = new ethers.Wallet(privateKey, provider())
   const owner = await signer.getAddress()

@@ -825,7 +825,396 @@ function FortyTwoCard({ initial, onRefresh }: { initial: AccountState["venues"][
   );
 }
 
-// ── Phase placeholder card (Pancake, Topaz, four.meme) ──
+// ── four.meme card — manual buy/sell on any BSC token by address ──
+interface FourMemeState {
+  linked: boolean;
+  hasBscWallet: boolean;
+  walletAddress: string | null;
+  bnbBalance: string | null;
+  recentLaunches: Array<{ id: string; token_name: string; token_symbol: string; token_address: string | null; tx_hash: string | null; launch_url: string | null; status: string; created_at: string }>;
+}
+interface FourMemePosition {
+  id: string; tokenName: string; tokenSymbol: string; tokenAddress: string;
+  source: "launch" | "buy"; entryBnb: number | null; balanceTokens: number | null;
+  currentValueBnb: number | null; pnlBnb: number | null; error: string | null;
+}
+
+function FourMemeCard() {
+  const [state, setState] = useState<FourMemeState | null>(null);
+  const [positions, setPositions] = useState<FourMemePosition[]>([]);
+  const [err, setErr] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [tokenAddress, setTokenAddress] = useState("");
+  const [bnbAmount, setBnbAmount] = useState("0.01");
+  const [sellPct, setSellPct] = useState("100");
+  const [slippageBps, setSlippageBps] = useState("500");
+
+  const load = useCallback(async () => {
+    try {
+      const [s, p] = await Promise.all([
+        fetch("/web-api/fourmeme/state", { credentials: "include" }).then(r => r.json()),
+        fetch("/web-api/fourmeme/positions", { credentials: "include" }).then(r => r.json()),
+      ]);
+      if (s?.error) throw new Error(s.detail || s.error);
+      setState(s);
+      setPositions(Array.isArray(p?.positions) ? p.positions : []);
+      setErr(null);
+    } catch (e: any) { setErr(e?.message || "load failed"); }
+  }, []);
+  useEffect(() => { void load(); }, [load]);
+
+  async function runBuy() {
+    setBusy("buy"); setMsg(null); setErr(null);
+    try {
+      if (!tokenAddress.trim()) throw new Error("token address required");
+      const r = await fetch("/web-api/fourmeme/buy", {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tokenAddress: tokenAddress.trim(), bnbAmount, slippageBps: Number(slippageBps) }),
+      });
+      const j = await r.json();
+      if (!r.ok || !j.ok) throw new Error(j.detail || j.error || `buy failed (${r.status})`);
+      setMsg(`Bought via ${j.venue} — tx ${short(j.txHash, 6)}.`);
+      await load();
+    } catch (e: any) { setErr(e?.message || "buy failed"); }
+    finally { setBusy(null); }
+  }
+
+  async function runSell(addr: string, balance: number | null, pctOverride?: string) {
+    setBusy(`sell:${addr}`); setMsg(null); setErr(null);
+    try {
+      if (!balance || balance <= 0) throw new Error("no balance to sell");
+      const pct = Math.max(1, Math.min(100, Number(pctOverride ?? sellPct) || 100));
+      const tokenAmount = (balance * pct / 100).toFixed(6);
+      const r = await fetch("/web-api/fourmeme/sell", {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tokenAddress: addr, tokenAmount, slippageBps: Number(slippageBps) }),
+      });
+      const j = await r.json();
+      if (!r.ok || !j.ok) throw new Error(j.detail || j.error || `sell failed (${r.status})`);
+      setMsg(`Sold ${pct}% via ${j.venue} — tx ${short(j.txHash, 6)}.`);
+      await load();
+    } catch (e: any) { setErr(e?.message || "sell failed"); }
+    finally { setBusy(null); }
+  }
+
+  return (
+    <Card data-testid="card-venue-fourmeme">
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-sm flex items-center gap-2">
+            four.meme
+            {state?.hasBscWallet
+              ? <CheckCircle2 className="w-3.5 h-3.5 text-green-500" />
+              : <AlertCircle className="w-3.5 h-3.5 text-amber-500" />}
+            <Badge variant="outline" className="text-[9px] font-mono">LAUNCHPAD · BSC</Badge>
+          </CardTitle>
+          <button onClick={load} className="text-muted-foreground hover:text-foreground" data-testid="button-refresh-fourmeme">
+            <RefreshCw className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3 text-xs">
+        <div className="grid grid-cols-2 gap-2">
+          <div className="border border-border/60 rounded p-2 bg-muted/20">
+            <div className="text-[10px] uppercase text-muted-foreground">BSC wallet</div>
+            <div className="font-mono text-sm mt-1" data-testid="text-fourmeme-wallet">
+              <CopyChip value={state?.walletAddress} />
+            </div>
+          </div>
+          <div className="border border-border/60 rounded p-2 bg-muted/20">
+            <div className="text-[10px] uppercase text-muted-foreground">BNB balance</div>
+            <div className="font-mono text-sm mt-1" data-testid="text-fourmeme-bnb">
+              {state?.bnbBalance != null ? `${Number(state.bnbBalance).toFixed(4)} BNB` : "—"}
+            </div>
+          </div>
+        </div>
+
+        <div className="border border-border/60 rounded p-2 bg-muted/10 space-y-2">
+          <div className="text-[10px] uppercase text-muted-foreground">Trade by token address</div>
+          <input
+            value={tokenAddress} onChange={(e) => setTokenAddress(e.target.value)}
+            placeholder="0x… token address"
+            className="w-full bg-background border border-border/60 rounded px-2 py-1 font-mono text-xs"
+            data-testid="input-fourmeme-token"
+          />
+          <div className="grid grid-cols-3 gap-1.5">
+            <input
+              value={bnbAmount} onChange={(e) => setBnbAmount(e.target.value)} type="number" step="0.001" min="0.0001"
+              placeholder="BNB" className="bg-background border border-border/60 rounded px-2 py-1 font-mono text-xs"
+              data-testid="input-fourmeme-bnb-amount"
+            />
+            <input
+              value={sellPct} onChange={(e) => setSellPct(e.target.value)} type="number" min="1" max="100"
+              placeholder="sell %" className="bg-background border border-border/60 rounded px-2 py-1 font-mono text-xs"
+              data-testid="input-fourmeme-sell-pct"
+            />
+            <input
+              value={slippageBps} onChange={(e) => setSlippageBps(e.target.value)} type="number" min="50" max="5000"
+              placeholder="slip bps" className="bg-background border border-border/60 rounded px-2 py-1 font-mono text-xs"
+              data-testid="input-fourmeme-slippage"
+            />
+          </div>
+          <Button
+            size="sm" className="w-full h-7 text-[11px]" onClick={runBuy}
+            disabled={busy === "buy" || !tokenAddress.trim()}
+            data-testid="button-fourmeme-buy"
+          >
+            {busy === "buy" ? <><Loader2 className="w-3 h-3 mr-1.5 animate-spin" />buying…</> : `BUY for ${bnbAmount} BNB`}
+          </Button>
+          <div className="text-[10px] text-muted-foreground">
+            Routes via four.meme bonding curve, auto-falls back to PancakeSwap V2 for graduated tokens.
+          </div>
+        </div>
+
+        <div>
+          <div className="text-[10px] uppercase text-muted-foreground mb-1.5">Open bags ({positions.filter(p => (p.balanceTokens ?? 0) > 0).length})</div>
+          {positions.length === 0 ? (
+            <div className="text-muted-foreground py-3 text-center border border-dashed border-border/60 rounded">No four.meme bags yet.</div>
+          ) : (
+            <div className="space-y-1.5 max-h-56 overflow-y-auto">
+              {positions.slice(0, 12).map((p) => (
+                <div key={p.id} className="border border-border/60 rounded p-2 flex items-center gap-2" data-testid={`row-fourmeme-${p.tokenAddress}`}>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-mono font-medium truncate">{p.tokenSymbol || p.tokenName}</div>
+                    <div className="text-[10px] text-muted-foreground font-mono">
+                      bal {p.balanceTokens != null ? p.balanceTokens.toFixed(2) : "—"}
+                      {p.currentValueBnb != null && ` · ${p.currentValueBnb.toFixed(5)} BNB`}
+                      {p.entryBnb != null && ` · in ${p.entryBnb.toFixed(5)} BNB`}
+                    </div>
+                  </div>
+                  {p.pnlBnb != null && (
+                    <div className={`font-mono text-[11px] ${p.pnlBnb >= 0 ? "text-green-500" : "text-red-500"}`}>
+                      {p.pnlBnb >= 0 ? "+" : ""}{p.pnlBnb.toFixed(5)}
+                    </div>
+                  )}
+                  <Button
+                    size="sm" variant="outline" className="h-7 px-2 text-[10px]"
+                    disabled={busy === `sell:${p.tokenAddress}` || !p.balanceTokens || p.balanceTokens <= 0}
+                    onClick={() => runSell(p.tokenAddress, p.balanceTokens)}
+                    data-testid={`button-fourmeme-sell-${p.tokenAddress}`}
+                  >
+                    {busy === `sell:${p.tokenAddress}` ? <Loader2 className="w-3 h-3 animate-spin" /> : `SELL ${sellPct}%`}
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {msg && <div className="text-green-500" data-testid="text-fourmeme-msg">{msg}</div>}
+        {err && <div className="text-red-500" data-testid="text-fourmeme-err">{err}</div>}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ── Topaz card — per-user spot swap (Phase 2), read-only LP list ──
+interface TopazState {
+  enabled: boolean;
+  walletAddress: string | null;
+  bnbBalance: string | null;
+  usdtBalance: string | null;
+  positions: Array<{ tokenId: string; token0: string; token1: string; tickLower: number; tickUpper: number; liquidity: string; tickSpacing: number }>;
+  config: { wbnb: string | null; usdt: string | null; defaultSlippageBps: number; maxTradeUsdt: number };
+}
+
+function TopazCard() {
+  const [state, setState] = useState<TopazState | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [tokenInKind, setTokenInKind] = useState<"WBNB" | "USDT">("WBNB");
+  const [tokenOut, setTokenOut] = useState("");
+  const [amountIn, setAmountIn] = useState("0.01");
+  const [slippageBps, setSlippageBps] = useState("50");
+  const [isStable, setIsStable] = useState(false);
+  const [quote, setQuote] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const r = await fetch("/web-api/topaz/state", { credentials: "include" });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.detail || j.error || `status ${r.status}`);
+      setState(j); setErr(null);
+    } catch (e: any) { setErr(e?.message || "load failed"); }
+  }, []);
+  useEffect(() => { void load(); }, [load]);
+
+  function resolveTokenIn(): string | null {
+    if (!state) return null;
+    return tokenInKind === "WBNB" ? state.config.wbnb : state.config.usdt;
+  }
+
+  function toWei(amount: string, decimals: number): string {
+    // Hand-roll wei conversion (avoid pulling ethers into the bundle for one call).
+    const [whole, frac = ""] = amount.split(".");
+    const padded = (frac + "0".repeat(decimals)).slice(0, decimals);
+    const s = (whole + padded).replace(/^0+(?=\d)/, "");
+    return s === "" ? "0" : s;
+  }
+
+  async function runQuote() {
+    setBusy("quote"); setMsg(null); setErr(null); setQuote(null);
+    try {
+      const tokenIn = resolveTokenIn();
+      if (!tokenIn) throw new Error("Topaz not configured (missing WBNB/USDT addresses)");
+      if (!tokenOut.trim()) throw new Error("tokenOut required");
+      const decimals = 18;
+      const r = await fetch("/web-api/topaz/quote", {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tokenIn, tokenOut: tokenOut.trim(), amountIn: toWei(amountIn, decimals), isStable }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.detail || j.error || `quote failed (${r.status})`);
+      const out = BigInt(j.amountOut);
+      const whole = out / 10n ** 18n;
+      const frac = (out % 10n ** 18n).toString().padStart(18, "0").slice(0, 6);
+      setQuote(`${whole}.${frac}`);
+    } catch (e: any) { setErr(e?.message || "quote failed"); }
+    finally { setBusy(null); }
+  }
+
+  async function runSwap() {
+    setBusy("swap"); setMsg(null); setErr(null);
+    try {
+      const tokenIn = resolveTokenIn();
+      if (!tokenIn) throw new Error("Topaz not configured");
+      if (!tokenOut.trim()) throw new Error("tokenOut required");
+      const r = await fetch("/web-api/topaz/swap", {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tokenIn, tokenOut: tokenOut.trim(),
+          amountIn: toWei(amountIn, 18),
+          slippageBps: Number(slippageBps), isStable,
+        }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.detail || j.error || `swap failed (${r.status})`);
+      setMsg(`Swapped — tx ${short(j.txHash, 6)}.`);
+      await load();
+    } catch (e: any) { setErr(e?.message || "swap failed"); }
+    finally { setBusy(null); }
+  }
+
+  return (
+    <Card data-testid="card-venue-topaz">
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-sm flex items-center gap-2">
+            Topaz
+            {state?.enabled
+              ? <CheckCircle2 className="w-3.5 h-3.5 text-green-500" />
+              : <AlertCircle className="w-3.5 h-3.5 text-amber-500" />}
+            <Badge variant="outline" className="text-[9px] font-mono">SPOT+LP · BSC</Badge>
+          </CardTitle>
+          <button onClick={load} className="text-muted-foreground hover:text-foreground" data-testid="button-refresh-topaz">
+            <RefreshCw className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3 text-xs">
+        {!state?.enabled && (
+          <div className="border border-amber-500/30 bg-amber-500/5 rounded p-2 text-amber-500/90 text-[11px]">
+            Topaz is not enabled on this server (TOPAZ_ENABLED=false). Read-only.
+          </div>
+        )}
+        <div className="grid grid-cols-3 gap-2">
+          <div className="border border-border/60 rounded p-2 bg-muted/20">
+            <div className="text-[10px] uppercase text-muted-foreground">BSC wallet</div>
+            <div className="font-mono text-sm mt-1"><CopyChip value={state?.walletAddress} /></div>
+          </div>
+          <div className="border border-border/60 rounded p-2 bg-muted/20">
+            <div className="text-[10px] uppercase text-muted-foreground">BNB</div>
+            <div className="font-mono text-sm mt-1" data-testid="text-topaz-bnb">
+              {state?.bnbBalance != null ? Number(state.bnbBalance).toFixed(4) : "—"}
+            </div>
+          </div>
+          <div className="border border-border/60 rounded p-2 bg-muted/20">
+            <div className="text-[10px] uppercase text-muted-foreground">USDT</div>
+            <div className="font-mono text-sm mt-1" data-testid="text-topaz-usdt">
+              {state?.usdtBalance != null ? Number(state.usdtBalance).toFixed(2) : "—"}
+            </div>
+          </div>
+        </div>
+
+        <div className="border border-border/60 rounded p-2 bg-muted/10 space-y-2">
+          <div className="text-[10px] uppercase text-muted-foreground">Swap (Phase 2 per-user signer)</div>
+          <div className="grid grid-cols-2 gap-1.5">
+            <div className="flex gap-1">
+              <Button size="sm" variant={tokenInKind === "WBNB" ? "default" : "outline"} className="flex-1 h-7 text-[11px]"
+                onClick={() => setTokenInKind("WBNB")} data-testid="button-topaz-tokenin-wbnb">WBNB</Button>
+              <Button size="sm" variant={tokenInKind === "USDT" ? "default" : "outline"} className="flex-1 h-7 text-[11px]"
+                onClick={() => setTokenInKind("USDT")} data-testid="button-topaz-tokenin-usdt">USDT</Button>
+            </div>
+            <input
+              value={tokenOut} onChange={(e) => setTokenOut(e.target.value)}
+              placeholder="0x… tokenOut" className="bg-background border border-border/60 rounded px-2 py-1 font-mono text-xs"
+              data-testid="input-topaz-tokenout"
+            />
+            <input
+              value={amountIn} onChange={(e) => setAmountIn(e.target.value)} type="number" step="0.001" min="0"
+              placeholder="amount in" className="bg-background border border-border/60 rounded px-2 py-1 font-mono text-xs"
+              data-testid="input-topaz-amount"
+            />
+            <input
+              value={slippageBps} onChange={(e) => setSlippageBps(e.target.value)} type="number" min="10" max="5000"
+              placeholder="slip bps" className="bg-background border border-border/60 rounded px-2 py-1 font-mono text-xs"
+              data-testid="input-topaz-slippage"
+            />
+          </div>
+          <label className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+            <input type="checkbox" checked={isStable} onChange={(e) => setIsStable(e.target.checked)} data-testid="checkbox-topaz-stable" />
+            stable pool
+          </label>
+          <div className="flex gap-1.5">
+            <Button size="sm" variant="outline" className="flex-1 h-7 text-[11px]" onClick={runQuote} disabled={busy === "quote"} data-testid="button-topaz-quote">
+              {busy === "quote" ? <><Loader2 className="w-3 h-3 mr-1.5 animate-spin" />quote…</> : "Quote"}
+            </Button>
+            <Button size="sm" className="flex-1 h-7 text-[11px]" onClick={runSwap} disabled={busy === "swap" || !state?.enabled} data-testid="button-topaz-swap">
+              {busy === "swap" ? <><Loader2 className="w-3 h-3 mr-1.5 animate-spin" />swapping…</> : "Swap"}
+            </Button>
+          </div>
+          {quote != null && (
+            <div className="text-[11px] text-muted-foreground font-mono" data-testid="text-topaz-quote">
+              ≈ {quote} tokens out (before slippage)
+            </div>
+          )}
+        </div>
+
+        <div>
+          <div className="text-[10px] uppercase text-muted-foreground mb-1.5">Open v3 LP positions ({state?.positions?.length ?? 0})</div>
+          {!state || state.positions.length === 0 ? (
+            <div className="text-muted-foreground py-3 text-center border border-dashed border-border/60 rounded">No v3 NFT positions.</div>
+          ) : (
+            <div className="space-y-1.5 max-h-48 overflow-y-auto">
+              {state.positions.slice(0, 10).map((p) => (
+                <div key={p.tokenId} className="border border-border/60 rounded p-2" data-testid={`row-topaz-${p.tokenId}`}>
+                  <div className="font-mono text-[11px]">#{p.tokenId}</div>
+                  <div className="text-[10px] text-muted-foreground font-mono break-all">
+                    {short(p.token0, 4)} / {short(p.token1, 4)} · ticks [{p.tickLower}, {p.tickUpper}] · liq {p.liquidity}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="text-[10px] text-muted-foreground mt-1.5">
+            LP add/remove is Phase 2 — manage from @build4_bot for now.
+          </div>
+        </div>
+
+        {msg && <div className="text-green-500" data-testid="text-topaz-msg">{msg}</div>}
+        {err && <div className="text-red-500" data-testid="text-topaz-err">{err}</div>}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ── Phase placeholder card (Pancake) ──
 function PhaseCard({ id, name, kind, chain, message, telegramCmd }: {
   id: string; name: string; kind: string; chain: string;
   message: string; telegramCmd?: string;
@@ -868,15 +1257,8 @@ function VenueDashboard({ account, onRefresh }: { account: AccountState; onRefre
         id="pancakeswap" name="PancakeSwap" kind="spot" chain="BSC"
         message="Per-user swap routing ships in Phase 3."
       />
-      <PhaseCard
-        id="topaz" name="Topaz" kind="spot+lp" chain="BSC"
-        message="Master-wallet-only in Phase 1. Multi-user rollout in Phase 2."
-      />
-      <PhaseCard
-        id="fourmeme" name="four.meme" kind="launchpad" chain="BSC"
-        message="Token launches are driven from the bot's /launch command."
-        telegramCmd="launch"
-      />
+      <TopazCard />
+      <FourMemeCard />
     </div>
   );
 }

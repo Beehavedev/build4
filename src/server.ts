@@ -5460,6 +5460,190 @@ app.post('/api/topaz/v3/burn', requireTgUser, async (req, res) => {
   }
 })
 
+// ── PancakeSwap V2 — Phase 2 (per-user wallets from-the-start) ───────────
+// PancakeSwap is the canonical AMM on BSC for any BEP-20 trade outside the
+// four.meme bonding curve. Unlike Topaz Phase 1, there is no master-wallet
+// path: every write decrypts the caller's active BSC wallet via wallet.ts
+// `decryptPrivateKey`. The underlying service supports only BNB ↔ token
+// swaps (single-hop V2 path through WBNB) — token ↔ token requests are
+// refused server-side instead of silently producing a bad route.
+const PCS_WBNB_BSC = '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c'
+const PCS_USDT_BSC = '0x55d398326f99059fF775485246999027B3197955'
+const PCS_CAKE_BSC = '0x0E09FaBB73Bd3Ade0a17ECC321fD13a19e81cE82'
+
+function pcsIsBnb(token: string): boolean {
+  if (!token) return false
+  const t = token.trim()
+  if (t.toUpperCase() === 'BNB') return true
+  return t.toLowerCase() === PCS_WBNB_BSC.toLowerCase()
+}
+function pcsClampSlippageBps(input: any): number {
+  const n = Number(input)
+  if (!Number.isFinite(n) || n <= 0) return 50
+  return Math.min(500, Math.floor(n))
+}
+
+app.get('/api/pancakeswap/state', requireTgUser, async (req, res) => {
+  try {
+    const user = (req as any).user as { id: string } | undefined
+    if (!user?.id) return res.status(401).json({ ok: false, error: 'unauthorized' })
+    const w = await db.wallet.findFirst({
+      where: { userId: user.id, chain: 'BSC', isActive: true },
+    })
+    if (!w) {
+      return res.json({
+        ok: true,
+        userWallet: { address: null, error: 'no_bsc_wallet' },
+        balances: { bnb: 0, usdt: 0, error: 'no_bsc_wallet' },
+        tokens: {
+          BNB: 'BNB', WBNB: PCS_WBNB_BSC, USDT: PCS_USDT_BSC, CAKE: PCS_CAKE_BSC,
+        },
+      })
+    }
+    const { getWalletBalances } = await import('./services/wallet')
+    const bal = await getWalletBalances(w.address, 'BSC')
+    res.json({
+      ok: true,
+      userWallet: { address: w.address, error: null },
+      balances: { bnb: bal.native, usdt: bal.usdt, error: bal.error },
+      tokens: {
+        BNB: 'BNB', WBNB: PCS_WBNB_BSC, USDT: PCS_USDT_BSC, CAKE: PCS_CAKE_BSC,
+      },
+    })
+  } catch (err) {
+    res.status(500).json({ ok: false, error: (err as Error).message })
+  }
+})
+
+app.get('/api/pancakeswap/quote', requireTgUser, async (req, res) => {
+  try {
+    const tokenIn  = String(req.query.tokenIn  ?? '')
+    const tokenOut = String(req.query.tokenOut ?? '')
+    const amount   = String(req.query.amount   ?? '')
+    if (!tokenIn || !tokenOut || !amount) {
+      return res.status(400).json({ ok: false, error: 'tokenIn, tokenOut, amount required' })
+    }
+    let amountWei: bigint
+    try { amountWei = BigInt(amount) } catch { return res.status(400).json({ ok: false, error: 'amount must be a wei integer' }) }
+    if (amountWei <= 0n) return res.status(400).json({ ok: false, error: 'amount must be > 0' })
+
+    const inIsBnb  = pcsIsBnb(tokenIn)
+    const outIsBnb = pcsIsBnb(tokenOut)
+    if (inIsBnb === outIsBnb) {
+      return res.status(400).json({ ok: false, error: 'one side of the swap must be BNB (token↔token not supported)' })
+    }
+
+    const { pancakeQuoteBuy, pancakeQuoteSell } = await import('./services/pancakeSwapTrading')
+    if (inIsBnb) {
+      const q = await pancakeQuoteBuy(tokenOut, amountWei)
+      // Simple price-impact proxy: probe 0.0001× input and compare unit
+      // prices. Higher delta → larger price impact. Best-effort only.
+      let priceImpactPct: number | null = null
+      try {
+        const probeWei = amountWei / 10000n > 0n ? amountWei / 10000n : 1n
+        const probe = await pancakeQuoteBuy(tokenOut, probeWei)
+        const unitProbe = Number(probe.estimatedAmountWei) / Number(probeWei)
+        const unitFull  = Number(q.estimatedAmountWei)     / Number(amountWei)
+        if (unitProbe > 0) priceImpactPct = ((unitProbe - unitFull) / unitProbe) * 100
+      } catch { /* impact stays null */ }
+      return res.json({
+        ok: true,
+        direction: 'buy',
+        amountIn: amountWei.toString(),
+        amountOut: q.estimatedAmountWei.toString(),
+        priceImpactPct,
+      })
+    } else {
+      const q = await pancakeQuoteSell(tokenIn, amountWei)
+      let priceImpactPct: number | null = null
+      try {
+        const probeWei = amountWei / 10000n > 0n ? amountWei / 10000n : 1n
+        const probe = await pancakeQuoteSell(tokenIn, probeWei)
+        const unitProbe = Number(probe.estimatedBnbWei) / Number(probeWei)
+        const unitFull  = Number(q.estimatedBnbWei)     / Number(amountWei)
+        if (unitProbe > 0) priceImpactPct = ((unitProbe - unitFull) / unitProbe) * 100
+      } catch { /* impact stays null */ }
+      return res.json({
+        ok: true,
+        direction: 'sell',
+        amountIn: amountWei.toString(),
+        amountOut: q.estimatedBnbWei.toString(),
+        priceImpactPct,
+      })
+    }
+  } catch (err) {
+    res.status(400).json({ ok: false, error: (err as Error).message })
+  }
+})
+
+app.get('/api/pancakeswap/positions', requireTgUser, async (req, res) => {
+  // No PancakeSwapPosition table exists — Phase 2 doesn't track holdings
+  // server-side yet. Return an empty array so the UI can render the panel
+  // and we have a stable endpoint to wire DB-backed positions into later.
+  try {
+    res.json({ ok: true, positions: [] })
+  } catch (err) {
+    res.status(500).json({ ok: false, error: (err as Error).message })
+  }
+})
+
+app.post('/api/pancakeswap/swap', requireTgUser, async (req, res) => {
+  try {
+    const user = (req as any).user as { id: string } | undefined
+    if (!user?.id) return res.status(401).json({ ok: false, error: 'unauthorized' })
+    const { tokenIn, tokenOut, amountIn, slippageBps } = req.body || {}
+    if (!tokenIn || !tokenOut || !amountIn) {
+      return res.status(400).json({ ok: false, error: 'tokenIn, tokenOut, amountIn required' })
+    }
+    let amountWei: bigint
+    try { amountWei = BigInt(amountIn) } catch { return res.status(400).json({ ok: false, error: 'amountIn must be a wei integer' }) }
+    if (amountWei <= 0n) return res.status(400).json({ ok: false, error: 'amountIn must be > 0' })
+
+    const inIsBnb  = pcsIsBnb(tokenIn)
+    const outIsBnb = pcsIsBnb(tokenOut)
+    if (inIsBnb === outIsBnb) {
+      return res.status(400).json({ ok: false, error: 'one side of the swap must be BNB (token↔token not supported)' })
+    }
+    const slipBps = pcsClampSlippageBps(slippageBps)
+
+    // Phase-2 invariant: signer comes from the caller's active BSC wallet,
+    // never a master wallet. Surface a structured error if the user hasn't
+    // provisioned one yet so the UI can deep-link them to Wallet.
+    const w = await db.wallet.findFirst({
+      where: { userId: user.id, chain: 'BSC', isActive: true },
+    })
+    if (!w) return res.status(400).json({ ok: false, error: 'no_bsc_wallet' })
+    const { decryptPrivateKey } = await import('./services/wallet')
+    const pk = decryptPrivateKey(w.encryptedPK, user.id)
+
+    const { pancakeBuyTokenWithBnb, pancakeSellTokenForBnb } = await import('./services/pancakeSwapTrading')
+    if (inIsBnb) {
+      const r = await pancakeBuyTokenWithBnb(pk, tokenOut, amountWei, { slippageBps: slipBps })
+      return res.json({
+        ok: true,
+        txHash: r.txHash,
+        amountOut: r.estimatedTokensWei.toString(),
+        minAmountOut: r.minTokensWei.toString(),
+        slippageBps: r.slippageBps,
+        venue: r.venue,
+      })
+    } else {
+      const r = await pancakeSellTokenForBnb(pk, tokenIn, amountWei, { slippageBps: slipBps })
+      return res.json({
+        ok: true,
+        txHash: r.txHash,
+        amountOut: r.estimatedBnbWei.toString(),
+        minAmountOut: r.minBnbWei.toString(),
+        slippageBps: r.slippageBps,
+        approvalTxHash: r.approvalTxHash,
+        venue: r.venue,
+      })
+    }
+  } catch (err) {
+    res.status(500).json({ ok: false, error: (err as Error).message })
+  }
+})
+
 // Force a real, on-chain prediction-market trade RIGHT NOW for partnership
 // demos. Picks the highest-volume live 42.space market, reads its outcomes
 // on-chain, picks the highest-implied-probability outcome (most liquid side),
