@@ -18,12 +18,16 @@ import {
   pancakeGetTokenInfo,
   getBscWalletBalance,
 } from "./services/pancakeSwapTrading";
+import {
+  fourMemeGetTokenInfo,
+  fourMemeQuoteSell,
+} from "./services/fourMemeTrading";
 import { requireSiweAuthed } from "./competition-auth";
 import { mintAgentIdentity, getBscScanTokenUrl, getBscScanTxUrl } from "./services/erc8004Mint";
 
 // Competition window — must match constants in client/src/pages/competition.tsx.
-const DEFAULT_COMP_NAME = "BUILD4 × PancakeSwap Season 1";
-const DEFAULT_COMP_DESC = "AI Agent Championship · 7-day BSC trading sprint";
+const DEFAULT_COMP_NAME = "BUILD4 × four.meme Season 1";
+const DEFAULT_COMP_DESC = "AI Agent Championship · 7-day BSC memecoin sprint";
 const DEFAULT_COMP_START_ISO = "2026-05-18T00:00:00Z";
 const DEFAULT_COMP_END_ISO = "2026-05-25T00:00:00Z";
 // Stored as USD — paid out in BNB at competition close.
@@ -144,15 +148,34 @@ async function recomputeEntryEquity(walletAddress: string, trackedTokens: string
     const { bnbWei } = await getBscWalletBalance(walletAddress, "0x000000000000000000000000000000000000dEaD");
     totalBnb += Number(ethers.formatEther(bnbWei));
     // For each tracked token, get balance × current sell quote in BNB.
+    // Try four.meme bonding curve first (where most competition tokens
+    // live); fall back to PancakeSwap V2 for graduated tokens / tokens
+    // that were never on four.meme.
     for (const tokenAddr of trackedTokens.slice(0, 20)) {
       try {
-        const info = await pancakeGetTokenInfo(tokenAddr);
         const { tokenWei } = await getBscWalletBalance(walletAddress, tokenAddr);
         if (tokenWei <= 0n) continue;
-        const q = await pancakeQuoteSell(tokenAddr, tokenWei);
-        totalBnb += Number(ethers.formatEther(q.estimatedBnbWei));
+        let bnbOut = 0n;
+        try {
+          const fmInfo = await fourMemeGetTokenInfo(tokenAddr);
+          if (!fmInfo.graduatedToPancake && fmInfo.quoteIsBnb && fmInfo.version === 2) {
+            const fmQ = await fourMemeQuoteSell(tokenAddr, tokenWei);
+            bnbOut = fmQ.fundsWei;
+          } else {
+            // Graduated or V1 — value via PancakeSwap V2.
+            const pcsQ = await pancakeQuoteSell(tokenAddr, tokenWei);
+            bnbOut = pcsQ.estimatedBnbWei;
+          }
+        } catch {
+          // Not on four.meme at all — try PancakeSwap.
+          try {
+            const pcsQ = await pancakeQuoteSell(tokenAddr, tokenWei);
+            bnbOut = pcsQ.estimatedBnbWei;
+          } catch { /* honeypot / no liquidity — treat as 0 */ }
+        }
+        totalBnb += Number(ethers.formatEther(bnbOut));
       } catch {
-        // Token may have no liquidity / be honeypot — treat as 0.
+        // Treat as 0 on any unexpected error.
       }
     }
   } catch (e: any) {
@@ -162,14 +185,15 @@ async function recomputeEntryEquity(walletAddress: string, trackedTokens: string
   return totalBnb;
 }
 
-// Hook called by pancakeswap-routes.ts after every successful swap.
-// Fire-and-forget: caller must not await this critically.
-export async function recordPancakeTrade(opts: {
+// Hook called by pancakeswap-routes.ts / four-meme-routes.ts after every
+// successful swap. Fire-and-forget: caller must not await critically.
+async function recordTradeInternal(opts: {
   chatId: string;
   walletAddress: string;
   tokenAddress: string;
   side: "buy" | "sell";
   bnbWei: bigint;
+  venue: "pancakeV2" | "fourMeme";
 }): Promise<void> {
   try {
     const comp = await getActiveCompetition();
@@ -196,8 +220,28 @@ export async function recordPancakeTrade(opts: {
       WHERE id = ${row.id}
     `);
   } catch (e: any) {
-    console.warn("[Competition] recordPancakeTrade failed:", e?.message ?? e);
+    console.warn(`[Competition] recordTrade (${opts.venue}) failed:`, e?.message ?? e);
   }
+}
+
+export async function recordPancakeTrade(opts: {
+  chatId: string;
+  walletAddress: string;
+  tokenAddress: string;
+  side: "buy" | "sell";
+  bnbWei: bigint;
+}): Promise<void> {
+  return recordTradeInternal({ ...opts, venue: "pancakeV2" });
+}
+
+export async function recordFourMemeTrade(opts: {
+  chatId: string;
+  walletAddress: string;
+  tokenAddress: string;
+  side: "buy" | "sell";
+  bnbWei: bigint;
+}): Promise<void> {
+  return recordTradeInternal({ ...opts, venue: "fourMeme" });
 }
 
 // Fire-and-forget ERC-8004 mint with status updates. Looks up the

@@ -24,6 +24,7 @@ import { registerMiniAppRoutes } from "./miniapp-routes";
 import { registerHyperliquidRoutes } from "./hyperliquid-routes";
 import { registerBotBridgeRoutes } from "./bot-bridge-routes";
 import { registerPancakeRoutes } from "./pancakeswap-routes";
+import { registerFourMemeRoutes } from "./four-meme-routes";
 import { registerCompetitionRoutes, ensureDefaultCompetition, ensureCompetitionColumns } from "./competition-routes";
 import { startPancakeAgentLoop, ensureHouseAgent } from "./pancakeSwapAgent";
 import { registerWalletRoutes } from "./wallet-routes";
@@ -49,6 +50,7 @@ export async function registerRoutes(
   registerHyperliquidRoutes(app);
   registerBotBridgeRoutes(app);
   registerPancakeRoutes(app);
+  registerFourMemeRoutes(app);
   registerCompetitionRoutes(app);
   registerWalletRoutes(app);
   // Idempotent: ensure new columns + a default competition row exist, then

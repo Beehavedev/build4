@@ -1,0 +1,34 @@
+[
+  {
+    "type": "function",
+    "name": "purchaseTokenAMAP",
+    "stateMutability": "payable",
+    "inputs": [
+      { "name": "token", "type": "address" },
+      { "name": "funds", "type": "uint256" },
+      { "name": "minAmount", "type": "uint256" }
+    ],
+    "outputs": []
+  },
+  {
+    "type": "function",
+    "name": "purchaseToken",
+    "stateMutability": "payable",
+    "inputs": [
+      { "name": "token", "type": "address" },
+      { "name": "amount", "type": "uint256" },
+      { "name": "maxFunds", "type": "uint256" }
+    ],
+    "outputs": []
+  },
+  {
+    "type": "function",
+    "name": "saleToken",
+    "stateMutability": "nonpayable",
+    "inputs": [
+      { "name": "token", "type": "address" },
+      { "name": "amount", "type": "uint256" }
+    ],
+    "outputs": []
+  }
+]
