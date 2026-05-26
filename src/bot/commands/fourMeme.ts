@@ -113,7 +113,9 @@ async function handleBuy(ctx: Context, args: string[]) {
   try {
     const quote = await quoteBuyByBnb(token, bnbWei)
     const { privateKey } = await loadUserBscPrivateKey(user.id)
-    const result = await buyTokenWithBnb(privateKey, token, bnbWei)
+    const result = await buyTokenWithBnb(privateKey, token, bnbWei, {
+      feeCtx: { userId: user.id, venue: 'fourmeme', side: 'buy' },
+    })
     await ctx.reply(
       `✅ *four\\.meme buy filled*\n\n` +
         `Token: \`${token}\`\n` +
@@ -145,7 +147,9 @@ async function handleSell(ctx: Context, args: string[]) {
   try {
     const sq = await quoteSell(token, tokenWei)
     const { privateKey } = await loadUserBscPrivateKey(user.id)
-    const result = await sellTokenForBnb(privateKey, token, tokenWei)
+    const result = await sellTokenForBnb(privateKey, token, tokenWei, {
+      feeCtx: { userId: user.id, venue: 'fourmeme', side: 'sell' },
+    })
     await ctx.reply(
       `✅ *four\\.meme sell filled*\n\n` +
         `Token: \`${token}\`\n` +

@@ -43,6 +43,29 @@ export async function ensureNewTables() {
   await run(`CREATE INDEX IF NOT EXISTS "X402Payment_payer_idx" ON "X402Payment"("payer")`)
   await run(`CREATE INDEX IF NOT EXISTS "X402Payment_resource_idx" ON "X402Payment"("resource")`)
 
+  // Broker spread fees (0.30% default) charged on the 4 venues without
+  // native builder programs (42.space, four.meme, PancakeSwap, Topaz).
+  // Written by src/services/brokerFees.ts after each successful fee
+  // transfer; used for reconciliation against the recipient wallet's
+  // on-chain history. Idempotent.
+  await run(`CREATE TABLE IF NOT EXISTS "BrokerFee" (
+    "id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
+    "userId" TEXT NOT NULL,
+    "agentId" TEXT,
+    "venue" TEXT NOT NULL,
+    "side" TEXT NOT NULL,
+    "asset" TEXT NOT NULL,
+    "grossAmount" TEXT NOT NULL,
+    "feeAmount" TEXT NOT NULL,
+    "feeBps" INTEGER NOT NULL,
+    "feeTxHash" TEXT,
+    "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT "BrokerFee_pkey" PRIMARY KEY ("id")
+  )`)
+  await run(`CREATE INDEX IF NOT EXISTS "BrokerFee_userId_idx" ON "BrokerFee"("userId")`)
+  await run(`CREATE INDEX IF NOT EXISTS "BrokerFee_venue_idx" ON "BrokerFee"("venue")`)
+  await run(`CREATE INDEX IF NOT EXISTS "BrokerFee_createdAt_idx" ON "BrokerFee"("createdAt")`)
+
   await run(`CREATE TABLE IF NOT EXISTS "User" (
     "id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
     "telegramId" BIGINT NOT NULL,

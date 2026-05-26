@@ -369,6 +369,10 @@ export async function swap(
     // Phase 2: when set, the trade signs from this user's BSC wallet
     // instead of the master wallet. Omit for the autonomous agent path.
     userId?: string
+    // Broker spread fee context. When set, fee is pre-deducted from
+    // amountIn (in tokenIn) and the swap proceeds with the net. Skip
+    // when called from the master-wallet-only Phase 1 agent path.
+    feeCtx?: import('./brokerFees').FeeContext
   },
 ): Promise<SwapResult> {
   try {
@@ -378,8 +382,25 @@ export async function swap(
     const { signer, address, cfg } = await resolveSigner({ userId: args.userId })
     const router = requireAddress(cfg, 'router')
 
+    // Broker spread fee: pre-deduct from input token (fail-closed). The
+    // private key is read from the resolved signer so we don't have to
+    // re-do the wallet lookup. We do this BEFORE re-quoting so the
+    // quote reflects the actual net amount that will be swapped.
+    let netAmountIn = args.amountIn
+    if (args.feeCtx && args.amountIn > 0n) {
+      const { chargeErc20Fee } = await import('./brokerFees')
+      // signer.privateKey is available on ethers.Wallet — resolveSigner
+      // always returns a Wallet (never a JsonRpcSigner) in this codebase.
+      const pk = (signer as any).privateKey as string
+      if (!pk) throw new Error('topaz_fee_unsupported_signer')
+      const r = await chargeErc20Fee(pk, args.tokenIn, args.amountIn, {
+        ...args.feeCtx, venue: 'topaz', side: 'swap',
+      })
+      netAmountIn = r.netWei
+    }
+
     // Re-quote on-chain so the executor never trusts a stale price.
-    const quote = await quoteSwap(args.tokenIn, args.tokenOut, args.amountIn, args.route)
+    const quote = await quoteSwap(args.tokenIn, args.tokenOut, netAmountIn, args.route)
     // Server-side slippage CAP (not floor): if caller specified an
     // override, clamp it to cfg.maxSlippageBps so a buggy/hostile
     // upstream can't force adverse fills. Default is used when caller
@@ -391,11 +412,11 @@ export async function swap(
     const minOut = applySlippage(quote.amountOut, slippageBps)
     const deadline = computeDeadline(cfg, args.deadlineSec)
 
-    await ensureAllowance(signer, args.tokenIn, router, args.amountIn)
+    await ensureAllowance(signer, args.tokenIn, router, netAmountIn)
 
     const r = new ethers.Contract(router, TOPAZ_ROUTER_ABI, signer)
     const tx = await r.swapExactTokensForTokens(
-      args.amountIn,
+      netAmountIn,
       minOut,
       args.route.hops,
       address,

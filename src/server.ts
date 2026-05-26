@@ -1563,8 +1563,18 @@ app.post('/api/me/link-wallet/refresh', requireTgUser, async (req, res) => {
 app.post('/api/aster/approve', requireTgUser, async (req, res) => {
   const user = (req as any).user
   try {
-    const builderAddress = process.env.ASTER_BUILDER_ADDRESS
-    const feeRate        = process.env.ASTER_BUILDER_FEE_RATE ?? '0.0001'
+    // ASTER_BUILDER_ADDRESS env wins for backwards compat; otherwise fall
+    // back to BROKER_FEE_WALLET so a fresh deploy already routes the 30 bps
+    // self-collected broker fee to the right place without extra env wiring.
+    const { brokerFeeWallet } = await import('./services/brokerFees')
+    let builderAddress: string | undefined = process.env.ASTER_BUILDER_ADDRESS
+    if (!builderAddress) {
+      try { builderAddress = brokerFeeWallet() } catch { /* leave undefined */ }
+    }
+    // 30 bps self-collected fee (was 10 bps under the old Aster Builder
+    // Program defaults). This rate becomes the per-order feeRate AND the
+    // maxFeeRate the user signs in approveBuilder.
+    const feeRate        = process.env.ASTER_BUILDER_FEE_RATE ?? '0.003'
     if (!builderAddress) {
       return res.status(500).json({ success: false, error: 'Platform not configured (no builder)' })
     }
@@ -2329,8 +2339,13 @@ app.post('/api/aster/order', requireTgUser, async (req, res) => {
       console.warn('[API] /aster/order balance pre-check failed:', balErr?.message)
     }
 
-    const builderAddress = process.env.ASTER_BUILDER_ADDRESS
-    const feeRate        = process.env.ASTER_BUILDER_FEE_RATE ?? '0.0001'
+    // Same defaults as the onboarding handler — see /api/aster/approve.
+    const { brokerFeeWallet: _bfw } = await import('./services/brokerFees')
+    let builderAddress: string | undefined = process.env.ASTER_BUILDER_ADDRESS
+    if (!builderAddress) {
+      try { builderAddress = _bfw() } catch { /* leave undefined */ }
+    }
+    const feeRate        = process.env.ASTER_BUILDER_FEE_RATE ?? '0.003'
     const buySell        = side === 'LONG' ? 'BUY' : 'SELL'
 
     // Only attribute to the builder if THIS user has actually signed
@@ -2422,6 +2437,22 @@ app.post('/api/aster/order', requireTgUser, async (req, res) => {
     })
   } catch (err: any) {
     const msg = (await import('./services/aster')).friendlyAsterError(err)
+    // Lazy 30-bps re-approval: existing users onboarded under the old
+    // 0.0001 maxFeeRate will hit -4400 on their first 0.003 order. Fire
+    // reapproveAsterForUser in the background so their NEXT manual order
+    // clears, and surface a clear retry hint in the response.
+    const { isAsterFeeOverMaxError, reapproveAsterForUser } = await import('./services/asterReapprove')
+    if (isAsterFeeOverMaxError(err)) {
+      console.warn(`[API] /aster/order fee-over-max for user=${user.id}; firing reapprove`)
+      reapproveAsterForUser(user as any).then(r => {
+        console.log(`[API] /aster/order auto-reapprove → success=${r.success} builderEnrolled=${r.builderEnrolled ?? false} err=${r.error ?? 'none'}`)
+      }).catch(e => console.error('[API] /aster/order auto-reapprove threw:', e?.message))
+      return res.status(503).json({
+        error: 'Fee terms updated to 0.30%. Re-approving your account now — please retry in a few seconds.',
+        retryAfterMs: 5000,
+        reapproving: true,
+      })
+    }
     console.error('[API] /aster/order failed:', msg, '(raw:', err?.message, 'status:', err?.response?.status, ')')
     res.status(502).json({ error: msg })
   }
@@ -5368,6 +5399,8 @@ app.post('/api/topaz/swap', requireTgUser, async (req, res) => {
       route: { kind: 'v2', hops: hops ?? [{ from: tokenIn, to: tokenOut, stable: !!stable }] },
       slippageBps,
       userId: user.id,
+      // Broker spread fee (30 bps) on the input ERC20.
+      feeCtx: { userId: user.id, venue: 'topaz', side: 'buy' },
     })
     res.json({
       ...r,
@@ -5455,6 +5488,191 @@ app.post('/api/topaz/v3/burn', requireTgUser, async (req, res) => {
     const { burnV3Position } = await import('./services/topazTrading')
     const r = await burnV3Position(BigInt(tokenId), undefined, { userId: user.id })
     res.json(r)
+  } catch (err) {
+    res.status(500).json({ ok: false, error: (err as Error).message })
+  }
+})
+
+// ── PancakeSwap V2 — Phase 2 (per-user wallets from-the-start) ───────────
+// PancakeSwap is the canonical AMM on BSC for any BEP-20 trade outside the
+// four.meme bonding curve. Unlike Topaz Phase 1, there is no master-wallet
+// path: every write decrypts the caller's active BSC wallet via wallet.ts
+// `decryptPrivateKey`. The underlying service supports only BNB ↔ token
+// swaps (single-hop V2 path through WBNB) — token ↔ token requests are
+// refused server-side instead of silently producing a bad route.
+const PCS_WBNB_BSC = '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c'
+const PCS_USDT_BSC = '0x55d398326f99059fF775485246999027B3197955'
+const PCS_CAKE_BSC = '0x0E09FaBB73Bd3Ade0a17ECC321fD13a19e81cE82'
+
+function pcsIsBnb(token: string): boolean {
+  if (!token) return false
+  const t = token.trim()
+  if (t.toUpperCase() === 'BNB') return true
+  return t.toLowerCase() === PCS_WBNB_BSC.toLowerCase()
+}
+function pcsClampSlippageBps(input: any): number {
+  const n = Number(input)
+  if (!Number.isFinite(n) || n <= 0) return 50
+  return Math.min(500, Math.floor(n))
+}
+
+app.get('/api/pancakeswap/state', requireTgUser, async (req, res) => {
+  try {
+    const user = (req as any).user as { id: string } | undefined
+    if (!user?.id) return res.status(401).json({ ok: false, error: 'unauthorized' })
+    const w = await db.wallet.findFirst({
+      where: { userId: user.id, chain: 'BSC', isActive: true },
+    })
+    if (!w) {
+      return res.json({
+        ok: true,
+        userWallet: { address: null, error: 'no_bsc_wallet' },
+        balances: { bnb: 0, usdt: 0, error: 'no_bsc_wallet' },
+        tokens: {
+          BNB: 'BNB', WBNB: PCS_WBNB_BSC, USDT: PCS_USDT_BSC, CAKE: PCS_CAKE_BSC,
+        },
+      })
+    }
+    const { getWalletBalances } = await import('./services/wallet')
+    const bal = await getWalletBalances(w.address, 'BSC')
+    res.json({
+      ok: true,
+      userWallet: { address: w.address, error: null },
+      balances: { bnb: bal.native, usdt: bal.usdt, error: bal.error },
+      tokens: {
+        BNB: 'BNB', WBNB: PCS_WBNB_BSC, USDT: PCS_USDT_BSC, CAKE: PCS_CAKE_BSC,
+      },
+    })
+  } catch (err) {
+    res.status(500).json({ ok: false, error: (err as Error).message })
+  }
+})
+
+app.get('/api/pancakeswap/quote', requireTgUser, async (req, res) => {
+  try {
+    const tokenIn  = String(req.query.tokenIn  ?? '')
+    const tokenOut = String(req.query.tokenOut ?? '')
+    const amount   = String(req.query.amount   ?? '')
+    if (!tokenIn || !tokenOut || !amount) {
+      return res.status(400).json({ ok: false, error: 'tokenIn, tokenOut, amount required' })
+    }
+    let amountWei: bigint
+    try { amountWei = BigInt(amount) } catch { return res.status(400).json({ ok: false, error: 'amount must be a wei integer' }) }
+    if (amountWei <= 0n) return res.status(400).json({ ok: false, error: 'amount must be > 0' })
+
+    const inIsBnb  = pcsIsBnb(tokenIn)
+    const outIsBnb = pcsIsBnb(tokenOut)
+    if (inIsBnb === outIsBnb) {
+      return res.status(400).json({ ok: false, error: 'one side of the swap must be BNB (token↔token not supported)' })
+    }
+
+    const { pancakeQuoteBuy, pancakeQuoteSell } = await import('./services/pancakeSwapTrading')
+    if (inIsBnb) {
+      const q = await pancakeQuoteBuy(tokenOut, amountWei)
+      // Simple price-impact proxy: probe 0.0001× input and compare unit
+      // prices. Higher delta → larger price impact. Best-effort only.
+      let priceImpactPct: number | null = null
+      try {
+        const probeWei = amountWei / 10000n > 0n ? amountWei / 10000n : 1n
+        const probe = await pancakeQuoteBuy(tokenOut, probeWei)
+        const unitProbe = Number(probe.estimatedAmountWei) / Number(probeWei)
+        const unitFull  = Number(q.estimatedAmountWei)     / Number(amountWei)
+        if (unitProbe > 0) priceImpactPct = ((unitProbe - unitFull) / unitProbe) * 100
+      } catch { /* impact stays null */ }
+      return res.json({
+        ok: true,
+        direction: 'buy',
+        amountIn: amountWei.toString(),
+        amountOut: q.estimatedAmountWei.toString(),
+        priceImpactPct,
+      })
+    } else {
+      const q = await pancakeQuoteSell(tokenIn, amountWei)
+      let priceImpactPct: number | null = null
+      try {
+        const probeWei = amountWei / 10000n > 0n ? amountWei / 10000n : 1n
+        const probe = await pancakeQuoteSell(tokenIn, probeWei)
+        const unitProbe = Number(probe.estimatedBnbWei) / Number(probeWei)
+        const unitFull  = Number(q.estimatedBnbWei)     / Number(amountWei)
+        if (unitProbe > 0) priceImpactPct = ((unitProbe - unitFull) / unitProbe) * 100
+      } catch { /* impact stays null */ }
+      return res.json({
+        ok: true,
+        direction: 'sell',
+        amountIn: amountWei.toString(),
+        amountOut: q.estimatedBnbWei.toString(),
+        priceImpactPct,
+      })
+    }
+  } catch (err) {
+    res.status(400).json({ ok: false, error: (err as Error).message })
+  }
+})
+
+app.get('/api/pancakeswap/positions', requireTgUser, async (req, res) => {
+  // No PancakeSwapPosition table exists — Phase 2 doesn't track holdings
+  // server-side yet. Return an empty array so the UI can render the panel
+  // and we have a stable endpoint to wire DB-backed positions into later.
+  try {
+    res.json({ ok: true, positions: [] })
+  } catch (err) {
+    res.status(500).json({ ok: false, error: (err as Error).message })
+  }
+})
+
+app.post('/api/pancakeswap/swap', requireTgUser, async (req, res) => {
+  try {
+    const user = (req as any).user as { id: string } | undefined
+    if (!user?.id) return res.status(401).json({ ok: false, error: 'unauthorized' })
+    const { tokenIn, tokenOut, amountIn, slippageBps } = req.body || {}
+    if (!tokenIn || !tokenOut || !amountIn) {
+      return res.status(400).json({ ok: false, error: 'tokenIn, tokenOut, amountIn required' })
+    }
+    let amountWei: bigint
+    try { amountWei = BigInt(amountIn) } catch { return res.status(400).json({ ok: false, error: 'amountIn must be a wei integer' }) }
+    if (amountWei <= 0n) return res.status(400).json({ ok: false, error: 'amountIn must be > 0' })
+
+    const inIsBnb  = pcsIsBnb(tokenIn)
+    const outIsBnb = pcsIsBnb(tokenOut)
+    if (inIsBnb === outIsBnb) {
+      return res.status(400).json({ ok: false, error: 'one side of the swap must be BNB (token↔token not supported)' })
+    }
+    const slipBps = pcsClampSlippageBps(slippageBps)
+
+    // Phase-2 invariant: signer comes from the caller's active BSC wallet,
+    // never a master wallet. Surface a structured error if the user hasn't
+    // provisioned one yet so the UI can deep-link them to Wallet.
+    const w = await db.wallet.findFirst({
+      where: { userId: user.id, chain: 'BSC', isActive: true },
+    })
+    if (!w) return res.status(400).json({ ok: false, error: 'no_bsc_wallet' })
+    const { decryptPrivateKey } = await import('./services/wallet')
+    const pk = decryptPrivateKey(w.encryptedPK, user.id)
+
+    const { pancakeBuyTokenWithBnb, pancakeSellTokenForBnb } = await import('./services/pancakeSwapTrading')
+    const feeCtx = { userId: user.id, venue: 'pancake' as const, side: 'buy' as const }
+    if (inIsBnb) {
+      const r = await pancakeBuyTokenWithBnb(pk, tokenOut, amountWei, { slippageBps: slipBps, feeCtx })
+      return res.json({
+        ok: true,
+        txHash: r.txHash,
+        amountOut: r.estimatedTokensWei.toString(),
+        minAmountOut: r.minTokensWei.toString(),
+        slippageBps: r.slippageBps,
+        venue: r.venue,
+      })
+    } else {
+      const r = await pancakeSellTokenForBnb(pk, tokenIn, amountWei, { slippageBps: slipBps, feeCtx: { ...feeCtx, side: 'sell' } })
+      return res.json({
+        ok: true,
+        txHash: r.txHash,
+        amountOut: r.estimatedBnbWei.toString(),
+        minAmountOut: r.minBnbWei.toString(),
+        slippageBps: r.slippageBps,
+        approvalTxHash: r.approvalTxHash,
+        venue: r.venue,
+      })
+    }
   } catch (err) {
     res.status(500).json({ ok: false, error: (err as Error).message })
   }
@@ -6429,6 +6647,7 @@ app.post('/api/fourmeme/buy', requireTgUser, async (req, res) => {
       const { pancakeBuyTokenWithBnb } = await import('./services/pancakeSwapTrading')
       const result = await pancakeBuyTokenWithBnb(privateKey, String(tokenAddress), bnbWei, {
         slippageBps: slippageBps != null ? Number(slippageBps) : undefined,
+        feeCtx: { userId: user.id, venue: 'pancake', side: 'buy' },
       })
       // Demo Day — Portfolio "Token Bags" parity: track this manual
       // buy in four_meme_holdings so it shows up alongside launches.
@@ -6451,6 +6670,7 @@ app.post('/api/fourmeme/buy', requireTgUser, async (req, res) => {
     }
     const result = await buyTokenWithBnb(privateKey, String(tokenAddress), bnbWei, {
       slippageBps: slippageBps != null ? Number(slippageBps) : undefined,
+      feeCtx: { userId: user.id, venue: 'fourmeme', side: 'buy' },
     })
     await recordFourMemeHoldingBuy({
       userId: user.id,
@@ -6495,6 +6715,7 @@ app.post('/api/fourmeme/sell', requireTgUser, async (req, res) => {
       const { pancakeSellTokenForBnb } = await import('./services/pancakeSwapTrading')
       const result = await pancakeSellTokenForBnb(privateKey, String(tokenAddress), tokensWei, {
         slippageBps: slippageBps != null ? Number(slippageBps) : undefined,
+        feeCtx: { userId: user.id, venue: 'pancake', side: 'sell' },
       })
       // Track proceeds in four_meme_holdings if we have a row for
       // this (user, token). Uses the EXPECTED bnb (estimatedBnbWei
@@ -6519,6 +6740,7 @@ app.post('/api/fourmeme/sell', requireTgUser, async (req, res) => {
     }
     const result = await sellTokenForBnb(privateKey, String(tokenAddress), tokensWei, {
       slippageBps: slippageBps != null ? Number(slippageBps) : undefined,
+      feeCtx: { userId: user.id, venue: 'fourmeme', side: 'sell' },
     })
     await recordFourMemeHoldingSell({
       userId: user.id,

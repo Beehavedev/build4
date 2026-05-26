@@ -595,6 +595,13 @@ test('openPredictionPosition INSERT writes all columns with providers cast to js
     FortyTwoTraderCtor: makeTraderCtor({
       buyOutcome: async () => dryReceipt('0xtxHashOpenStub'),
     }),
+    // Broker spread fee path: no-op so the test doesn't try to send a
+    // real BSC transaction. Assertion that the trade proceeds with the
+    // net amount lives in the dedicated brokerFees + executor unit
+    // suites; here we just need the live path to advance to the INSERT.
+    chargeUsdtFee: async (_pk, grossWei) => ({
+      netWei: grossWei, feeWei: 0n, feeTxHash: null, bps: 0, skipped: true,
+    }),
   })
   const restoreWallet = withWalletFindFirst(async () => ({
     address: '0xWallet', encryptedPK: 'enc', chain: 'BSC', isActive: true,
@@ -618,6 +625,10 @@ test('openPredictionPosition INSERT writes all columns with providers cast to js
     [{ c: 0n }], [{ c: 0n }], [{ c: 0n }],
     [{ walletId: null }],
     [{ fortyTwoLiveTrade: true }],
+    // Broker fee charge re-loads the user's wallet via loadUserWalletPK,
+    // which fires a second Agent.walletId raw lookup. Mock walletId=null
+    // again so it falls through to the same user wallet stub.
+    [{ walletId: null }],
     [{ id: 'pos_new_id' }],
   ])
   try {
@@ -631,9 +642,9 @@ test('openPredictionPosition INSERT writes all columns with providers cast to js
       providers,
     )
     assert.deepEqual(result, { ok: true, positionId: 'pos_new_id', paperTrade: false, usdtIn: 2 })
-    assert.equal(spy.calls.length, 7, 'exactly 7 SQL calls: enable-check + 3 guards + buildTrader opt-in + Agent.walletId lookup + INSERT')
+    assert.equal(spy.calls.length, 8, 'exactly 8 SQL calls: enable-check + 3 guards + Agent.walletId + buildTrader opt-in + broker-fee Agent.walletId re-lookup + INSERT')
 
-    const insert = spy.calls[6]
+    const insert = spy.calls[7]
     const n = norm(insert.sql)
     assert.match(n, /INSERT\s+INTO\s+"OutcomePosition"/i)
     // Column list must match our positional binding contract exactly.
