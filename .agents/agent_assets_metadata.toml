@@ -54,6 +54,18 @@ uri = "file://attached_assets/generated_images/build4_fourmeme_battle_banner.png
 type = "image"
 title = "generated_image"
 
+[[generated]]
+id = "LCcaxaUkiYwnEDhNAv8bd"
+uri = "file://attached_assets/generated_images/build4_fourmeme_banner_v2_wide.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "qTc0Ouzmnu5t9VveRVP1L"
+uri = "file://attached_assets/generated_images/build4_fourmeme_banner_v2_minimal.png"
+type = "image"
+title = "generated_image"
+
 [[outputs]]
 id = "JBjCUwiEHNM3bqg5OGXfp"
 uri = "file://attached_assets/generated_images/build4_xlayer_banner.png"
@@ -238,4 +250,16 @@ title = "BUILD4 Pitch Deck (13 pages)"
 id = "X4IEYQR6kKoFunKCyX7lT"
 uri = "file://attached_assets/generated_images/build4_fourmeme_battle_banner.png"
 type = "image"
-title = "BUILD4 × four.meme — Agent Battle Banner"
+title = "Option C — Original Dense Battle Scene"
+
+[[outputs]]
+id = "_QBkJiPhUdJwEsbG_YpvE"
+uri = "file://attached_assets/generated_images/build4_fourmeme_banner_v2_wide.png"
+type = "image"
+title = "Option A — Cinematic Agent Arena (recommended)"
+
+[[outputs]]
+id = "yAMRSzUKC1hBdE7CNa9nP"
+uri = "file://attached_assets/generated_images/build4_fourmeme_banner_v2_minimal.png"
+type = "image"
+title = "Option B — Minimalist Neon Duel"
