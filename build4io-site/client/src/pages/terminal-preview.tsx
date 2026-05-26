@@ -3283,8 +3283,36 @@ export default function TerminalPreview() {
     <div className="min-h-screen bg-background text-foreground flex flex-col">
       <StatusBar ready={session.ready} summary={summary} />
       {session.registerState === "error" && (
-        <div className="px-4 py-2 bg-destructive/10 border-b border-destructive/30 font-mono text-[11px] text-destructive">
-          Wallet register failed: {session.registerError}
+        <div className="px-4 py-3 bg-destructive/10 border-b border-destructive/30 font-mono text-[11px] text-destructive flex items-center justify-between gap-4" data-testid="banner-register-error">
+          <span>Wallet register failed: {session.registerError}</span>
+          <button
+            onClick={() => session.disconnect()}
+            className="px-2 py-1 rounded border border-destructive/40 hover:bg-destructive/20 uppercase tracking-widest"
+            data-testid="button-reconnect-on-error"
+          >
+            Disconnect &amp; retry
+          </button>
+        </div>
+      )}
+      {session.wallet.connected && (session.registerState === "registering" || session.registerState === "signing") && (
+        <div className="px-4 py-3 bg-yellow-500/10 border-b border-yellow-500/30 font-mono text-[11px] text-yellow-500 flex items-center justify-between gap-4" data-testid="banner-signing">
+          <span>
+            {session.registerState === "registering"
+              ? "Provisioning your terminal session…"
+              : "Check your wallet app — approve the sign-in request to continue. (On mobile, switch to your wallet app and tap Sign.)"}
+          </span>
+          <button
+            onClick={() => session.disconnect()}
+            className="px-2 py-1 rounded border border-yellow-500/40 hover:bg-yellow-500/20 uppercase tracking-widest"
+            data-testid="button-cancel-signin"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+      {session.wallet.connected && session.registerState === "ready" && session.linked === null && (
+        <div className="px-4 py-2 bg-card/60 border-b border-border font-mono text-[11px] text-muted-foreground" data-testid="banner-checking-link">
+          Checking Telegram link status…
         </div>
       )}
       {session.wallet.connected && session.linked === false && (
