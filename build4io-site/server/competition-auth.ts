@@ -33,22 +33,21 @@ interface AuthOpts {
 }
 
 function allowedHosts(req: Request): Set<string> {
+  // Canonical build4.io origins are ALWAYS in the allowlist (merged with
+  // env, not replaced) so a missing/typo'd SITE_ALLOWED_HOSTS can't lock
+  // real users out of writes. Anchoring on the known-good hostnames is
+  // safe vs. DNS-rebinding because attackers can't spoof a real browser's
+  // Origin: https://build4.io header from another actual host.
   const env = process.env.SITE_ALLOWED_HOSTS || process.env.DAPP_ALLOWED_HOSTS || "";
   const list = env.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
-  if (list.length) return new Set(list);
-  // PRODUCTION: fail closed. An empty allow-list with a Host-header fallback
-  // is a DNS-rebinding / spoofed-Host CSRF risk. Force operator to set
-  // SITE_ALLOWED_HOSTS explicitly before any write endpoint will accept the
-  // request. Without this guard the dev fallback below would silently trust
-  // whatever Host the attacker can get to land on the server.
-  if (process.env.NODE_ENV === "production") {
-    console.error("[competition-auth] SITE_ALLOWED_HOSTS is REQUIRED in production. Refusing all writes.");
-    return new Set(["__no_host_will_ever_match__"]);
-  }
-  // Dev fallback only: trust the request's Host (Replit preview hosts are
-  // workspace-unique).
+  const defaults = ["build4.io", "www.build4.io"];
   const h = String(req.headers.host || "").toLowerCase();
-  return new Set(h ? [h] : []);
+  // In production we deliberately DON'T trust req.headers.host (still a
+  // spoofed-Host risk for write endpoints); only the dev fallback adds it.
+  if (process.env.NODE_ENV === "production") {
+    return new Set([...defaults, ...list]);
+  }
+  return new Set([...defaults, ...list, ...(h ? [h] : [])]);
 }
 function originHost(o: string | undefined | null): string {
   if (!o) return "";

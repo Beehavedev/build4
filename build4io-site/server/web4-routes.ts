@@ -2953,8 +2953,12 @@ ${urls}
   }
 
   function hostAllowedForSiwe(host: string, reqHost: string): boolean {
-    const allow = (process.env.DAPP_ALLOWED_HOSTS || "build4.io,www.build4.io")
-      .split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
+    // Canonical build4.io origins are ALWAYS allowed (merged with env, not
+    // replaced) so a missing/typo'd DAPP_ALLOWED_HOSTS or SITE_ALLOWED_HOSTS
+    // can't lock real users out. Kept aligned with wallet-routes.ts.
+    const envRaw = process.env.SITE_ALLOWED_HOSTS || process.env.DAPP_ALLOWED_HOSTS || "";
+    const envList = envRaw.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
+    const allow = ["build4.io", "www.build4.io", ...envList];
     const h = host.toLowerCase().split(":")[0];
     if (allow.includes(h)) return true;
     // Dev: allow request's own host (localhost, replit preview, etc.)

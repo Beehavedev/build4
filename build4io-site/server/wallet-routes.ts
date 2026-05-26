@@ -111,19 +111,19 @@ function requireSession(req: AuthedRequest, res: Response, next: NextFunction) {
 // ── Allowed Origins (for CSRF + SIWE domain binding) ───────────────────
 
 function allowedHosts(req: Request): Set<string> {
+  // Canonical build4.io origins are ALWAYS in the allowlist — merging,
+  // not replacing, the env-provided values. This prevents a missing or
+  // typo'd SITE_ALLOWED_HOSTS env from locking real users out of their
+  // own site. Spoofing Origin: https://build4.io from a different actual
+  // host is not possible in a real browser, so anchoring these defaults
+  // is safe even when an explicit allowlist is configured.
   const env = process.env.SITE_ALLOWED_HOSTS || process.env.DAPP_ALLOWED_HOSTS || "";
   const list = env.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
-  if (list.length) return new Set(list);
-  // Production default: when no env is set, allow the canonical build4.io
-  // origins. Replit Publish typically rewrites the Host header to the
-  // internal repl host while the browser keeps Origin=https://build4.io,
-  // which would otherwise fail the allowlist and 403 every SIWE/CSRF check.
-  // web4-routes.ts:2956 already does this; keeping it consistent here.
   const defaults = ["build4.io", "www.build4.io"];
   // Dev fallback: also trust the request's Host header so local Replit
   // previews (xxx.replit.dev / xxx.kirk.replit.dev) work without config.
   const h = String(req.headers.host || "").toLowerCase();
-  return new Set(h ? [...defaults, h] : defaults);
+  return new Set([...defaults, ...list, ...(h ? [h] : [])]);
 }
 function originHost(o: string | undefined | null): string {
   if (!o) return "";

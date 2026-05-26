@@ -40,15 +40,15 @@ type AuthedRequest = Request & { botUserId?: string; botUser?: any };
 // trivially spoofable. The DB lookup that maps wallet → bot user
 // is unchanged; only the source of `wallet` is hardened.
 function bridgeAllowedHosts(req: Request): Set<string> {
+  // Canonical build4.io origins are ALWAYS in the allowlist — merging, not
+  // replacing, env-provided values. Prevents a missing/typo'd env from
+  // locking real users out. Kept aligned with wallet-routes.ts allowedHosts
+  // and web4-routes.ts hostAllowedForSiwe.
   const env = process.env.SITE_ALLOWED_HOSTS || process.env.DAPP_ALLOWED_HOSTS || "";
   const list = env.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
-  if (list.length) return new Set(list);
-  // Same canonical defaults as wallet-routes.ts allowedHosts — keep the three
-  // origin-allowlist helpers (here, wallet-routes, web4-routes) aligned so
-  // SIWE and bot-bridge CSRF accept the same set of origins by default.
   const defaults = ["build4.io", "www.build4.io"];
   const h = String(req.headers.host || "").toLowerCase();
-  return new Set(h ? [...defaults, h] : defaults);
+  return new Set([...defaults, ...list, ...(h ? [h] : [])]);
 }
 function originHostFromHeader(o: string | undefined | null): string {
   if (!o) return "";

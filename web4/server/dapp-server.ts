@@ -148,13 +148,17 @@ function parseSiweMessage(message: string): SiweFields {
 }
 
 function getAllowedHosts(req: Request): string[] {
+  // Merge env-provided hosts with the request's own Host header so a
+  // missing or typo'd DAPP_ALLOWED_HOSTS can't silently 403 every wallet
+  // sign-in on the deployment's actual hostname. Same defensive pattern
+  // as build4io-site/server/wallet-routes.ts allowedHosts.
   const fromEnv = (process.env.DAPP_ALLOWED_HOSTS || "")
     .split(",")
     .map((s) => s.trim().toLowerCase())
     .filter(Boolean);
-  if (fromEnv.length > 0) return fromEnv;
   const reqHost = (req.get("host") || "").toLowerCase();
-  return reqHost ? [reqHost] : [];
+  const merged = Array.from(new Set([...fromEnv, ...(reqHost ? [reqHost] : [])]));
+  return merged;
 }
 
 app.post("/api/web4/siwe", async (req: Request, res: Response) => {

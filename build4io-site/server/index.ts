@@ -367,6 +367,18 @@ async function ensureSchema() {
     async () => {
       log(`serving on port ${port}`);
 
+      // Surface the SIWE/CSRF origin allowlist at boot so a missing or
+      // typo'd SITE_ALLOWED_HOSTS env is immediately obvious in logs,
+      // instead of silently 403'ing every wallet sign-in. Canonical
+      // build4.io origins are always merged in (see wallet-routes.ts
+      // allowedHosts), but operator-added entries are worth confirming.
+      {
+        const envRaw = process.env.SITE_ALLOWED_HOSTS || process.env.DAPP_ALLOWED_HOSTS || "";
+        const envList = envRaw.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
+        const effective = Array.from(new Set(["build4.io", "www.build4.io", ...envList]));
+        log(`[Boot] SIWE/CSRF allowlist: ${effective.join(", ")} (env: ${envList.length ? envList.join(",") : "<unset>"})`);
+      }
+
       if (process.env.NODE_ENV === "production") {
         try {
           const { db: dbConn } = await import("./db");
