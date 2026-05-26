@@ -28,8 +28,8 @@ import { mintAgentIdentity, getBscScanTokenUrl, getBscScanTxUrl } from "./servic
 // Competition window — must match constants in client/src/pages/competition.tsx.
 const DEFAULT_COMP_NAME = "BUILD4 × four.meme Season 1";
 const DEFAULT_COMP_DESC = "AI Agent Championship · 7-day BSC memecoin sprint";
-const DEFAULT_COMP_START_ISO = "2026-05-18T00:00:00Z";
-const DEFAULT_COMP_END_ISO = "2026-05-25T00:00:00Z";
+const DEFAULT_COMP_START_ISO = "2026-05-29T12:00:00Z";
+const DEFAULT_COMP_END_ISO = "2026-06-05T12:00:00Z";
 // Stored as USD — paid out in BNB at competition close.
 const DEFAULT_PRIZE_POOL_USD = "2820";
 const DEFAULT_MAX_ENTRIES = 500;
