@@ -487,6 +487,23 @@ function MemeTradePanel() {
           <div className="text-xs font-mono uppercase tracking-wider text-zinc-500 mb-2">Step 3 · Trade</div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {isV1Curve && (
+              <div className="p-3 rounded-lg border border-amber-500/50 bg-amber-500/10" data-testid="banner-v1-warning">
+                <div className="text-[11px] font-mono text-amber-300 leading-relaxed mb-2">
+                  ⚠ V1 bonding curve · sells are blocked on-chain until this token graduates to V2 / PancakeSwap. If you buy now, you're locked in until graduation.
+                </div>
+                <label className="flex items-start gap-2 cursor-pointer text-[11px] font-mono text-amber-200">
+                  <input
+                    type="checkbox"
+                    checked={ackV1Lockin}
+                    onChange={(e) => setAckV1Lockin(e.target.checked)}
+                    className="mt-0.5 accent-amber-500"
+                    data-testid="checkbox-v1-ack"
+                  />
+                  <span>I understand I can't sell until graduation</span>
+                </label>
+              </div>
+            )}
             <div className="p-3 rounded-lg border border-zinc-800 bg-zinc-900/30">
               <div className="text-[10px] font-mono uppercase text-zinc-500 mb-1.5">Buy {info.symbol} with BNB</div>
               <div className="flex gap-2 mb-2">
@@ -515,9 +532,9 @@ function MemeTradePanel() {
               </div>
               <Button
                 onClick={onBuy}
-                disabled={!session.ready || !bnbIn || Number(bnbIn) <= 0 || busy !== ""}
-                className="w-full font-mono text-xs border-0 text-white gap-2"
-                style={{ background: "linear-gradient(135deg, #1FC7D4 0%, #7645D9 100%)" }}
+                disabled={!session.ready || !bnbIn || Number(bnbIn) <= 0 || busy !== "" || buyBlockedByV1}
+                className="w-full font-mono text-xs border-0 text-black gap-2 hover:brightness-110"
+                style={{ background: "linear-gradient(135deg, #3FE94A 0%, #A8FF35 100%)" }}
                 data-testid="button-pancake-buy"
               >
                 {busy === "buy" ? <><Loader2 className="w-3 h-3 animate-spin" /> Sending…</> : <><TrendingUp className="w-3 h-3" /> Buy {info.symbol}</>}

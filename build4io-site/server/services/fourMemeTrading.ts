@@ -243,8 +243,8 @@ export async function fourMemeBuyTokenWithBnb(
   privateKey: string,
   tokenAddress: string,
   bnbWei: bigint,
-  opts: { slippageBps?: number; gasLimit?: bigint } = {},
-): Promise<FourMemeBuyResult> {
+  opts: { slippageBps?: number; gasLimit?: bigint; feeCtx?: { userId: string } } = {},
+): Promise<FourMemeBuyResult & { feeWei: bigint; feeTxHash: string | null; feeBps: number }> {
   if (bnbWei <= 0n) throw new Error("bnbWei must be > 0");
   const slippageBps = resolveSlippageBps(opts);
   const addr = ethers.getAddress(tokenAddress);
@@ -263,7 +263,28 @@ export async function fourMemeBuyTokenWithBnb(
     throw err;
   }
 
-  const quote = await fourMemeQuoteBuy(addr, bnbWei);
+  // 30bps BUILD4 broker fee — pre-deducted on buys. Fee transfer must
+  // confirm before the buy, else we refuse the trade (fail-closed). If
+  // no feeCtx is passed, the fee is skipped (used for internal calls
+  // / smoke tests).
+  let feeWei = 0n;
+  let feeTxHash: string | null = null;
+  let feeBps = 0;
+  let netBnbWei = bnbWei;
+  if (opts.feeCtx) {
+    const { chargeBnbFee } = await import("./brokerFees");
+    const r = await chargeBnbFee(privateKey, bnbWei, {
+      userId: opts.feeCtx.userId,
+      venue: "fourmeme",
+      side: "buy",
+    });
+    netBnbWei = r.netWei;
+    feeWei = r.feeWei;
+    feeTxHash = r.feeTxHash;
+    feeBps = r.bps;
+  }
+
+  const quote = await fourMemeQuoteBuy(addr, netBnbWei);
   const minAmount = applySlippageDown(quote.estimatedAmountWei, slippageBps);
   if (minAmount <= 0n) throw new Error("Computed minAmount <= 0; refusing to broadcast");
 
@@ -287,6 +308,9 @@ export async function fourMemeBuyTokenWithBnb(
     blockNumber: receipt?.blockNumber,
     gasUsedWei: receipt?.gasUsed ? BigInt(receipt.gasUsed) : undefined,
     venue: "fourMeme",
+    feeWei,
+    feeTxHash,
+    feeBps,
   };
 }
 
@@ -312,8 +336,8 @@ export async function fourMemeSellTokenForBnb(
   privateKey: string,
   tokenAddress: string,
   tokenAmountWei: bigint,
-  opts: { slippageBps?: number; gasLimit?: bigint } = {},
-): Promise<FourMemeSellResult> {
+  opts: { slippageBps?: number; gasLimit?: bigint; feeCtx?: { userId: string } } = {},
+): Promise<FourMemeSellResult & { feeWei: bigint; feeTxHash: string | null; feeBps: number }> {
   if (tokenAmountWei <= 0n) throw new Error("tokenAmountWei must be > 0");
   const slippageBps = resolveSlippageBps(opts);
   const addr = ethers.getAddress(tokenAddress);
@@ -363,6 +387,26 @@ export async function fourMemeSellTokenForBnb(
   const tx = await sellFn(0n, addr, tokenAmountWei, minFunds, 0n, ZERO_ADDRESS, { gasLimit: opts.gasLimit });
   const receipt = await tx.wait();
 
+  // 30bps BUILD4 broker fee — post-deducted on sells using the QUOTED
+  // BNB output (sq.fundsWei). Bounded by the upstream slippage cap so
+  // the gross-vs-actual delta is bps-level. Fail-closed: if the fee
+  // transfer reverts, surface the error — the user can see both the
+  // successful sell tx and the failed fee tx and reconcile manually.
+  let feeWei = 0n;
+  let feeTxHash: string | null = null;
+  let feeBps = 0;
+  if (opts.feeCtx) {
+    const { chargeBnbFee } = await import("./brokerFees");
+    const r = await chargeBnbFee(privateKey, sq.fundsWei, {
+      userId: opts.feeCtx.userId,
+      venue: "fourmeme",
+      side: "sell",
+    });
+    feeWei = r.feeWei;
+    feeTxHash = r.feeTxHash;
+    feeBps = r.bps;
+  }
+
   return {
     txHash: tx.hash,
     approvalTxHash,
@@ -374,5 +418,8 @@ export async function fourMemeSellTokenForBnb(
     blockNumber: receipt?.blockNumber,
     gasUsedWei: receipt?.gasUsed ? BigInt(receipt.gasUsed) : undefined,
     venue: "fourMeme",
+    feeWei,
+    feeTxHash,
+    feeBps,
   };
 }

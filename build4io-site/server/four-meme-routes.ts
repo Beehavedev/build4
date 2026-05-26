@@ -113,6 +113,7 @@ export function registerFourMemeRoutes(app: Express) {
       const bnbWei = ethers.parseEther(String(bnbAmount));
       const result = await fourMemeBuyTokenWithBnb(auth.privateKey!, String(tokenAddress), bnbWei, {
         slippageBps: slippageBps != null ? Number(slippageBps) : undefined,
+        feeCtx: { userId: auth.walletAddress },
       });
       // Fire-and-forget competition hook — never blocks the response.
       recordFourMemeTrade({
@@ -130,6 +131,9 @@ export function registerFourMemeRoutes(app: Express) {
         estimatedTokensWei: result.estimatedTokensWei.toString(),
         minTokensWei: result.minTokensWei.toString(),
         slippageBps: result.slippageBps,
+        feeWei: result.feeWei.toString(),
+        feeTxHash: result.feeTxHash,
+        feeBps: result.feeBps,
       });
     } catch (err: any) {
       res.status(400).json({ ok: false, error: err?.message ?? String(err), code: err?.code });
@@ -152,6 +156,7 @@ export function registerFourMemeRoutes(app: Express) {
       const tokensWei = ethers.parseUnits(String(tokenAmount), info.decimals);
       const result = await fourMemeSellTokenForBnb(auth.privateKey!, String(tokenAddress), tokensWei, {
         slippageBps: slippageBps != null ? Number(slippageBps) : undefined,
+        feeCtx: { userId: auth.walletAddress },
       });
       recordFourMemeTrade({
         chatId: auth.chatId,
@@ -169,6 +174,9 @@ export function registerFourMemeRoutes(app: Express) {
         estimatedBnbWei: result.estimatedBnbWei.toString(),
         minBnbWei: result.minBnbWei.toString(),
         slippageBps: result.slippageBps,
+        feeWei: result.feeWei.toString(),
+        feeTxHash: result.feeTxHash,
+        feeBps: result.feeBps,
       });
     } catch (err: any) {
       res.status(400).json({ ok: false, error: err?.message ?? String(err), code: err?.code });
