@@ -38,12 +38,12 @@ const VEST_META = [
 ];
 
 const UTIL_META = [
-  { id: "discount", icon: DollarSign, titleKey: "utilDiscount", descKey: "utilDiscountDesc" },
+  { id: "burn", icon: Flame, titleKey: "utilBurn", descKey: "utilBurnDesc" },
   { id: "revenue", icon: BarChart3, titleKey: "utilRevenue", descKey: "utilRevenueDesc" },
+  { id: "discount", icon: DollarSign, titleKey: "utilDiscount", descKey: "utilDiscountDesc" },
   { id: "premium", icon: Star, titleKey: "utilPremium", descKey: "utilPremiumDesc" },
   { id: "boost", icon: Zap, titleKey: "utilBoost", descKey: "utilBoostDesc" },
   { id: "gov", icon: Vote, titleKey: "utilGov", descKey: "utilGovDesc" },
-  { id: "burn", icon: Flame, titleKey: "utilBurn", descKey: "utilBurnDesc" },
 ];
 
 export default function TokenPage() {
