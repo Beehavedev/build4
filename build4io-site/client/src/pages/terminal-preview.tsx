@@ -270,6 +270,15 @@ function DashboardPane({
   summary: AccountSummary;
   venues: VenueBalance[];
 }) {
+  // Pull session here (not as a prop) so the SIWE-retry button below can call
+  // retryRegister without having to thread the session through every prop. The
+  // hook is memoized — multiple call sites in the same tree are fine.
+  const dashSession = useTerminalSession();
+  // err can include venue-prefixed messages like "Aster: Sign in via Telegram
+  // or upgrade to SIWE flow." When the b4_sess cookie is stale (or was never
+  // issued), bot-bridge endpoints return 401 with that text. Detect those so
+  // we can offer a one-click SIWE retry inline with the error.
+  const needsSiwe = !!err && /sign in|siwe|unsigned|auth disabled|not authenticated|unauthorized|401/i.test(err);
   const fmtUsd = (n: number | null) =>
     n == null ? "—" : `${n < 0 ? "-" : ""}$${Math.abs(n).toLocaleString(undefined, { maximumFractionDigits: 2, minimumFractionDigits: 2 })}`;
   const fmtPct = (n: number | null) => (n == null ? "" : `${n >= 0 ? "+" : ""}${n.toFixed(2)}%`);
@@ -291,8 +300,18 @@ function DashboardPane({
       )}
 
       {err && ready && (
-        <div className="mb-4 p-3 rounded-md border border-destructive/40 bg-destructive/5 font-mono text-xs text-destructive" data-testid="text-account-error">
-          {err}
+        <div className="mb-4 p-3 rounded-md border border-destructive/40 bg-destructive/5 font-mono text-xs text-destructive flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3" data-testid="text-account-error">
+          <div className="flex-1">{err}</div>
+          {needsSiwe && dashSession.wallet.connected && (
+            <Button
+              size="sm"
+              onClick={dashSession.retryRegister}
+              className="font-mono text-[11px] gap-1.5 flex-shrink-0"
+              data-testid="button-retry-siwe-overview"
+            >
+              Sign in to your wallet
+            </Button>
+          )}
         </div>
       )}
 

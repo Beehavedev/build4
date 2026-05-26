@@ -402,12 +402,17 @@ function MemeTradePanel() {
           <WalletConnector />
           <p className="text-[11px] text-zinc-500 font-mono mt-2">First-time connect creates a BUILD4 custodial BSC wallet. Fund it with BNB to trade.</p>
         </div>
-      ) : session.registerState === "registering" ? (
-        <div className="mb-6 flex items-center gap-2 text-sm text-zinc-400"><Loader2 className="w-4 h-4 animate-spin" /> Registering wallet…</div>
+      ) : session.registerState === "registering" || session.registerState === "signing" ? (
+        <div className="mb-6 flex items-center gap-2 text-sm text-zinc-400"><Loader2 className="w-4 h-4 animate-spin" /> {session.registerState === "signing" ? "Waiting for wallet signature…" : "Registering wallet…"}</div>
       ) : session.registerState === "error" ? (
-        <div className="mb-6 p-3 rounded-lg border border-red-500/40 bg-red-500/10 text-xs text-red-300 font-mono flex items-start gap-2">
-          <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-          <div>Wallet registration failed: {session.registerError}. Refresh and try again.</div>
+        <div className="mb-6 p-3 rounded-lg border border-red-500/40 bg-red-500/10 text-xs text-red-300 font-mono flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div className="flex items-start gap-2">
+            <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+            <div>Wallet sign-in didn't complete: {session.registerError || "signature dismissed"}. Click below to retry — your wallet will pop up a sign-in message.</div>
+          </div>
+          <Button size="sm" onClick={session.retryRegister} className="font-mono text-[11px] gap-1.5 border-0 text-white flex-shrink-0" style={{ background: PCS_GRADIENT }} data-testid="button-retry-siwe-trade">
+            Sign in to your wallet
+          </Button>
         </div>
       ) : (
         <div className="mb-6 flex items-center justify-between p-3 rounded-lg bg-zinc-900/50 border border-zinc-800">
@@ -954,9 +959,20 @@ export default function Competition() {
                   Read the rules <ChevronRight className="w-4 h-4" />
                 </a>
               </div>
-              {session.registerState === "error" && session.registerError && (
-                <div className="mt-3 text-[11px] font-mono text-red-400 max-w-md mx-auto" data-testid="text-register-error">
-                  Wallet registration failed. Refresh and try again, or contact support if it persists.
+              {session.registerState === "error" && (
+                <div className="mt-4 flex flex-col items-center gap-2 max-w-md mx-auto" data-testid="block-register-error">
+                  <div className="text-[11px] font-mono text-red-400 text-center">
+                    Wallet sign-in didn't complete{session.registerError ? `: ${session.registerError}` : ""}. Click below — your wallet will pop up a sign-in message (no transaction, no gas).
+                  </div>
+                  <Button
+                    size="sm"
+                    onClick={session.retryRegister}
+                    className="font-mono text-[11px] gap-1.5 border-0 text-white"
+                    style={{ background: PCS_GRADIENT }}
+                    data-testid="button-retry-siwe-hero"
+                  >
+                    Sign in to your wallet
+                  </Button>
                 </div>
               )}
 

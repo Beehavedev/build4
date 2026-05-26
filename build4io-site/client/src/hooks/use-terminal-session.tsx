@@ -81,6 +81,12 @@ export function useTerminalSession() {
   const [siweReady, setSiweReady] = useState(false);
   const [linked, setLinked] = useState<boolean | null>(null);
   const [linkBump, setLinkBump] = useState(0);
+  // Bumped by retryRegister() to force the registration effect to re-run
+  // without requiring the user to disconnect/reconnect their wallet first.
+  // Lets us surface a "Sign in to your wallet" button anywhere SIWE has
+  // failed or the server has 401'd a write because the b4_sess cookie
+  // expired mid-session.
+  const [registerBump, setRegisterBump] = useState(0);
 
   // Once SIWE is ready, poll /api/wallet/link-telegram/status to see whether
   // this connected wallet is mapped to a Telegram user (i.e. shares a `User`
@@ -201,6 +207,17 @@ export function useTerminalSession() {
     return () => {
       cancelled = true;
     };
+  }, [wallet.connected, wallet.address, registerBump]);
+
+  // Re-run the registration + SIWE handshake against the currently-connected
+  // wallet. Used by the "Sign in to your wallet" retry button so a user whose
+  // SIWE prompt was dismissed/rejected can recover without having to fully
+  // disconnect and reconnect.
+  const retryRegister = useCallback(() => {
+    if (!wallet.connected || !wallet.address) return;
+    setRegisterError(null);
+    setSiweReady(false);
+    setRegisterBump((n) => n + 1);
   }, [wallet.connected, wallet.address]);
 
   const apiFetch = useCallback(
@@ -283,11 +300,13 @@ export function useTerminalSession() {
       ready,
       registerState,
       registerError,
+      siweReady,
       apiFetch,
       disconnect,
+      retryRegister,
       linked,
       refreshLink,
     }),
-    [wallet, chatId, ready, registerState, registerError, apiFetch, disconnect, linked, refreshLink],
+    [wallet, chatId, ready, registerState, registerError, siweReady, apiFetch, disconnect, retryRegister, linked, refreshLink],
   );
 }
