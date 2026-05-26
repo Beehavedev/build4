@@ -231,7 +231,10 @@ export async function handleAsterConnect(ctx: Context) {
   const builderAddress = process.env.ASTER_BUILDER_ADDRESS
   const agentPrivKey   = process.env.ASTER_AGENT_PRIVATE_KEY
   const agentAddress   = process.env.ASTER_AGENT_ADDRESS
-  const feeRate        = process.env.ASTER_BUILDER_FEE_RATE ?? '0.0001'
+  // 30 bps self-collected fee (was 10 bps Aster Builder Program default).
+  // Aligned with src/server.ts, web4/server/dapp-server.ts, and asterReapprove.ts
+  // so the legacy /asterconnect command doesn't onboard new users at the old rate.
+  const feeRate        = process.env.ASTER_BUILDER_FEE_RATE ?? '0.003'
 
   if (!builderAddress || !agentPrivKey || !agentAddress) {
     return ctx.reply(

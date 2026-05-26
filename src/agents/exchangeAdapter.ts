@@ -177,8 +177,20 @@ const realAsterOpenServices: AsterOpenServices = {
   placeBracketOrders:        asterPlaceBracketOrders,
   reapproveAsterForUser,
   // Resolved at call time so env var changes don't get baked into a constant.
-  get builderAddress() { return process.env.ASTER_BUILDER_ADDRESS },
-  get feeRate()        { return process.env.ASTER_BUILDER_FEE_RATE ?? '0.0001' },
+  // builderAddress: ASTER_BUILDER_ADDRESS env wins; else fall back to
+  // BROKER_FEE_WALLET so the 30 bps self-collected broker fee lands at the
+  // right address without requiring extra env wiring on a fresh deploy.
+  get builderAddress() {
+    const env = process.env.ASTER_BUILDER_ADDRESS
+    if (env) return env
+    try {
+      // Lazy require to avoid pulling brokerFees into the module init graph.
+      const { brokerFeeWallet } = require('../services/brokerFees') as typeof import('../services/brokerFees')
+      return brokerFeeWallet()
+    } catch { return undefined }
+  },
+  // 30 bps self-collected (was 10 bps program default).
+  get feeRate()        { return process.env.ASTER_BUILDER_FEE_RATE ?? '0.003' },
 }
 
 const realAsterCloseServices: AsterCloseServices = {
@@ -404,9 +416,24 @@ export async function executeOpenAster(
     // on-file agent address isn't recognised by Aster anymore. Fire
     // reapproveAsterForUser once now so the NEXT tick uses fresh creds
     // and the order succeeds.
-    if (/no agent found|-1000/i.test(execMsg) && dbUser) {
+    //
+    // ALSO covers the lazy-bump path for the 30 bps Aster fee rollout:
+    // every user onboarded under the old 0.0001 maxFeeRate will see their
+    // first 0.003 order rejected with a fee-exceeds-max error. Same heal:
+    // reapproveAsterForUser re-calls approveBuilder with the new env-default
+    // maxFeeRate (0.003), so the NEXT tick clears. Matches Aster's known
+    // error shapes plus a loose "builder/fee rate" catch-all to survive
+    // wording changes in their error strings.
+    const isNoAgent  = /no agent found|-1000/i.test(execMsg)
+    // Centralized detector — see asterReapprove.isAsterFeeOverMaxError.
+    // Operates on the raw error object so it sees both err.message and
+    // err.response.data.code, not just the flattened string.
+    const { isAsterFeeOverMaxError } = await import('../services/asterReapprove')
+    const isFeeOverMax = isAsterFeeOverMaxError(execErr)
+    if ((isNoAgent || isFeeOverMax) && dbUser) {
       console.warn(
-        `[Agent ${agent.name}] Aster reports "No agent found" — auto-reapproving for user=${dbUser.id}`,
+        `[Agent ${agent.name}] Aster rejection triggering re-approve ` +
+        `(noAgent=${isNoAgent} feeOverMax=${isFeeOverMax}) for user=${dbUser.id}: ${execMsg.slice(0, 200)}`,
       )
       try {
         const r = await services.reapproveAsterForUser(dbUser as any)

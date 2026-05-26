@@ -266,6 +266,8 @@ export async function isAgentWallet(walletAddress: string): Promise<boolean> {
 
 // ── Trading (signing required) ───────────────────────────────────────
 
+import { chargeBnbFee, type FeeContext } from './brokerFees'
+
 export interface FourMemeBuyResult {
   txHash: string
   tokenAddress: string
@@ -275,6 +277,8 @@ export interface FourMemeBuyResult {
   slippageBps: number
   blockNumber?: number
   gasUsedWei?: bigint
+  brokerFeeWei?: bigint
+  brokerFeeTxHash?: string | null
 }
 
 export interface FourMemeSellResult {
@@ -286,11 +290,14 @@ export interface FourMemeSellResult {
   slippageBps: number
   blockNumber?: number
   gasUsedWei?: bigint
+  brokerFeeWei?: bigint
+  brokerFeeTxHash?: string | null
 }
 
 interface BuyOpts {
   slippageBps?: number   // default 500 (5%)
   gasLimit?: bigint      // override gas limit
+  feeCtx?: FeeContext    // broker spread fee context (pre-deduct from BNB)
 }
 
 /**
@@ -317,6 +324,10 @@ export async function buyTokenWithBnb(
 
   // Read first — we need to know which TokenManager to dispatch to
   // and the exact `funds` / `msg.value` / `minAmount` to send.
+  // Precondition checks (QUOTE_NOT_SUPPORTED, GRADUATED) must run BEFORE
+  // the broker fee transfer; otherwise a user could pay the 30 bps fee
+  // and then have the trade rejected with no execution, leaving them
+  // charged for nothing. Read is cheap and idempotent — safe to do first.
   const info = await getTokenInfo(addr)
   if (!info.quoteIsBnb) {
     const err: any = new Error(`Token ${addr} is BEP20-quoted (quote=${info.quote}); BEP20 quote not supported in Module 1`)
@@ -329,7 +340,20 @@ export async function buyTokenWithBnb(
     throw err
   }
 
-  const quote = await quoteBuyByBnb(addr, bnbWei)
+  // Broker spread fee: pre-deduct from input BNB (fail-closed). Trade
+  // proceeds with the net amount so the user is never charged more than
+  // the displayed gross. Placed AFTER precondition checks (see above).
+  let netBnbWei = bnbWei
+  let brokerFeeWei = 0n
+  let brokerFeeTxHash: string | null = null
+  if (opts.feeCtx) {
+    const r = await chargeBnbFee(privateKey, bnbWei, { ...opts.feeCtx, venue: 'fourmeme', side: 'buy' })
+    netBnbWei = r.netWei
+    brokerFeeWei = r.feeWei
+    brokerFeeTxHash = r.feeTxHash
+  }
+
+  const quote = await quoteBuyByBnb(addr, netBnbWei)
   const minAmount = applySlippageDown(quote.estimatedAmountWei, slippageBps)
   if (minAmount <= 0n) throw new Error('Computed minAmount <= 0; refusing to broadcast')
 
@@ -352,12 +376,15 @@ export async function buyTokenWithBnb(
     slippageBps,
     blockNumber: receipt?.blockNumber,
     gasUsedWei: receipt?.gasUsed ? BigInt(receipt.gasUsed) : undefined,
+    brokerFeeWei,
+    brokerFeeTxHash,
   }
 }
 
 interface SellOpts {
   slippageBps?: number   // default 500 (5%)
   gasLimit?: bigint
+  feeCtx?: FeeContext    // broker spread fee context (post-deduct from BNB)
 }
 
 /**
@@ -452,6 +479,16 @@ export async function sellTokenForBnb(
   const tx = await sellFn(0n, addr, tokenAmountWei, minFunds, 0n, ZERO_ADDRESS, { gasLimit: opts.gasLimit })
   const receipt = await tx.wait()
 
+  // Broker spread fee: post-deduct from output BNB (fail-closed). Use
+  // the quoted funds as the basis — bps-level slippage error is OK.
+  let brokerFeeWei = 0n
+  let brokerFeeTxHash: string | null = null
+  if (opts.feeCtx && sq.fundsWei > 0n) {
+    const r = await chargeBnbFee(privateKey, sq.fundsWei, { ...opts.feeCtx, venue: 'fourmeme', side: 'sell' })
+    brokerFeeWei = r.feeWei
+    brokerFeeTxHash = r.feeTxHash
+  }
+
   return {
     txHash: tx.hash,
     tokenAddress: addr,
@@ -461,6 +498,8 @@ export async function sellTokenForBnb(
     slippageBps,
     blockNumber: receipt?.blockNumber,
     gasUsedWei: receipt?.gasUsed ? BigInt(receipt.gasUsed) : undefined,
+    brokerFeeWei,
+    brokerFeeTxHash,
   }
 }
 

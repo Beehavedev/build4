@@ -19,6 +19,7 @@ import LaunchToken from './pages/LaunchToken'
 import TokenTrade from './pages/TokenTrade'
 import CampaignBrain from './pages/CampaignBrain'
 import Topaz from './pages/Topaz'
+import PancakeSwap from './pages/PancakeSwap'
 import { apiFetch, type AgentData } from './api'
 
 declare global {
@@ -27,7 +28,7 @@ declare global {
   }
 }
 
-type Page = 'dashboard' | 'agents' | 'wallet' | 'trade' | 'copy' | 'portfolio' | 'predictions' | 'hyperliquid' | 'admin' | 'aiusage' | 'onboard' | 'launchToken' | 'tokenTrade' | 'brain' | 'topaz'
+type Page = 'dashboard' | 'agents' | 'wallet' | 'trade' | 'copy' | 'portfolio' | 'predictions' | 'hyperliquid' | 'admin' | 'aiusage' | 'onboard' | 'launchToken' | 'tokenTrade' | 'brain' | 'topaz' | 'pancakeswap'
 
 export default function App() {
   const [page, setPage] = useState<Page>('dashboard')
@@ -165,6 +166,7 @@ export default function App() {
   const overflowItems: { id: Page; label: string; icon: string }[] = [
     ...(launchEnabled ? [{ id: 'launchToken' as Page, label: 'Launch token', icon: '🚀' }] : []),
     { id: 'topaz' as Page, label: 'Topaz', icon: '💎' },
+    { id: 'pancakeswap' as Page, label: 'PancakeSwap', icon: '🥞' },
     ...(isAdmin ? [{ id: 'aiusage' as Page, label: 'AI Usage', icon: '🧠' }] : []),
     ...(isAdmin ? [{ id: 'admin' as Page, label: 'Admin', icon: '🛠' }] : []),
     // House Agent lives at /house as a standalone admin panel — kept out of
@@ -302,6 +304,7 @@ export default function App() {
         {page === 'tokenTrade' && <TokenTrade />}
         {page === 'brain' && <CampaignBrain />}
         {page === 'topaz' && <Topaz />}
+        {page === 'pancakeswap' && <PancakeSwap />}
         {page === 'onboard' && (
           <Onboard
             asterOnboarded={asterOnboarded}

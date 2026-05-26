@@ -170,6 +170,31 @@ test('executeOpenAster auto-reapproves on "No agent found" error', async () => {
   }
 })
 
+test('executeOpenAster auto-reapproves on fee-rate-exceeds-max error (30 bps lazy bump)', async () => {
+  // Users onboarded under the old Aster Builder Program rate (maxFeeRate=0.0001)
+  // will have their first 0.003 order rejected. The lazy re-approval handler
+  // must detect this and fire reapproveAsterForUser so the next tick clears.
+  let reapproved = false
+  const svc: AsterOpenServices = {
+    resolveAgentCreds:         async () => fakeAsterCreds,
+    getAccountBalanceStrict:   async () => ({ usdt: 1000 }) as any,
+    placeOrder:                async () => { throw new Error('not reached') },
+    placeOrderWithBuilderCode: async () => {
+      const err: any = new Error('Request failed with status code 400')
+      err.response = { data: { code: -4400, msg: 'feeRate exceeds builder approved maxFeeRate' } }
+      throw err
+    },
+    placeBracketOrders:        async () => ({}) as any,
+    reapproveAsterForUser:     async () => { reapproved = true; return { success: true, agentAddress: '0xnew', builderEnrolled: true } as any },
+    builderAddress: '0xfee',
+    feeRate: '0.003',
+  }
+  const r = await executeOpenAster(openInput({ dbUser: { id: 'u1', asterOnboarded: true } as any }), svc)
+  assert.equal(reapproved, true)
+  assert.equal(r.ok, false)
+  if (!r.ok) assert.equal(r.reason, 'rejected')
+})
+
 test('executeOpenAster does NOT auto-reapprove on unrelated rejects', async () => {
   let reapproved = false
   const svc: AsterOpenServices = {

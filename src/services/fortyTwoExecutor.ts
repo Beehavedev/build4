@@ -1,6 +1,7 @@
 import { ethers } from 'ethers';
 import { db } from '../db';
 import { decryptPrivateKey } from './wallet';
+import { chargeUsdtFee } from './brokerFees';
 import { FortyTwoTrader, type DryRunReceipt } from './fortyTwoTrader';
 import { readMarketOnchain, isWinningTokenId, quoteRedeemValue } from './fortyTwoOnchain';
 import type { Market42 } from './fortyTwo';
@@ -165,6 +166,7 @@ export interface ExecutorDeps {
   isWinningTokenId: typeof isWinningTokenId;
   decryptPrivateKey: typeof decryptPrivateKey;
   FortyTwoTraderCtor: ExecutorTraderCtor;
+  chargeUsdtFee: typeof chargeUsdtFee;
 }
 
 /**
@@ -183,6 +185,7 @@ export const __testDeps: ExecutorDeps = {
   isWinningTokenId,
   decryptPrivateKey,
   FortyTwoTraderCtor: FortyTwoTrader,
+  chargeUsdtFee,
 };
 
 const BSC_RPC = process.env.BSC_RPC_URL ?? 'https://bsc-dataseed.binance.org';
@@ -584,12 +587,31 @@ export async function openPredictionPosition(
         18,
       );
 
+  // Broker spread fee (0.30%): pre-deduct USDT from the user wallet
+  // before placing the trade. Fail-closed — if the fee transfer reverts
+  // we refuse the trade rather than silently waive fees. We reuse the
+  // wallet PK already loaded by buildTrader (re-load is cheap — same
+  // row, DB roundtrip ~10ms).
+  let netUsdtIn = sizing.usdtIn;
+  try {
+    const w = await loadUserWalletPK(ctx.userId, ctx.agentId);
+    if (!w) return { ok: false, reason: 'no usable BSC wallet for fee transfer' };
+    const grossWei = ethers.parseUnits(sizing.usdtIn.toFixed(6), 18);
+    const r = await __testDeps.chargeUsdtFee(w.privateKey, grossWei, {
+      userId: ctx.userId, agentId: ctx.agentId, venue: '42space', side: 'buy',
+    });
+    netUsdtIn = Number(ethers.formatUnits(r.netWei, 18));
+  } catch (err) {
+    console.error('[fortyTwoExecutor] broker fee charge failed (agent path):', err);
+    return { ok: false, reason: `broker fee failed: ${(err as Error).message}` };
+  }
+
   let receipt: TxReceiptLike = null;
   try {
     receipt = await trader.buyOutcome(
       intent.marketAddress,
       intent.tokenId,
-      sizing.usdtIn.toString(),
+      netUsdtIn.toString(),
       minOtOut,
     );
   } catch (err) {
@@ -822,9 +844,29 @@ export async function openManualPredictionPosition(
           18,
         );
 
+    // Broker spread fee (0.30%): pre-deduct USDT before the trade.
+    // Manual-path flows from the mini-app / dApp — paperTrade users
+    // skip the fee since they're not on-chain (the trader is a dry-run
+    // mock; sending real USDT to the fee wallet would be a bug).
+    let netUsdtAmount = usdtAmount;
+    if (!paperTrade) {
+      try {
+        const w = await loadUserWalletPK(userId);
+        if (!w) return { ok: false, reason: 'no usable BSC wallet for fee transfer' };
+        const grossWei = ethers.parseUnits(usdtAmount.toFixed(6), 18);
+        const r = await __testDeps.chargeUsdtFee(w.privateKey, grossWei, {
+          userId, venue: '42space', side: 'buy',
+        });
+        netUsdtAmount = Number(ethers.formatUnits(r.netWei, 18));
+      } catch (err) {
+        console.error('[fortyTwoExecutor] broker fee charge failed (manual path):', err);
+        return { ok: false, reason: `broker fee failed: ${(err as Error).message}` };
+      }
+    }
+
     let receipt: TxReceiptLike = null;
     try {
-      receipt = await trader.buyOutcome(marketAddress, tokenId, usdtAmount.toString(), minOtOut);
+      receipt = await trader.buyOutcome(marketAddress, tokenId, netUsdtAmount.toString(), minOtOut);
     } catch (err) {
       console.error('[fortyTwoExecutor] buyOutcome (manual path) failed:', err);
       return { ok: false, reason: friendlyTraderError(err, 'buyOutcome') };
