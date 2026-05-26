@@ -14,20 +14,21 @@ import {
   Loader2, AlertCircle, CheckCircle2, ArrowDownUp, Rocket,
 } from "lucide-react";
 
-// four.meme brand-adjacent palette (yellow/orange/magenta on dark).
-// Variable names kept as PCS_* for minimal diff vs. the prior page —
-// only the hex values rotated to the memecoin-launchpad vibe.
-const PCS_CYAN = "#FFD400";        // bright yellow (primary accent)
-const PCS_PURPLE = "#FF8A00";      // orange (secondary)
-const PCS_PINK = "#FF3D8E";        // magenta (loss / villain accent)
-const PCS_YELLOW = "#FFB237";      // amber (unchanged)
-const PCS_DARK_PURPLE = "#1A0F00"; // dark amber backdrop
-const PCS_GRADIENT = "linear-gradient(135deg, #FFD400 0%, #FF8A00 55%, #FF3D8E 100%)";
-const PCS_GRADIENT_SOFT = "linear-gradient(135deg, rgba(255,212,0,0.18) 0%, rgba(255,138,0,0.18) 55%, rgba(255,61,142,0.18) 100%)";
+// four.meme brand palette — neon green on pure black, lifted from
+// four.meme/en. Variable names kept as PCS_* for minimal diff vs.
+// the prior page. four.meme green (#3FE94A) sits one shade brighter
+// than BUILD4 green (#42CF71), so the two greens harmonize cleanly.
+const PCS_CYAN = "#3FE94A";        // four.meme neon green (primary)
+const PCS_PURPLE = "#A8FF35";      // lime accent (secondary)
+const PCS_PINK = "#FF4D6D";        // soft red (loss / sell button)
+const PCS_YELLOW = "#42CF71";      // BUILD4 green echo (tertiary)
+const PCS_DARK_PURPLE = "#001A05"; // deep-green backdrop
+const PCS_GRADIENT = "linear-gradient(135deg, #3FE94A 0%, #42CF71 55%, #A8FF35 100%)";
+const PCS_GRADIENT_SOFT = "linear-gradient(135deg, rgba(63,233,74,0.18) 0%, rgba(66,207,113,0.18) 55%, rgba(168,255,53,0.18) 100%)";
 const B4_GREEN = "#42CF71";
 
-// Inline four.meme wordmark — yellow rounded square with bold "4" glyph.
-// Self-contained SVG so we don't need a separate brand asset on disk.
+// Inline 4meme wordmark — neon-green rounded square with bold "4"
+// glyph, matching the four.meme/en hero treatment. Self-contained SVG.
 function FourMemeLogo({ size = 28, className = "" }: { size?: number; className?: string }) {
   return (
     <svg
@@ -36,17 +37,17 @@ function FourMemeLogo({ size = 28, className = "" }: { size?: number; className?
       viewBox="0 0 40 40"
       xmlns="http://www.w3.org/2000/svg"
       className={className}
-      aria-label="four.meme"
+      aria-label="4meme"
       data-testid="img-fourmeme-logo"
     >
-      <rect x="1" y="1" width="38" height="38" rx="9" fill="#FFD400" stroke="#FF8A00" strokeWidth="1.5" />
+      <rect x="1" y="1" width="38" height="38" rx="9" fill="#3FE94A" stroke="#A8FF35" strokeWidth="1.5" />
       <text
         x="20" y="29"
         textAnchor="middle"
         fontFamily="'JetBrains Mono', ui-monospace, monospace"
         fontWeight="900"
         fontSize="24"
-        fill="#0A0A0A"
+        fill="#001A05"
       >4</text>
     </svg>
   );
@@ -376,8 +377,8 @@ function MemeTradePanel() {
         <div className="text-xs font-mono uppercase tracking-wider text-zinc-500">Step 1 · Connect</div>
         <div className="flex items-center gap-2">
           {info?.venue === "fourMeme" && (
-            <Badge variant="outline" className="font-mono text-[10px] gap-1" style={{ borderColor: "#FFD40066", color: "#FFD400" }} data-testid="badge-venue-fourmeme">
-              <Rocket className="w-3 h-3" /> four.meme curve{typeof info.fillPct === "number" ? ` · ${(info.fillPct * 100).toFixed(1)}%` : ""}
+            <Badge variant="outline" className="font-mono text-[10px] gap-1" style={{ borderColor: "#3FE94A66", color: "#3FE94A" }} data-testid="badge-venue-fourmeme">
+              <Rocket className="w-3 h-3" /> 4meme curve{typeof info.fillPct === "number" ? ` · ${(info.fillPct * 100).toFixed(1)}%` : ""}
             </Badge>
           )}
           {info?.venue === "pancakeV2" && (
@@ -541,7 +542,7 @@ function MemeTradePanel() {
                 onClick={onSell}
                 disabled={!session.ready || !tokensIn || Number(tokensIn) <= 0 || busy !== "" || !!sellDisabledReason}
                 className="w-full font-mono text-xs border-0 text-white gap-2"
-                style={{ background: "linear-gradient(135deg, #FF8A00 0%, #FF3D8E 100%)" }}
+                style={{ background: "linear-gradient(135deg, #FF4D6D 0%, #C9184A 100%)" }}
                 data-testid="button-trade-sell"
                 title={sellDisabledReason || undefined}
               >
@@ -823,8 +824,8 @@ export default function Competition() {
   return (
     <>
       <SEO
-        title="BUILD4 × four.meme AI Agent Championship | $3,000 Prize Pool"
-        description="The first AI agent trading championship on four.meme. Deploy your BUILD4 agent, choose Auto, Co-pilot or Manual mode, and compete for $3,000 in BNB. 7 days. Real funds. Real memecoins."
+        title="4meme Competition | BUILD4 × four.meme · $3,000 Prize Pool"
+        description="The first AI agent trading competition on four.meme. Deploy your BUILD4 agent, choose Auto, Co-pilot or Manual mode, and compete for $3,000 in BNB. 7 days. Real funds. Real memecoins."
         path="/competition"
       />
       <div className="min-h-screen bg-[#08060F] text-white" data-testid="page-competition">
@@ -839,7 +840,7 @@ export default function Competition() {
                 className="font-semibold bg-clip-text text-transparent"
                 style={{ backgroundImage: PCS_GRADIENT }}
               >
-                four.meme
+                4meme competition
               </span>
             </Link>
             <div className="flex items-center gap-2">
@@ -880,7 +881,7 @@ export default function Competition() {
                   className="font-mono text-2xl sm:text-3xl font-bold tracking-tight bg-clip-text text-transparent"
                   style={{ backgroundImage: PCS_GRADIENT }}
                 >
-                  four.meme
+                  4meme competition
                 </span>
               </div>
               <Badge className="mb-6 font-mono text-[10px] uppercase tracking-widest border-0 gap-1.5" style={{ background: PCS_GRADIENT_SOFT, color: PCS_CYAN }} data-testid="badge-partnership">
@@ -1789,7 +1790,7 @@ export default function Competition() {
           <div className="max-w-3xl mx-auto px-4 sm:px-6 py-12">
             <div className="flex items-center gap-3 mb-2">
               <FourMemeLogo size={24} />
-              <Badge variant="outline" className="font-mono text-[10px]" style={{ borderColor: "#FFD40066", color: "#FFD400" }}>LIVE · FOUR.MEME</Badge>
+              <Badge variant="outline" className="font-mono text-[10px]" style={{ borderColor: "#3FE94A66", color: "#3FE94A" }}>LIVE · 4MEME</Badge>
               <Badge variant="outline" className="font-mono text-[10px] border-zinc-700 text-zinc-400">Auto-fallback · PCS V2 for graduated</Badge>
             </div>
             <h2 className="font-mono text-2xl font-bold mb-2" data-testid="text-trade-title">Trade live, right here.</h2>
@@ -1919,7 +1920,7 @@ export default function Competition() {
         {/* Footer */}
         <footer className="py-8 text-center text-[11px] font-mono text-zinc-600">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 flex flex-col sm:flex-row items-center justify-between gap-2">
-            <div>BUILD4 × four.meme · AI Agent Championship Season 1 · 2026</div>
+            <div>BUILD4 × 4meme Competition · Season 1 · 2026</div>
             <div className="flex items-center gap-4">
               <Link href="/" className="hover:text-white transition-colors" data-testid="link-footer-home">BUILD4</Link>
               <a href="https://four.meme" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors" data-testid="link-footer-fourmeme">four.meme</a>
