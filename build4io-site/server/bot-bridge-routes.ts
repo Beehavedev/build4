@@ -43,8 +43,12 @@ function bridgeAllowedHosts(req: Request): Set<string> {
   const env = process.env.SITE_ALLOWED_HOSTS || process.env.DAPP_ALLOWED_HOSTS || "";
   const list = env.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
   if (list.length) return new Set(list);
+  // Same canonical defaults as wallet-routes.ts allowedHosts — keep the three
+  // origin-allowlist helpers (here, wallet-routes, web4-routes) aligned so
+  // SIWE and bot-bridge CSRF accept the same set of origins by default.
+  const defaults = ["build4.io", "www.build4.io"];
   const h = String(req.headers.host || "").toLowerCase();
-  return new Set(h ? [h] : []);
+  return new Set(h ? [...defaults, h] : defaults);
 }
 function originHostFromHeader(o: string | undefined | null): string {
   if (!o) return "";

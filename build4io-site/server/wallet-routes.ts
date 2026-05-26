@@ -114,9 +114,16 @@ function allowedHosts(req: Request): Set<string> {
   const env = process.env.SITE_ALLOWED_HOSTS || process.env.DAPP_ALLOWED_HOSTS || "";
   const list = env.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
   if (list.length) return new Set(list);
-  // Dev fallback: trust the request's Host header so local Replit previews work.
+  // Production default: when no env is set, allow the canonical build4.io
+  // origins. Replit Publish typically rewrites the Host header to the
+  // internal repl host while the browser keeps Origin=https://build4.io,
+  // which would otherwise fail the allowlist and 403 every SIWE/CSRF check.
+  // web4-routes.ts:2956 already does this; keeping it consistent here.
+  const defaults = ["build4.io", "www.build4.io"];
+  // Dev fallback: also trust the request's Host header so local Replit
+  // previews (xxx.replit.dev / xxx.kirk.replit.dev) work without config.
   const h = String(req.headers.host || "").toLowerCase();
-  return new Set(h ? [h] : []);
+  return new Set(h ? [...defaults, h] : defaults);
 }
 function originHost(o: string | undefined | null): string {
   if (!o) return "";
