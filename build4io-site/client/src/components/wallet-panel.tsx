@@ -20,7 +20,7 @@ const CHAIN_META: Record<ChainKey, { id: number; name: string; native: string; e
 };
 const CHAIN_KEYS = Object.keys(CHAIN_META) as ChainKey[];
 
-async function ensureSiweSession(wallet: { address: string | null; signMessage: (m: string) => Promise<string> }): Promise<void> {
+async function ensureSiweSession(wallet: { address: string | null; chainId: number | null; signMessage: (m: string) => Promise<string> }): Promise<void> {
   const r0 = await fetch("/api/auth/session", { credentials: "include" });
   const j0 = await r0.json();
   if (j0.authenticated && j0.wallet?.toLowerCase() === wallet.address?.toLowerCase()) return;
@@ -30,11 +30,14 @@ async function ensureSiweSession(wallet: { address: string | null; signMessage: 
   const { nonce } = await nonceRes.json();
   const issuedAt = new Date().toISOString();
   const domain = window.location.host;
+  // Chain ID must match the wallet's active chain — WalletConnect v2 rejects
+  // signMessage if the SIWE text names a chain outside the session's allowlist.
+  const chainId = wallet.chainId ?? 1;
   const message =
     `${domain} wants you to sign in with your Ethereum account:\n` +
     `${wallet.address}\n\n` +
     `Sign in to BUILD4 terminal. This will not trigger any transaction.\n\n` +
-    `URI: ${window.location.origin}\nVersion: 1\nChain ID: 1\nNonce: ${nonce}\nIssued At: ${issuedAt}`;
+    `URI: ${window.location.origin}\nVersion: 1\nChain ID: ${chainId}\nNonce: ${nonce}\nIssued At: ${issuedAt}`;
   const signature = await wallet.signMessage(message);
   const r = await fetch("/api/auth/siwe", {
     method: "POST",
