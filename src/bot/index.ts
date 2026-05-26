@@ -19,6 +19,7 @@ import { registerSwarmStats } from './commands/swarmstats'
 import { registerCampaignWallet } from './commands/campaignWallet'
 import { registerFourMeme } from './commands/fourMeme'
 import { registerTopaz } from './commands/topaz'
+import { registerSubscribe, handlePaymentTxReply } from './commands/subscribe'
 import { registerLlm } from './llm'
 
 export function createBot(): Bot {
@@ -35,9 +36,12 @@ export function createBot(): Bot {
 
   // PIN reply interceptor — must run BEFORE command handlers so digits-only
   // messages from a pending PIN prompt don't fall through to other handlers.
+  // Also catches subscription tx-hash replies (0x…64hex) so they don't get
+  // mistaken for an LLM prompt.
   bot.on('message:text', async (ctx, next) => {
-    const handled = await handlePinReply(ctx)
-    if (!handled) await next()
+    if (await handlePinReply(ctx)) return
+    if (await handlePaymentTxReply(ctx)) return
+    await next()
   })
 
   // Register all command handlers
@@ -60,6 +64,7 @@ export function createBot(): Bot {
   registerCampaignWallet(bot)
   registerFourMeme(bot)
   registerTopaz(bot)
+  registerSubscribe(bot)
 
   // Fallback commands
   bot.command('settings', async (ctx) => {
@@ -183,6 +188,7 @@ export function createBot(): Bot {
     { command: 'portfolio',   description: 'Portfolio overview' },
     { command: 'predictions', description: 'Trade 42.space prediction markets' },
     { command: 'price',       description: 'Quick token price' },
+    { command: 'subscribe',   description: 'Manage your BUILD4 Pro subscription' },
     { command: 'help',        description: 'Show all commands' },
   ]).catch((err: any) => console.error('[Bot] setMyCommands failed:', err?.message))
 

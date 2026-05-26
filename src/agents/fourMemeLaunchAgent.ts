@@ -195,7 +195,7 @@ export async function tickAllFourMemeLaunchAgents(): Promise<{
     // Raw SQL (mirrors polymarketAgent's defensive pattern) so we don't
     // depend on the prisma client carrying the new column. Filters at
     // the DB level: only active, unpaused, opted-in agents.
-    const rows = await db.$queryRawUnsafe<any[]>(
+    const rowsRaw = await db.$queryRawUnsafe<any[]>(
       `SELECT a."id", a."userId", a."name", a."description",
               a."fourMemeLaunchEnabled", a."lastFourMemeLaunchTickAt",
               COALESCE(a."fourMemeLaunchRequiresApproval", false) AS "fourMemeLaunchRequiresApproval",
@@ -206,6 +206,10 @@ export async function tickAllFourMemeLaunchAgents(): Promise<{
         WHERE a."isActive" = true
           AND a."fourMemeLaunchEnabled" = true`,
     )
+    // Subscription soft-pause: drop agents whose owner's subscription
+    // expired (no-op when SUBSCRIPTION_ENFORCED is off).
+    const { filterAgentsByActiveSubscription } = await import('../services/subscriptions')
+    const rows = await filterAgentsByActiveSubscription(rowsRaw, 'fourMemeLaunchAgent')
     agents = rows.map<LaunchAgentRow>((r) => ({
       id: r.id,
       userId: r.userId,
@@ -1194,6 +1198,7 @@ export async function tickAllFourMemeTakeProfit(): Promise<TakeProfitSweepResult
 
   let rows: TpHeldRow[] = []
   try {
+    // Subscription soft-pause applied after fetch (below).
     rows = await db.$queryRawUnsafe<TpHeldRow[]>(
       // sold_tx_hash IS NULL filter ensures we don't even consider a
       // row another worker has already CAS-claimed (see the per-row
@@ -1219,6 +1224,16 @@ export async function tickAllFourMemeTakeProfit(): Promise<TakeProfitSweepResult
     console.warn('[fourMemeTakeProfit] query failed:', (err as Error).message)
     lastTpSweepStatus = { ...result, errors: 1 }
     return lastTpSweepStatus
+  }
+
+  // Subscription soft-pause: drop take-profit rows whose owner's
+  // subscription expired. Take-profit is a SELL action — debatable
+  // whether to gate it (some operators may prefer expired users can
+  // still EXIT positions), but consistency with the other venue gates
+  // wins. No-op when SUBSCRIPTION_ENFORCED is off.
+  {
+    const { filterAgentsByActiveSubscription } = await import('../services/subscriptions')
+    rows = await filterAgentsByActiveSubscription(rows, 'fourMemeTakeProfit')
   }
 
   result.scanned = rows.length

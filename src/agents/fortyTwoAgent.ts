@@ -40,6 +40,12 @@ export async function tickAllFortyTwoAgents(): Promise<FortyTwoSweepResult> {
         ],
       },
     })
+    // Subscription soft-pause: drop agents whose owner's subscription
+    // expired (when SUBSCRIPTION_ENFORCED='true'). No-op when the gate
+    // is off. Centralised in subscriptions.filterAgentsByActiveSubscription
+    // so policy stays consistent across all per-venue runners.
+    const { filterAgentsByActiveSubscription } = await import('../services/subscriptions')
+    agents = await filterAgentsByActiveSubscription(agents, 'fortyTwoAgent')
   } catch (err) {
     console.warn('[fortyTwoAgent] agent fetch failed:', (err as Error).message)
     return result

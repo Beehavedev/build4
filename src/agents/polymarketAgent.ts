@@ -180,7 +180,12 @@ export async function tickAllPolymarketAgents(): Promise<{
     // platform level. Treat undefined / null as ALLOW so a missing
     // user record (shouldn't happen, but be defensive) does not
     // silently mute the venue.
-    agents = rows
+    // Subscription soft-pause: drop agents whose owner's subscription
+    // expired (no-op when SUBSCRIPTION_ENFORCED is off). Runs BEFORE the
+    // polymarket-trading-enabled filter for cheaper short-circuit.
+    const { filterAgentsByActiveSubscription } = await import('../services/subscriptions')
+    const subFiltered = await filterAgentsByActiveSubscription(rows as Array<{ userId: string }> & typeof rows, 'polymarketAgent')
+    agents = (subFiltered as typeof rows)
       .filter((r) => r.userPolymarketAgentTradingEnabled !== false)
       .map<PolymarketAgentRow>((r) => ({
         id: r.id,

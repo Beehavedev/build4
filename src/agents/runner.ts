@@ -696,7 +696,7 @@ async function runAllAgents() {
     // can gate dispatch on `User.{aster|hyperliquid}AgentTradingEnabled`
     // without an N+1 round-trip per agent. Selecting only the booleans
     // keeps the per-row payload tiny on the 9k+ agents table.
-    const activeAgents = await db.agent.findMany({
+    const activeAgentsRaw = await db.agent.findMany({
       where: ACTIVE_AGENTS_FILTER,
       include: {
         user: {
@@ -707,6 +707,22 @@ async function runAllAgents() {
         },
       },
     })
+
+    // Subscription soft-pause. When SUBSCRIPTION_ENFORCED='true', drop any
+    // agent whose owner's subscription has expired — they STAY in the DB
+    // (no destructive mutation), they just don't tick. Resume is instant
+    // on the next renewal payment. When the gate is OFF (default), the
+    // helper returns 'all' and this filter is a no-op. One indexed SELECT
+    // per tick; cheap even at 17k users.
+    const { getActiveSubscriberUserIds } = await import('../services/subscriptions')
+    const allowed = await getActiveSubscriberUserIds()
+    const activeAgents = allowed === 'all'
+      ? activeAgentsRaw
+      : activeAgentsRaw.filter((a) => (allowed as string[]).includes(a.userId))
+    const subPaused = activeAgentsRaw.length - activeAgents.length
+    if (subPaused > 0) {
+      console.log(`[Runner] Subscription gate paused ${subPaused}/${activeAgentsRaw.length} agents (expired subs)`)
+    }
 
     if (activeAgents.length === 0) {
       console.log('[Runner] No active onboarded agents, skipping tick')

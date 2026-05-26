@@ -208,7 +208,11 @@ export async function tickAllTopazAgents(opts: { onlyAgentId?: string; force?: b
           AND a."id" = ANY($1::text[])`,
       ids,
     )
-    agents = rows
+    // Subscription soft-pause: drop agents whose owner's subscription
+    // expired (no-op when SUBSCRIPTION_ENFORCED is off).
+    const { filterAgentsByActiveSubscription } = await import('../services/subscriptions')
+    const subFiltered = await filterAgentsByActiveSubscription(rows, 'topazAgent')
+    agents = subFiltered
       .filter((r) => r.topazEnabled === true || (Array.isArray(r.enabledVenues) && r.enabledVenues.includes('topaz')))
       .map<TopazAgentRow>((r) => ({
         id: r.id, userId: r.userId, name: r.name,

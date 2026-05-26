@@ -96,6 +96,29 @@ export async function createAgentForUser(opts: {
   const preset = PRESETS[opts.preset]
   if (!preset) return { ok: false, reason: `unknown preset: ${opts.preset}` }
 
+  // Subscription gate. Grants a free trial on first touch, then refuses
+  // when the user's subscriptionExpiry is in the past AND the gate is
+  // enforced. The gate is OFF by default (SUBSCRIPTION_ENFORCED != 'true')
+  // so this is a no-op on initial deploy — flip the env to start charging.
+  // The fail-closed return shape matches existing partial-failure replies
+  // so /myagents can offer a "Renew" CTA without code changes to callers.
+  try {
+    const { ensureTrial, assertActiveSubscription } = await import('./subscriptions')
+    await ensureTrial(opts.userId).catch(() => null)
+    const gate = await assertActiveSubscription(opts.userId)
+    if (!gate.ok) {
+      const expiry = gate.view.expiresAt?.toISOString().slice(0, 10) ?? 'never'
+      return {
+        ok: false,
+        reason: `subscription_${gate.reason}: your BUILD4 Pro subscription expired on ${expiry}. Tap /subscribe to renew ($19.99/mo). Your existing agents stay paused (not deleted) until you renew.`,
+      }
+    }
+  } catch (err: any) {
+    // Never let a subscription-service failure block a legitimate user.
+    // Log loudly so the operator sees if the gate is silently failing.
+    console.error('[agentCreation] subscription gate error (ignored):', err?.message ?? err)
+  }
+
   // XLayer is the campaign default when its registry is configured;
   // otherwise we fall back to BSC so the bot never offers a broken option.
   const chain: AgentChain = opts.chain ?? (XLAYER_ERC8004_REGISTRY ? 'xlayer' : 'bsc')

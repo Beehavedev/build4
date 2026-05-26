@@ -807,5 +807,42 @@ export async function ensureNewTables() {
   await run(`ALTER TABLE "TopazPosition" ADD COLUMN IF NOT EXISTS "tokenB" TEXT`)
   await run(`ALTER TABLE "TopazPosition" ADD COLUMN IF NOT EXISTS "stable" BOOLEAN`)
 
+  // Subscription payment ledger. One row per verified on-chain payment
+  // ($19.99/mo USDT-on-BSC or USDC-on-Base). The UNIQUE constraint on
+  // txHash is the single source of truth for single-use enforcement —
+  // mirrors the X402Payment pattern. Written by
+  // src/services/subscriptions.ts → recordPayment() via
+  // INSERT ... ON CONFLICT DO NOTHING.
+  await run(`CREATE TABLE IF NOT EXISTS "Subscription" (
+    "id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
+    "userId" TEXT NOT NULL,
+    "chain" TEXT NOT NULL,
+    "asset" TEXT NOT NULL,
+    "amountUsd" DOUBLE PRECISION NOT NULL,
+    "txHash" TEXT NOT NULL,
+    "payer" TEXT NOT NULL,
+    "periodDays" INTEGER NOT NULL,
+    "extendedFrom" TIMESTAMPTZ NOT NULL,
+    "extendedTo" TIMESTAMPTZ NOT NULL,
+    "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT "Subscription_pkey" PRIMARY KEY ("id"),
+    CONSTRAINT "Subscription_txHash_key" UNIQUE ("txHash")
+  )`)
+  await run(`CREATE INDEX IF NOT EXISTS "Subscription_userId_idx"    ON "Subscription"("userId")`)
+  await run(`CREATE INDEX IF NOT EXISTS "Subscription_createdAt_idx" ON "Subscription"("createdAt")`)
+
+  // One-shot trial backfill: every existing user (~17.5k as of deploy)
+  // with NULL subscriptionExpiry gets a fresh trial starting NOW. The
+  // window is read from the same env the runtime helper uses
+  // (SUBSCRIPTION_TRIAL_DAYS, default 4) so the on-boot grant and the
+  // per-user ensureTrial() helper can't drift. WHERE IS NULL keeps this
+  // idempotent — subsequent boots are no-ops because every touched
+  // user now has a non-null expiry, and any future paid user with a
+  // populated expiry is left untouched.
+  const trialDays = parseInt(process.env.SUBSCRIPTION_TRIAL_DAYS ?? '4', 10)
+  await run(`UPDATE "User"
+    SET "subscriptionExpiry" = NOW() + INTERVAL '${trialDays} days'
+    WHERE "subscriptionExpiry" IS NULL`)
+
   console.log('[DB] All new tables ready')
 }
