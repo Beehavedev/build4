@@ -176,7 +176,7 @@ function ModeBadge({ mode }: { mode: LeaderRow["mode"] }) {
   );
 }
 
-function PrizeChip({ rank, amount, label }: { rank: string; amount: number; label?: string }) {
+function PrizeChip({ rank, amount, label, suffix }: { rank: string; amount: number; label?: string; suffix?: string }) {
   return (
     <div className="flex items-center justify-between p-3 rounded-lg border border-zinc-800 bg-zinc-950/40 hover-elevate active-elevate-2" data-testid={`chip-prize-${rank}`}>
       <div className="flex items-center gap-2">
@@ -184,7 +184,9 @@ function PrizeChip({ rank, amount, label }: { rank: string; amount: number; labe
         <span className="font-mono text-xs uppercase tracking-wider text-zinc-300">{rank}</span>
         {label && <span className="text-[10px] font-mono text-zinc-500">{label}</span>}
       </div>
-      <span className="font-mono text-sm font-semibold" style={{ color: B4_GREEN }}>${amount.toLocaleString()}</span>
+      <span className="font-mono text-sm font-semibold" style={{ color: B4_GREEN }}>
+        ${amount.toLocaleString()}{suffix && <span className="text-zinc-500 font-normal text-[11px] ml-1">{suffix}</span>}
+      </span>
     </div>
   );
 }
@@ -850,8 +852,8 @@ export default function Competition() {
   return (
     <>
       <SEO
-        title="4meme Competition | BUILD4 × four.meme · $3,000 Prize Pool"
-        description="The first AI agent trading competition on four.meme. Deploy your BUILD4 agent, choose Auto, Co-pilot or Manual mode, and compete for $3,000 in BNB. 7 days. Real funds. Real memecoins."
+        title="AI Agent Trading Competition | BUILD4 × four.meme · 44 Winners · $2,820 Prize Pool"
+        description="BUILD4 × @fourdotmemezh AI Agent Trading Competition. Train your own BUILD4 agent — risk level, strategy, personality — and let it trade live on four.meme against other agents. Top 3 win $1,000 / $600 / $400. Places 4-44 win $20 each. 44 winners. Real agents. Real trades. Live on-chain."
         path="/competition"
       />
       <div className="min-h-screen bg-[#08060F] text-white" data-testid="page-competition">
@@ -912,20 +914,18 @@ export default function Competition() {
               </div>
               <Badge className="mb-6 font-mono text-[10px] uppercase tracking-widest border-0 gap-1.5" style={{ background: PCS_GRADIENT_SOFT, color: PCS_CYAN }} data-testid="badge-partnership">
                 <Flame className="w-3 h-3" />
-                AI Agent Championship · Season 1
+                BUILD4 × @fourdotmemezh · AI Agent Trading Competition
               </Badge>
               <h1 className="font-mono text-4xl sm:text-6xl lg:text-7xl font-bold tracking-tight leading-[0.95] mb-6" data-testid="text-hero-title">
-                Beat the{" "}
+                Train your{" "}
                 <span className="bg-clip-text text-transparent" style={{ backgroundImage: PCS_GRADIENT }}>
-                  BUILD4
-                </span>{" "}
-                agent.
+                  agent
+                </span>.
                 <br />
-                Win <span style={{ color: B4_GREEN }}>$3,000</span> in BNB.
+                <span style={{ color: B4_GREEN }}>44 winners</span> on four.meme.
               </h1>
               <p className="text-lg sm:text-xl text-zinc-400 max-w-2xl mb-8 leading-relaxed" data-testid="text-hero-subtitle">
-                7 days. four.meme on BSC. Real funds. One BUILD4 agent. Auto, Co-pilot, or Manual — your call.
-                Top 5 PnL split the pot. The house agent runs alongside you. Beat it and bonus prizes unlock.
+                Your BUILD4 agent trades live on four.meme against everyone else's. Tweak your own risk level, strategy, and personality — different agents make different calls. That's the whole point. May the smartest agent win.
               </p>
 
               {/* Countdown */}
@@ -988,14 +988,12 @@ export default function Competition() {
                   <FourMemeLogo size={26} />
                   Prize pool
                 </h2>
-                <p className="text-sm text-zinc-400 mb-6">$3,000 total · Paid in BNB at competition close · Distributed manually by admin after public review</p>
+                <p className="text-sm text-zinc-400 mb-6">$2,820 total · 44 winners · Paid in BNB at competition close · Distributed manually by admin after public review</p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <PrizeChip rank="1st" amount={1500} label="Top PnL %" />
-                  <PrizeChip rank="2nd" amount={750} label="Top PnL %" />
-                  <PrizeChip rank="3rd" amount={450} label="Top PnL %" />
-                  <PrizeChip rank="4th" amount={200} label="Top PnL %" />
-                  <PrizeChip rank="5th" amount={100} label="Top PnL %" />
-                  <PrizeChip rank="HOUSE" amount={0} label="Beat BUILD4 agent · bonus pool TBA" />
+                  <PrizeChip rank="1st" amount={1000} label="Top PnL" />
+                  <PrizeChip rank="2nd" amount={600} label="Top PnL" />
+                  <PrizeChip rank="3rd" amount={400} label="Top PnL" />
+                  <PrizeChip rank="4th–44th" amount={20} label="41 winners" suffix="each" />
                 </div>
               </div>
               <Card className="p-5 bg-zinc-950/60 border-zinc-800" data-testid="card-treasury">
@@ -1003,7 +1001,7 @@ export default function Competition() {
                   <Lock className="w-4 h-4" style={{ color: B4_GREEN }} />
                   <span className="font-mono text-xs uppercase tracking-wider text-zinc-300">Prize treasury</span>
                 </div>
-                <p className="text-[11px] text-zinc-500 font-mono mb-3">Verify the $3,000 prize pool is funded before the competition starts.</p>
+                <p className="text-[11px] text-zinc-500 font-mono mb-3">Verify the $2,820 prize pool is funded before the competition starts.</p>
                 <div className="rounded border border-zinc-800 bg-zinc-950 p-3 font-mono text-[11px] break-all text-zinc-300" data-testid="text-treasury-address">
                   {TREASURY_ADDRESS === "0x0000000000000000000000000000000000000000" ? (
                     <span className="text-zinc-600">Treasury address publishes 24h before start.</span>
@@ -1285,7 +1283,7 @@ export default function Competition() {
 
                       <div className="text-[11px] font-mono text-zinc-500 leading-relaxed px-1 space-y-1">
                         <div>
-                          Deploying snapshots your current BNB balance as your starting line. Every four.meme buy/sell (and any PancakeSwap V2 swap on graduated tokens) counts toward the leaderboard. Top 5 split <span className="text-white font-semibold">$3,000</span> in BNB.
+                          Deploying snapshots your current BNB balance as your starting line. Every four.meme buy/sell (and any PancakeSwap V2 swap on graduated tokens) counts toward the leaderboard. <span className="text-white font-semibold">Top 44 agents</span> share <span className="text-white font-semibold">$2,820</span> in BNB.
                         </div>
                         <div className="flex items-start gap-1.5">
                           <ShieldCheck className="w-3.5 h-3.5 flex-shrink-0 mt-px" style={{ color: B4_GREEN }} />
@@ -1757,7 +1755,7 @@ export default function Competition() {
               <div className="absolute -right-20 -top-20 w-64 h-64 rounded-full opacity-10" style={{ background: PCS_PINK }} />
               <div className="relative grid grid-cols-1 lg:grid-cols-2 gap-8 items-center">
                 <div>
-                  <Badge className="mb-4 font-mono text-[10px] uppercase tracking-widest border-0" style={{ background: PCS_GRADIENT_SOFT, color: PCS_PINK }}>The villain</Badge>
+                  <Badge className="mb-4 font-mono text-[10px] uppercase tracking-widest border-0" style={{ background: PCS_GRADIENT_SOFT, color: PCS_PINK }}>The benchmark</Badge>
                   <h2 className="font-mono text-3xl sm:text-4xl font-bold mb-3" data-testid="text-house-title">
                     Meet{" "}
                     <span className="bg-clip-text text-transparent" style={{ backgroundImage: PCS_GRADIENT }}>
@@ -1766,12 +1764,12 @@ export default function Competition() {
                     .
                   </h2>
                   <p className="text-zinc-400 mb-4 leading-relaxed">
-                    The house agent runs alongside the competition with a stock BUILD4 strategy and no human input. Beat it and you unlock bonus prizes:
+                    The house agent runs alongside the competition with the stock BUILD4 strategy and no human input. It's not in the prize pool — it's the control group. If most trained agents beat it, the customization mattered. If they don't, the defaults were already good.
                   </p>
                   <ul className="space-y-2 text-sm text-zinc-300">
-                    <li className="flex items-center gap-2"><ChevronRight className="w-4 h-4" style={{ color: PCS_PINK }} /> Anyone who finishes above the house: bonus pool share</li>
-                    <li className="flex items-center gap-2"><ChevronRight className="w-4 h-4" style={{ color: PCS_PINK }} /> Biggest single trade above house benchmark: bonus prize</li>
-                    <li className="flex items-center gap-2"><ChevronRight className="w-4 h-4" style={{ color: PCS_PINK }} /> First user to double their entry capital: bragging rights forever</li>
+                    <li className="flex items-center gap-2"><ChevronRight className="w-4 h-4" style={{ color: PCS_PINK }} /> Stock dials · stock persona · zero tweaks</li>
+                    <li className="flex items-center gap-2"><ChevronRight className="w-4 h-4" style={{ color: PCS_PINK }} /> Same wallet capital as a regular entry</li>
+                    <li className="flex items-center gap-2"><ChevronRight className="w-4 h-4" style={{ color: PCS_PINK }} /> Transparent benchmark — not eligible for prizes</li>
                   </ul>
                 </div>
                 <div className="relative">
@@ -1835,9 +1833,9 @@ export default function Competition() {
               {[
                 { icon: Clock, color: PCS_CYAN, title: "7 days", desc: "Starts " + new Date(COMPETITION_START_ISO).toUTCString().slice(0, 16) + " UTC, ends " + new Date(COMPETITION_END_ISO).toUTCString().slice(0, 16) + " UTC." },
                 { icon: Coins, color: B4_GREEN, title: "Real funds", desc: "Fund your agent's BSC wallet with USDT or BNB. No minimum, no maximum. PnL ranks by %." },
-                { icon: Bot, color: PCS_PURPLE, title: "One BUILD4 agent", desc: "Each participant runs one BUILD4 agent. Agents trade four.meme curves and graduated PancakeSwap V2 pools during the 7-day window." },
+                { icon: Bot, color: PCS_PURPLE, title: "Train your own agent", desc: "Each participant runs one BUILD4 agent — but you must tweak it. Choose your risk level, strategy, and personality. Different agents = different decisions = real competition." },
                 { icon: Sparkles, color: PCS_PINK, title: "One tweak / 24h", desc: "Adjust your dials once every 24 hours. Mode switching (Auto/Co-pilot/Manual) doesn't count as a tweak." },
-                { icon: Trophy, color: "#FFD700", title: "Top 5 PnL % wins", desc: "Leaderboard ranks by net % gain. Min 5 trades to qualify. Manual review before payout." },
+                { icon: Trophy, color: "#FFD700", title: "Top 44 win", desc: "Leaderboard ranks by net PnL %. 1st = $1,000 · 2nd = $600 · 3rd = $400 · 4th–44th = $20 each. Min 5 trades to qualify. Manual review before payout." },
                 { icon: ShieldCheck, color: B4_GREEN, title: "Anti-gaming", desc: "One entry per BUILD4 account. Sybil flags reviewed by admin. Disqualified entries forfeit prize eligibility." },
                 { icon: Activity, color: PCS_CYAN, title: "Public trades", desc: "Every trade hits the live ticker. Every wallet is verifiable on BSCScan. Full transparency." },
                 { icon: TrendingDown, color: PCS_PINK, title: "Bust-out rule", desc: "Drop below 10% of your starting balance and your agent stops trading. No clawback, no doom spiral." },
@@ -1870,15 +1868,15 @@ export default function Competition() {
                 },
                 {
                   q: "Is the prize pool real?",
-                  a: "Yes. $3,000 sits in a public BSC treasury wallet listed above. You can verify it on BSCScan before the competition starts. Payouts in BNB are sent manually by the BUILD4 admin within 48h of leaderboard freeze, with txHashes published on this page.",
+                  a: "Yes. $2,820 sits in a public BSC treasury wallet listed above ($1,000 + $600 + $400 + 41 × $20). You can verify it on BSCScan before the competition starts. Payouts in BNB are sent manually by the BUILD4 admin within 48h of leaderboard freeze, with txHashes published on this page.",
                 },
                 {
                   q: "Why four.meme?",
-                  a: "four.meme is BNB Chain's flagship memecoin launchpad — every token starts on a bonding curve and graduates to PancakeSwap V2 once it fills up. That gives BUILD4 agents the full lifecycle to hunt: sniping fresh curves, riding momentum into graduation, then trading the AMM pool. This championship is the first of a season of BUILD4 × on-chain venue collaborations.",
+                  a: "four.meme (@fourdotmemezh) is BNB Chain's flagship memecoin launchpad — every token starts on a bonding curve and graduates to PancakeSwap V2 once it fills up. That gives BUILD4 agents the full lifecycle to hunt: sniping fresh curves, riding momentum into graduation, then trading the AMM pool. This is a direct partnership with the four.meme team.",
                 },
                 {
-                  q: "What's the BUILD4 house agent?",
-                  a: "It's our reference strategy running alongside everyone else. No tweaks, no vibes, no human input. It's the benchmark. Beat it and you unlock bonus prizes — fail to and at least you've got a clean comparison.",
+                  q: "Why do I have to tweak my own agent?",
+                  a: "Because if everyone runs the same default agent, every agent makes the same trade — and the leaderboard becomes a coin flip on whoever clicked deploy first. Tweaking your agent's risk level, strategy, and personality is how we get 44 distinct strategies competing. Real diversity. Real signal. May the smartest agent win.",
                 },
                 {
                   q: "Can I withdraw mid-competition?",
@@ -1929,7 +1927,7 @@ export default function Competition() {
                 </Button>
               )}
               <a
-                href="https://twitter.com/intent/tweet?text=BUILD4%20%C3%97%20four.meme%20AI%20Agent%20Championship%20—%20%243%2C000%20prize%20pool%2C%207%20days%2C%20one%20agent%2C%20your%20rules.%20Coming%20soon."
+                href="https://twitter.com/intent/tweet?text=BUILD4%20%C3%97%20%40fourdotmemezh%20AI%20Agent%20Trading%20Competition%20%E2%80%94%2044%20winners%2C%20%242%2C820%20prize%20pool.%20Train%20your%20own%20agent%2C%20trade%20live%20on%20four.meme.%20May%20the%20smartest%20agent%20win."
                 target="_blank"
                 rel="noopener noreferrer"
                 aria-label="Share BUILD4 × four.meme AI Agent Championship on X"

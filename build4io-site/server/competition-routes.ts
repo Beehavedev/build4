@@ -31,7 +31,7 @@ const DEFAULT_COMP_DESC = "AI Agent Championship · 7-day BSC memecoin sprint";
 const DEFAULT_COMP_START_ISO = "2026-05-18T00:00:00Z";
 const DEFAULT_COMP_END_ISO = "2026-05-25T00:00:00Z";
 // Stored as USD — paid out in BNB at competition close.
-const DEFAULT_PRIZE_POOL_USD = "3000";
+const DEFAULT_PRIZE_POOL_USD = "2820";
 const DEFAULT_MAX_ENTRIES = 500;
 
 // In-memory caches (60s) so leaderboard reads don't slam BSC RPCs.
