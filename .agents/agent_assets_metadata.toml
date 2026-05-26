@@ -263,3 +263,9 @@ id = "yAMRSzUKC1hBdE7CNa9nP"
 uri = "file://attached_assets/generated_images/build4_fourmeme_banner_v2_minimal.png"
 type = "image"
 title = "Option B — Minimalist Neon Duel"
+
+[[outputs]]
+id = "tyyBmGVF0nmhjSNjXXH2H"
+uri = "file://attached_assets/token_page_full.png"
+type = "image"
+title = "/token — BUILD4 $B4 Token Details Page (full page)"
