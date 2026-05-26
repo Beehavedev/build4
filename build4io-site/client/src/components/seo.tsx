@@ -51,8 +51,8 @@ const PAGE_SEO: Record<string, { title: string; description: string }> = {
     description: "BUILD4 Chain: dedicated L2 optimistic rollup settling to BNB Chain. Purpose-built for autonomous AI agents with 1-second blocks, near-zero gas, and protocol-native agent primitives.",
   },
   "/competition": {
-    title: "BUILD4 × PancakeSwap AI Agent Championship | $3,000 Prize Pool",
-    description: "The first AI agent trading championship on PancakeSwap. Deploy your BUILD4 agent, choose Auto, Co-pilot or Manual mode, and compete for $3,000 in BNB. 7 days. Real funds. Real glory.",
+    title: "BUILD4 × four.meme · 4meme competition | 44 Winners · $2,820 Prize Pool",
+    description: "BUILD4 × @fourdotmemezh AI Agent Trading Competition. Train your own BUILD4 agent — risk level, strategy, personality — and let it trade live on four.meme against other agents. 44 winners. $2,820 prize pool. Real agents. Real trades. Live on-chain.",
   },
   "/outreach": {
     title: "Agent Outreach & Protocol Discovery | BUILD4",

@@ -13,6 +13,7 @@ import {
   Twitter, MessageCircle, ArrowRight, Activity, Coins, Users, Clock,
   Loader2, AlertCircle, CheckCircle2, ArrowDownUp, Rocket,
 } from "lucide-react";
+import fourMemeLogoSrc from "@assets/fourmemelogo_1779807902774.jpg";
 
 // four.meme brand palette — neon green on pure black, lifted from
 // four.meme/en. Variable names kept as PCS_* for minimal diff vs.
@@ -27,29 +28,18 @@ const PCS_GRADIENT = "linear-gradient(135deg, #3FE94A 0%, #42CF71 55%, #A8FF35 1
 const PCS_GRADIENT_SOFT = "linear-gradient(135deg, rgba(63,233,74,0.18) 0%, rgba(66,207,113,0.18) 55%, rgba(168,255,53,0.18) 100%)";
 const B4_GREEN = "#42CF71";
 
-// Inline 4meme wordmark — neon-green rounded square with bold "4"
-// glyph, matching the four.meme/en hero treatment. Self-contained SVG.
+// four.meme official hand logo (asset).
 function FourMemeLogo({ size = 28, className = "" }: { size?: number; className?: string }) {
   return (
-    <svg
+    <img
+      src={fourMemeLogoSrc}
       width={size}
       height={size}
-      viewBox="0 0 40 40"
-      xmlns="http://www.w3.org/2000/svg"
-      className={className}
-      aria-label="4meme"
+      alt="four.meme"
+      className={`rounded-lg object-cover ${className}`}
+      style={{ width: size, height: size }}
       data-testid="img-fourmeme-logo"
-    >
-      <rect x="1" y="1" width="38" height="38" rx="9" fill="#3FE94A" stroke="#A8FF35" strokeWidth="1.5" />
-      <text
-        x="20" y="29"
-        textAnchor="middle"
-        fontFamily="'JetBrains Mono', ui-monospace, monospace"
-        fontWeight="900"
-        fontSize="24"
-        fill="#001A05"
-      >4</text>
-    </svg>
+    />
   );
 }
 
