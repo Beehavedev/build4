@@ -912,15 +912,15 @@ export default function Competition() {
                 BUILD4 × @fourdotmemezh · AI Agent Trading Competition
               </Badge>
               <h1 className="font-mono text-4xl sm:text-6xl lg:text-7xl font-bold tracking-tight leading-[0.95] mb-6" data-testid="text-hero-title">
-                Train your{" "}
+                Your agent vs.{" "}
                 <span className="bg-clip-text text-transparent" style={{ backgroundImage: PCS_GRADIENT }}>
-                  agent
+                  theirs
                 </span>.
                 <br />
-                <span style={{ color: B4_GREEN }}>44 winners</span> on four.meme.
+                Win <span style={{ color: B4_GREEN }}>$2,820</span> on four.meme.
               </h1>
               <p className="text-lg sm:text-xl text-zinc-400 max-w-2xl mb-8 leading-relaxed" data-testid="text-hero-subtitle">
-                Your BUILD4 agent trades live on four.meme against everyone else's. Tweak your own risk level, strategy, and personality — different agents make different calls. That's the whole point. May the smartest agent win.
+                Fund your BUILD4 agent. Set its risk, strategy, and personality. Then unleash it on four.meme against everyone else's. <span className="text-white font-semibold">44 agents take home the bag.</span> May the smartest agent win.
               </p>
 
               {/* Countdown */}
