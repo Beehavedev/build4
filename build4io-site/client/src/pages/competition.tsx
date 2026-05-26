@@ -371,6 +371,15 @@ function MemeTradePanel() {
     return null;
   }, [info]);
 
+  // V1 BUYS are technically possible, but a user who buys a V1 token
+  // is locked in until that token graduates to V2 / PancakeSwap. To
+  // avoid a one-way trap, require an explicit acknowledgement before
+  // we'll send a V1 buy. V2 and graduated tokens have no such gate.
+  const isV1Curve = info?.venue === "fourMeme" && info?.version === 1;
+  const [ackV1Lockin, setAckV1Lockin] = useState(false);
+  useEffect(() => { setAckV1Lockin(false); }, [tokenAddress, info?.version]);
+  const buyBlockedByV1 = isV1Curve && !ackV1Lockin;
+
   return (
     <Card className="p-5 sm:p-6 bg-zinc-950/60 border-zinc-800" data-testid="card-trade-panel">
       <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
