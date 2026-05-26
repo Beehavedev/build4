@@ -158,11 +158,15 @@ async function recomputeEntryEquity(walletAddress: string, trackedTokens: string
         let bnbOut = 0n;
         try {
           const fmInfo = await fourMemeGetTokenInfo(tokenAddr);
-          if (!fmInfo.graduatedToPancake && fmInfo.quoteIsBnb && fmInfo.version === 2) {
+          if (!fmInfo.graduatedToPancake && fmInfo.quoteIsBnb) {
+            // Mark-to-market via the four.meme curve quote — read-only,
+            // so the V1-sell-unsafe gate (which only blocks execution)
+            // does NOT apply here. Valuing V1 holdings at 0 would break
+            // leaderboard equity for any pre-V2 token still on its curve.
             const fmQ = await fourMemeQuoteSell(tokenAddr, tokenWei);
             bnbOut = fmQ.fundsWei;
           } else {
-            // Graduated or V1 — value via PancakeSwap V2.
+            // Graduated or BEP20-quoted — value via PancakeSwap V2.
             const pcsQ = await pancakeQuoteSell(tokenAddr, tokenWei);
             bnbOut = pcsQ.estimatedBnbWei;
           }

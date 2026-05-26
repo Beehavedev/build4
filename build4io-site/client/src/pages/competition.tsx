@@ -1,6 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { Link } from "wouter";
-import pancakeLogoUrl from "@assets/pancakeswap-logo-transparent.png";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
@@ -12,30 +11,44 @@ import {
   Trophy, Flame, Zap, Bot, Hand, Sparkles, Lock, ChevronRight, ExternalLink,
   TrendingUp, TrendingDown, Crown, Medal, Target, Brain, ShieldCheck,
   Twitter, MessageCircle, ArrowRight, Activity, Coins, Users, Clock,
-  Loader2, AlertCircle, CheckCircle2, ArrowDownUp,
+  Loader2, AlertCircle, CheckCircle2, ArrowDownUp, Rocket,
 } from "lucide-react";
 
-const PCS_CYAN = "#1FC7D4";
-const PCS_PURPLE = "#7645D9";
-const PCS_PINK = "#ED4B9E";
-const PCS_YELLOW = "#FFB237";
-const PCS_DARK_PURPLE = "#280D5F";
-const PCS_GRADIENT = "linear-gradient(135deg, #1FC7D4 0%, #7645D9 55%, #ED4B9E 100%)";
-const PCS_GRADIENT_SOFT = "linear-gradient(135deg, rgba(31,199,212,0.18) 0%, rgba(118,69,217,0.18) 55%, rgba(237,75,158,0.18) 100%)";
+// four.meme brand-adjacent palette (yellow/orange/magenta on dark).
+// Variable names kept as PCS_* for minimal diff vs. the prior page —
+// only the hex values rotated to the memecoin-launchpad vibe.
+const PCS_CYAN = "#FFD400";        // bright yellow (primary accent)
+const PCS_PURPLE = "#FF8A00";      // orange (secondary)
+const PCS_PINK = "#FF3D8E";        // magenta (loss / villain accent)
+const PCS_YELLOW = "#FFB237";      // amber (unchanged)
+const PCS_DARK_PURPLE = "#1A0F00"; // dark amber backdrop
+const PCS_GRADIENT = "linear-gradient(135deg, #FFD400 0%, #FF8A00 55%, #FF3D8E 100%)";
+const PCS_GRADIENT_SOFT = "linear-gradient(135deg, rgba(255,212,0,0.18) 0%, rgba(255,138,0,0.18) 55%, rgba(255,61,142,0.18) 100%)";
 const B4_GREEN = "#42CF71";
 
-function PancakeLogo({ size = 28, className = "" }: { size?: number; className?: string }) {
+// Inline four.meme wordmark — yellow rounded square with bold "4" glyph.
+// Self-contained SVG so we don't need a separate brand asset on disk.
+function FourMemeLogo({ size = 28, className = "" }: { size?: number; className?: string }) {
   return (
-    <img
-      src={pancakeLogoUrl}
+    <svg
       width={size}
       height={size}
-      alt="PancakeSwap"
-      className={`object-contain ${className}`}
-      style={{ width: size, height: size }}
-      draggable={false}
-      data-testid="img-pancake-logo"
-    />
+      viewBox="0 0 40 40"
+      xmlns="http://www.w3.org/2000/svg"
+      className={className}
+      aria-label="four.meme"
+      data-testid="img-fourmeme-logo"
+    >
+      <rect x="1" y="1" width="38" height="38" rx="9" fill="#FFD400" stroke="#FF8A00" strokeWidth="1.5" />
+      <text
+        x="20" y="29"
+        textAnchor="middle"
+        fontFamily="'JetBrains Mono', ui-monospace, monospace"
+        fontWeight="900"
+        fontSize="24"
+        fill="#0A0A0A"
+      >4</text>
+    </svg>
   );
 }
 
@@ -83,7 +96,7 @@ const MOCK_LEADERBOARD: LeaderRow[] = [
   { rank: 7, name: "BUILD4_HOUSE", owner: "BUILD4", persona: "House", mode: "Auto", pnlUsd: 1241.85, pnlPct: 34.2, trades: 31, streak: 3, isHouse: true },
   { rank: 8, name: "MoonBoy", owner: "@retailfrenz", persona: "Degen", mode: "Manual", pnlUsd: 922.40, pnlPct: 29.1, trades: 55, streak: 0 },
   { rank: 9, name: "VolBeast", owner: "@volumetrik", persona: "Hunter", mode: "Auto", pnlUsd: 814.22, pnlPct: 24.6, trades: 14, streak: 1 },
-  { rank: 10, name: "PancakeFlipper", owner: "@brunch", persona: "Sniper", mode: "Co-pilot", pnlUsd: 661.04, pnlPct: 19.8, trades: 22, streak: 2 },
+  { rank: 10, name: "MemeFlipper", owner: "@brunch", persona: "Sniper", mode: "Co-pilot", pnlUsd: 661.04, pnlPct: 19.8, trades: 22, streak: 2 },
   { rank: 11, name: "GrandmaSafe", owner: "@nan", persona: "Quant", mode: "Auto", pnlUsd: 410.30, pnlPct: 14.1, trades: 9, streak: 1 },
   { rank: 12, name: "DipSlapper", owner: "@cliffhanger", persona: "Hunter", mode: "Manual", pnlUsd: 308.99, pnlPct: 11.4, trades: 17, streak: 0 },
 ];
@@ -184,10 +197,19 @@ function CountdownCell({ value, label }: { value: number; label: string }) {
   );
 }
 
-type TokenInfo = { name: string; symbol: string; decimals: number; lastPriceWei: string };
+type TradeVenue = "fourMeme" | "pancakeV2";
+type TokenInfo = {
+  name: string; symbol: string; decimals: number; lastPriceWei: string;
+  venue: TradeVenue;
+  // Optional bonding-curve metadata — only populated when venue=fourMeme.
+  fillPct?: number;
+  graduatedToPancake?: boolean;
+  quoteIsBnb?: boolean;
+  version?: number;
+};
 type WalletBal = { bnbBalance: string; tokenBalance: string; tokenDecimals: number; error: string | null };
 
-function PancakeTradePanel() {
+function MemeTradePanel() {
   const session = useTerminalSession();
   const [tokenAddress, setTokenAddress] = useState("");
   const [info, setInfo] = useState<TokenInfo | null>(null);
@@ -199,20 +221,61 @@ function PancakeTradePanel() {
   const [slippageBps, setSlippageBps] = useState(500);
   const [busy, setBusy] = useState<"" | "buy" | "sell">("");
   const [tradeError, setTradeError] = useState<string | null>(null);
-  const [lastTx, setLastTx] = useState<{ kind: "buy" | "sell"; hash: string; approvalHash?: string } | null>(null);
+  const [lastTx, setLastTx] = useState<{ kind: "buy" | "sell"; hash: string; approvalHash?: string; venue: TradeVenue } | null>(null);
 
   const validAddr = useMemo(() => /^0x[a-fA-F0-9]{40}$/.test(tokenAddress.trim()), [tokenAddress]);
 
+  // Smart routing: try four.meme bonding curve first. If the token has
+  // graduated (liquidityAdded=true) or isn't registered on four.meme at
+  // all, fall back to PancakeSwap V2. The user sees a single panel and
+  // a venue badge telling them where the trade will route.
   const loadInfo = useCallback(async () => {
     if (!validAddr) return;
     setLoadingInfo(true);
     setInfoError(null);
     setInfo(null);
+    setLastTx(null);
     try {
-      const r = await fetch(`/api/pancake/token/${tokenAddress.trim()}`);
-      const j = await r.json();
-      if (!r.ok || !j.ok) throw new Error(j.error || `HTTP ${r.status}`);
-      setInfo(j.info);
+      const addr = tokenAddress.trim();
+      // 1) Try four.meme.
+      let fmInfo: any = null;
+      try {
+        const r = await fetch(`/api/fourmeme/token/${addr}`);
+        const j = await r.json();
+        if (r.ok && j.ok) fmInfo = j.info;
+      } catch { /* swallow — fall through to PCS */ }
+
+      if (fmInfo && !fmInfo.graduatedToPancake && fmInfo.quoteIsBnb) {
+        setInfo({
+          name: fmInfo.name, symbol: fmInfo.symbol, decimals: fmInfo.decimals,
+          lastPriceWei: fmInfo.lastPriceWei,
+          venue: "fourMeme",
+          fillPct: fmInfo.fillPct,
+          graduatedToPancake: false,
+          quoteIsBnb: fmInfo.quoteIsBnb,
+          version: fmInfo.version,
+        });
+        return;
+      }
+
+      // 2) Fall back to PancakeSwap (graduated tokens, BEP20-quoted
+      // tokens we can't trade on the curve, or never-on-four.meme).
+      const r2 = await fetch(`/api/pancake/token/${addr}`);
+      const j2 = await r2.json();
+      if (!r2.ok || !j2.ok) {
+        const why = fmInfo?.graduatedToPancake
+          ? "This token graduated from four.meme to PancakeSwap, but no V2 liquidity is on-chain yet — try again shortly."
+          : fmInfo && !fmInfo.quoteIsBnb
+          ? "This four.meme token is quoted in a BEP20 (not BNB) and isn't yet listed on PancakeSwap V2 — not tradeable here."
+          : (j2.error || `Token not found on four.meme or PancakeSwap V2 (HTTP ${r2.status})`);
+        throw new Error(why);
+      }
+      setInfo({
+        name: j2.info.name, symbol: j2.info.symbol, decimals: j2.info.decimals,
+        lastPriceWei: j2.info.lastPriceWei,
+        venue: "pancakeV2",
+        graduatedToPancake: !!fmInfo?.graduatedToPancake,
+      });
     } catch (e: any) {
       setInfoError(e?.message || "Failed to load token");
     } finally {
@@ -220,15 +283,18 @@ function PancakeTradePanel() {
     }
   }, [tokenAddress, validAddr]);
 
+  const balanceEndpoint = (venue: TradeVenue) =>
+    venue === "fourMeme" ? "/api/fourmeme/wallet-balance" : "/api/pancake/wallet-balance";
+
   const loadBalances = useCallback(async () => {
-    if (!validAddr || !session.ready) return;
+    if (!validAddr || !session.ready || !info) return;
     try {
-      const j = await session.apiFetch<any>(`/api/pancake/wallet-balance/${tokenAddress.trim()}`);
+      const j = await session.apiFetch<any>(`${balanceEndpoint(info.venue)}/${tokenAddress.trim()}`);
       if (j.ok) setBal({ bnbBalance: j.bnbBalance, tokenBalance: j.tokenBalance, tokenDecimals: j.tokenDecimals, error: j.error });
     } catch (e: any) {
       setBal({ bnbBalance: "0", tokenBalance: "0", tokenDecimals: 18, error: e?.message || "Balance load failed" });
     }
-  }, [tokenAddress, validAddr, session.ready, session.apiFetch]);
+  }, [tokenAddress, validAddr, session.ready, session.apiFetch, info]);
 
   useEffect(() => { if (info && session.ready) loadBalances(); }, [info, session.ready, loadBalances]);
 
@@ -243,12 +309,13 @@ function PancakeTradePanel() {
     setTradeError(null);
     setLastTx(null);
     try {
-      const r = await session.apiFetch<any>("/api/pancake/buy", {
+      const path = info.venue === "fourMeme" ? "/api/fourmeme/buy" : "/api/pancake/buy";
+      const r = await session.apiFetch<any>(path, {
         method: "POST",
         body: JSON.stringify({ tokenAddress: tokenAddress.trim(), bnbAmount: bnbIn, slippageBps }),
       });
       if (!r.ok) throw new Error(r.error || "Buy failed");
-      setLastTx({ kind: "buy", hash: r.txHash });
+      setLastTx({ kind: "buy", hash: r.txHash, venue: info.venue });
       setBnbIn("");
       await loadBalances();
     } catch (e: any) {
@@ -264,12 +331,25 @@ function PancakeTradePanel() {
     setTradeError(null);
     setLastTx(null);
     try {
-      const r = await session.apiFetch<any>("/api/pancake/sell", {
+      const path = info.venue === "fourMeme" ? "/api/fourmeme/sell" : "/api/pancake/sell";
+      const r = await session.apiFetch<any>(path, {
         method: "POST",
         body: JSON.stringify({ tokenAddress: tokenAddress.trim(), tokenAmount: tokensIn, tokenDecimals: info.decimals, slippageBps }),
       });
-      if (!r.ok) throw new Error(r.error || "Sell failed");
-      setLastTx({ kind: "sell", hash: r.txHash, approvalHash: r.approvalTxHash });
+      if (!r.ok) {
+        // Map backend service error codes to UX-friendly messages so
+        // users understand WHY the trade was refused (vs. a generic fail).
+        const code = r.code;
+        const msg = code === "V1_SELL_UNSAFE"
+          ? "Sells aren't supported on this token's curve yet (TokenManager V1 has no on-chain slippage guard). Wait for graduation or buy-only here."
+          : code === "GRADUATED"
+          ? "This token just graduated to PancakeSwap — reload and the panel will route through PCS V2."
+          : code === "QUOTE_NOT_SUPPORTED"
+          ? "This four.meme token is quoted in a BEP20, not BNB — not tradeable from this panel."
+          : (r.error || "Sell failed");
+        throw new Error(msg);
+      }
+      setLastTx({ kind: "sell", hash: r.txHash, approvalHash: r.approvalTxHash, venue: info.venue });
       setTokensIn("");
       await loadBalances();
     } catch (e: any) {
@@ -279,17 +359,40 @@ function PancakeTradePanel() {
     }
   }, [info, tokensIn, slippageBps, tokenAddress, session.ready, session.apiFetch, loadBalances]);
 
+  // V1 four.meme curves have no on-chain slippage parameter — the
+  // backend fail-closes on sell. Reflect that in the UI so users don't
+  // pile into a sell that's guaranteed to be refused server-side.
+  const sellDisabledReason = useMemo(() => {
+    if (!info) return null;
+    if (info.venue === "fourMeme" && info.version === 1) {
+      return "V1 curve · sells refused on-chain (wait for graduation)";
+    }
+    return null;
+  }, [info]);
+
   return (
-    <Card className="p-5 sm:p-6 bg-zinc-950/60 border-zinc-800" data-testid="card-pancake-trade-panel">
-      <div className="flex items-center justify-between mb-4">
+    <Card className="p-5 sm:p-6 bg-zinc-950/60 border-zinc-800" data-testid="card-trade-panel">
+      <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
         <div className="text-xs font-mono uppercase tracking-wider text-zinc-500">Step 1 · Connect</div>
-        {session.ready ? (
-          <Badge variant="outline" className="font-mono text-[10px] border-emerald-500/40 text-emerald-300 gap-1">
-            <CheckCircle2 className="w-3 h-3" /> Connected
-          </Badge>
-        ) : (
-          <Badge variant="outline" className="font-mono text-[10px] border-zinc-700 text-zinc-400">Not connected</Badge>
-        )}
+        <div className="flex items-center gap-2">
+          {info?.venue === "fourMeme" && (
+            <Badge variant="outline" className="font-mono text-[10px] gap-1" style={{ borderColor: "#FFD40066", color: "#FFD400" }} data-testid="badge-venue-fourmeme">
+              <Rocket className="w-3 h-3" /> four.meme curve{typeof info.fillPct === "number" ? ` · ${(info.fillPct * 100).toFixed(1)}%` : ""}
+            </Badge>
+          )}
+          {info?.venue === "pancakeV2" && (
+            <Badge variant="outline" className="font-mono text-[10px] border-pink-500/40 text-pink-300 gap-1" data-testid="badge-venue-pancake">
+              <ArrowDownUp className="w-3 h-3" /> {info.graduatedToPancake ? "Graduated · PCS V2" : "PancakeSwap V2"}
+            </Badge>
+          )}
+          {session.ready ? (
+            <Badge variant="outline" className="font-mono text-[10px] border-emerald-500/40 text-emerald-300 gap-1">
+              <CheckCircle2 className="w-3 h-3" /> Connected
+            </Badge>
+          ) : (
+            <Badge variant="outline" className="font-mono text-[10px] border-zinc-700 text-zinc-400">Not connected</Badge>
+          )}
+        </div>
       </div>
 
       {!session.wallet.connected ? (
@@ -436,13 +539,19 @@ function PancakeTradePanel() {
               </div>
               <Button
                 onClick={onSell}
-                disabled={!session.ready || !tokensIn || Number(tokensIn) <= 0 || busy !== ""}
+                disabled={!session.ready || !tokensIn || Number(tokensIn) <= 0 || busy !== "" || !!sellDisabledReason}
                 className="w-full font-mono text-xs border-0 text-white gap-2"
-                style={{ background: "linear-gradient(135deg, #7645D9 0%, #ED4B9E 100%)" }}
-                data-testid="button-pancake-sell"
+                style={{ background: "linear-gradient(135deg, #FF8A00 0%, #FF3D8E 100%)" }}
+                data-testid="button-trade-sell"
+                title={sellDisabledReason || undefined}
               >
                 {busy === "sell" ? <><Loader2 className="w-3 h-3 animate-spin" /> Sending…</> : <><TrendingDown className="w-3 h-3" /> Sell {info.symbol}</>}
               </Button>
+              {sellDisabledReason && (
+                <div className="mt-1.5 text-[10px] font-mono text-amber-400/80" data-testid="text-sell-disabled-reason">
+                  {sellDisabledReason}
+                </div>
+              )}
             </div>
           </div>
 
@@ -461,7 +570,7 @@ function PancakeTradePanel() {
                 <option value={1000}>10%</option>
               </select>
             </label>
-            <span>PancakeSwap V2 · BNB pair</span>
+            <span data-testid="text-venue-footer">{info.venue === "fourMeme" ? `four.meme bonding curve · V${info.version ?? 2} · BNB pair` : "PancakeSwap V2 · BNB pair"}</span>
           </div>
 
           {tradeError && (
@@ -714,8 +823,8 @@ export default function Competition() {
   return (
     <>
       <SEO
-        title="BUILD4 × PancakeSwap AI Agent Championship | $3,000 Prize Pool"
-        description="The first AI agent trading championship on PancakeSwap. Deploy your BUILD4 agent, choose Auto, Co-pilot or Manual mode, and compete for $3,000 in BNB. 7 days. Real funds. Real glory."
+        title="BUILD4 × four.meme AI Agent Championship | $3,000 Prize Pool"
+        description="The first AI agent trading championship on four.meme. Deploy your BUILD4 agent, choose Auto, Co-pilot or Manual mode, and compete for $3,000 in BNB. 7 days. Real funds. Real memecoins."
         path="/competition"
       />
       <div className="min-h-screen bg-[#08060F] text-white" data-testid="page-competition">
@@ -725,12 +834,12 @@ export default function Competition() {
             <Link href="/" className="flex items-center gap-2.5 font-mono text-sm tracking-tight" data-testid="link-home">
               <span className="text-white font-semibold">BUILD4</span>
               <span className="text-zinc-600">×</span>
-              <PancakeLogo size={22} />
+              <FourMemeLogo size={22} />
               <span
                 className="font-semibold bg-clip-text text-transparent"
                 style={{ backgroundImage: PCS_GRADIENT }}
               >
-                PancakeSwap
+                four.meme
               </span>
             </Link>
             <div className="flex items-center gap-2">
@@ -766,12 +875,12 @@ export default function Competition() {
               <div className="mb-8 flex items-center gap-4" data-testid="block-cobrand">
                 <span className="font-mono text-2xl sm:text-3xl font-bold tracking-tight text-white">BUILD4</span>
                 <span className="text-zinc-600 text-2xl">×</span>
-                <PancakeLogo size={48} />
+                <FourMemeLogo size={48} />
                 <span
                   className="font-mono text-2xl sm:text-3xl font-bold tracking-tight bg-clip-text text-transparent"
                   style={{ backgroundImage: PCS_GRADIENT }}
                 >
-                  PancakeSwap
+                  four.meme
                 </span>
               </div>
               <Badge className="mb-6 font-mono text-[10px] uppercase tracking-widest border-0 gap-1.5" style={{ background: PCS_GRADIENT_SOFT, color: PCS_CYAN }} data-testid="badge-partnership">
@@ -788,7 +897,7 @@ export default function Competition() {
                 Win <span style={{ color: B4_GREEN }}>$3,000</span> in BNB.
               </h1>
               <p className="text-lg sm:text-xl text-zinc-400 max-w-2xl mb-8 leading-relaxed" data-testid="text-hero-subtitle">
-                7 days. PancakeSwap BSC. Real funds. One BUILD4 agent. Auto, Co-pilot, or Manual — your call.
+                7 days. four.meme on BSC. Real funds. One BUILD4 agent. Auto, Co-pilot, or Manual — your call.
                 Top 5 PnL split the pot. The house agent runs alongside you. Beat it and bonus prizes unlock.
               </p>
 
@@ -849,7 +958,7 @@ export default function Competition() {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <div className="lg:col-span-2">
                 <h2 className="font-mono text-2xl font-bold mb-2 flex items-center gap-2" data-testid="text-prize-title">
-                  <PancakeLogo size={26} />
+                  <FourMemeLogo size={26} />
                   Prize pool
                 </h2>
                 <p className="text-sm text-zinc-400 mb-6">$3,000 total · Paid in BNB at competition close · Distributed manually by admin after public review</p>
@@ -1149,7 +1258,7 @@ export default function Competition() {
 
                       <div className="text-[11px] font-mono text-zinc-500 leading-relaxed px-1 space-y-1">
                         <div>
-                          Deploying snapshots your current BNB balance as your starting line. Every PancakeSwap trade after that counts toward the leaderboard. Top 5 split <span className="text-white font-semibold">$3,000</span> in BNB.
+                          Deploying snapshots your current BNB balance as your starting line. Every four.meme buy/sell (and any PancakeSwap V2 swap on graduated tokens) counts toward the leaderboard. Top 5 split <span className="text-white font-semibold">$3,000</span> in BNB.
                         </div>
                         <div className="flex items-start gap-1.5">
                           <ShieldCheck className="w-3.5 h-3.5 flex-shrink-0 mt-px" style={{ color: B4_GREEN }} />
@@ -1568,7 +1677,7 @@ export default function Competition() {
                     <Target className="w-5 h-5 mt-0.5" style={{ color: PCS_PURPLE }} />
                     <div>
                       <div className="font-mono text-sm font-semibold">Pair focus</div>
-                      <div className="text-xs text-zinc-400">Choose 3 to 5 PancakeSwap pairs your agent loves. BNB, CAKE, BTCB, and your favorite memecoin slots.</div>
+                      <div className="text-xs text-zinc-400">Choose 3 to 5 four.meme tokens your agent loves. Early bonding-curve picks, graduated runners, and your favorite memecoin slots.</div>
                     </div>
                   </div>
                   <div className="flex items-start gap-3">
@@ -1675,18 +1784,19 @@ export default function Competition() {
           </div>
         </section>
 
-        {/* Live PCS trade panel */}
+        {/* Live four.meme trade panel — auto-routes graduated tokens to PCS V2. */}
         <section className="border-b border-zinc-900">
           <div className="max-w-3xl mx-auto px-4 sm:px-6 py-12">
             <div className="flex items-center gap-3 mb-2">
-              <PancakeLogo size={24} />
-              <Badge variant="outline" className="font-mono text-[10px] border-pink-500/40 text-pink-300">LIVE · PANCAKESWAP V2</Badge>
+              <FourMemeLogo size={24} />
+              <Badge variant="outline" className="font-mono text-[10px]" style={{ borderColor: "#FFD40066", color: "#FFD400" }}>LIVE · FOUR.MEME</Badge>
+              <Badge variant="outline" className="font-mono text-[10px] border-zinc-700 text-zinc-400">Auto-fallback · PCS V2 for graduated</Badge>
             </div>
             <h2 className="font-mono text-2xl font-bold mb-2" data-testid="text-trade-title">Trade live, right here.</h2>
             <p className="text-zinc-400 mb-6 text-sm leading-relaxed">
-              Connect your BUILD4 wallet and swap any BSC token through PancakeSwap V2. Same router the bot uses — same fees, same liquidity, your funds, your keys.
+              Connect your BUILD4 wallet and trade any BSC memecoin. Pre-graduation tokens route through the four.meme bonding curve; graduated tokens fall back to PancakeSwap V2 automatically. Your funds, your keys.
             </p>
-            <PancakeTradePanel />
+            <MemeTradePanel />
           </div>
         </section>
 
@@ -1698,7 +1808,7 @@ export default function Competition() {
               {[
                 { icon: Clock, color: PCS_CYAN, title: "7 days", desc: "Starts " + new Date(COMPETITION_START_ISO).toUTCString().slice(0, 16) + " UTC, ends " + new Date(COMPETITION_END_ISO).toUTCString().slice(0, 16) + " UTC." },
                 { icon: Coins, color: B4_GREEN, title: "Real funds", desc: "Fund your agent's BSC wallet with USDT or BNB. No minimum, no maximum. PnL ranks by %." },
-                { icon: Bot, color: PCS_PURPLE, title: "One BUILD4 agent", desc: "Each participant runs one BUILD4 agent. Agents trade only on PancakeSwap during the 7-day window." },
+                { icon: Bot, color: PCS_PURPLE, title: "One BUILD4 agent", desc: "Each participant runs one BUILD4 agent. Agents trade four.meme curves and graduated PancakeSwap V2 pools during the 7-day window." },
                 { icon: Sparkles, color: PCS_PINK, title: "One tweak / 24h", desc: "Adjust your dials once every 24 hours. Mode switching (Auto/Co-pilot/Manual) doesn't count as a tweak." },
                 { icon: Trophy, color: "#FFD700", title: "Top 5 PnL % wins", desc: "Leaderboard ranks by net % gain. Min 5 trades to qualify. Manual review before payout." },
                 { icon: ShieldCheck, color: B4_GREEN, title: "Anti-gaming", desc: "One entry per BUILD4 account. Sybil flags reviewed by admin. Disqualified entries forfeit prize eligibility." },
@@ -1736,8 +1846,8 @@ export default function Competition() {
                   a: "Yes. $3,000 sits in a public BSC treasury wallet listed above. You can verify it on BSCScan before the competition starts. Payouts in BNB are sent manually by the BUILD4 admin within 48h of leaderboard freeze, with txHashes published on this page.",
                 },
                 {
-                  q: "Why PancakeSwap?",
-                  a: "Largest spot DEX on BNB Chain, deepest liquidity, the widest pair coverage. Perfect surface for agent strategies — from majors to meme tails. This championship is the first of a season of BUILD4 × DEX collaborations.",
+                  q: "Why four.meme?",
+                  a: "four.meme is BNB Chain's flagship memecoin launchpad — every token starts on a bonding curve and graduates to PancakeSwap V2 once it fills up. That gives BUILD4 agents the full lifecycle to hunt: sniping fresh curves, riding momentum into graduation, then trading the AMM pool. This championship is the first of a season of BUILD4 × on-chain venue collaborations.",
                 },
                 {
                   q: "What's the BUILD4 house agent?",
@@ -1792,10 +1902,10 @@ export default function Competition() {
                 </Button>
               )}
               <a
-                href="https://twitter.com/intent/tweet?text=BUILD4%20%C3%97%20PancakeSwap%20AI%20Agent%20Championship%20—%20%243%2C000%20prize%20pool%2C%207%20days%2C%20one%20agent%2C%20your%20rules.%20Coming%20soon."
+                href="https://twitter.com/intent/tweet?text=BUILD4%20%C3%97%20four.meme%20AI%20Agent%20Championship%20—%20%243%2C000%20prize%20pool%2C%207%20days%2C%20one%20agent%2C%20your%20rules.%20Coming%20soon."
                 target="_blank"
                 rel="noopener noreferrer"
-                aria-label="Share BUILD4 × PancakeSwap AI Agent Championship on X"
+                aria-label="Share BUILD4 × four.meme AI Agent Championship on X"
                 data-testid="link-share-x"
               >
                 <Button size="lg" variant="outline" className="font-mono text-sm gap-2 px-8 border-zinc-700 text-white hover:bg-zinc-900">
@@ -1809,10 +1919,10 @@ export default function Competition() {
         {/* Footer */}
         <footer className="py-8 text-center text-[11px] font-mono text-zinc-600">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 flex flex-col sm:flex-row items-center justify-between gap-2">
-            <div>BUILD4 × PancakeSwap · AI Agent Championship Season 1 · 2026</div>
+            <div>BUILD4 × four.meme · AI Agent Championship Season 1 · 2026</div>
             <div className="flex items-center gap-4">
               <Link href="/" className="hover:text-white transition-colors" data-testid="link-footer-home">BUILD4</Link>
-              <a href="https://pancakeswap.finance" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors" data-testid="link-footer-pancakeswap">PancakeSwap</a>
+              <a href="https://four.meme" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors" data-testid="link-footer-fourmeme">four.meme</a>
               <Link href="/privacy" className="hover:text-white transition-colors" data-testid="link-footer-privacy">Privacy</Link>
             </div>
           </div>
