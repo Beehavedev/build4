@@ -759,10 +759,13 @@ export async function unstakeFromGauge(
 }
 
 export async function claimGaugeRewards(
-  args: { gauge: string; kind: 'v2' | 'v3'; tokenId?: bigint },
+  args: { gauge: string; kind: 'v2' | 'v3'; tokenId?: bigint; userId?: string },
 ): Promise<SwapResult & { claimed?: bigint }> {
   try {
-    const { signer, address } = await getMasterSigner()
+    if (!ethers.isAddress(args.gauge)) throw new Error(`topaz_invalid_gauge:${args.gauge}`)
+    // userId set → sign from that user's BSC wallet (mini-app Claim
+    // button); omitted → master wallet (autonomous agent path).
+    const { signer, address } = await resolveSigner({ userId: args.userId })
     if (args.kind === 'v2') {
       const g = new ethers.Contract(args.gauge, TOPAZ_GAUGE_ABI, signer)
       const tx = await g.getReward(address)
@@ -793,6 +796,64 @@ export async function getClaimableEmissions(
   return (await g.earned(walletAddr)) as bigint
 }
 
+// ── Wallet balances ──────────────────────────────────────────────────────
+
+export interface WalletTokenBalance {
+  symbol: string
+  // null = native BNB (not an ERC-20).
+  address: string | null
+  decimals: number
+  raw: bigint
+  formatted: string
+}
+
+/**
+ * Read the user's spendable balances for the headline Topaz tokens:
+ * native BNB + USDT + TOPAZ. Each token is best-effort — a single
+ * reverting balanceOf/decimals call is skipped rather than failing the
+ * whole snapshot, so the mini-app always renders what it can. Tokens
+ * that aren't configured (null address in TopazConfig) are omitted.
+ */
+export async function getUserWalletBalances(walletAddr: string): Promise<WalletTokenBalance[]> {
+  if (!ethers.isAddress(walletAddr)) throw new Error(`topaz_invalid_wallet:${walletAddr}`)
+  const cfg = getTopazConfig()
+  const provider = activeDeps.buildProvider()
+  const out: WalletTokenBalance[] = []
+
+  // Native BNB first (always shown — it's the gas token).
+  try {
+    const raw = await provider.getBalance(walletAddr)
+    out.push({ symbol: 'BNB', address: null, decimals: 18, raw, formatted: ethers.formatEther(raw) })
+  } catch (e) {
+    void e
+  }
+
+  const erc20s: Array<{ addr: string; fallbackSymbol: string }> = []
+  if (cfg.usdtToken) erc20s.push({ addr: cfg.usdtToken, fallbackSymbol: 'USDT' })
+  if (cfg.topazToken) erc20s.push({ addr: cfg.topazToken, fallbackSymbol: 'TOPAZ' })
+
+  for (const t of erc20s) {
+    try {
+      const erc = new ethers.Contract(t.addr, ERC20_ABI, provider)
+      const [raw, decimals, symbol] = await Promise.all([
+        erc.balanceOf(walletAddr) as Promise<bigint>,
+        (erc.decimals() as Promise<bigint>).then((d) => Number(d)).catch(() => 18),
+        (erc.symbol() as Promise<string>).catch(() => t.fallbackSymbol),
+      ])
+      out.push({
+        symbol: String(symbol),
+        address: t.addr,
+        decimals,
+        raw,
+        formatted: ethers.formatUnits(raw, decimals),
+      })
+    } catch (e) {
+      void e
+    }
+  }
+  return out
+}
+
 // ── LP-position discovery ────────────────────────────────────────────────
 
 export interface OpenLpPosition {
@@ -804,6 +865,89 @@ export interface OpenLpPosition {
   tickUpper: number
   liquidity: bigint
   tickSpacing: number
+  // Enriched only when listOpenLpPositions is given a gauge list and the
+  // position's pool maps to a live v3 gauge. Undefined = not resolvable
+  // (no subgraph / unmatched) — the caller renders "—" rather than a fake 0.
+  gauge?: string
+  claimable?: bigint
+}
+
+export interface V2LpPosition {
+  kind: 'v2-lp'
+  pool: string
+  gauge: string | null
+  token0: string
+  token1: string
+  token0Symbol: string
+  token1Symbol: string
+  stable: boolean
+  // Unstaked LP tokens sitting in the wallet.
+  walletBalance: bigint
+  // LP tokens staked in the gauge (earning emissions).
+  stakedBalance: bigint
+  // Claimable TOPAZ emissions on the staked balance.
+  claimable: bigint
+}
+
+/**
+ * Enumerate the wallet's v2 LP holdings across the known (subgraph-ranked)
+ * pools. For each ranked v2 gauge we read the pair's balanceOf(wallet)
+ * (unstaked LP) plus the gauge's balanceOf/earned (staked LP + claimable
+ * emissions). Pools where the wallet holds nothing are dropped.
+ *
+ * This relies on the Goldsky subgraph to know which pools exist — without
+ * it we have no on-chain way to enumerate every v2 pair the wallet ever
+ * touched, so we return []. That degradation is intentional and matches
+ * how getTopGaugesByApr already behaves.
+ */
+export async function listV2LpPositions(walletAddr: string): Promise<V2LpPosition[]> {
+  if (!ethers.isAddress(walletAddr)) throw new Error(`topaz_invalid_wallet:${walletAddr}`)
+  const provider = activeDeps.buildProvider()
+  const gauges = await getTopGaugesByApr(50)
+  const v2Gauges = gauges.filter((g) => !g.isV3 && ethers.isAddress(g.pool))
+  const out: V2LpPosition[] = []
+  for (const g of v2Gauges) {
+    try {
+      const pair = new ethers.Contract(g.pool, TOPAZ_V2_PAIR_ABI, provider)
+      const [token0, token1, stable, walletBalance] = await Promise.all([
+        pair.token0() as Promise<string>,
+        pair.token1() as Promise<string>,
+        (pair.stable() as Promise<boolean>).catch(() => false),
+        pair.balanceOf(walletAddr) as Promise<bigint>,
+      ])
+      let stakedBalance = 0n
+      let claimable = 0n
+      const gaugeAddr = ethers.isAddress(g.gauge) ? ethers.getAddress(g.gauge) : null
+      if (gaugeAddr) {
+        const gc = new ethers.Contract(gaugeAddr, TOPAZ_GAUGE_ABI, provider)
+        const [bal, earned] = await Promise.all([
+          (gc.balanceOf(walletAddr) as Promise<bigint>).catch(() => 0n),
+          (gc.earned(walletAddr) as Promise<bigint>).catch(() => 0n),
+        ])
+        stakedBalance = bal
+        claimable = earned
+      }
+      // Drop pools the wallet has no stake in at all.
+      if (walletBalance === 0n && stakedBalance === 0n && claimable === 0n) continue
+      out.push({
+        kind: 'v2-lp',
+        pool: ethers.getAddress(g.pool),
+        gauge: gaugeAddr,
+        token0,
+        token1,
+        token0Symbol: g.token0Symbol,
+        token1Symbol: g.token1Symbol,
+        stable,
+        walletBalance,
+        stakedBalance,
+        claimable,
+      })
+    } catch (e) {
+      // One bad pool shouldn't poison the whole list.
+      void e
+    }
+  }
+  return out
 }
 
 /**
@@ -812,7 +956,10 @@ export interface OpenLpPosition {
  * here — the master wallet's v2 staked balance is read from the gauge
  * directly (single Gauge.balanceOf call) when needed.
  */
-export async function listOpenLpPositions(walletAddr: string): Promise<OpenLpPosition[]> {
+export async function listOpenLpPositions(
+  walletAddr: string,
+  opts?: { withEmissions?: boolean },
+): Promise<OpenLpPosition[]> {
   const cfg = getTopazConfig()
   if (!cfg.npm) return []
   const provider = activeDeps.buildProvider()
@@ -848,7 +995,63 @@ export async function listOpenLpPositions(walletAddr: string): Promise<OpenLpPos
       void e
     }
   }
+  // Optional enrichment: resolve each position's CL gauge + claimable
+  // TOPAZ emissions. Best-effort and gated behind a flag because it costs
+  // one getPoolStats read per ranked v3 gauge — the autonomous agent path
+  // doesn't need it, only the mini-app's "Claim" UI does.
+  if (opts?.withEmissions && positions.length > 0) {
+    try {
+      await enrichV3Emissions(positions, walletAddr, provider)
+    } catch (e) {
+      // Enrichment never fails the core listing — emissions just stay "—".
+      console.warn('[topazTrading] v3 emissions enrich failed:', (e as Error).message)
+    }
+  }
   return positions
+}
+
+/**
+ * Resolve gauge + claimable emissions for each v3 position by matching
+ * its (token0, token1, tickSpacing) against the subgraph-ranked v3
+ * gauges' pools. Mutates `positions` in place. Silent per-gauge failures
+ * — an unmatched position simply keeps `gauge`/`claimable` undefined.
+ */
+async function enrichV3Emissions(
+  positions: OpenLpPosition[],
+  walletAddr: string,
+  provider: ethers.AbstractProvider,
+): Promise<void> {
+  const gauges = await getTopGaugesByApr(50)
+  const v3Gauges = gauges.filter((g) => g.isV3 && ethers.isAddress(g.pool) && ethers.isAddress(g.gauge))
+  if (v3Gauges.length === 0) return
+  // Build pool-key → gauge map by reading each v3 pool's identity once.
+  const keyToGauge = new Map<string, string>()
+  for (const g of v3Gauges) {
+    try {
+      const stats = await getPoolStats(g.pool)
+      if (stats.type !== 'v3' || stats.tickSpacing === undefined) continue
+      keyToGauge.set(v3Key(stats.token0, stats.token1, stats.tickSpacing), ethers.getAddress(g.gauge))
+    } catch (e) {
+      void e
+    }
+  }
+  if (keyToGauge.size === 0) return
+  for (const p of positions) {
+    const gauge = keyToGauge.get(v3Key(p.token0, p.token1, p.tickSpacing))
+    if (!gauge) continue
+    p.gauge = gauge
+    try {
+      const gc = new ethers.Contract(gauge, TOPAZ_CL_GAUGE_ABI, provider)
+      p.claimable = (await gc.earned(walletAddr, p.tokenId)) as bigint
+    } catch (e) {
+      // Position not staked / gauge read failed → leave claimable unset.
+      void e
+    }
+  }
+}
+
+function v3Key(token0: string, token1: string, tickSpacing: number): string {
+  return `${token0.toLowerCase()}-${token1.toLowerCase()}-${tickSpacing}`
 }
 
 // ── Gauge ranking (subgraph) ─────────────────────────────────────────────

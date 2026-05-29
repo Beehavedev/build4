@@ -1048,6 +1048,30 @@ export async function getHouseTopazPositions(): Promise<HouseTopazPosition[]> {
   return out
 }
 
+// ── 42.space dex routing ─────────────────────────────────────────────
+// The House Agent's 42.space participation lives in a dedicated brain
+// (`houseFortyTwoSportsBrain.ts`) that calls a dedicated executor
+// (`houseFortyTwoExecutor.ts`). This thin re-export keeps the dex-mode
+// dispatch story consistent with topaz/pancake: anyone reading
+// houseAgent.ts can see all supported HouseDex paths in one place.
+//
+// HouseLog rows for 42.space are tagged dex='42' (already a member of
+// the HouseDex union above), and HouseAgent.dex='42' is a valid mode.
+export async function tickHouseFortyTwo(input: {
+  marketAddress: string
+  dryRun?: boolean
+  force?: boolean
+  newsQuery?: string
+}) {
+  const { runHouseFortyTwoPick } = await import('../agents/houseFortyTwoSportsBrain')
+  return runHouseFortyTwoPick(input)
+}
+
+export async function claimHouseFortyTwo(marketAddress: string, opts: { dryRun?: boolean } = {}) {
+  const { houseClaimFortyTwoMarket } = await import('./houseFortyTwoExecutor')
+  return houseClaimFortyTwoMarket(marketAddress, opts)
+}
+
 /** Last N rows from the dedicated HouseLog feed. */
 export async function getHouseBrainFeed(limit = 50): Promise<any[]> {
   const lim = Math.min(Math.max(1, limit), 200)

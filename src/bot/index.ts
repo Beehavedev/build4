@@ -18,8 +18,11 @@ import { registerShowcase } from './commands/showcase'
 import { registerSwarmStats } from './commands/swarmstats'
 import { registerCampaignWallet } from './commands/campaignWallet'
 import { registerFourMeme } from './commands/fourMeme'
+import { registerCompetition } from './commands/competition'
 import { registerTopaz } from './commands/topaz'
+import { registerHouseUcl } from './commands/houseUcl'
 import { registerSubscribe, handlePaymentTxReply } from './commands/subscribe'
+import { registerFleet } from './commands/fleet'
 import { registerLlm } from './llm'
 
 export function createBot(): Bot {
@@ -63,8 +66,11 @@ export function createBot(): Bot {
   registerSwarmStats(bot)
   registerCampaignWallet(bot)
   registerFourMeme(bot)
+  registerCompetition(bot)
   registerTopaz(bot)
+  registerHouseUcl(bot)
   registerSubscribe(bot)
+  registerFleet(bot)
 
   // Fallback commands
   bot.command('settings', async (ctx) => {
@@ -158,7 +164,7 @@ export function createBot(): Bot {
 
   bot.command('help', async (ctx) => {
     await ctx.reply(
-      `📖 *BUILD4 Commands*\n\n*Wallet:* /wallet /linkwallet\n*Trading:* /trade /tradestatus /newagent /myagents\n*Market:* /signals /smartmoney /scan /trending /price\n*Buy/Sell:* /buy /sell /swap /launch\n*Social:* /copytrade /portfolio /predictions /showcase\n*Rewards:* /quests /rewards\n*Utility:* /settings /gas /swarmstats /cancel /help`,
+      `📖 *BUILD4 Commands*\n\n*Wallet:* /wallet /linkwallet\n*Trading:* /trade /tradestatus /newagent /myagents\n*Market:* /signals /smartmoney /scan /trending /price\n*Buy/Sell:* /buy /sell /swap /launch\n*Social:* /copytrade /portfolio /predictions /showcase\n*Compete:* /competition\n*Rewards:* /quests /rewards\n*Utility:* /settings /gas /swarmstats /cancel /help`,
       { parse_mode: 'Markdown' }
     )
   })
@@ -187,6 +193,7 @@ export function createBot(): Bot {
     { command: 'signals',     description: 'Whale flow & smart-money signals' },
     { command: 'portfolio',   description: 'Portfolio overview' },
     { command: 'predictions', description: 'Trade 42.space prediction markets' },
+    { command: 'competition', description: 'Join the four.meme trading competition' },
     { command: 'price',       description: 'Quick token price' },
     { command: 'subscribe',   description: 'Manage your BUILD4 Pro subscription' },
     { command: 'help',        description: 'Show all commands' },

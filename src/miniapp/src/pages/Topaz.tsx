@@ -34,6 +34,28 @@ interface V3Position {
   tickUpper: number
   liquidity: string
   tickSpacing: number
+  gauge?: string
+  claimable?: string | null
+}
+interface WalletBalance {
+  symbol: string
+  address: string | null
+  decimals: number
+  raw: string
+  formatted: string
+}
+interface V2LpPosition {
+  kind: 'v2-lp'
+  pool: string
+  gauge: string | null
+  token0: string
+  token1: string
+  token0Symbol: string
+  token1Symbol: string
+  stable: boolean
+  walletBalance: string
+  stakedBalance: string
+  claimable: string
 }
 
 const card: React.CSSProperties = {
@@ -61,12 +83,41 @@ const tabBtn = (active: boolean): React.CSSProperties => ({
 const short = (a: string | null | undefined) =>
   a ? `${a.slice(0, 6)}…${a.slice(-4)}` : '—'
 
+// Convert a raw 18-decimal bigint-string to a decimal string. LP tokens
+// and TOPAZ emissions are both 18-decimal on BSC, so a single helper
+// covers them without pulling ethers into the mini-app bundle.
+const formatUnits18 = (raw: string | null | undefined): string => {
+  if (!raw) return '0'
+  let neg = false
+  let s = raw
+  if (s.startsWith('-')) { neg = true; s = s.slice(1) }
+  if (!/^\d+$/.test(s)) return raw
+  s = s.padStart(19, '0')
+  const intPart = s.slice(0, s.length - 18)
+  const fracPart = s.slice(s.length - 18).replace(/0+$/, '')
+  const out = fracPart ? `${intPart}.${fracPart}` : intPart
+  return neg ? `-${out}` : out
+}
+
+// Trim a decimal-string balance to a readable length without rounding the
+// integer part away. Shows up to 6 significant fractional digits.
+const fmtBal = (v: string | null | undefined): string => {
+  if (!v) return '0'
+  const n = Number(v)
+  if (!Number.isFinite(n)) return v
+  if (n === 0) return '0'
+  if (n >= 1) return n.toLocaleString(undefined, { maximumFractionDigits: 4 })
+  return n.toLocaleString(undefined, { maximumFractionDigits: 6 })
+}
+
 export default function Topaz() {
   const [tab, setTab] = useState<'swap' | 'lp'>('swap')
   const [state, setState] = useState<TopazState | null>(null)
   const [stateErr, setStateErr] = useState<string | null>(null)
   const [gauges, setGauges] = useState<Gauge[]>([])
   const [positions, setPositions] = useState<V3Position[]>([])
+  const [balances, setBalances] = useState<WalletBalance[]>([])
+  const [lpPositions, setLpPositions] = useState<V2LpPosition[]>([])
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -100,6 +151,11 @@ export default function Topaz() {
     try {
       const p = await apiFetch<{ positions: V3Position[] }>('/api/topaz/positions')
       setPositions(p.positions ?? [])
+    } catch { /* not enabled, leave empty */ }
+    try {
+      const b = await apiFetch<{ balances: WalletBalance[]; lpPositions: V2LpPosition[] }>('/api/topaz/balances')
+      setBalances(b.balances ?? [])
+      setLpPositions(b.lpPositions ?? [])
     } catch { /* not enabled, leave empty */ }
   }
 
@@ -170,6 +226,21 @@ export default function Topaz() {
     } finally { setBusy(false) }
   }
 
+  const doClaim = async (gauge: string, kind: 'v2' | 'v3', tokenId?: string) => {
+    setBusy(true); setMsg(null)
+    try {
+      const r = await apiFetch<{ ok: boolean; txHash?: string; error?: string }>(
+        '/api/topaz/claim',
+        { method: 'POST', body: JSON.stringify({ gauge, kind, tokenId }) },
+      )
+      if (r.ok) setMsg({ kind: 'ok', text: `Claim tx: ${short(r.txHash ?? '')}` })
+      else setMsg({ kind: 'err', text: r.error ?? 'claim failed' })
+      await loadAll()
+    } catch (e: any) {
+      setMsg({ kind: 'err', text: e?.message ?? 'claim failed' })
+    } finally { setBusy(false) }
+  }
+
   const doBurn = async (tokenId: string) => {
     if (!confirm(`Burn v3 position #${tokenId}? This decreases liquidity, collects fees, and burns the NFT.`)) return
     setBusy(true); setMsg(null)
@@ -219,6 +290,23 @@ export default function Topaz() {
         {stateErr && (
           <div style={{ marginTop: 10, fontSize: 12, color: '#ef4444' }}>
             {stateErr}
+          </div>
+        )}
+        {balances.length > 0 && (
+          <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }} data-testid="row-topaz-balances">
+            {balances.map(b => (
+              <div
+                key={b.address ?? 'native'}
+                data-testid={`balance-${b.symbol}`}
+                style={{
+                  flex: '1 1 30%', minWidth: 90, background: '#12121a',
+                  borderRadius: 8, padding: '8px 10px',
+                }}
+              >
+                <div style={{ fontSize: 10, color: '#9ca3af', textTransform: 'uppercase' }}>{b.symbol}</div>
+                <div style={{ fontSize: 14, fontWeight: 600, marginTop: 2 }}>{fmtBal(b.formatted)}</div>
+              </div>
+            ))}
           </div>
         )}
         <div style={{ marginTop: 10, fontSize: 11, color: '#6b7280' }}>
@@ -367,15 +455,70 @@ export default function Topaz() {
                     <div style={{ fontSize: 11, color: '#6b7280' }}>
                       Range [{p.tickLower}, {p.tickUpper}] · spacing {p.tickSpacing}
                     </div>
+                    <div style={{ fontSize: 11, color: '#fbbf24', marginTop: 2 }} data-testid={`text-claimable-${p.tokenId}`}>
+                      Claimable: {p.claimable != null ? `${fmtBal(formatUnits18(p.claimable))} TOPAZ` : '—'}
+                    </div>
                   </div>
-                  <button
-                    data-testid={`button-burn-${p.tokenId}`}
-                    onClick={() => doBurn(p.tokenId)}
-                    disabled={busy}
-                    style={{ ...btn(false), width: 'auto', padding: '8px 12px', fontSize: 12 }}
-                  >
-                    Burn
-                  </button>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {p.gauge && p.claimable != null && p.claimable !== '0' && (
+                      <button
+                        data-testid={`button-claim-${p.tokenId}`}
+                        onClick={() => doClaim(p.gauge as string, 'v3', p.tokenId)}
+                        disabled={busy}
+                        style={{ ...btn(true), width: 'auto', padding: '8px 12px', fontSize: 12 }}
+                      >
+                        Claim
+                      </button>
+                    )}
+                    <button
+                      data-testid={`button-burn-${p.tokenId}`}
+                      onClick={() => doBurn(p.tokenId)}
+                      disabled={busy}
+                      style={{ ...btn(false), width: 'auto', padding: '8px 12px', fontSize: 12 }}
+                    >
+                      Burn
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* v2 LP holdings */}
+          <div style={card}>
+            <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 10 }}>Your v2 LP positions ({lpPositions.length})</div>
+            {lpPositions.length === 0 && (
+              <div style={{ fontSize: 12, color: '#6b7280' }}>No v2 LP positions on your wallet.</div>
+            )}
+            {lpPositions.map(p => (
+              <div key={p.pool} data-testid={`row-v2lp-${p.pool}`} style={{
+                padding: 10, marginBottom: 8, borderRadius: 8, background: '#12121a',
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 600 }}>
+                      {p.token0Symbol}/{p.token1Symbol} {p.stable ? '(stable)' : '(volatile)'}
+                    </div>
+                    <div style={{ fontSize: 10, color: '#6b7280', fontFamily: 'monospace' }}>
+                      {short(p.pool)}
+                    </div>
+                    <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 2 }} data-testid={`text-v2lp-bal-${p.pool}`}>
+                      Wallet: {fmtBal(formatUnits18(p.walletBalance))} · Staked: {fmtBal(formatUnits18(p.stakedBalance))}
+                    </div>
+                    <div style={{ fontSize: 11, color: '#fbbf24', marginTop: 2 }} data-testid={`text-v2lp-claimable-${p.pool}`}>
+                      Claimable: {fmtBal(formatUnits18(p.claimable))} TOPAZ
+                    </div>
+                  </div>
+                  {p.gauge && p.claimable !== '0' && (
+                    <button
+                      data-testid={`button-claim-v2-${p.pool}`}
+                      onClick={() => doClaim(p.gauge as string, 'v2')}
+                      disabled={busy}
+                      style={{ ...btn(true), width: 'auto', padding: '8px 12px', fontSize: 12 }}
+                    >
+                      Claim
+                    </button>
+                  )}
                 </div>
               </div>
             ))}

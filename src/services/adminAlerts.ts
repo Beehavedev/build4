@@ -28,7 +28,7 @@ export interface AdminAlertResult {
 export async function sendAdminAlert(
   bot: Bot | null,
   text: string,
-  opts: { parseMode?: 'Markdown' | 'HTML' } = {},
+  opts: { parseMode?: 'Markdown' | 'HTML'; replyMarkup?: any } = {},
 ): Promise<AdminAlertResult> {
   const ids = parseAdminIds()
   if (!bot || ids.length === 0) {
@@ -42,6 +42,7 @@ export async function sendAdminAlert(
     try {
       await bot.api.sendMessage(id, text, {
         parse_mode: opts.parseMode ?? 'Markdown',
+        ...(opts.replyMarkup ? { reply_markup: opts.replyMarkup } : {}),
       })
       sent++
     } catch (err: any) {

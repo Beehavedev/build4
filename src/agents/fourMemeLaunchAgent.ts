@@ -1134,6 +1134,54 @@ const ERC20_TP_ABI = [
   'function approve(address,uint256) returns (bool)',
 ] as const
 
+// Crash-stranded-claim lease for the TP sweep. The sweep uses
+// sold_tx_hash as a CAS lock: it stamps a "__claim_<epoch_ms>_<rand>__"
+// sentinel BEFORE any on-chain call so a second worker hitting the same
+// row sees the non-NULL value and bails. On success the sentinel is
+// overwritten with the real tx hash (markPositionSold); on a retryable
+// failure it is reset to NULL (releaseClaim); on a terminal failure it
+// is replaced by the skip sentinel (markPositionPermanentlyClosed).
+//
+// But a worker that CRASHES mid-sell (process killed, OOM, pod evicted)
+// runs NO catch/finally, so none of those release paths fire: the claim
+// sentinel is left set forever. Because the sweep SELECT filters
+// `sold_tx_hash IS NULL`, that row is never re-scanned again — the bag is
+// frozen and can never be sold. The reaper below is the only out-of-band
+// recovery. The lease is long enough (default 5 min) that a healthy but
+// slow live sell completes well within it, so an in-flight sell is never
+// disturbed (no double-sell window). Mirrors the four.meme snipe / fleet
+// exit-claim reapers; the only difference is token_launches has no
+// separate claim_at column, so the claim time is parsed out of the
+// sentinel itself.
+const TP_CLAIM_LEASE_SEC = Math.max(
+  30,
+  Math.round(Number(process.env.FOUR_MEME_LAUNCH_TP_CLAIM_LEASE_SEC) || 300),
+)
+
+// Stale-claim reaper — see TP_CLAIM_LEASE_SEC. Clears any TP claim
+// sentinel whose embedded timestamp is older than the lease so a
+// crash-stranded lock becomes re-claimable by a later sweep. Only the
+// claim sentinel ever starts with "__claim_" (real tx hashes start with
+// "0x", skip sentinels with "[skipped:"), so the pattern match can never
+// touch a legitimately sold/closed row. Best-effort — a reap failure
+// must not stop the TP sweep.
+async function reapStaleTpClaims(): Promise<void> {
+  try {
+    await db.$executeRawUnsafe(
+      `UPDATE "token_launches"
+          SET "sold_tx_hash" = NULL
+        WHERE "status" = 'launched'
+          AND "sold_at" IS NULL
+          AND "sold_tx_hash" ~ '^__claim_[0-9]+_'
+          AND (substring("sold_tx_hash" from '^__claim_([0-9]+)_'))::bigint
+              < (extract(epoch from now()) * 1000)::bigint - ($1::bigint * 1000)`,
+      String(TP_CLAIM_LEASE_SEC),
+    )
+  } catch (e) {
+    console.warn('[fourMemeTakeProfit] stale-claim reap failed:', (e as Error).message)
+  }
+}
+
 interface TpHeldRow {
   id: string
   agentId: string
@@ -1195,6 +1243,10 @@ export async function tickAllFourMemeTakeProfit(): Promise<TakeProfitSweepResult
     lastTpSweepStatus = result
     return result
   }
+
+  // Reclaim any crash-stranded TP claim before scanning so a bag whose
+  // owning worker died mid-sell becomes sellable again on this tick.
+  await reapStaleTpClaims()
 
   let rows: TpHeldRow[] = []
   try {
@@ -1428,3 +1480,7 @@ export async function tickAllFourMemeTakeProfit(): Promise<TakeProfitSweepResult
   lastTpSweepStatus = result
   return result
 }
+
+// Test-only surface. Exposes the TP stale-claim reaper so the regression
+// suite can prove a crash-stranded claim sentinel becomes re-claimable.
+export const __test = { reapStaleTpClaims, TP_CLAIM_LEASE_SEC }

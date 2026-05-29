@@ -62,6 +62,16 @@ app.get('/house', (_req, res) => {
   res.sendFile(housePanelPath)
 })
 
+// ── Community Trading Fleet admin panel ─────────────────────────────────────
+// Lives at /fleet — operates the 50 community-owned four.meme agents. Same
+// ADMIN_TOKEN-in-browser gating as /house (stored in localStorage, sent as
+// x-admin-token). All mutating ops go through /api/admin/fleet/* (requireAdmin).
+const fleetPanelPath = path.join(__dirname, '..', 'public', 'fleet.html')
+app.get('/fleet', (_req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+  res.sendFile(fleetPanelPath)
+})
+
 // ── Public landing page (https://build4.io/) ────────────────────────────────
 // Serves public/index.html with the WalletConnect Project ID injected in
 // place of the placeholder string. We read the file once at boot, do the
@@ -5167,6 +5177,267 @@ app.post('/api/admin/campaign/tick', requireAdmin, async (req, res) => {
   }
 })
 
+// ── House Agent × 42.space sports-aware pick (Task #135) ─────────────────
+//   POST /api/admin/house/42space/pick   body: { marketAddress, dryRun?, force?, newsQuery? }
+//     Runs the 4-LLM swarm against an arbitrary 42.space market (e.g. UCL
+//     Final), opens a position from HOUSE_AGENT_PRIVATE_KEY. dryRun=true
+//     skips the on-chain tx but still runs LLM swarm + logs to HouseLog.
+//   POST /api/admin/house/42space/claim  body: { marketAddress, dryRun? }
+//     Sweep winnings post-resolution via the router's claimAllSimple path.
+// Both gated by requireAdmin.
+app.post('/api/admin/house/42space/pick', requireAdmin, async (req, res) => {
+  try {
+    const marketAddress = String(req.body?.marketAddress ?? req.query.marketAddress ?? '').trim()
+    if (!/^0x[a-fA-F0-9]{40}$/.test(marketAddress)) {
+      return res.status(400).json({ ok: false, error: 'marketAddress must be a 0x-prefixed 40-hex address' })
+    }
+    const dryRun = req.body?.dryRun === true || String(req.query.dryRun ?? '') === 'true'
+    const force = req.body?.force === true || String(req.query.force ?? '') === 'true'
+    const newsQuery = typeof req.body?.newsQuery === 'string' ? req.body.newsQuery : undefined
+    const { runHouseFortyTwoPick } = await import('./agents/houseFortyTwoSportsBrain')
+    const r = await runHouseFortyTwoPick({ marketAddress, dryRun, force, newsQuery })
+    return res.json(r)
+  } catch (err) {
+    console.error('[API] /admin/house/42space/pick failed:', err)
+    res.status(500).json({ ok: false, error: (err as Error).message })
+  }
+})
+
+// GET /api/admin/house/42space/recap
+//   Per-market recap with realised PnL for the BUILD4 House Agent's
+//   42.space activity. For each OPEN_42 row, looks up on-chain market
+//   state to decide win/loss/pending, sums cost basis, and produces a
+//   tweet-ready recap string suitable for the campaign channel.
+//
+//   PnL model (simplified — we don't reconstruct the bonding-curve
+//   payout from logs):
+//     - WIN  → unrealised payout estimated as cost / impliedProbAtBuy
+//              (= 1 unit per outcome token); realised payout once a
+//              CLAIM_42 row exists.
+//     - LOSE → realised PnL = -cost.
+//     - PENDING → unrealised = 0, cost is at risk.
+//
+//   Optional `?marketAddress=0x…` filters to a single market.
+app.get('/api/admin/house/42space/recap', requireAdmin, async (req, res) => {
+  try {
+    const limit = Math.min(Math.max(Number(req.query.limit ?? 50), 1), 200)
+    const filterAddr =
+      typeof req.query.marketAddress === 'string' &&
+      /^0x[a-fA-F0-9]{40}$/.test(req.query.marketAddress)
+        ? (req.query.marketAddress as string).toLowerCase()
+        : null
+
+    const rows = await db.$queryRawUnsafe<Array<{
+      id: string
+      createdAt: Date
+      decision: string | null
+      kind: string
+      reasoning: string
+      txHash: string | null
+      meta: Record<string, unknown> | null
+    }>>(
+      `SELECT id, "createdAt", decision, kind, reasoning, "txHash", meta
+         FROM "HouseLog"
+        WHERE dex = '42'
+        ORDER BY "createdAt" DESC
+        LIMIT $1`,
+      limit,
+    )
+
+    // Group opens / claims by market address for PnL computation.
+    const opens = rows.filter(
+      (r) =>
+        r.decision === 'OPEN_42' &&
+        r.txHash &&
+        !(r.meta?.dryRun === true),
+    )
+    const claims = rows.filter((r) => r.decision === 'CLAIM_42')
+
+    const byMarket = new Map<string, {
+      marketAddress: string
+      opens: typeof opens
+      claims: typeof claims
+    }>()
+    for (const o of opens) {
+      const addr = String(o.meta?.marketAddress ?? '').toLowerCase()
+      if (!addr) continue
+      if (filterAddr && addr !== filterAddr) continue
+      if (!byMarket.has(addr)) byMarket.set(addr, { marketAddress: addr, opens: [], claims: [] })
+      byMarket.get(addr)!.opens.push(o)
+    }
+    for (const c of claims) {
+      const addr = String(c.meta?.marketAddress ?? '').toLowerCase()
+      const bucket = byMarket.get(addr)
+      if (bucket) bucket.claims.push(c)
+    }
+
+    const { getMarketByAddress } = await import('./services/fortyTwo')
+    const { readMarketOnchain } = await import('./services/fortyTwoOnchain')
+
+    type MarketRecap = {
+      marketAddress: string
+      question: string | null
+      isFinalised: boolean
+      winningOutcome: string | null
+      outcomeLabel: string | null
+      tokenId: number | null
+      costUsdt: number
+      estimatedPayoutUsdt: number
+      pnlUsdt: number
+      status: 'WIN' | 'LOSE' | 'PENDING' | 'CLAIMED'
+      txHash: string | null
+      claimTxHash: string | null
+    }
+
+    const marketRecaps: MarketRecap[] = []
+    for (const [, bucket] of byMarket) {
+      // Take the earliest open per market as the canonical entry.
+      const entry = bucket.opens.sort(
+        (a, b) => a.createdAt.getTime() - b.createdAt.getTime(),
+      )[0]
+      const cost = Number(entry.meta?.usdtIn ?? 0)
+      const tokenId = Number(entry.meta?.tokenId ?? 0) || null
+      const outcomeLabel = (entry.meta?.outcomeLabel as string) ?? null
+
+      let question: string | null = null
+      let isFinalised = false
+      let winningOutcome: string | null = null
+      let probAtRead = 0
+      try {
+        const m = await getMarketByAddress(bucket.marketAddress)
+        question = m.question ?? null
+        const state = await readMarketOnchain(m)
+        isFinalised = state.isFinalised
+        const winner = state.outcomes.find((o) => o.isWinner)
+        winningOutcome = winner?.label ?? null
+        const ours = state.outcomes.find((o) => o.tokenId === tokenId)
+        probAtRead = ours?.impliedProbability ?? 0
+      } catch (err) {
+        console.warn(
+          `[recap] on-chain read failed for ${bucket.marketAddress}: ${(err as Error).message}`,
+        )
+      }
+
+      let status: MarketRecap['status'] = 'PENDING'
+      let estimatedPayoutUsdt = 0
+      if (isFinalised) {
+        const weWon = !!(winningOutcome && outcomeLabel && winningOutcome === outcomeLabel)
+        if (weWon) {
+          // Cost / prob ≈ contracts held × 1 USDT/contract payout.
+          estimatedPayoutUsdt = probAtRead > 0 ? cost / probAtRead : cost
+          status = bucket.claims.length > 0 ? 'CLAIMED' : 'WIN'
+        } else {
+          status = 'LOSE'
+        }
+      }
+      const pnlUsdt = estimatedPayoutUsdt - cost
+
+      marketRecaps.push({
+        marketAddress: bucket.marketAddress,
+        question,
+        isFinalised,
+        winningOutcome,
+        outcomeLabel,
+        tokenId,
+        costUsdt: cost,
+        estimatedPayoutUsdt: Number(estimatedPayoutUsdt.toFixed(2)),
+        pnlUsdt: Number(pnlUsdt.toFixed(2)),
+        status,
+        txHash: entry.txHash,
+        claimTxHash: bucket.claims[0]?.txHash ?? null,
+      })
+    }
+
+    const totals = marketRecaps.reduce(
+      (acc, r) => {
+        acc.cost += r.costUsdt
+        acc.payout += r.estimatedPayoutUsdt
+        acc.pnl += r.pnlUsdt
+        acc.wins += r.status === 'WIN' || r.status === 'CLAIMED' ? 1 : 0
+        acc.losses += r.status === 'LOSE' ? 1 : 0
+        acc.pending += r.status === 'PENDING' ? 1 : 0
+        return acc
+      },
+      { cost: 0, payout: 0, pnl: 0, wins: 0, losses: 0, pending: 0 },
+    )
+
+    const roiPct =
+      totals.cost > 0 ? Number(((totals.pnl / totals.cost) * 100).toFixed(1)) : 0
+
+    // Tweet-ready recap (≤280 chars best-effort). Falls back to a single
+    // line when there's only one market in the recap.
+    let tweet: string
+    if (marketRecaps.length === 0) {
+      tweet = '🏛️ BUILD4 House Agent × 42.space: no settled positions yet.'
+    } else if (marketRecaps.length === 1) {
+      const r = marketRecaps[0]
+      const verb =
+        r.status === 'WIN' || r.status === 'CLAIMED'
+          ? `WON $${r.estimatedPayoutUsdt.toFixed(2)} on "${r.outcomeLabel}"`
+          : r.status === 'LOSE'
+            ? `LOST $${r.costUsdt.toFixed(2)} (called "${r.outcomeLabel}", winner was "${r.winningOutcome}")`
+            : `OPEN on "${r.outcomeLabel}" with $${r.costUsdt.toFixed(2)} at risk`
+      tweet =
+        `🏛️ BUILD4 House Agent — ${verb}.` +
+        ` Market: ${(r.question ?? r.marketAddress).slice(0, 90)}` +
+        ` · PnL $${r.pnlUsdt >= 0 ? '+' : ''}${r.pnlUsdt.toFixed(2)} (${roiPct >= 0 ? '+' : ''}${roiPct}%)` +
+        ` · Powered by the 4-LLM swarm.`
+    } else {
+      tweet =
+        `🏛️ BUILD4 House Agent × 42.space — ${marketRecaps.length} markets:` +
+        ` ${totals.wins}W / ${totals.losses}L / ${totals.pending}P.` +
+        ` Staked $${totals.cost.toFixed(0)} →` +
+        ` paid $${totals.payout.toFixed(0)},` +
+        ` PnL $${totals.pnl >= 0 ? '+' : ''}${totals.pnl.toFixed(0)}` +
+        ` (${roiPct >= 0 ? '+' : ''}${roiPct}%).` +
+        ` 4-LLM swarm — non-custodial, on-chain.`
+    }
+
+    return res.json({
+      ok: true,
+      summary: {
+        total: rows.length,
+        opens: rows.filter((r) => r.decision === 'OPEN_42').length,
+        claims: rows.filter((r) => r.decision === 'CLAIM_42').length,
+        skips: rows.filter((r) => r.decision === 'SKIP_42').length,
+        failures: rows.filter((r) => r.decision?.endsWith('_FAILED')).length,
+        broadcasts: rows.filter((r) => r.decision?.startsWith('BROADCAST_42')).length,
+      },
+      pnl: {
+        totalCostUsdt: Number(totals.cost.toFixed(2)),
+        totalPayoutUsdt: Number(totals.payout.toFixed(2)),
+        totalPnlUsdt: Number(totals.pnl.toFixed(2)),
+        roiPct,
+        wins: totals.wins,
+        losses: totals.losses,
+        pending: totals.pending,
+      },
+      markets: marketRecaps,
+      tweet,
+      rows,
+    })
+  } catch (err) {
+    console.error('[API] /admin/house/42space/recap failed:', err)
+    res.status(500).json({ ok: false, error: (err as Error).message })
+  }
+})
+
+app.post('/api/admin/house/42space/claim', requireAdmin, async (req, res) => {
+  try {
+    const marketAddress = String(req.body?.marketAddress ?? req.query.marketAddress ?? '').trim()
+    if (!/^0x[a-fA-F0-9]{40}$/.test(marketAddress)) {
+      return res.status(400).json({ ok: false, error: 'marketAddress must be a 0x-prefixed 40-hex address' })
+    }
+    const dryRun = req.body?.dryRun === true || String(req.query.dryRun ?? '') === 'true'
+    const { houseClaimFortyTwoMarket } = await import('./services/houseFortyTwoExecutor')
+    const r = await houseClaimFortyTwoMarket(marketAddress, { dryRun })
+    return res.json(r)
+  } catch (err) {
+    console.error('[API] /admin/house/42space/claim failed:', err)
+    res.status(500).json({ ok: false, error: (err as Error).message })
+  }
+})
+
 // ── Topaz DEX (Phase 1 master-wallet-only) admin surface ─────────────────
 //   POST /api/admin/topaz/tick           → fire one sweep immediately
 //   GET  /api/admin/topaz/state          → config + master wallet snapshot
@@ -5262,6 +5533,268 @@ app.get('/api/admin/topaz/state', requireAdmin, async (req, res) => {
   }
 })
 
+// ════════════════════════════════════════════════════════════════════════
+// Community Trading Fleet — admin API (all gated by requireAdmin)
+// Powers the /fleet panel: list agents + their wallets/stats, flip the
+// global pause + live-trading switches, pause/resume agents (one or all),
+// edit per-agent knobs, and inspect recent trades/positions/logs.
+// ════════════════════════════════════════════════════════════════════════
+
+// GET /api/admin/fleet/state — everything the dashboard needs in one shot.
+app.get('/api/admin/fleet/state', requireAdmin, async (_req, res) => {
+  try {
+    const fleet = await import('./services/fleet')
+    const [settings, agents, stats, openCounts, lowBalanceAcked] = await Promise.all([
+      fleet.getFleetSettings(),
+      fleet.listFleetAgents(),
+      fleet.getTodayStats(),
+      fleet.getOpenPositionCounts(),
+      fleet.getLowBalanceAckedIds(),
+    ])
+
+    const strategies = fleet.FLEET_STRATEGY_KEYS.map((k) => ({
+      key: k,
+      label: fleet.FLEET_STRATEGIES[k].label,
+      description: fleet.FLEET_STRATEGIES[k].description,
+      risk: fleet.FLEET_STRATEGIES[k].risk,
+    }))
+
+    const agentsOut = agents.map((a) => {
+      const s = stats.get(a.id)
+      return {
+        id: a.id,
+        name: a.name,
+        strategy: a.strategy,
+        walletAddress: a.walletAddress,
+        riskLevel: a.riskLevel,
+        maxTradeSizeBnb: a.maxTradeSizeBnb,
+        dailyTradeLimit: a.dailyTradeLimit,
+        cooldownSec: a.cooldownSec,
+        jitterSec: a.jitterSec,
+        maxPositions: a.maxPositions,
+        minTrust: a.minTrust,
+        takeProfitPct: a.takeProfitPct,
+        stopLossPct: a.stopLossPct,
+        exitFillPct: a.exitFillPct,
+        maxDailyLossBnb: a.maxDailyLossBnb,
+        slippageBps: a.slippageBps,
+        watchlist: a.watchlist,
+        status: a.status,
+        assignedTo: a.assignedTo,
+        lastTickAt: a.lastTickAt ? a.lastTickAt.toISOString() : null,
+        todayBuys: s?.buys ?? 0,
+        todayPnlBnb: s?.pnl ?? 0,
+        openPositions: openCounts.get(a.id) ?? 0,
+      }
+    })
+
+    res.json({
+      ok: true,
+      settings,
+      liveEnvEnabled: fleet.isFleetLiveTradingEnabled(),
+      strategies,
+      agents: agentsOut,
+      totalAgents: agentsOut.length,
+      lowBalanceAckedIds: Array.from(lowBalanceAcked),
+    })
+  } catch (err) {
+    console.error('[API] /admin/fleet/state failed:', err)
+    res.status(500).json({ error: (err as Error).message })
+  }
+})
+
+// GET /api/admin/fleet/balances — on-chain BNB balance per fleet wallet, so an
+// admin can verify funding before unpausing/going live and watch it drain as
+// agents trade. Cached 30s server-side so the dashboard's 6s poll never hammers
+// the RPC with 50 balance calls. Resilient: balances are fetched independently
+// of /state, so an RPC hiccup never breaks the rest of the dashboard.
+// Mirrors the low-balance threshold logic in the fleet watcher
+// (src/agents/runner.ts): threshold = maxTradeSizeBnb × rounds + gas buffer,
+// unless an absolute FLEET_LOW_BALANCE_BNB override is set (flat floor across
+// the fleet). Keep these two in sync so the panel badge matches the DM alert.
+function computeFleetLowBalanceThreshold(maxTradeSizeBnb: number): number {
+  const rounds = Math.max(1, parseFloat(process.env.FLEET_LOW_BALANCE_ROUNDS ?? '2') || 2)
+  const gasBuffer = Math.max(0, parseFloat(process.env.FLEET_LOW_BALANCE_GAS_BNB ?? '0.0005') || 0)
+  const absOverride = parseFloat(process.env.FLEET_LOW_BALANCE_BNB ?? '')
+  const hasAbs = Number.isFinite(absOverride) && absOverride > 0
+  return hasAbs ? absOverride : (Number(maxTradeSizeBnb) || 0) * rounds + gasBuffer
+}
+
+let fleetBalanceCache: { ts: number; balances: Record<string, number>; thresholds: Record<string, number> } | null = null
+const FLEET_BALANCE_TTL_MS = 30_000
+app.get('/api/admin/fleet/balances', requireAdmin, async (_req, res) => {
+  try {
+    if (fleetBalanceCache && Date.now() - fleetBalanceCache.ts < FLEET_BALANCE_TTL_MS) {
+      return res.json({ ok: true, balances: fleetBalanceCache.balances, thresholds: fleetBalanceCache.thresholds, cachedAtMs: fleetBalanceCache.ts })
+    }
+    const fleet = await import('./services/fleet')
+    const { buildBscProvider } = await import('./services/bscProvider')
+    const provider = buildBscProvider(process.env.BSC_RPC_URL)
+    const agents = await fleet.listFleetAgents()
+    const balances: Record<string, number> = {}
+    const thresholds: Record<string, number> = {}
+    for (const a of agents) {
+      thresholds[a.walletAddress.toLowerCase()] = computeFleetLowBalanceThreshold(a.maxTradeSizeBnb)
+    }
+    const results = await Promise.allSettled(
+      agents.map(async (a) => {
+        const wei = await provider.getBalance(a.walletAddress)
+        return { addr: a.walletAddress.toLowerCase(), bnb: Number(ethers.formatEther(wei)) }
+      }),
+    )
+    for (const r of results) {
+      if (r.status === 'fulfilled') balances[r.value.addr] = r.value.bnb
+    }
+    fleetBalanceCache = { ts: Date.now(), balances, thresholds }
+    res.json({ ok: true, balances, thresholds, cachedAtMs: fleetBalanceCache.ts })
+  } catch (err) {
+    console.error('[API] /admin/fleet/balances failed:', err)
+    res.status(500).json({ error: (err as Error).message })
+  }
+})
+
+// POST /api/admin/fleet/settings  body: { liveTrading?, globalPaused? }
+app.post('/api/admin/fleet/settings', requireAdmin, async (req, res) => {
+  try {
+    const fleet = await import('./services/fleet')
+    const body = (req.body ?? {}) as { liveTrading?: unknown; globalPaused?: unknown }
+    const patch: { liveTrading?: boolean; globalPaused?: boolean } = {}
+    if (typeof body.liveTrading === 'boolean') patch.liveTrading = body.liveTrading
+    if (typeof body.globalPaused === 'boolean') patch.globalPaused = body.globalPaused
+    const settings = await fleet.setFleetSettings(patch)
+    await fleet.logFleet(null, 'info', `settings updated → live=${settings.liveTrading} paused=${settings.globalPaused}`)
+    res.json({ ok: true, settings })
+  } catch (err) {
+    console.error('[API] /admin/fleet/settings failed:', err)
+    res.status(500).json({ error: (err as Error).message })
+  }
+})
+
+// POST /api/admin/fleet/low-balance/ack  body: { id, ack?: boolean }
+// Ack (default) silences a known-low agent's low-BNB alert until its wallet
+// refills above threshold — persisted so it survives redeploys (the watcher's
+// in-memory dedup is wiped on restart). ack:false manually clears it. The
+// watcher auto-clears the ack once the wallet recovers.
+app.post('/api/admin/fleet/low-balance/ack', requireAdmin, async (req, res) => {
+  try {
+    const fleet = await import('./services/fleet')
+    const body = (req.body ?? {}) as { id?: unknown; ack?: unknown }
+    const id = typeof body.id === 'string' ? body.id.trim() : ''
+    if (!id) return res.status(400).json({ error: 'id is required' })
+    const agent = await fleet.getFleetAgent(id)
+    if (!agent) return res.status(404).json({ error: 'agent not found' })
+    const ack = body.ack !== false
+    if (ack) {
+      await fleet.ackFleetLowBalance(id, 'panel')
+      await fleet.logFleet(id, 'info', 'low-balance alert acked via panel')
+    } else {
+      await fleet.clearFleetLowBalanceAck(id)
+      await fleet.logFleet(id, 'info', 'low-balance ack cleared via panel')
+    }
+    res.json({ ok: true, id, acked: ack })
+  } catch (err) {
+    console.error('[API] /admin/fleet/low-balance/ack failed:', err)
+    res.status(500).json({ error: (err as Error).message })
+  }
+})
+
+// POST /api/admin/fleet/agents/status  body: { id?, status: 'active'|'paused' }
+// Omitting `id` applies to ALL agents (bulk pause/resume).
+app.post('/api/admin/fleet/agents/status', requireAdmin, async (req, res) => {
+  try {
+    const fleet = await import('./services/fleet')
+    const body = (req.body ?? {}) as { id?: unknown; status?: unknown }
+    const status = body.status === 'active' ? 'active' : body.status === 'paused' ? 'paused' : null
+    if (!status) return res.status(400).json({ error: 'status must be active|paused' })
+    if (typeof body.id === 'string' && body.id) {
+      await fleet.setFleetAgentStatus(body.id, status)
+      await fleet.logFleet(body.id, 'info', `status → ${status}`)
+      return res.json({ ok: true, scope: 'one', id: body.id, status })
+    }
+    const n = await fleet.setAllFleetStatus(status)
+    await fleet.logFleet(null, 'info', `bulk status → ${status} (${n} agents)`)
+    res.json({ ok: true, scope: 'all', count: n, status })
+  } catch (err) {
+    console.error('[API] /admin/fleet/agents/status failed:', err)
+    res.status(500).json({ error: (err as Error).message })
+  }
+})
+
+// PATCH /api/admin/fleet/agents/:id  body: allow-listed per-agent knobs
+app.patch('/api/admin/fleet/agents/:id', requireAdmin, async (req, res) => {
+  try {
+    const fleet = await import('./services/fleet')
+    const agent = await fleet.updateFleetAgent(String(req.params.id), (req.body ?? {}) as Record<string, any>)
+    if (!agent) return res.status(404).json({ error: 'agent not found' })
+    await fleet.logFleet(agent.id, 'info', 'config updated via panel')
+    res.json({ ok: true, agent })
+  } catch (err) {
+    console.error('[API] /admin/fleet/agents/:id failed:', err)
+    res.status(500).json({ error: (err as Error).message })
+  }
+})
+
+// GET /api/admin/fleet/trades?agentId=&limit=  — recent trades (default 100).
+app.get('/api/admin/fleet/trades', requireAdmin, async (req, res) => {
+  try {
+    const agentId = typeof req.query.agentId === 'string' ? req.query.agentId : null
+    const limit = Math.min(500, Math.max(1, parseInt(String(req.query.limit ?? '100'), 10) || 100))
+    const rows = await db.$queryRawUnsafe<any[]>(
+      `SELECT * FROM "fleet_trades"
+        ${agentId ? 'WHERE "agent_id" = $1' : ''}
+        ORDER BY "created_at" DESC
+        LIMIT ${agentId ? '$2' : '$1'}`,
+      ...(agentId ? [agentId, limit] : [limit]),
+    )
+    res.json({ ok: true, trades: rows })
+  } catch (err) {
+    console.error('[API] /admin/fleet/trades failed:', err)
+    res.status(500).json({ error: (err as Error).message })
+  }
+})
+
+// GET /api/admin/fleet/positions?agentId=&status=  — positions (default open).
+app.get('/api/admin/fleet/positions', requireAdmin, async (req, res) => {
+  try {
+    const agentId = typeof req.query.agentId === 'string' ? req.query.agentId : null
+    const status = req.query.status === 'closed' ? 'closed' : req.query.status === 'all' ? null : 'open'
+    const where: string[] = []
+    const vals: any[] = []
+    let i = 1
+    if (agentId) { where.push(`"agent_id" = $${i++}`); vals.push(agentId) }
+    if (status) { where.push(`"status" = $${i++}`); vals.push(status) }
+    const rows = await db.$queryRawUnsafe<any[]>(
+      `SELECT * FROM "fleet_positions"
+        ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+        ORDER BY "opened_at" DESC LIMIT 300`,
+      ...vals,
+    )
+    res.json({ ok: true, positions: rows })
+  } catch (err) {
+    console.error('[API] /admin/fleet/positions failed:', err)
+    res.status(500).json({ error: (err as Error).message })
+  }
+})
+
+// GET /api/admin/fleet/logs?agentId=&limit=  — recent log lines (default 100).
+app.get('/api/admin/fleet/logs', requireAdmin, async (req, res) => {
+  try {
+    const agentId = typeof req.query.agentId === 'string' ? req.query.agentId : null
+    const limit = Math.min(500, Math.max(1, parseInt(String(req.query.limit ?? '100'), 10) || 100))
+    const rows = await db.$queryRawUnsafe<any[]>(
+      `SELECT * FROM "fleet_logs"
+        ${agentId ? 'WHERE "agent_id" = $1' : ''}
+        ORDER BY "created_at" DESC
+        LIMIT ${agentId ? '$2' : '$1'}`,
+      ...(agentId ? [agentId, limit] : [limit]),
+    )
+    res.json({ ok: true, logs: rows })
+  } catch (err) {
+    console.error('[API] /admin/fleet/logs failed:', err)
+    res.status(500).json({ error: (err as Error).message })
+  }
+})
+
 // ── Public TOPAZ surface (mini-app + web dApp) ─────────────────────────
 // Phase 2 (multi-user): all WRITES execute from the caller's own active
 // BSC custodial wallet — signer is resolved by Telegram user id via
@@ -5331,12 +5864,52 @@ app.get('/api/topaz/positions', requireTgUser, async (req, res) => {
     })
     if (!w) return res.json({ ok: true, positions: [], note: 'no_bsc_wallet' })
     const { listOpenLpPositions } = await import('./services/topazTrading')
-    const positions = await listOpenLpPositions(w.address)
+    const positions = await listOpenLpPositions(w.address, { withEmissions: true })
     // Convert bigints for JSON
     const safe = positions.map(p => ({
-      ...p, tokenId: p.tokenId.toString(), liquidity: p.liquidity.toString(),
+      ...p,
+      tokenId: p.tokenId.toString(),
+      liquidity: p.liquidity.toString(),
+      claimable: p.claimable !== undefined ? p.claimable.toString() : null,
     }))
     res.json({ ok: true, userWallet: w.address, positions: safe })
+  } catch (err) {
+    res.status(500).json({ ok: false, error: (err as Error).message })
+  }
+})
+
+// Live wallet balances (BNB / USDT / TOPAZ) + the user's v2 LP holdings
+// per pool. Read-only; signs nothing. Empty when the user has no active
+// BSC wallet or Topaz isn't enabled.
+app.get('/api/topaz/balances', requireTgUser, async (req, res) => {
+  try {
+    const user = (req as any).user as { id: string } | undefined
+    const { getTopazConfig } = await import('./services/topaz')
+    const cfg = getTopazConfig()
+    if (!cfg.enabled) {
+      return res.json({ ok: true, balances: [], lpPositions: [], note: 'topaz not enabled' })
+    }
+    if (!user?.id) return res.status(401).json({ ok: false, error: 'unauthorized' })
+    const w = await db.wallet.findFirst({
+      where: { userId: user.id, chain: 'BSC', isActive: true },
+    })
+    if (!w) return res.json({ ok: true, balances: [], lpPositions: [], note: 'no_bsc_wallet' })
+    const { getUserWalletBalances, listV2LpPositions } = await import('./services/topazTrading')
+    const [balances, lpPositions] = await Promise.all([
+      getUserWalletBalances(w.address),
+      listV2LpPositions(w.address),
+    ])
+    res.json({
+      ok: true,
+      userWallet: w.address,
+      balances: balances.map(b => ({ ...b, raw: b.raw.toString() })),
+      lpPositions: lpPositions.map(p => ({
+        ...p,
+        walletBalance: p.walletBalance.toString(),
+        stakedBalance: p.stakedBalance.toString(),
+        claimable: p.claimable.toString(),
+      })),
+    })
   } catch (err) {
     res.status(500).json({ ok: false, error: (err as Error).message })
   }
@@ -5488,6 +6061,33 @@ app.post('/api/topaz/v3/burn', requireTgUser, async (req, res) => {
     const { burnV3Position } = await import('./services/topazTrading')
     const r = await burnV3Position(BigInt(tokenId), undefined, { userId: user.id })
     res.json(r)
+  } catch (err) {
+    res.status(500).json({ ok: false, error: (err as Error).message })
+  }
+})
+
+// Claim gauge emissions from the caller's own BSC wallet. `kind` selects
+// the v2 Gauge.getReward(address) vs v3 CLGauge.getReward(tokenId) path.
+app.post('/api/topaz/claim', requireTgUser, async (req, res) => {
+  try {
+    const user = (req as any).user as { id: string } | undefined
+    if (!user?.id) return res.status(401).json({ ok: false, error: 'unauthorized' })
+    const { gauge, kind, tokenId } = req.body || {}
+    if (!gauge) return res.status(400).json({ ok: false, error: 'gauge required' })
+    if (kind !== 'v2' && kind !== 'v3') {
+      return res.status(400).json({ ok: false, error: "kind must be 'v2' or 'v3'" })
+    }
+    if (kind === 'v3' && !tokenId) {
+      return res.status(400).json({ ok: false, error: 'tokenId required for v3 claim' })
+    }
+    const { claimGaugeRewards } = await import('./services/topazTrading')
+    const r = await claimGaugeRewards({
+      gauge,
+      kind,
+      tokenId: tokenId ? BigInt(tokenId) : undefined,
+      userId: user.id,
+    })
+    res.json({ ...r, claimed: r.claimed?.toString() })
   } catch (err) {
     res.status(500).json({ ok: false, error: (err as Error).message })
   }

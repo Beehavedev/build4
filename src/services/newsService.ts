@@ -62,6 +62,8 @@ export async function fetchTrendingNews(
     lookbackHours?: number
     limit?: number
     fetchImpl?: typeof fetch
+    /** Override topic query. When omitted, uses the default crypto/AI/geopolitics bias. */
+    query?: string
   } = {},
 ): Promise<NewsSignal[]> {
   const apiKey = process.env.GNEWS_API_KEY
@@ -74,8 +76,10 @@ export async function fetchTrendingNews(
   const fetchImpl = opts.fetchImpl ?? fetch
 
   // Topic query — bias toward what 42.space markets are good at: AI, crypto,
-  // geopolitics, finance milestones, big-tech announcements.
-  const query = '(AI OR crypto OR bitcoin OR ethereum OR geopolitics OR election OR Fed OR OpenAI OR Anthropic)'
+  // geopolitics, finance milestones, big-tech announcements. Callers (e.g.
+  // sports markets) may override this with a market-specific query.
+  const query = opts.query
+    ?? '(AI OR crypto OR bitcoin OR ethereum OR geopolitics OR election OR Fed OR OpenAI OR Anthropic)'
   const fromIso = new Date(Date.now() - lookbackHours * 60 * 60 * 1000).toISOString()
   const url = `${GNEWS_BASE}?q=${encodeURIComponent(query)}&lang=en&max=25&from=${fromIso}&sortby=publishedAt&apikey=${apiKey}`
 

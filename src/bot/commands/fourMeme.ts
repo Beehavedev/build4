@@ -22,6 +22,7 @@ import {
   LaunchApprovalError,
 } from '../../services/fourMemeLaunch'
 import { db } from '../../db'
+import { recordCompetitionTrade } from '../../services/competition'
 
 // ── /fourmeme — manual buy/sell of existing four.meme tokens ──────────
 //
@@ -116,6 +117,9 @@ async function handleBuy(ctx: Context, args: string[]) {
     const result = await buyTokenWithBnb(privateKey, token, bnbWei, {
       feeCtx: { userId: user.id, venue: 'fourmeme', side: 'buy' },
     })
+    // Score this fill toward the shared competition leaderboard if the user
+    // has joined. Fire-and-forget — never block or fail a real trade on it.
+    void recordCompetitionTrade({ chatId: String(user.telegramId), tokenAddress: token })
     await ctx.reply(
       `✅ *four\\.meme buy filled*\n\n` +
         `Token: \`${token}\`\n` +
@@ -150,6 +154,9 @@ async function handleSell(ctx: Context, args: string[]) {
     const result = await sellTokenForBnb(privateKey, token, tokenWei, {
       feeCtx: { userId: user.id, venue: 'fourmeme', side: 'sell' },
     })
+    // Score this fill toward the shared competition leaderboard if the user
+    // has joined. Fire-and-forget — never block or fail a real trade on it.
+    void recordCompetitionTrade({ chatId: String(user.telegramId), tokenAddress: token })
     await ctx.reply(
       `✅ *four\\.meme sell filled*\n\n` +
         `Token: \`${token}\`\n` +

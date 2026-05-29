@@ -1,0 +1,427 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>BUILD4 · Community Trading Fleet</title>
+<style>
+  :root {
+    --bg: #0d0e12;
+    --bg-card: #16181f;
+    --bg-elev: #1d2029;
+    --border: #2a2d36;
+    --text: #e8e9ec;
+    --text-dim: #8a8e98;
+    --purple: #7645d9;
+    --green: #1cb46a;
+    --red: #d04e4e;
+    --amber: #e0a020;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 14px; min-height: 100vh;
+  }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 20px 16px 64px; }
+  h1 { font-size: 22px; margin: 4px 0 4px; font-weight: 700; }
+  .sub { color: var(--text-dim); font-size: 13px; margin-bottom: 18px; }
+  .card {
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: 10px; padding: 14px; margin-bottom: 12px;
+  }
+  .label {
+    font-size: 11px; color: var(--text-dim); text-transform: uppercase;
+    letter-spacing: 1px; font-weight: 600;
+  }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .between { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+  .dim { color: var(--text-dim); }
+  button {
+    background: var(--bg-elev); color: var(--text); border: 1px solid var(--border);
+    border-radius: 8px; padding: 8px 12px; font-size: 13px; cursor: pointer; font-weight: 600;
+  }
+  button:hover { border-color: var(--purple); }
+  button.primary { background: var(--purple); border-color: var(--purple); }
+  button.danger { background: var(--red); border-color: var(--red); }
+  button.ok { background: var(--green); border-color: var(--green); }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  input {
+    background: var(--bg); color: var(--text); border: 1px solid var(--border);
+    border-radius: 8px; padding: 8px 10px; font-size: 13px; width: 90px;
+  }
+  input.wide { width: 100%; }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  th { color: var(--text-dim); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .5px; }
+  tr:hover td { background: var(--bg-elev); }
+  .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
+  .pill.active { background: rgba(28,180,106,.18); color: var(--green); }
+  .pill.paused { background: rgba(138,142,152,.18); color: var(--text-dim); }
+  .pill.live { background: rgba(208,78,78,.18); color: var(--red); }
+  .pill.mock { background: rgba(118,69,217,.18); color: #b69bff; }
+  .pos { color: var(--green); } .neg { color: var(--red); }
+  .strat-momentum { color: #ff7a59; } .strat-dip { color: #59b0ff; }
+  .strat-trend { color: #59ffc6; } .strat-snipe { color: #ffd059; }
+  .strat-conservative { color: #b69bff; }
+  .toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+  .toolbar input { width: 220px; }
+  .tabs { display: flex; gap: 4px; margin: 14px 0 10px; }
+  .tab { padding: 7px 14px; border-radius: 8px 8px 0 0; cursor: pointer; color: var(--text-dim); font-weight: 600; }
+  .tab.active { color: var(--text); background: var(--bg-card); border: 1px solid var(--border); border-bottom: none; }
+  .err { color: var(--red); font-size: 13px; margin: 8px 0; }
+  .stat { font-size: 20px; font-weight: 700; }
+  .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; }
+  .login { max-width: 380px; margin: 80px auto; }
+  .scroll { overflow-x: auto; }
+  details summary { cursor: pointer; font-weight: 600; padding: 6px 0; }
+</style>
+</head>
+<body>
+<div class="wrap" id="app"></div>
+<script>
+  const TOKEN_KEY = "b4_fleet_admin_token";
+  let state = null;
+  let balances = null;        // { addrLower: bnb } from /balances (lazy)
+  let thresholds = null;      // { addrLower: lowBalanceThresholdBnb } from /balances
+  let activeTab = "agents";
+  let strategyFilter = "all";
+  let search = "";
+  let detail = null;          // currently expanded agent id
+  let detailTrades = null;    // trades for expanded agent
+  let busy = false;
+  let errMsg = "";
+
+  function getToken() { return localStorage.getItem(TOKEN_KEY) || ""; }
+  function setToken(t) { if (t) localStorage.setItem(TOKEN_KEY, t); else localStorage.removeItem(TOKEN_KEY); }
+
+  async function api(path, init = {}) {
+    const token = getToken();
+    if (!token) throw new Error("not authenticated");
+    const headers = Object.assign({ "x-admin-token": token }, init.headers || {});
+    if (init.body && !headers["content-type"]) headers["content-type"] = "application/json";
+    const r = await fetch(path, Object.assign({}, init, { headers }));
+    const txt = await r.text();
+    let json; try { json = txt ? JSON.parse(txt) : {}; } catch { json = { raw: txt }; }
+    if (!r.ok) {
+      if (r.status === 401 || r.status === 403) { setToken(""); render(); }
+      throw new Error(json.error || json.message || ("HTTP " + r.status));
+    }
+    return json;
+  }
+
+  async function refresh() {
+    try {
+      const r = await api("/api/admin/fleet/state");
+      state = r; errMsg = "";
+    } catch (e) { errMsg = e.message; }
+    render();
+    refreshBalances();
+  }
+
+  async function refreshBalances() {
+    try {
+      const r = await api("/api/admin/fleet/balances");
+      balances = r.balances || {};
+      thresholds = r.thresholds || {};
+    } catch (e) { /* balances are best-effort; never block the dashboard */ }
+    render();
+  }
+
+  function bal(addr) {
+    if (!balances || !addr) return null;
+    const v = balances[String(addr).toLowerCase()];
+    return typeof v === "number" ? v : null;
+  }
+
+  // Per-agent low-balance threshold, computed server-side with the SAME knobs
+  // the alerter uses (FLEET_LOW_BALANCE_ROUNDS / _GAS_BNB / _BNB). null when the
+  // balances endpoint hasn't loaded yet.
+  function lowThreshold(addr) {
+    if (!thresholds || !addr) return null;
+    const v = thresholds[String(addr).toLowerCase()];
+    return typeof v === "number" ? v : null;
+  }
+
+  function isLowBalAcked(id) {
+    return !!(state && Array.isArray(state.lowBalanceAckedIds) && state.lowBalanceAckedIds.indexOf(id) !== -1);
+  }
+
+  function ackLowBalance(id, ack) {
+    return act(() => api("/api/admin/fleet/low-balance/ack", { method: "POST", body: JSON.stringify({ id: id, ack: ack }) }));
+  }
+
+  // Per-agent BNB balance cell. Flags wallets the alerter considers LOW in red
+  // (balance below its computed threshold) so an admin sees at a glance which
+  // wallets the DM alert would fire on. Shows the threshold + a LOW/OK badge.
+  // When a wallet is acked (its low-BNB alert silenced until refill), also show
+  // an "acked" badge + an un-ack button; when low and not acked, an ack button.
+  function balCell(a) {
+    const b = bal(a.walletAddress);
+    const acked = isLowBalAcked(a.id);
+    const ackBadge = acked
+      ? ' <span class="pill mock" title="low-balance alert acked — silenced until refill">acked</span>' +
+        ' <button ' + (busy ? "disabled" : "") + ' style="padding:2px 6px;font-size:11px" onclick="ackLowBalance(\'' + a.id + '\',false)">un-ack</button>'
+      : '';
+    if (b == null) return '<span class="dim">…</span>' + ackBadge;
+    const t = lowThreshold(a.walletAddress);
+    if (t == null) {
+      const cls0 = b <= 0 ? "neg" : "pos";
+      return '<span class="' + cls0 + '">' + b.toFixed(4) + '</span>' + ackBadge;
+    }
+    const low = b < t;
+    const cls = low ? "neg" : "pos";
+    const badge = '<span class="pill ' + (low ? "live" : "active") + '" title="threshold ' + t.toFixed(4) + ' BNB">' + (low ? "LOW" : "OK") + '</span>';
+    const ackBtn = (low && !acked)
+      ? ' <button ' + (busy ? "disabled" : "") + ' style="padding:2px 6px;font-size:11px" onclick="ackLowBalance(\'' + a.id + '\',true)">ack</button>'
+      : '';
+    return '<span class="' + cls + '">' + b.toFixed(4) + '</span> ' +
+      badge +
+      ' <span class="dim" style="font-size:11px">/ ' + t.toFixed(4) + '</span>' +
+      ackBadge + ackBtn;
+  }
+
+  async function act(fn) {
+    if (busy) return;
+    busy = true; errMsg = ""; render();
+    try { await fn(); await refresh(); }
+    catch (e) { errMsg = e.message; }
+    finally { busy = false; render(); }
+  }
+
+  function setSettings(patch) {
+    return act(() => api("/api/admin/fleet/settings", { method: "POST", body: JSON.stringify(patch) }));
+  }
+  function setStatus(id, status) {
+    return act(() => api("/api/admin/fleet/agents/status", { method: "POST", body: JSON.stringify({ id, status }) }));
+  }
+  function setAll(status) {
+    return act(() => api("/api/admin/fleet/agents/status", { method: "POST", body: JSON.stringify({ status }) }));
+  }
+  function patchAgent(id, patch) {
+    return act(() => api("/api/admin/fleet/agents/" + encodeURIComponent(id), { method: "PATCH", body: JSON.stringify(patch) }));
+  }
+
+  async function toggleDetail(id) {
+    if (detail === id) { detail = null; detailTrades = null; render(); return; }
+    detail = id; detailTrades = null; render();
+    try {
+      const r = await api("/api/admin/fleet/trades?limit=40&agentId=" + encodeURIComponent(id));
+      detailTrades = r.trades || [];
+    } catch (e) { detailTrades = []; }
+    render();
+  }
+
+  function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+  function short(a) { return a ? a.slice(0, 6) + "…" + a.slice(-4) : ""; }
+  function bnb(n) { return (Number(n) || 0).toFixed(4); }
+  function stratClass(s) {
+    return { momentum: "strat-momentum", dip: "strat-dip", trend: "strat-trend", snipe: "strat-snipe", conservative: "strat-conservative" }[s] || "";
+  }
+
+  function loginView() {
+    return '<div class="login card">' +
+      '<h1>Fleet Admin</h1>' +
+      '<div class="sub">Enter the admin token to operate the community trading fleet.</div>' +
+      '<input id="tok" class="wide" type="password" placeholder="ADMIN_TOKEN" />' +
+      '<div style="height:10px"></div>' +
+      '<button class="primary" onclick="(function(){var v=document.getElementById(\'tok\').value.trim(); if(v){setToken(v); refresh();}})()">Unlock</button>' +
+      (errMsg ? '<div class="err">' + esc(errMsg) + '</div>' : '') +
+      '</div>';
+  }
+
+  function header() {
+    const s = state.settings;
+    const dbLive = s.liveTrading;
+    const envLive = !!state.liveEnvEnabled;
+    // Real BNB only moves when BOTH the DB toggle AND the FLEET_LIVE_TRADING
+    // env gate are on. DB-on but env-off = effectively still mock.
+    const effectiveLive = dbLive && envLive;
+    const paused = s.globalPaused;
+    const modePill = effectiveLive
+      ? '<span class="pill live">LIVE TRADING</span>'
+      : '<span class="pill mock">MOCK MODE</span>';
+    const envWarn = (dbLive && !envLive)
+      ? '<div class="err">DB live toggle is ON but FLEET_LIVE_TRADING is not set in this environment — opens stay in MOCK mode (no real BNB). Set FLEET_LIVE_TRADING=true in prod to actually trade.</div>'
+      : "";
+    return '<div class="between">' +
+        '<div><h1>Community Trading Fleet</h1><div class="sub">' + state.totalAgents + ' community-owned four.meme agents · ' +
+          modePill + ' ' +
+          '<span class="pill ' + (paused ? "paused" : "active") + '">' + (paused ? "GLOBALLY PAUSED" : "RUNNING") + '</span></div></div>' +
+        '<div class="row">' +
+          '<button onclick="setToken(\'\'); render()">Lock</button>' +
+          '<button onclick="refresh()">Refresh</button>' +
+        '</div>' +
+      '</div>' +
+      '<div class="card"><div class="row" style="gap:18px">' +
+        '<div><div class="label">Global pause</div>' +
+          '<button class="' + (paused ? "ok" : "danger") + '" ' + (busy ? "disabled" : "") + ' onclick="setSettings({globalPaused:' + (!paused) + '})">' +
+            (paused ? "Resume fleet" : "Pause fleet") + '</button></div>' +
+        '<div><div class="label">Live trading (real BNB)</div>' +
+          '<button class="' + (dbLive ? "danger" : "primary") + '" ' + (busy ? "disabled" : "") + ' onclick="confirmLive(' + (!dbLive) + ')">' +
+            (dbLive ? "Switch to MOCK" : "Enable LIVE") + '</button>' +
+          '<div class="dim" style="font-size:11px;margin-top:4px">env gate: ' +
+            (envLive ? '<span class="pos">FLEET_LIVE_TRADING set</span>' : '<span class="neg">FLEET_LIVE_TRADING not set</span>') + '</div></div>' +
+        '<div><div class="label">Bulk</div><div class="row">' +
+          '<button class="ok" ' + (busy ? "disabled" : "") + ' onclick="setAll(\'active\')">Activate all</button>' +
+          '<button ' + (busy ? "disabled" : "") + ' onclick="setAll(\'paused\')">Pause all</button>' +
+        '</div></div>' +
+      '</div></div>' + envWarn;
+  }
+
+  function confirmLive(next) {
+    if (next && !window.confirm("Enable LIVE trading? Agents will spend REAL BNB from their wallets on four.meme — but ONLY if FLEET_LIVE_TRADING and FOUR_MEME_ENABLED are also set in this environment. Make sure wallets are funded and you have reviewed the agents.")) return;
+    setSettings({ liveTrading: next });
+  }
+
+  function statsBar() {
+    const a = state.agents;
+    const active = a.filter(x => x.status === "active").length;
+    const buys = a.reduce((s, x) => s + (x.todayBuys || 0), 0);
+    const pnl = a.reduce((s, x) => s + (x.todayPnlBnb || 0), 0);
+    const open = a.reduce((s, x) => s + (x.openPositions || 0), 0);
+    return '<div class="card stat-grid">' +
+      '<div><div class="label">Agents</div><div class="stat">' + a.length + '</div></div>' +
+      '<div><div class="label">Active</div><div class="stat">' + active + '</div></div>' +
+      '<div><div class="label">Open positions</div><div class="stat">' + open + '</div></div>' +
+      '<div><div class="label">Buys today</div><div class="stat">' + buys + '</div></div>' +
+      '<div><div class="label">PnL today (BNB)</div><div class="stat ' + (pnl >= 0 ? "pos" : "neg") + '">' + (pnl >= 0 ? "+" : "") + bnb(pnl) + '</div></div>' +
+      '</div>';
+  }
+
+  function filters() {
+    let opts = '<option value="all">All strategies</option>';
+    for (const s of state.strategies) opts += '<option value="' + s.key + '"' + (strategyFilter === s.key ? " selected" : "") + '>' + esc(s.label) + '</option>';
+    return '<div class="toolbar">' +
+      '<input placeholder="Search name / address" value="' + esc(search) + '" oninput="search=this.value; render()" />' +
+      '<select onchange="strategyFilter=this.value; render()" style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:8px">' + opts + '</select>' +
+      '</div>';
+  }
+
+  function agentRow(a) {
+    const isOpen = detail === a.id;
+    const pnlCls = (a.todayPnlBnb >= 0) ? "pos" : "neg";
+    let row = '<tr>' +
+      '<td><a href="#" onclick="toggleDetail(\'' + a.id + '\');return false" style="color:var(--text);text-decoration:none">' +
+        (isOpen ? "▾ " : "▸ ") + esc(a.name) + '</a></td>' +
+      '<td class="' + stratClass(a.strategy) + '">' + esc(a.strategy) + '</td>' +
+      '<td class="mono dim">' + short(a.walletAddress) +
+        ' <a href="#" title="copy" onclick="navigator.clipboard.writeText(\'' + a.walletAddress + '\');return false">⧉</a></td>' +
+      '<td class="mono">' + balCell(a) + '</td>' +
+      '<td>' + bnb(a.maxTradeSizeBnb) + '</td>' +
+      '<td>' + a.openPositions + "/" + a.maxPositions + '</td>' +
+      '<td>' + a.todayBuys + "/" + a.dailyTradeLimit + '</td>' +
+      '<td class="' + pnlCls + '">' + (a.todayPnlBnb >= 0 ? "+" : "") + bnb(a.todayPnlBnb) + '</td>' +
+      '<td>+' + a.takeProfitPct + "% / -" + a.stopLossPct + '%</td>' +
+      '<td><span class="pill ' + a.status + '">' + a.status + '</span></td>' +
+      '<td>' + (a.status === "active"
+        ? '<button ' + (busy ? "disabled" : "") + ' onclick="setStatus(\'' + a.id + '\',\'paused\')">Pause</button>'
+        : '<button class="ok" ' + (busy ? "disabled" : "") + ' onclick="setStatus(\'' + a.id + '\',\'active\')">Activate</button>') +
+      '</td></tr>';
+    if (isOpen) row += detailRow(a);
+    return row;
+  }
+
+  function field(a, key, label, step) {
+    return '<div style="margin:4px 8px"><div class="label">' + label + '</div>' +
+      '<input id="f_' + a.id + '_' + key + '" type="number" step="' + (step || 1) + '" value="' + a[key] + '" /></div>';
+  }
+
+  function detailRow(a) {
+    let trades = '<div class="dim">Loading trades…</div>';
+    if (detailTrades) {
+      if (detailTrades.length === 0) trades = '<div class="dim">No trades yet.</div>';
+      else {
+        trades = '<div class="scroll"><table><tr><th>When</th><th>Side</th><th>Token</th><th>BNB</th><th>PnL</th><th>Mode</th><th>Reason</th></tr>';
+        for (const t of detailTrades) {
+          const pnl = t.pnl_bnb != null ? Number(t.pnl_bnb) : null;
+          trades += '<tr><td class="dim">' + esc(new Date(t.created_at).toLocaleString()) + '</td>' +
+            '<td>' + esc(t.side) + '</td>' +
+            '<td class="mono dim">' + short(t.token_address) + '</td>' +
+            '<td>' + bnb(t.amount_bnb) + '</td>' +
+            '<td class="' + (pnl == null ? "" : pnl >= 0 ? "pos" : "neg") + '">' + (pnl == null ? "—" : (pnl >= 0 ? "+" : "") + bnb(pnl)) + '</td>' +
+            '<td><span class="pill ' + (t.mock ? "mock" : "live") + '">' + (t.mock ? "mock" : "live") + '</span></td>' +
+            '<td class="dim">' + esc(t.reason || "") + '</td></tr>';
+        }
+        trades += '</table></div>';
+      }
+    }
+    const knobs =
+      field(a, "maxTradeSizeBnb", "Size (BNB)", "0.001") +
+      field(a, "dailyTradeLimit", "Daily limit") +
+      field(a, "maxPositions", "Max pos") +
+      field(a, "cooldownSec", "Cooldown s") +
+      field(a, "jitterSec", "Jitter s") +
+      field(a, "minTrust", "Min trust") +
+      field(a, "takeProfitPct", "TP %") +
+      field(a, "stopLossPct", "SL %") +
+      field(a, "exitFillPct", "Exit fill %") +
+      field(a, "maxDailyLossBnb", "Max daily loss", "0.01") +
+      field(a, "slippageBps", "Slippage bps");
+    return '<tr><td colspan="11"><div class="card" style="margin:6px 0">' +
+      '<div class="between"><div class="mono dim">' + esc(a.walletAddress) + '</div>' +
+        '<div class="dim">last tick: ' + (a.lastTickAt ? esc(new Date(a.lastTickAt).toLocaleString()) : "never") + '</div></div>' +
+      '<div class="row" style="margin-top:8px">' + knobs + '</div>' +
+      '<div class="row" style="margin-top:8px"><button class="primary" ' + (busy ? "disabled" : "") + ' onclick="saveAgent(\'' + a.id + '\')">Save knobs</button></div>' +
+      '<div style="height:12px"></div><div class="label">Recent trades</div>' + trades +
+      '</div></td></tr>';
+  }
+
+  function saveAgent(id) {
+    const keys = ["maxTradeSizeBnb","dailyTradeLimit","maxPositions","cooldownSec","jitterSec","minTrust","takeProfitPct","stopLossPct","exitFillPct","maxDailyLossBnb","slippageBps"];
+    const patch = {};
+    for (const k of keys) {
+      const el = document.getElementById("f_" + id + "_" + k);
+      if (el && el.value !== "") patch[k] = Number(el.value);
+    }
+    patchAgent(id, patch);
+  }
+
+  function agentsView() {
+    let list = state.agents.slice();
+    if (strategyFilter !== "all") list = list.filter(a => a.strategy === strategyFilter);
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      list = list.filter(a => a.name.toLowerCase().includes(q) || a.walletAddress.toLowerCase().includes(q));
+    }
+    let rows = list.map(agentRow).join("");
+    if (!rows) rows = '<tr><td colspan="11" class="dim">No agents match.</td></tr>';
+    return filters() +
+      '<div class="card scroll"><table>' +
+        '<tr><th>Name</th><th>Strategy</th><th>Wallet</th><th>Bal BNB / low?</th><th>Size</th><th>Pos</th><th>Buys</th><th>PnL</th><th>TP/SL</th><th>Status</th><th></th></tr>' +
+        rows +
+      '</table></div>';
+  }
+
+  function strategiesView() {
+    let cards = "";
+    for (const s of state.strategies) {
+      const members = state.agents.filter(a => a.strategy === s.key);
+      const active = members.filter(a => a.status === "active").length;
+      cards += '<div class="card"><div class="between">' +
+        '<div><span class="' + stratClass(s.key) + '" style="font-weight:700;font-size:16px">' + esc(s.label) + '</span> ' +
+          '<span class="dim">· ' + esc(s.risk) + ' risk · ' + members.length + ' agents (' + active + ' active)</span></div></div>' +
+        '<div class="dim" style="margin-top:6px">' + esc(s.description) + '</div></div>';
+    }
+    return cards;
+  }
+
+  function render() {
+    const el = document.getElementById("app");
+    if (!getToken()) { el.innerHTML = loginView(); const t = document.getElementById("tok"); if (t) t.focus(); return; }
+    if (!state) { el.innerHTML = '<div class="card">Loading…' + (errMsg ? '<div class="err">' + esc(errMsg) + '</div>' : "") + '</div>'; return; }
+    const tabs = '<div class="tabs">' +
+      '<div class="tab ' + (activeTab === "agents" ? "active" : "") + '" onclick="activeTab=\'agents\'; render()">Agents</div>' +
+      '<div class="tab ' + (activeTab === "strategies" ? "active" : "") + '" onclick="activeTab=\'strategies\'; render()">Strategies</div>' +
+      '</div>';
+    el.innerHTML = header() + statsBar() +
+      (errMsg ? '<div class="err">' + esc(errMsg) + '</div>' : "") +
+      tabs + (activeTab === "agents" ? agentsView() : strategiesView());
+  }
+
+  if (getToken()) refresh(); else render();
+  setInterval(() => { if (getToken() && state && !detail) refresh(); }, 6000);
+</script>
+</body>
+</html>

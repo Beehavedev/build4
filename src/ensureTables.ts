@@ -325,6 +325,119 @@ export async function ensureNewTables() {
                ON "four_meme_holdings" ("user_id", "token_address")`)
   await run(`CREATE INDEX IF NOT EXISTS "four_meme_holdings_user_idx"
                ON "four_meme_holdings" ("user_id", "last_action_at" DESC)`)
+
+  // ── Task #149 — four.meme SNIPING (replaces autonomous launching) ────
+  // Agents no longer LAUNCH their own tokens; they SNIPE other people's
+  // fresh four.meme bonding-curve launches. The columns below are the
+  // per-agent opt-in + tuning knobs, all NULLable so a NULL falls back
+  // to the env/code default (see src/services/fourMemeTrust.ts and
+  // src/agents/fourMemeSnipeAgent.ts). Read via raw SQL (the prisma
+  // client doesn't carry these columns — same pattern as the launch
+  // columns above), so we never touch prisma/.
+  await run(`ALTER TABLE "Agent" ADD COLUMN IF NOT EXISTS "fourMemeSnipeEnabled" BOOLEAN DEFAULT false`)
+  // Per-agent tick throttle so a fast runner cadence doesn't make one
+  // agent fire multiple buys per scan window.
+  await run(`ALTER TABLE "Agent" ADD COLUMN IF NOT EXISTS "lastFourMemeSnipeTickAt" TIMESTAMP(3)`)
+  // Per-buy size in BNB (decimal string). NULL = env default
+  // FOUR_MEME_SNIPE_BUY_BNB. Hard-capped in code regardless.
+  await run(`ALTER TABLE "Agent" ADD COLUMN IF NOT EXISTS "fourMemeSnipeBuyBnb" TEXT`)
+  // Minimum trust score (0-100) the agent will buy at. NULL = Balanced
+  // default from the trust model.
+  await run(`ALTER TABLE "Agent" ADD COLUMN IF NOT EXISTS "fourMemeSnipeMinTrust" INTEGER`)
+  // Max concurrent open snipe positions per agent. NULL = code default.
+  await run(`ALTER TABLE "Agent" ADD COLUMN IF NOT EXISTS "fourMemeSnipeMaxPositions" INTEGER`)
+  // Take-profit % (e.g. 50 = +50%). NULL = code default.
+  await run(`ALTER TABLE "Agent" ADD COLUMN IF NOT EXISTS "fourMemeSnipeTakeProfitPct" INTEGER`)
+  // Stop-loss % (e.g. 40 = -40%). NULL = code default. Unlike the dev-bag
+  // TP sweep (which has no SL), snipers buy mid-curve so a real SL makes
+  // economic sense.
+  await run(`ALTER TABLE "Agent" ADD COLUMN IF NOT EXISTS "fourMemeSnipeStopLossPct" INTEGER`)
+  // Curve fill % (0-99) at which to exit before migration. NULL = code
+  // default (~90). Very-high-trust positions ride through migration and
+  // ignore this gate.
+  await run(`ALTER TABLE "Agent" ADD COLUMN IF NOT EXISTS "fourMemeSnipeExitFillPct" INTEGER`)
+
+  // four_meme_scanner_state — single-row cursor for the factory-log
+  // scanner so a process restart resumes from the last scanned block
+  // instead of re-scanning a huge range or missing launches. id is a
+  // fixed sentinel ('singleton').
+  await run(`CREATE TABLE IF NOT EXISTS "four_meme_scanner_state" (
+    "id" TEXT PRIMARY KEY,
+    "last_block" BIGINT NOT NULL DEFAULT 0,
+    "updated_at" TIMESTAMPTZ NOT NULL DEFAULT now()
+  )`)
+
+  // four_meme_launches_seen — the scanner cache + latest trust snapshot
+  // for every discovered four.meme launch. The snipe agent reads
+  // verdict='buy' rows from here; the scanner upserts curve stats +
+  // trust on each enrichment pass. token_address always lowercased.
+  await run(`CREATE TABLE IF NOT EXISTS "four_meme_launches_seen" (
+    "token_address" TEXT PRIMARY KEY,
+    "creator_wallet" TEXT,
+    "version" INTEGER,
+    "first_seen_block" BIGINT,
+    "first_seen_at" TIMESTAMPTZ NOT NULL DEFAULT now(),
+    "launch_time" BIGINT,
+    "last_scanned_at" TIMESTAMPTZ,
+    "fill_pct" DOUBLE PRECISION,
+    "funds_bnb" DOUBLE PRECISION,
+    "buyer_count" INTEGER,
+    "buy_count" INTEGER,
+    "sell_count" INTEGER,
+    "volume_bnb" DOUBLE PRECISION,
+    "dev_holds_pct" DOUBLE PRECISION,
+    "graduated" BOOLEAN DEFAULT false,
+    "quote_is_bnb" BOOLEAN,
+    "trust_score" INTEGER,
+    "verdict" TEXT,
+    "flags" TEXT,
+    "discovered_via" TEXT
+  )`)
+  await run(`CREATE INDEX IF NOT EXISTS "four_meme_launches_seen_verdict_idx"
+               ON "four_meme_launches_seen" ("verdict", "trust_score" DESC)`)
+  await run(`CREATE INDEX IF NOT EXISTS "four_meme_launches_seen_seen_idx"
+               ON "four_meme_launches_seen" ("first_seen_at" DESC)`)
+  await run(`CREATE INDEX IF NOT EXISTS "four_meme_launches_seen_scanned_idx"
+               ON "four_meme_launches_seen" ("graduated", "last_scanned_at")`)
+
+  // four_meme_positions — open snipe positions per (agent, token). The
+  // exit sweep uses claim_token as an atomic CAS lock (same idea as the
+  // dev-bag TP sweep's sold_tx_hash) so concurrent workers can't
+  // double-sell. token_address always lowercased.
+  await run(`CREATE TABLE IF NOT EXISTS "four_meme_positions" (
+    "id" TEXT PRIMARY KEY,
+    "agent_id" TEXT NOT NULL,
+    "user_id" TEXT NOT NULL,
+    "token_address" TEXT NOT NULL,
+    "version" INTEGER,
+    "entry_bnb_wei" TEXT NOT NULL,
+    "entry_cost_bnb" DOUBLE PRECISION,
+    "tokens_wei" TEXT NOT NULL,
+    "buy_tx" TEXT,
+    "entry_fill_pct" DOUBLE PRECISION,
+    "trust_at_entry" INTEGER,
+    "ride_through" BOOLEAN DEFAULT false,
+    "status" TEXT NOT NULL DEFAULT 'open',
+    "exit_reason" TEXT,
+    "exit_proceeds_bnb" DOUBLE PRECISION,
+    "exit_tx" TEXT,
+    "claim_token" TEXT,
+    "claim_at" TIMESTAMPTZ,
+    "opened_at" TIMESTAMPTZ NOT NULL DEFAULT now(),
+    "closed_at" TIMESTAMPTZ
+  )`)
+  // claim_at lets the exit sweep reclaim a position whose worker crashed
+  // mid-sell (claim_token set, never released) so it can't freeze forever.
+  await run(`ALTER TABLE "four_meme_positions" ADD COLUMN IF NOT EXISTS "claim_at" TIMESTAMPTZ`)
+  await run(`CREATE INDEX IF NOT EXISTS "four_meme_positions_agent_status_idx"
+               ON "four_meme_positions" ("agent_id", "status")`)
+  await run(`CREATE INDEX IF NOT EXISTS "four_meme_positions_status_idx"
+               ON "four_meme_positions" ("status")`)
+  // One open position per (agent, token) — prevents a slow exit sweep
+  // from letting the buy loop stack duplicate bags on the same launch.
+  await run(`CREATE UNIQUE INDEX IF NOT EXISTS "four_meme_positions_open_unique"
+               ON "four_meme_positions" ("agent_id", "token_address")
+               WHERE "status" = 'open'`)
   // Phase 4 (2026-05-03): include 'polymarket' in the auto-expansion so
   // every agent (existing AND brand-new — agentCreation now stamps
   // venuesAutoExpanded=true to opt out of this UPDATE entirely, but
@@ -843,6 +956,139 @@ export async function ensureNewTables() {
   await run(`UPDATE "User"
     SET "subscriptionExpiry" = NOW() + INTERVAL '${trialDays} days'
     WHERE "subscriptionExpiry" IS NULL`)
+
+  // ══════════════════════════════════════════════════════════════════════
+  // Community Trading Fleet — 50 diversified, community-owned four.meme
+  // trading agents (5 strategy groups × 10). Fully isolated from the Agent
+  // table (those are Telegram-user agents); the fleet has its own wallets,
+  // its own scheduler, and its own admin panel at /fleet. All raw-SQL,
+  // never touches prisma/. Idempotent CREATE IF NOT EXISTS.
+  // ══════════════════════════════════════════════════════════════════════
+
+  // fleet_settings — single-row global control. live_trading=false means
+  // the engine quotes real four.meme prices but NEVER sends a transaction
+  // (mock-first). global_paused=true halts every agent regardless of its
+  // own status. Both default to the safe value so a fresh deploy can never
+  // spend funds until an admin flips them on from the panel.
+  await run(`CREATE TABLE IF NOT EXISTS "fleet_settings" (
+    "id" TEXT PRIMARY KEY,
+    "live_trading" BOOLEAN NOT NULL DEFAULT false,
+    "global_paused" BOOLEAN NOT NULL DEFAULT true,
+    "updated_at" TIMESTAMPTZ NOT NULL DEFAULT now()
+  )`)
+  await run(`INSERT INTO "fleet_settings" ("id") VALUES ('singleton') ON CONFLICT ("id") DO NOTHING`)
+
+  // fleet_agents — the 50 community agents. Each has its own BSC wallet
+  // (encrypted_pk encrypted with the agent's own id as the key namespace),
+  // a strategy tag, and per-agent risk/safety knobs. status='paused' on
+  // creation so newly-seeded agents never trade before an admin reviews +
+  // funds them. assigned_to holds the community member's handle (nullable).
+  await run(`CREATE TABLE IF NOT EXISTS "fleet_agents" (
+    "id" TEXT PRIMARY KEY,
+    "name" TEXT NOT NULL,
+    "strategy" TEXT NOT NULL,
+    "wallet_address" TEXT NOT NULL,
+    "encrypted_pk" TEXT NOT NULL,
+    "risk_level" TEXT NOT NULL DEFAULT 'medium',
+    "max_trade_size_bnb" DOUBLE PRECISION NOT NULL DEFAULT 0.01,
+    "daily_trade_limit" INTEGER NOT NULL DEFAULT 10,
+    "cooldown_sec" INTEGER NOT NULL DEFAULT 300,
+    "jitter_sec" INTEGER NOT NULL DEFAULT 60,
+    "max_positions" INTEGER NOT NULL DEFAULT 3,
+    "min_trust" INTEGER NOT NULL DEFAULT 60,
+    "take_profit_pct" INTEGER NOT NULL DEFAULT 50,
+    "stop_loss_pct" INTEGER NOT NULL DEFAULT 35,
+    "exit_fill_pct" INTEGER NOT NULL DEFAULT 90,
+    "max_daily_loss_bnb" DOUBLE PRECISION NOT NULL DEFAULT 0.05,
+    "slippage_bps" INTEGER NOT NULL DEFAULT 500,
+    "watchlist" TEXT,
+    "status" TEXT NOT NULL DEFAULT 'paused',
+    "assigned_to" TEXT,
+    "last_tick_at" TIMESTAMPTZ,
+    "created_at" TIMESTAMPTZ NOT NULL DEFAULT now()
+  )`)
+  await run(`CREATE UNIQUE INDEX IF NOT EXISTS "fleet_agents_name_key" ON "fleet_agents" ("name")`)
+  await run(`CREATE INDEX IF NOT EXISTS "fleet_agents_strategy_idx" ON "fleet_agents" ("strategy")`)
+  await run(`CREATE INDEX IF NOT EXISTS "fleet_agents_status_idx" ON "fleet_agents" ("status")`)
+
+  // fleet_positions — open/closed bags per (agent, token). mock=true means
+  // the position was opened with a real four.meme quote but NO on-chain tx.
+  // claim_token is an atomic CAS lock for the exit sweep (same pattern as
+  // four_meme_positions) so two exit workers can't double-sell.
+  await run(`CREATE TABLE IF NOT EXISTS "fleet_positions" (
+    "id" TEXT PRIMARY KEY,
+    "agent_id" TEXT NOT NULL,
+    "token_address" TEXT NOT NULL,
+    "token_symbol" TEXT,
+    "version" INTEGER,
+    "entry_bnb_wei" TEXT NOT NULL,
+    "entry_cost_bnb" DOUBLE PRECISION,
+    "tokens_wei" TEXT NOT NULL,
+    "buy_tx" TEXT,
+    "entry_fill_pct" DOUBLE PRECISION,
+    "trust_at_entry" INTEGER,
+    "mock" BOOLEAN NOT NULL DEFAULT true,
+    "status" TEXT NOT NULL DEFAULT 'open',
+    "exit_reason" TEXT,
+    "exit_proceeds_bnb" DOUBLE PRECISION,
+    "exit_tx" TEXT,
+    "claim_token" TEXT,
+    "claim_at" TIMESTAMPTZ,
+    "opened_at" TIMESTAMPTZ NOT NULL DEFAULT now(),
+    "closed_at" TIMESTAMPTZ
+  )`)
+  await run(`CREATE INDEX IF NOT EXISTS "fleet_positions_agent_status_idx" ON "fleet_positions" ("agent_id", "status")`)
+  await run(`CREATE INDEX IF NOT EXISTS "fleet_positions_status_idx" ON "fleet_positions" ("status")`)
+  await run(`CREATE UNIQUE INDEX IF NOT EXISTS "fleet_positions_open_unique"
+               ON "fleet_positions" ("agent_id", "token_address") WHERE "status" = 'open'`)
+
+  // fleet_trades — append-only fill log (buy + sell). The dashboard reads
+  // today's buy count + realized PnL per agent from here, so it doubles as
+  // the daily-limit / daily-loss source of truth (no counter columns to
+  // drift). mock mirrors the position's mock flag.
+  await run(`CREATE TABLE IF NOT EXISTS "fleet_trades" (
+    "id" TEXT PRIMARY KEY,
+    "agent_id" TEXT NOT NULL,
+    "position_id" TEXT,
+    "side" TEXT NOT NULL,
+    "token_address" TEXT NOT NULL,
+    "token_symbol" TEXT,
+    "amount_bnb" DOUBLE PRECISION,
+    "tokens_wei" TEXT,
+    "price_bnb" DOUBLE PRECISION,
+    "pnl_bnb" DOUBLE PRECISION,
+    "status" TEXT NOT NULL DEFAULT 'filled',
+    "mock" BOOLEAN NOT NULL DEFAULT true,
+    "tx_hash" TEXT,
+    "reason" TEXT,
+    "created_at" TIMESTAMPTZ NOT NULL DEFAULT now()
+  )`)
+  await run(`CREATE INDEX IF NOT EXISTS "fleet_trades_agent_idx" ON "fleet_trades" ("agent_id", "created_at" DESC)`)
+  await run(`CREATE INDEX IF NOT EXISTS "fleet_trades_created_idx" ON "fleet_trades" ("created_at" DESC)`)
+
+  // fleet_logs — brain feed (decisions, skips, errors) for the dashboard.
+  await run(`CREATE TABLE IF NOT EXISTS "fleet_logs" (
+    "id" TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    "agent_id" TEXT,
+    "level" TEXT NOT NULL DEFAULT 'info',
+    "message" TEXT NOT NULL,
+    "meta" TEXT,
+    "created_at" TIMESTAMPTZ NOT NULL DEFAULT now()
+  )`)
+  await run(`CREATE INDEX IF NOT EXISTS "fleet_logs_agent_idx" ON "fleet_logs" ("agent_id", "created_at" DESC)`)
+  await run(`CREATE INDEX IF NOT EXISTS "fleet_logs_created_idx" ON "fleet_logs" ("created_at" DESC)`)
+
+  // fleet_low_balance_acks — admin acknowledgements of low-BNB alerts. The
+  // low-balance watcher dedupes alerts in-memory per process, but that state
+  // is lost on every redeploy/restart, so a chronically-low wallet re-alerts
+  // after each deploy. A persisted ack row silences a known-low agent until
+  // its wallet refills above threshold — the watcher deletes the row on
+  // recovery so a later re-drain alerts again. One row per acked agent.
+  await run(`CREATE TABLE IF NOT EXISTS "fleet_low_balance_acks" (
+    "agent_id" TEXT PRIMARY KEY,
+    "acked_by" TEXT,
+    "acked_at" TIMESTAMPTZ NOT NULL DEFAULT now()
+  )`)
 
   console.log('[DB] All new tables ready')
 }

@@ -192,37 +192,137 @@ export function initRunner(bot: Bot) {
   // refactor means one fetch covers all enabled agents per tick.
   setInterval(tickPolymarket, 300_000)
 
-  // Module 4 — autonomous four.meme token launches. Independent of every
-  // other tick: a launch agent only creates new tokens, never trades.
-  // Master kill-switch is FOUR_MEME_AGENT_LAUNCH_ENABLED (checked inside
-  // tickAllFourMemeLaunchAgents) on top of the existing FOUR_MEME_ENABLED
-  // and FOUR_MEME_LAUNCH_ENABLED flags. Single-flight via the inflight
-  // guard so a slow LLM round-trip + on-chain createToken (which can take
-  // 30s+) can't pile up. Per-agent caps (1 launch/day, 0.05 BNB/launch)
-  // live inside the agent module.
-  const tickFourMemeLaunch = async () => {
-    if (fourMemeLaunchTickInflight) {
-      console.log('[fourMemeLaunchAgent] previous tick still running, skipping')
-      return
-    }
-    fourMemeLaunchTickInflight = true
+  // ── Task #149 — four.meme SNIPING (replaces the retired launch loop) ──
+  // Agents no longer LAUNCH their own tokens. The autonomous launch
+  // decision loop (tickAllFourMemeLaunchAgents) is intentionally NO LONGER
+  // SCHEDULED — the module is kept only so the legacy dev-bag take-profit
+  // sweep below and the manual /fourmeme launch command still resolve.
+  //
+  // Three new sweeps replace it, all gated by FOUR_MEME_ENABLED (+ the
+  // snipe master switch FOUR_MEME_AGENT_SNIPE_ENABLED for the buy/exit
+  // loops), each with its own single-flight guard:
+  //   1. Scanner — discover + score fresh launches (no LLM, fast cadence).
+  //   2. Snipe buy — buy top trusted curves for opted-in agents.
+  //   3. Snipe exit — sell pre-migration / TP / SL / rug, or ride-through.
+  const tickFourMemeScanner = async () => {
+    if (fourMemeScannerTickInflight) return
+    fourMemeScannerTickInflight = true
     try {
-      const { tickAllFourMemeLaunchAgents } = await import('./fourMemeLaunchAgent')
-      const r = await tickAllFourMemeLaunchAgents()
-      console.log(
-        `[fourMemeLaunchAgent] scanned=${r.scanned} ticked=${r.ticked} ` +
-          `launched=${r.launchesAttempted} skipped=${r.launchesSkipped} errors=${r.errors}`,
-      )
+      const { tickFourMemeScanner } = await import('../services/fourMemeScanner')
+      const r = await tickFourMemeScanner()
+      if (r.discovered > 0 || r.buyable > 0 || r.errors > 0) {
+        console.log(
+          `[fourMemeScanner] discovered=${r.discovered} enriched=${r.enriched} ` +
+            `buyable=${r.buyable} errors=${r.errors}`,
+        )
+      }
     } catch (err) {
-      console.error('[fourMemeLaunchAgent] sweep failed:', (err as Error).message)
+      console.error('[fourMemeScanner] sweep failed:', (err as Error).message)
     } finally {
-      fourMemeLaunchTickInflight = false
+      fourMemeScannerTickInflight = false
     }
   }
-  setTimeout(tickFourMemeLaunch, 7_000)
-  // 2-min cadence — daily-cap + BNB guard already throttle launches;
-  // halves LLM scan cost. TP sweep below stays at 60s (price-only, no LLM).
-  setInterval(tickFourMemeLaunch, 120_000)
+  setTimeout(tickFourMemeScanner, 7_000)
+  setInterval(tickFourMemeScanner, 15_000)
+
+  const tickFourMemeSnipe = async () => {
+    if (fourMemeSnipeTickInflight) return
+    fourMemeSnipeTickInflight = true
+    try {
+      const { tickAllFourMemeSnipeAgents } = await import('./fourMemeSnipeAgent')
+      const r = await tickAllFourMemeSnipeAgents()
+      if (r.bought > 0 || r.errors > 0) {
+        console.log(
+          `[fourMemeSnipe] scanned=${r.scanned} ticked=${r.ticked} ` +
+            `bought=${r.bought} skipped=${r.skipped} errors=${r.errors}`,
+        )
+      }
+    } catch (err) {
+      console.error('[fourMemeSnipe] sweep failed:', (err as Error).message)
+    } finally {
+      fourMemeSnipeTickInflight = false
+    }
+  }
+  setTimeout(tickFourMemeSnipe, 11_000)
+  setInterval(tickFourMemeSnipe, 20_000)
+
+  const tickFourMemeSnipeExit = async () => {
+    if (fourMemeSnipeExitTickInflight) return
+    fourMemeSnipeExitTickInflight = true
+    try {
+      const { tickAllFourMemeSnipeExits } = await import('./fourMemeSnipeAgent')
+      const r = await tickAllFourMemeSnipeExits()
+      if (r.sold > 0 || r.errors > 0) {
+        console.log(
+          `[fourMemeSnipeExit] scanned=${r.scanned} evaluated=${r.evaluated} ` +
+            `sold=${r.sold} errors=${r.errors}`,
+        )
+      }
+    } catch (err) {
+      console.error('[fourMemeSnipeExit] sweep failed:', (err as Error).message)
+    } finally {
+      fourMemeSnipeExitTickInflight = false
+    }
+  }
+  setTimeout(tickFourMemeSnipeExit, 15_000)
+  setInterval(tickFourMemeSnipeExit, 15_000)
+
+  // ── Community Trading Fleet — 50 community-owned four.meme agents ─────
+  // Two sweeps (open + exit), each single-flighted. Mock-first: gated
+  // entirely by fleet_settings (global_paused/live_trading in the DB), so
+  // the schedulers are safe to leave armed — a fresh deploy with the
+  // default paused+mock settings does nothing until an admin flips it on
+  // from /fleet. Per-agent cooldown/jitter/daily-limit/daily-loss gates
+  // live inside the engine; this just dispatches the sweeps.
+  const tickFleetOpen = async () => {
+    if (fleetOpenTickInflight) return
+    fleetOpenTickInflight = true
+    try {
+      const { tickAllFleetAgents } = await import('./fleetAgent')
+      const r = await tickAllFleetAgents()
+      if (r.bought > 0 || r.errors > 0) {
+        console.log(`[fleet] open: scanned=${r.scanned} ticked=${r.ticked} bought=${r.bought} skipped=${r.skipped} errors=${r.errors}`)
+      }
+    } catch (err) {
+      console.error('[fleet] open sweep failed:', (err as Error).message)
+    } finally {
+      fleetOpenTickInflight = false
+    }
+  }
+  setTimeout(tickFleetOpen, 18_000)
+  setInterval(tickFleetOpen, 30_000)
+
+  const tickFleetExit = async () => {
+    if (fleetExitTickInflight) return
+    fleetExitTickInflight = true
+    try {
+      const { tickAllFleetExits } = await import('./fleetAgent')
+      const r = await tickAllFleetExits()
+      if (r.sold > 0 || r.errors > 0 || r.reaped > 0) {
+        console.log(`[fleet] exit: scanned=${r.scanned} evaluated=${r.evaluated} sold=${r.sold} errors=${r.errors} reaped=${r.reaped}`)
+      }
+      // Escalate repeated stale-claim reaps to admins (deduped, threshold-gated).
+      await noteFleetReaps(r.reaped)
+    } catch (err) {
+      console.error('[fleet] exit sweep failed:', (err as Error).message)
+    } finally {
+      fleetExitTickInflight = false
+    }
+  }
+  setTimeout(tickFleetExit, 22_000)
+  setInterval(tickFleetExit, 25_000)
+
+  // Fleet low-BNB-balance watch. Once the fleet trades live, an agent wallet
+  // that drains below its trade size silently stops opening positions. The
+  // /fleet panel shows on-chain balances but only when an admin is looking;
+  // this fires a deduped admin alert when any active agent's wallet crosses
+  // below a low-balance threshold. Default cadence every 15 min; a boot
+  // catch-up runs once ~40s after start so a redeploy surfaces low wallets
+  // without waiting the full interval. No-op in mock mode (see watcher body).
+  cron.schedule(process.env.FLEET_LOW_BALANCE_CRON ?? '*/15 * * * *', () => {
+    void runFleetLowBalanceWatch()
+  })
+  setTimeout(() => { void runFleetLowBalanceWatch() }, 40_000)
 
   // Demo Day — autonomous take-profit sweep for already-launched dev
   // bags. Independent of the launch sweep above so a slow LLM round
@@ -314,6 +414,92 @@ export function initRunner(bot: Bot) {
   setTimeout(tickHouseTopazWrapped, 20_000)
   setInterval(tickHouseTopazWrapped, 300_000)
   cron.schedule('*/5 * * * *', () => { void tickHouseTopazWrapped() }, { timezone: 'UTC' })
+
+  // ── House Agent × 42.space — kickoff scheduler + auto-claim sweep ────
+  // Pre-kickoff window: if HOUSE_UCL_MARKET_ADDRESS + HOUSE_UCL_KICKOFF_MS
+  // are set, fire ONE pick when we're in [kickoff - 15min, kickoff].
+  // findOpenHousePosition (HouseLog probe) makes overlapping fires no-op.
+  // Auto-claim sweep walks recent OPEN_42 rows that have no paired
+  // CLAIM_42 yet and claims any whose markets have finalised on-chain.
+  let houseUclInflight = false
+  const tickHouseUcl = async () => {
+    if (houseUclInflight) return
+    houseUclInflight = true
+    try {
+      const marketAddress = process.env.HOUSE_UCL_MARKET_ADDRESS
+      const kickoffStr = process.env.HOUSE_UCL_KICKOFF_MS
+      if (!marketAddress || !kickoffStr) return
+      const kickoff = Number(kickoffStr)
+      if (!Number.isFinite(kickoff) || kickoff <= 0) return
+      const now = Date.now()
+      const windowOpen = kickoff - 15 * 60 * 1000
+      if (now < windowOpen || now > kickoff) return
+      const { runHouseFortyTwoPick } = await import('./houseFortyTwoSportsBrain')
+      const r = await runHouseFortyTwoPick({ marketAddress })
+      console.log(
+        `[houseUcl] kickoff tick: ok=${r.ok} reason=${r.reason ?? '-'} ` +
+          `bucket=${r.bucketIndex ?? '-'} size=$${r.sizeUsdt ?? 0} ` +
+          `tx=${r.trade?.txHash ?? '-'}`,
+      )
+    } catch (err) {
+      console.error('[houseUcl] kickoff tick crashed:', (err as Error).message)
+    } finally {
+      houseUclInflight = false
+    }
+  }
+  cron.schedule('*/2 * * * *', () => { void tickHouseUcl() }, { timezone: 'UTC' })
+
+  let houseClaimInflight = false
+  const sweepHouseFortyTwoClaims = async () => {
+    if (houseClaimInflight) return
+    houseClaimInflight = true
+    try {
+      const { db } = await import('../db')
+      // Find OPEN_42 markets without a paired CLAIM_42 row.
+      const rows = await db.$queryRawUnsafe<Array<{ marketAddress: string }>>(
+        `SELECT DISTINCT (open.meta->>'marketAddress') AS "marketAddress"
+           FROM "HouseLog" open
+          WHERE open.dex = '42'
+            AND open.decision = 'OPEN_42'
+            AND open."txHash" IS NOT NULL
+            AND COALESCE((open.meta->>'dryRun')::boolean, false) = false
+            AND open."createdAt" > NOW() - INTERVAL '30 days'
+            AND NOT EXISTS (
+              SELECT 1 FROM "HouseLog" claim
+               WHERE claim.dex = '42'
+                 AND claim.decision = 'CLAIM_42'
+                 AND LOWER(claim.meta->>'marketAddress') = LOWER(open.meta->>'marketAddress')
+            )`,
+      )
+      if (rows.length === 0) return
+      const { houseClaimFortyTwoMarket } = await import('../services/houseFortyTwoExecutor')
+      const { getMarketByAddress } = await import('../services/fortyTwo')
+      const { readMarketOnchain } = await import('../services/fortyTwoOnchain')
+      for (const row of rows) {
+        if (!row.marketAddress) continue
+        try {
+          const m = await getMarketByAddress(row.marketAddress)
+          const state = await readMarketOnchain(m)
+          if (!state.isFinalised) continue
+          const r = await houseClaimFortyTwoMarket(row.marketAddress)
+          console.log(
+            `[houseUcl] auto-claim swept market=${row.marketAddress.slice(0, 10)}… tx=${r.txHash ?? '-'}`,
+          )
+        } catch (err) {
+          console.warn(
+            `[houseUcl] auto-claim failed market=${row.marketAddress?.slice(0, 10)}…:`,
+            (err as Error).message,
+          )
+        }
+      }
+    } catch (err) {
+      console.error('[houseUcl] claim sweep crashed:', (err as Error).message)
+    } finally {
+      houseClaimInflight = false
+    }
+  }
+  setTimeout(sweepHouseFortyTwoClaims, 30_000)
+  cron.schedule('*/10 * * * *', () => { void sweepHouseFortyTwoClaims() }, { timezone: 'UTC' })
 
   // Module 4 — auto-expire stale launch approval requests. The agent's
   // pending-dedup gate refuses to propose new launches while any
@@ -437,10 +623,65 @@ let polymarketTickInflight = false
 // In-flight guard for the dedicated 42.space regular sweep (*/10 cron).
 let fortyTwoTickInflight = false
 
-// In-flight guard for the four.meme launch agent sweep. createToken
-// can take 30s+ on-chain — we never want a second sweep to start one
-// before the first finishes, since both would race the daily-cap read.
-let fourMemeLaunchTickInflight = false
+// Task #149 — single-flight guards for the three four.meme snipe sweeps.
+// The scanner does bounded RPC log scans; the buy/exit sweeps fire
+// on-chain txs — in every case we never want a second sweep to start
+// before the first finishes (they'd race the same cursor/positions).
+let fourMemeScannerTickInflight = false
+let fourMemeSnipeTickInflight = false
+let fourMemeSnipeExitTickInflight = false
+
+// Community Trading Fleet — single-flight guards for the open + exit sweeps.
+let fleetOpenTickInflight = false
+let fleetExitTickInflight = false
+
+// Fleet stale-claim reap watch. The exit sweep silently reclaims positions whose
+// worker crashed mid-sell. A single reap is benign (one redeploy mid-sell), but
+// reaps that keep happening signal something broken (RPC hangs, process crashes,
+// a wedged sell path) and admins should be told. We accumulate reaped counts in
+// a rolling window and fire one deduped admin alert once they cross a threshold,
+// then stay quiet until the window goes clean again so a future spike re-alerts.
+let fleetReapWindowStart = 0
+let fleetReapWindowCount = 0
+let fleetReapAlerted = false
+
+async function noteFleetReaps(reaped: number): Promise<void> {
+  const windowMs = Math.max(1, parseFloat(process.env.FLEET_REAP_ALERT_WINDOW_MIN ?? '30') || 30) * 60_000
+  const threshold = Math.max(1, parseInt(process.env.FLEET_REAP_ALERT_THRESHOLD ?? '3', 10) || 3)
+  const now = Date.now()
+
+  // Roll the window: if it elapsed with no fresh reaps to extend it, reset and
+  // re-arm so a future spike alerts again.
+  if (now - fleetReapWindowStart > windowMs) {
+    fleetReapWindowStart = now
+    fleetReapWindowCount = 0
+    fleetReapAlerted = false
+  }
+
+  if (reaped <= 0) return
+  fleetReapWindowCount += reaped
+
+  if (fleetReapWindowCount < threshold || fleetReapAlerted) return
+
+  try {
+    const { sendAdminAlert, hasAdminTargets } = await import('../services/adminAlerts')
+    if (!hasAdminTargets()) {
+      console.warn(`[FleetReap] ${fleetReapWindowCount} stale exit-claim(s) reaped but ADMIN_TELEGRAM_IDS not set — alert dropped.`)
+      fleetReapAlerted = true
+      return
+    }
+    const windowMin = Math.round(windowMs / 60_000)
+    const text =
+      `🧟 *Fleet stuck\\-trade alert*\n` +
+      `${fleetReapWindowCount} fleet exit\\(s\\) had to be force\\-reclaimed in the last ${windowMin} min after a worker crashed mid\\-sell\\.\n\n` +
+      `Repeated reaps mean the sell path is wedging \\(RPC hangs, process crashes, or a stuck live sell\\)\\. Check the fleet exit logs and BSC RPC health\\.`
+    const res = await sendAdminAlert(botRef, text)
+    fleetReapAlerted = true
+    console.log(`[FleetReap] Alert sent to ${res.sent}/${res.attempted} admins (${res.failed} failed) for ${fleetReapWindowCount} reap(s).`)
+  } catch (err: any) {
+    console.error('[FleetReap] Alert error:', err?.message ?? err)
+  }
+}
 
 // ── Swarm divergence watch ─────────────────────────────────────────
 async function runSwarmDivergenceWatch() {
@@ -500,6 +741,123 @@ async function runSwarmDivergenceWatch() {
     console.log(`[SwarmDivergence] Alert sent to ${res.sent}/${res.attempted} admins (${res.failed} failed).`)
   } catch (err: any) {
     console.error('[SwarmDivergence] Watch error:', err?.message ?? err)
+  }
+}
+
+// ── Fleet low-BNB-balance watch ──────────────────────────────────────────
+// Tracks which agents we've already alerted about so the watcher doesn't
+// re-ping admins every interval. An agent is removed from the set once its
+// wallet refills above the threshold, so a later re-drain alerts again.
+const fleetLowBalanceAlerted = new Set<string>()
+
+async function runFleetLowBalanceWatch() {
+  try {
+    const { getFleetSettings, listFleetAgents, isFleetLiveTradingEnabled, getLowBalanceAckedIds, clearFleetLowBalanceAck } = await import('../services/fleet')
+
+    // Only meaningful when the fleet is actually trading live: mock mode never
+    // spends BNB, so unfunded wallets there are expected and alerting would be
+    // pure noise. Mirror the OPEN sweep's live-effective gate (DB toggle + env
+    // gate + four.meme master switch) and the global pause. When not live we
+    // also clear the dedup set so a future go-live starts from a clean slate.
+    const fourMemeOn = process.env.FOUR_MEME_ENABLED === 'true'
+    const settings = await getFleetSettings()
+    const liveEffective = settings.liveTrading && isFleetLiveTradingEnabled() && fourMemeOn
+    if (!liveEffective || settings.globalPaused) {
+      fleetLowBalanceAlerted.clear()
+      return
+    }
+
+    const agents = (await listFleetAgents()).filter((a) => a.status === 'active')
+    if (agents.length === 0) {
+      fleetLowBalanceAlerted.clear()
+      return
+    }
+
+    // Threshold per agent = maxTradeSizeBnb × rounds + gas buffer, so a wallet
+    // that can't cover its next few trades + gas trips the alert. An absolute
+    // override (FLEET_LOW_BALANCE_BNB) takes precedence when set, for admins
+    // who want one flat floor across the whole fleet.
+    const rounds = Math.max(1, parseFloat(process.env.FLEET_LOW_BALANCE_ROUNDS ?? '2') || 2)
+    const gasBuffer = Math.max(0, parseFloat(process.env.FLEET_LOW_BALANCE_GAS_BNB ?? '0.0005') || 0)
+    const absOverride = parseFloat(process.env.FLEET_LOW_BALANCE_BNB ?? '')
+    const hasAbs = Number.isFinite(absOverride) && absOverride > 0
+
+    const { buildBscProvider } = await import('../services/bscProvider')
+    const { ethers } = await import('ethers')
+    const provider = buildBscProvider(process.env.BSC_RPC_URL)
+
+    // Admin acks persist across restarts: an acked agent stays silent until
+    // its wallet recovers above threshold, even though the in-memory dedup set
+    // is wiped on every redeploy. Load them once per tick.
+    const acked = await getLowBalanceAckedIds()
+
+    const newlyLow: Array<{ id: string; name: string; addr: string; bnb: number; threshold: number }> = []
+
+    const results = await Promise.allSettled(
+      agents.map(async (a) => {
+        const wei = await provider.getBalance(a.walletAddress)
+        const bnb = Number(ethers.formatEther(wei))
+        const threshold = hasAbs ? absOverride : a.maxTradeSizeBnb * rounds + gasBuffer
+        return { id: a.id, name: a.name, addr: a.walletAddress, bnb, threshold }
+      }),
+    )
+
+    for (const r of results) {
+      if (r.status !== 'fulfilled') continue
+      const { id, name, addr, bnb, threshold } = r.value
+      if (bnb < threshold) {
+        // Silenced by an admin ack — skip until the wallet recovers. This is
+        // the cross-restart guard the in-memory set can't provide.
+        if (acked.has(id)) continue
+        // Only surface agents that just crossed below — deduped across ticks.
+        if (!fleetLowBalanceAlerted.has(id)) {
+          fleetLowBalanceAlerted.add(id)
+          newlyLow.push({ id, name, addr, bnb, threshold })
+        }
+      } else {
+        // Recovered (or never low) — clear so a future drain re-alerts.
+        fleetLowBalanceAlerted.delete(id)
+        // Auto-clear a persisted ack now that the wallet refilled above
+        // threshold, so the next drain alerts again.
+        if (acked.has(id)) {
+          await clearFleetLowBalanceAck(id).catch((e) =>
+            console.warn(`[FleetLowBalance] Failed to auto-clear ack for ${id}:`, e?.message ?? e),
+          )
+        }
+      }
+    }
+
+    if (newlyLow.length === 0) return
+
+    const { sendAdminAlert, hasAdminTargets } = await import('../services/adminAlerts')
+    if (!hasAdminTargets()) {
+      console.warn(`[FleetLowBalance] ${newlyLow.length} agent(s) low on BNB but ADMIN_TELEGRAM_IDS not set — alert dropped.`)
+      return
+    }
+
+    const fmtAddr = (a: string) => `${a.slice(0, 8)}…${a.slice(-4)}`
+    const lines = newlyLow
+      .slice(0, 20)
+      .map((l) => `• ${escapeMd(l.name)} \`${fmtAddr(l.addr)}\`: *${l.bnb.toFixed(4)}* BNB \\(below ${l.threshold.toFixed(4)}\\)`)
+    const more = newlyLow.length > 20 ? `\n…and ${newlyLow.length - 20} more` : ''
+    const text =
+      `⛽ *Fleet low\\-balance alert*\n` +
+      `${newlyLow.length} active agent wallet\\(s\\) dropped below their low\\-balance threshold and will stop opening positions until refunded:\n\n` +
+      `${lines.join('\n')}${more}\n\n` +
+      `Tap *Ack* to silence an agent until its wallet refills above threshold \\(persists across restarts\\)\\.`
+
+    // One inline "Ack" button per agent (cap to the 20 shown). Acking persists
+    // a DB row so the agent stays silent across redeploys until it recovers.
+    const { InlineKeyboard } = await import('grammy')
+    const kb = new InlineKeyboard()
+    for (const l of newlyLow.slice(0, 20)) {
+      kb.text(`✅ Ack ${l.name}`, `flbAck:${l.id}`).row()
+    }
+
+    const res = await sendAdminAlert(botRef, text, { replyMarkup: kb })
+    console.log(`[FleetLowBalance] Alert sent to ${res.sent}/${res.attempted} admins (${res.failed} failed) for ${newlyLow.length} agent(s).`)
+  } catch (err: any) {
+    console.error('[FleetLowBalance] Watch error:', err?.message ?? err)
   }
 }
 
