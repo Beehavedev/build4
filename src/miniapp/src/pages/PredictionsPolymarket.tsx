@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
+import { walkBidDepth, type OrderbookLevel } from './walkBidDepth'
+import { useAutoRefresh } from '../hooks/useAutoRefresh'
 
 // ─────────────────────────────────────────────────────────────────────────
 // PredictionsPolymarket — full Polymarket venue surface. Mounted inside
@@ -71,7 +73,6 @@ interface EventsResponse {
   builderCode: string | null
 }
 
-interface OrderbookLevel { price: number; size: number }
 interface OrderbookResponse {
   book: {
     tokenId: string
@@ -729,18 +730,22 @@ export default function PredictionsPolymarket() {
     return j
   }
 
+  // First paint: events + wallet + positions.
   useEffect(() => {
     load(true)
     loadWallet()
     loadPositions()
-    // 10s auto-refresh — server caches Gamma at 15s so this just reads
-    // local cache most of the time.
-    const id = setInterval(() => {
-      load(true)
-      loadPositions()
-    }, 10_000)
-    return () => clearInterval(id)
   }, [])
+
+  // 10s auto-refresh of events + positions — server caches Gamma at 15s so
+  // this mostly reads local cache. Single-flighted, paused while a setup/
+  // fund/order write is in flight, and skipped while the tab is hidden — all
+  // via the shared hook. immediate:false because the mount effect owns first
+  // paint (and the one-shot wallet read).
+  useAutoRefresh(
+    async () => { await Promise.allSettled([load(true), loadPositions()]) },
+    { intervalMs: 10_000, immediate: false, paused: setupBusy || fundBusy },
+  )
 
   const walletReady = !!(wallet?.ready)
 
@@ -1416,6 +1421,9 @@ function SellConfirmModal({
 }) {
   const [busy, setBusy] = useState(false)
   const [bestBid, setBestBid] = useState<number | null>(null)
+  // Full bid side (price high → low, best at index 0) so we can walk depth
+  // for a weighted-average fill estimate. Null when depth isn't available.
+  const [bids, setBids] = useState<OrderbookLevel[] | null>(null)
   const [bookErr, setBookErr] = useState<string | null>(null)
 
   useEffect(() => {
@@ -1430,6 +1438,7 @@ function SellConfirmModal({
         const j: OrderbookResponse = await r.json()
         if (cancelled) return
         setBestBid(j.book.bestBid)
+        setBids(Array.isArray(j.book.bids) ? j.book.bids : null)
         setBookErr(null)
       } catch (e) {
         if (cancelled) return
@@ -1441,7 +1450,12 @@ function SellConfirmModal({
     return () => { cancelled = true; clearInterval(id) }
   }, [position.tokenId])
 
-  const estProceeds = (bestBid !== null && bestBid > 0) ? qty * bestBid : null
+  // Depth-aware estimate: walk the live bid stack up to `qty`. Falls back to
+  // best-bid-only when depth isn't available (empty book or fetch error).
+  const depth = walkBidDepth(bids, qty)
+  const avgFill = depth ? depth.avgPrice : bestBid
+  const usingDepth = !!depth
+  const estProceeds = (avgFill !== null && avgFill > 0) ? qty * avgFill : null
 
   async function handleConfirm() {
     setBusy(true)
@@ -1501,6 +1515,17 @@ function SellConfirmModal({
               {bookErr && bestBid === null ? '—' : fmtPriceCents(bestBid)}
             </span>
           </div>
+          {/* Depth-aware weighted-average fill — what the live bid stack would
+              actually realise for `qty` shares. Falls back to the top bid only
+              when depth isn't available, flagged with "(top bid)". */}
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <span>Avg. fill</span>
+            <span style={{ fontFamily: 'ui-monospace, monospace', color: '#e2e8f0' }} data-testid="text-sell-avgfill">
+              {avgFill !== null
+                ? `${fmtPriceCents(avgFill)}${usingDepth ? '' : ' (top bid)'}`
+                : '—'}
+            </span>
+          </div>
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
             <span>Entry</span>
             <span style={{ fontFamily: 'ui-monospace, monospace', color: '#64748b' }}>
@@ -1514,6 +1539,12 @@ function SellConfirmModal({
               {estProceeds !== null ? `$${estProceeds.toFixed(2)}` : '—'}
             </span>
           </div>
+          {depth?.partial && (
+            <div style={{ marginTop: 4, fontSize: 9, color: '#f59e0b', textAlign: 'right' }}
+                 data-testid="text-sell-thin-book">
+              Book only covers ~{depth.filledQty.toFixed(2)} sh — estimate uses available depth.
+            </div>
+          )}
         </div>
 
         {bookErr && bestBid === null && (

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { apiFetch } from '../api'
+import { useAutoRefresh } from '../hooks/useAutoRefresh'
 
 interface WalletInfo {
   address: string
@@ -39,19 +40,31 @@ export default function Wallet() {
   const [err, setErr] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
 
-  const load = async () => {
-    setLoading(true); setErr(null)
+  // `silent` background refreshes (the auto-refresh interval) don't toggle the
+  // full-screen loading state or flash an error banner — on a transient
+  // failure they keep the last-good balances in place. The first mount load
+  // and the manual ↻ Refresh button stay non-silent so they drive the
+  // loading/error UI as before.
+  const load = async (silent = false) => {
+    if (!silent) { setLoading(true); setErr(null) }
     try {
       const data = await apiFetch<WalletInfo>('/api/me/wallet')
       setW(data)
+      if (silent) setErr(null)
     } catch (e: any) {
-      setErr(e?.message ?? 'Failed to load wallet')
+      if (!silent) setErr(e?.message ?? 'Failed to load wallet')
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }
 
   useEffect(() => { load() }, [])
+
+  // Keep balances (BSC, Aster, HL, Arbitrum, Polygon) live while the page is
+  // open. The mount load above owns first paint, so the hook only runs the
+  // silent background interval (immediate:false). Single-flight + visibility
+  // pause come from the hook.
+  useAutoRefresh(() => load(true), { intervalMs: 30000, immediate: false })
 
   const copy = async (text: string) => {
     try {
@@ -76,7 +89,7 @@ export default function Wallet() {
     return (
       <div style={{ paddingTop: 60, textAlign: 'center' }}>
         <div style={{ color: 'var(--b4-red)', marginBottom: 12 }}>{err ?? 'No wallet'}</div>
-        <button className="btn-primary" onClick={load} data-testid="button-wallet-retry">Retry</button>
+        <button className="btn-primary" onClick={() => load()} data-testid="button-wallet-retry">Retry</button>
       </div>
     )
   }
@@ -93,7 +106,7 @@ export default function Wallet() {
           <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 2 }}>{w.label}</div>
         </div>
         <button
-          onClick={load}
+          onClick={() => load()}
           disabled={loading}
           data-testid="button-wallet-refresh"
           title="Refresh balances — re-reads BSC, Aster, HL, Arbitrum, Polygon."

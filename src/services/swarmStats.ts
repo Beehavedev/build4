@@ -45,6 +45,14 @@ export interface ProviderRollup {
   /** Per-1M-token USD rates used for the cost estimate (so the dashboard can
    *  show the assumed rates alongside the raw number). */
   costRate: CostRate
+  /** How many of `callCount` are legacy telemetry rows (written before the
+   *  Task #24 input/output split) whose tokens had to be inferred via the
+   *  70/30 estimate. The rest are precisely measured. Task #39. */
+  legacyCallCount: number
+  /** The portion of `estimatedUsd` derived from those legacy (inferred) rows.
+   *  `legacyEstimatedUsd / estimatedUsd` is the share of this provider's cost
+   *  that is approximate rather than measured. Task #39. */
+  legacyEstimatedUsd: number
 }
 
 export interface SwarmStatsReport {
@@ -166,6 +174,12 @@ interface RawRollupRow {
   input_tokens: bigint | number | null
   output_tokens: bigint | number | null
   median_latency_ms: number | null
+  /** Subset of call_count whose input/output tokens were inferred (Task #39). */
+  legacy_call_count?: bigint | number | null
+  /** Tokens the legacy 70/30 estimate attributed to input/output, so the
+   *  estimated-vs-measured cost split can be computed in JS. */
+  legacy_input_tokens?: bigint | number | null
+  legacy_output_tokens?: bigint | number | null
 }
 
 /**
@@ -266,6 +280,24 @@ export async function getSwarmStats(
           ELSE COALESCE(output_tokens, 0)
         END
       ), 0)::bigint                                          AS output_tokens,
+      -- Estimated-vs-measured split (Task #39): how many rows, and how many
+      -- tokens, came from legacy telemetry whose input/output had to be
+      -- inferred via the 70/30 estimate above.
+      COUNT(*) FILTER (
+        WHERE input_tokens IS NULL AND output_tokens IS NULL
+      )::bigint                                              AS legacy_call_count,
+      COALESCE(SUM(
+        CASE
+          WHEN input_tokens IS NULL AND output_tokens IS NULL THEN COALESCE(tokens_used, 0) * 0.7
+          ELSE 0
+        END
+      ), 0)::bigint                                          AS legacy_input_tokens,
+      COALESCE(SUM(
+        CASE
+          WHEN input_tokens IS NULL AND output_tokens IS NULL THEN COALESCE(tokens_used, 0) * 0.3
+          ELSE 0
+        END
+      ), 0)::bigint                                          AS legacy_output_tokens,
       percentile_cont(0.5) WITHIN GROUP (ORDER BY latency_ms)::float AS median_latency_ms
     FROM telemetry
     WHERE provider IS NOT NULL
@@ -284,6 +316,11 @@ export async function getSwarmStats(
     const rate = costs[provider] ?? { input: 0, output: 0 }
     const estimatedUsd =
       (inputTokens / 1_000_000) * rate.input + (outputTokens / 1_000_000) * rate.output
+    const legacyInputTokens = Number(r.legacy_input_tokens ?? 0)
+    const legacyOutputTokens = Number(r.legacy_output_tokens ?? 0)
+    const legacyEstimatedUsd =
+      (legacyInputTokens / 1_000_000) * rate.input +
+      (legacyOutputTokens / 1_000_000) * rate.output
     return {
       provider,
       callCount: Number(r.call_count ?? 0),
@@ -293,6 +330,8 @@ export async function getSwarmStats(
       medianLatencyMs: Math.round(Number(r.median_latency_ms ?? 0)),
       estimatedUsd,
       costRate: rate,
+      legacyCallCount: Number(r.legacy_call_count ?? 0),
+      legacyEstimatedUsd,
     }
   })
 
@@ -416,20 +455,35 @@ export function formatSwarmStats(report: SwarmStatsReport): string {
   let totalCalls = 0
   let totalTokens = 0
   let totalUsd = 0
+  let totalLegacyUsd = 0
   for (const r of report.rows) {
     totalCalls += r.callCount
     totalTokens += r.totalTokens
     totalUsd += r.estimatedUsd
+    totalLegacyUsd += r.legacyEstimatedUsd
     const usd = r.estimatedUsd >= 1 ? r.estimatedUsd.toFixed(2) : r.estimatedUsd.toFixed(4)
     lines.push(`*${r.provider}* — ${r.callCount} calls`)
-    lines.push(
-      `  median ${r.medianLatencyMs}ms · ${r.inputTokens.toLocaleString()} in / ${r.outputTokens.toLocaleString()} out tok · ~$${usd} (@$${r.costRate.input}in/$${r.costRate.output}out per Mtok)`,
-    )
+    let line =
+      `  median ${r.medianLatencyMs}ms · ${r.inputTokens.toLocaleString()} in / ${r.outputTokens.toLocaleString()} out tok · ~$${usd} (@$${r.costRate.input}in/$${r.costRate.output}out per Mtok)`
+    // Estimated-vs-measured split (Task #39): flag the legacy share so admins
+    // know how much of this provider's cost is inferred rather than measured.
+    if (r.legacyCallCount > 0) {
+      const pct = r.estimatedUsd > 0 ? (r.legacyEstimatedUsd / r.estimatedUsd) * 100 : 0
+      line += ` · ${r.legacyCallCount} legacy est (${pct.toFixed(0)}% of $)`
+    }
+    lines.push(line)
   }
   lines.push('')
   lines.push(
     `_Total: ${totalCalls} calls · ${totalTokens.toLocaleString()} tokens · ~$${totalUsd.toFixed(2)}_`,
   )
+  if (totalLegacyUsd > 0) {
+    const pct = totalUsd > 0 ? (totalLegacyUsd / totalUsd) * 100 : 0
+    const legacyUsd = totalLegacyUsd >= 1 ? totalLegacyUsd.toFixed(2) : totalLegacyUsd.toFixed(4)
+    lines.push(
+      `_↳ of which ~$${legacyUsd} (${pct.toFixed(1)}%) is estimated from legacy rows; the rest is measured_`,
+    )
+  }
   if (report.quorum) {
     lines.push(formatQuorumLine(report.quorum))
   }

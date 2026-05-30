@@ -1,4 +1,5 @@
-import { useState, useRef, type DragEvent, type ChangeEvent } from 'react'
+import { useState, useRef, useEffect, useCallback, type DragEvent, type ChangeEvent } from 'react'
+import { apiFetch } from '../api'
 
 // four.meme token launcher — mirrors POST /api/fourmeme/launch.
 // Validation rules mirror validateLaunchParams() in
@@ -23,6 +24,69 @@ interface LaunchResponse {
   walletAddress?: string
   error?: string
   code?: string
+}
+
+// One row of the caller's launch history, as returned by
+// GET /api/fourmeme/launches (newest-first, limit ~20).
+interface LaunchHistoryItem {
+  id: string
+  tokenName: string
+  tokenSymbol: string
+  tokenAddress: string | null
+  txHash: string | null
+  launchUrl: string | null
+  bscScanUrl: string | null
+  imageUrl: string | null
+  initialBuyBnb: string | null
+  status: string
+  errorMessage: string | null
+  createdAt: string
+}
+
+// Status → { label, colour-var } for the history pill. Unknown statuses
+// fall back to a neutral grey so a new server-side status never renders
+// as a blank pill.
+const STATUS_META: Record<string, { label: string; color: string }> = {
+  launched: { label: 'Launched', color: 'var(--green)' },
+  failed: { label: 'Failed', color: 'var(--red)' },
+  pending: { label: 'Pending', color: 'var(--purple)' },
+  pending_user_approval: { label: 'Awaiting approval', color: 'var(--purple)' },
+  stale: { label: 'Stale', color: 'var(--text-secondary)' },
+  expired: { label: 'Expired', color: 'var(--text-secondary)' },
+}
+
+function statusMeta(status: string): { label: string; color: string } {
+  return STATUS_META[status] ?? { label: status, color: 'var(--text-secondary)' }
+}
+
+// Maps a POST /api/fourmeme/retry failure into a user-facing message.
+// The server always sends a `code` but only sometimes an `error` string
+// (e.g. the 503 disabled case sends code only), so we prefer the server
+// message when present and otherwise translate the code ourselves.
+function retryErrorMessage(
+  code: string | undefined,
+  status: number,
+  serverError?: string,
+): string {
+  if (serverError) return serverError
+  switch (code) {
+    case 'FOUR_MEME_LAUNCH_DISABLED':
+      return 'Token launching is temporarily disabled. Please try again later.'
+    case 'NOT_FOUND':
+      return 'This launch no longer exists.'
+    case 'NOT_RETRYABLE':
+      return 'This launch can no longer be retried.'
+    default:
+      return `Retry failed (HTTP ${status})`
+  }
+}
+
+function formatLaunchTime(iso: string): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  return d.toLocaleString(undefined, {
+    month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+  })
 }
 
 // Mirrors validateLaunchParams() in src/services/fourMemeLaunch.ts.
@@ -69,10 +133,62 @@ export default function LaunchToken() {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<LaunchResponse | null>(null)
+  const [launches, setLaunches] = useState<LaunchHistoryItem[]>([])
+  const [launchesLoading, setLaunchesLoading] = useState(true)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   const clientError = validateClient(name, symbol, initialBuyBnb)
   const canSubmit = !submitting && !clientError && !logoError
+
+  // Load the caller's launch history. Best-effort — a failure (e.g. the
+  // table not existing on a fresh dev DB, or a transient network error)
+  // just leaves the list empty rather than surfacing a scary error on a
+  // page whose primary job is launching a new token.
+  const loadLaunches = useCallback(async () => {
+    setLaunchesLoading(true)
+    try {
+      const j = await apiFetch<{ ok: boolean; launches: LaunchHistoryItem[] }>(
+        '/api/fourmeme/launches',
+      )
+      if (j?.ok) setLaunches(j.launches ?? [])
+    } catch {
+      /* silent — history is supplementary to the launch form */
+    } finally {
+      setLaunchesLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void loadLaunches()
+  }, [loadLaunches])
+
+  // Re-run a previously-failed/stale launch via POST /api/fourmeme/retry.
+  // The endpoint reuses the original row's name/symbol/description/buy/
+  // image, so the body is just { launchId }. Returns null on success
+  // (and refreshes the history so the new attempt appears at the top) or
+  // a user-facing error string the row renders inline.
+  const handleRetry = useCallback(
+    async (launchId: string): Promise<string | null> => {
+      try {
+        const res = await fetch('/api/fourmeme/retry', {
+          method: 'POST',
+          headers: tgHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ launchId }),
+        })
+        const json = await res
+          .json()
+          .catch(() => ({ ok: false, error: 'invalid server response' }))
+        if (!res.ok || !json.ok) {
+          return retryErrorMessage(json.code, res.status, json.error)
+        }
+        await loadLaunches()
+        return null
+      } catch (err: any) {
+        return err?.message ?? String(err)
+      }
+    },
+    [loadLaunches],
+  )
 
   function handleFile(file: File | null) {
     setLogoError(null)
@@ -135,6 +251,9 @@ export default function LaunchToken() {
       } else {
         setResult(json)
       }
+      // Refresh history either way: a failed attempt is persisted as a
+      // 'failed' row too, so both outcomes should appear at the top.
+      void loadLaunches()
     } catch (err: any) {
       setError(err?.message ?? String(err))
     } finally {
@@ -216,6 +335,7 @@ export default function LaunchToken() {
             Launch another
           </button>
         </div>
+        <PastLaunches launches={launches} loading={launchesLoading} onRetry={handleRetry} />
       </div>
     )
   }
@@ -396,6 +516,8 @@ export default function LaunchToken() {
           {submitting ? 'Launching… (this can take ~30s)' : 'Launch token'}
         </button>
       </div>
+
+      <PastLaunches launches={launches} loading={launchesLoading} onRetry={handleRetry} />
     </div>
   )
 }
@@ -419,4 +541,189 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
       {children}
     </label>
   )
+}
+
+// ── Past launches history ─────────────────────────────────────────────
+// Read-only audit list of the caller's launch attempts. Each row shows a
+// status pill plus name/symbol and, where available, BscScan (tx) and
+// four.meme (token) links. Failed rows surface the error message so the
+// user knows why and can decide to launch again.
+function PastLaunches({
+  launches,
+  loading,
+  onRetry,
+}: {
+  launches: LaunchHistoryItem[]
+  loading: boolean
+  onRetry: (launchId: string) => Promise<string | null>
+}) {
+  // Per-row retry state: which row is currently in-flight and any inline
+  // error message keyed by launch id. Keyed maps (rather than a single
+  // value) so a stale error from one row never bleeds onto another.
+  const [retryingId, setRetryingId] = useState<string | null>(null)
+  const [retryErrors, setRetryErrors] = useState<Record<string, string>>({})
+
+  async function doRetry(launchId: string) {
+    if (retryingId) return
+    setRetryingId(launchId)
+    setRetryErrors((prev) => {
+      if (!(launchId in prev)) return prev
+      const next = { ...prev }
+      delete next[launchId]
+      return next
+    })
+    const err = await onRetry(launchId)
+    if (err) setRetryErrors((prev) => ({ ...prev, [launchId]: err }))
+    setRetryingId(null)
+  }
+
+  return (
+    <div style={{ marginTop: 28 }} data-testid="section-past-launches">
+      <h3 style={{ margin: '0 0 4px', color: 'var(--text-primary)', fontSize: 16 }}>Past launches</h3>
+      <p style={{ margin: '0 0 12px', color: 'var(--text-secondary)', fontSize: 12 }}>
+        Your recent token launches. Tap a link to verify on-chain or open four.meme.
+      </p>
+
+      {loading && launches.length === 0 ? (
+        <div data-testid="text-launches-loading" style={{ color: 'var(--text-secondary)', fontSize: 13 }}>
+          Loading…
+        </div>
+      ) : launches.length === 0 ? (
+        <div data-testid="text-launches-empty" style={{ color: 'var(--text-secondary)', fontSize: 13 }}>
+          No launches yet. Your launched tokens will show up here.
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {launches.map((l) => {
+            const meta = statusMeta(l.status)
+            const when = formatLaunchTime(l.createdAt)
+            return (
+              <div
+                key={l.id}
+                data-testid={`card-launch-${l.id}`}
+                style={{
+                  background: 'var(--bg-card)', border: '1px solid var(--border)',
+                  borderRadius: 10, padding: 12, display: 'flex', flexDirection: 'column', gap: 8,
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  {l.imageUrl ? (
+                    <img
+                      src={l.imageUrl}
+                      alt=""
+                      style={{ width: 36, height: 36, borderRadius: 8, objectFit: 'cover', flexShrink: 0 }}
+                    />
+                  ) : (
+                    <div style={{
+                      width: 36, height: 36, borderRadius: 8, background: 'var(--bg-elevated)',
+                      flexShrink: 0,
+                    }} />
+                  )}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div
+                      data-testid={`text-launch-name-${l.id}`}
+                      style={{ color: 'var(--text-primary)', fontSize: 14, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                    >
+                      {l.tokenName} <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>({l.tokenSymbol})</span>
+                    </div>
+                    {when && (
+                      <div style={{ color: 'var(--text-secondary)', fontSize: 11 }}>{when}</div>
+                    )}
+                  </div>
+                  <span
+                    data-testid={`status-launch-${l.id}`}
+                    style={{
+                      flexShrink: 0, fontSize: 11, fontWeight: 600, color: meta.color,
+                      border: `1px solid ${meta.color}`, borderRadius: 999, padding: '2px 8px',
+                    }}
+                  >
+                    {meta.label}
+                  </span>
+                </div>
+
+                {l.errorMessage && (
+                  <div
+                    data-testid={`text-launch-error-${l.id}`}
+                    style={{
+                      color: 'var(--red)', fontSize: 12, wordBreak: 'break-word',
+                      background: 'rgba(239,68,68,0.06)', border: '1px solid var(--red)',
+                      borderRadius: 6, padding: '6px 8px',
+                    }}
+                  >
+                    {l.errorMessage}
+                  </div>
+                )}
+
+                {(l.status === 'failed' || l.status === 'stale') && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <button
+                      type="button"
+                      disabled={retryingId === l.id}
+                      onClick={() => void doRetry(l.id)}
+                      data-testid={`button-retry-${l.id}`}
+                      style={{
+                        alignSelf: 'flex-start',
+                        padding: '6px 14px', borderRadius: 6,
+                        background: 'var(--purple)', color: 'white', border: 'none',
+                        cursor: retryingId === l.id ? 'default' : 'pointer',
+                        fontWeight: 600, fontSize: 12,
+                        opacity: retryingId === l.id ? 0.6 : 1,
+                      }}
+                    >
+                      {retryingId === l.id ? 'Retrying…' : 'Retry'}
+                    </button>
+                    {retryErrors[l.id] && (
+                      <div
+                        data-testid={`text-retry-error-${l.id}`}
+                        style={{
+                          color: 'var(--red)', fontSize: 12, wordBreak: 'break-word',
+                          background: 'rgba(239,68,68,0.06)', border: '1px solid var(--red)',
+                          borderRadius: 6, padding: '6px 8px',
+                        }}
+                      >
+                        {retryErrors[l.id]}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {(l.bscScanUrl || l.launchUrl) && (
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    {l.launchUrl && (
+                      <a
+                        href={l.launchUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        data-testid={`link-fourmeme-${l.id}`}
+                        style={historyLinkStyle}
+                      >
+                        four.meme ↗
+                      </a>
+                    )}
+                    {l.bscScanUrl && (
+                      <a
+                        href={l.bscScanUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        data-testid={`link-bscscan-${l.id}`}
+                        style={historyLinkStyle}
+                      >
+                        BscScan ↗
+                      </a>
+                    )}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+const historyLinkStyle: React.CSSProperties = {
+  fontSize: 12, fontWeight: 600, color: 'var(--text-primary)',
+  border: '1px solid var(--border)', borderRadius: 6, padding: '5px 10px',
+  textDecoration: 'none', background: 'var(--bg-elevated)',
 }

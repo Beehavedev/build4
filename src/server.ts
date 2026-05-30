@@ -9,6 +9,13 @@ import { initRunner } from './agents/runner'
 import { migrateOldUsers, migrateAgentsToAuto } from './migrate'
 import { ensureNewTables } from './ensureTables'
 import { requireTgUser, requireAdmin, isAdminTelegramId } from './services/telegramAuth'
+// Per-user spot↔perps transfer mutex. Defined in the spotToPerps service so
+// runSpotToPerps and the perps-to-spot / withdraw endpoints all share ONE
+// Set instance (ESM module dedupe), preventing a double-tap across any
+// direction from racing. Imported statically here because the endpoints
+// reference it directly (the spot-to-perps path manages it inside the
+// service).
+import { HL_SPOT_TRANSFER_LOCKS } from './services/spotToPerps'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -3661,6 +3668,189 @@ app.post('/api/hyperliquid/perps-to-spot', requireTgUser, async (req, res) => {
   }
 })
 
+// POST /api/hyperliquid/withdraw
+// Native HL withdrawal to Arbitrum (USDC), in-app — no need to leave for
+// app.hyperliquid.xyz. Body: { amount: number, destination?: string,
+// autoSweep?: boolean }.
+//
+// SOURCE-OF-FUNDS — this is the crux: HL's `withdraw3` debits the user's
+// PERPS account, NOT spot. So the withdrawable amount is the perps free
+// margin (`getAccountState().withdrawableUsdc`). USDC parked on the spot
+// sub-account is NOT directly withdrawable — it has to be swept to perps
+// first via usdClassTransfer(toPerp:true). When the requested amount (plus
+// HL's flat $1 fee) exceeds perps withdrawable but the shortfall is covered
+// by spot USDC AND autoSweep is set, we transparently move the shortfall
+// spot→perps, let it settle, then withdraw — turning the multi-step flow
+// into one tap. (This is the reverse of the old "move to spot to withdraw"
+// copy, which was based on an incorrect model of HL's mechanics.)
+//
+// Shares HL_SPOT_TRANSFER_LOCKS with spot↔perps so a sweep here can't race a
+// concurrent move. `destination` defaults to the user's own wallet address
+// (same address on Arbitrum). Signed by the master key — agents can't
+// withdraw.
+app.post('/api/hyperliquid/withdraw', requireTgUser, async (req, res) => {
+  try {
+    const user = (req as any).user
+    if (HL_SPOT_TRANSFER_LOCKS.has(user.id)) {
+      return res.status(409).json({
+        success: false,
+        error:   'A balance move is already in progress. Hold on a few seconds and try again.',
+      })
+    }
+    HL_SPOT_TRANSFER_LOCKS.add(user.id)
+    try {
+      const wallet = await db.wallet.findFirst({ where: { userId: user.id, isActive: true } })
+      if (!wallet) return res.status(404).json({ success: false, error: 'No active wallet' })
+
+      const { decryptPrivateKey } = await import('./services/wallet')
+      const {
+        getAccountState, getSpotUsdcBalance, transferSpotPerp,
+        withdrawToArbitrum, HL_WITHDRAW_FEE_USD,
+      } = await import('./services/hyperliquid')
+
+      // ── Validate inputs ──────────────────────────────────────────────
+      const rawAmount = req.body?.amount
+      const amount = Number(rawAmount)
+      if (!Number.isFinite(amount) || amount <= 0) {
+        return res.status(400).json({ success: false, error: 'amount must be a positive number' })
+      }
+      // HL bridge enforces a $2 minimum withdrawal (so the $1 fee never
+      // exceeds the amount). Fail fast with a clear message.
+      if (amount < 2) {
+        return res.status(400).json({ success: false, error: 'Minimum Hyperliquid withdrawal is $2 USDC.' })
+      }
+      // Destination defaults to the user's own custodial address (same on
+      // Arbitrum). Allow an explicit override for users sweeping to an
+      // exchange / cold wallet.
+      const destination = typeof req.body?.destination === 'string' && req.body.destination.trim()
+        ? req.body.destination.trim()
+        : wallet.address
+      if (!/^0x[0-9a-fA-F]{40}$/.test(destination)) {
+        return res.status(400).json({ success: false, error: 'Invalid destination address' })
+      }
+      const autoSweep = req.body?.autoSweep !== false // default true
+
+      // ── Decrypt master PK (same broad candidate set as perps-to-spot) ──
+      const idCandidates = Array.from(new Set([
+        user.id,
+        user.telegramId?.toString(),
+        wallet.userId,
+      ].filter((v): v is string => Boolean(v))))
+      let userPk: string | null = null
+      for (const candidate of idCandidates) {
+        try {
+          const out = decryptPrivateKey(wallet.encryptedPK, candidate)
+          if (out?.startsWith('0x')) { userPk = out; break }
+        } catch { /* try next candidate */ }
+      }
+      if (!userPk) {
+        console.error(
+          `[/hyperliquid/withdraw] decrypt wallet PK failed user=${user.id} tg=${user.telegramId} wallet=${wallet.address}`,
+        )
+        return res.status(500).json({
+          success: false,
+          error: 'Could not decrypt wallet. Use Admin → Wallet recovery to re-encrypt your private key, then try again.',
+        })
+      }
+
+      // ── Figure out funding: perps withdrawable + (optionally) spot ────
+      const [acc, spotUsdc] = await Promise.all([
+        getAccountState(wallet.address),
+        getSpotUsdcBalance(wallet.address),
+      ])
+      const isUnified = acc.abstraction === 'unifiedAccount' || Boolean((user as any).hyperliquidUnified)
+      let withdrawable = acc.withdrawableUsdc
+      const needed = amount + HL_WITHDRAW_FEE_USD // HL charges $1 on top
+
+      let swept = 0
+      if (withdrawable < needed) {
+        const shortfall = needed - withdrawable
+        // Unified accounts share collateral — usdClassTransfer is forbidden
+        // (and unnecessary), so a sweep can't help. Surface the true
+        // shortfall against the unified withdrawable balance.
+        if (isUnified) {
+          return res.status(400).json({
+            success: false,
+            error: `Not enough withdrawable USDC. You have $${withdrawable.toFixed(2)} available; ` +
+                   `withdrawing $${amount.toFixed(2)} needs $${needed.toFixed(2)} (incl. $${HL_WITHDRAW_FEE_USD} HL fee).`,
+          })
+        }
+        // Can spot cover the gap?
+        if (spotUsdc + 1e-6 < shortfall) {
+          return res.status(400).json({
+            success: false,
+            error: `Not enough USDC to withdraw $${amount.toFixed(2)}. Perps free margin: ` +
+                   `$${withdrawable.toFixed(2)}, spot: $${spotUsdc.toFixed(2)} ` +
+                   `(need $${needed.toFixed(2)} incl. $${HL_WITHDRAW_FEE_USD} HL fee). Close positions or deposit more.`,
+            withdrawable,
+            spotUsdc,
+            needsSweep: true,
+          })
+        }
+        if (!autoSweep) {
+          // Caller wants to confirm the sweep first — tell it how much we'd move.
+          return res.status(409).json({
+            success:    false,
+            needsSweep: true,
+            sweepAmount: Math.min(shortfall, spotUsdc),
+            withdrawable,
+            spotUsdc,
+            error: `Need to move $${Math.min(shortfall, spotUsdc).toFixed(2)} from spot to perps before withdrawing.`,
+          })
+        }
+        // Sweep the shortfall (round UP a touch within spot budget to absorb
+        // rounding so the post-sweep withdrawable clears `needed`).
+        const sweepAmount = Math.min(spotUsdc, Math.max(shortfall, 0))
+        const sweep = await transferSpotPerp(userPk, sweepAmount, true)
+        if (!sweep.success) {
+          if (sweep.unifiedAccount) {
+            try { await db.user.update({ where: { id: user.id }, data: { hyperliquidUnified: true } }) }
+            catch (e: any) { console.warn(`[/hyperliquid/withdraw] persist unified flag failed user=${user.id}: ${e?.message}`) }
+          }
+          return res.status(502).json({
+            success: false,
+            error:   `Couldn't move funds from spot to perps: ${sweep.error ?? 'transfer failed'}`,
+            unifiedAccount: sweep.unifiedAccount || undefined,
+          })
+        }
+        swept = sweepAmount
+        // HL's perps clearinghouse lags the transfer ack by a beat — give it
+        // a moment, then re-read to confirm the funds landed before we
+        // attempt the withdrawal.
+        await new Promise((r) => setTimeout(r, 1500))
+        const accAfter = await getAccountState(wallet.address)
+        withdrawable = accAfter.withdrawableUsdc
+        if (withdrawable < needed) {
+          return res.status(502).json({
+            success: false,
+            error: `Swept $${swept.toFixed(2)} to perps but the balance hasn't settled yet ` +
+                   `($${withdrawable.toFixed(2)} available, need $${needed.toFixed(2)}). ` +
+                   `Wait a few seconds and tap Withdraw again.`,
+            swept,
+          })
+        }
+      }
+
+      // ── Withdraw ──────────────────────────────────────────────────────
+      const result = await withdrawToArbitrum(userPk, amount, destination)
+      if (!result.success) {
+        return res.status(502).json({ success: false, error: result.error ?? 'Withdrawal failed', swept })
+      }
+
+      console.log(
+        `[/hyperliquid/withdraw] user=${user.id} tg=${user.telegramId} wallet=${wallet.address} ` +
+        `amount=$${amount.toFixed(2)} dest=${destination} swept=$${swept.toFixed(2)} fee=$${HL_WITHDRAW_FEE_USD}`,
+      )
+      res.json({ success: true, amount, destination, swept, fee: HL_WITHDRAW_FEE_USD })
+    } finally {
+      HL_SPOT_TRANSFER_LOCKS.delete(user.id)
+    }
+  } catch (err: any) {
+    console.error('[API] /hyperliquid/withdraw failed:', err?.message)
+    res.status(500).json({ success: false, error: err?.message ?? 'Internal error' })
+  }
+})
+
 // Per-user mutex for withdrawals — prevents double-spend if a client
 // fires concurrent requests before the first tx is broadcast.
 const withdrawLocks = new Map<string, Promise<unknown>>()
@@ -5534,6 +5724,27 @@ app.get('/api/admin/topaz/state', requireAdmin, async (req, res) => {
 })
 
 // ════════════════════════════════════════════════════════════════════════
+// four.meme launch health — GET /api/admin/fourmeme/health
+// Ops visibility into how often launches stall: status counts (launched /
+// failed / stale / pending / …) over a trailing window, which users are
+// hitting stale launches, and the top error_message buckets so a spiking
+// upstream four.meme error is obvious. Read-only, gated by requireAdmin.
+// Window is overridable via ?hours= (default 24, capped at one week).
+// ════════════════════════════════════════════════════════════════════════
+app.get('/api/admin/fourmeme/health', requireAdmin, async (req, res) => {
+  try {
+    const raw = typeof req.query.hours === 'string' ? parseFloat(req.query.hours) : NaN
+    const hours = Number.isFinite(raw) && raw > 0 ? Math.min(raw, 24 * 7) : 24
+    const { getLaunchHealth } = await import('./services/fourMemeLaunch')
+    const health = await getLaunchHealth(hours)
+    return res.json({ ok: true, ...health })
+  } catch (err) {
+    console.error('[API] /admin/fourmeme/health failed:', err)
+    res.status(500).json({ error: (err as Error).message })
+  }
+})
+
+// ════════════════════════════════════════════════════════════════════════
 // Community Trading Fleet — admin API (all gated by requireAdmin)
 // Powers the /fleet panel: list agents + their wallets/stats, flip the
 // global pause + live-trading switches, pause/resume agents (one or all),
@@ -5629,6 +5840,7 @@ app.get('/api/admin/fleet/balances', requireAdmin, async (_req, res) => {
     }
     const fleet = await import('./services/fleet')
     const { buildBscProvider } = await import('./services/bscProvider')
+    const { ethers } = await import('ethers')
     const provider = buildBscProvider(process.env.BSC_RPC_URL)
     const agents = await fleet.listFleetAgents()
     const balances: Record<string, number> = {}
@@ -5730,6 +5942,113 @@ app.patch('/api/admin/fleet/agents/:id', requireAdmin, async (req, res) => {
     res.json({ ok: true, agent })
   } catch (err) {
     console.error('[API] /admin/fleet/agents/:id failed:', err)
+    res.status(500).json({ error: (err as Error).message })
+  }
+})
+
+// POST /api/admin/fleet/seed — bulk-create the full fleet (5 strategies × 10),
+// each with a fresh BSC wallet. Idempotent (ON CONFLICT name DO NOTHING), so
+// re-running tops up missing agents without duplicating or burning wallets.
+// Requires MASTER_ENCRYPTION_KEY in this environment (wallet encryption is
+// fail-closed) — without it this returns 500 with the encryption error.
+app.post('/api/admin/fleet/seed', requireAdmin, async (_req, res) => {
+  try {
+    const fleet = await import('./services/fleet')
+    const { ensureNewTables } = await import('./ensureTables')
+    await ensureNewTables()
+    const { created, skipped } = await fleet.seedFleetAgents()
+    fleetBalanceCache = null
+    await fleet.logFleet(null, 'info', `fleet seeded via panel: created=${created} skipped=${skipped}`)
+    res.json({ ok: true, created, skipped })
+  } catch (err) {
+    console.error('[API] /admin/fleet/seed failed:', err)
+    res.status(500).json({ error: (err as Error).message })
+  }
+})
+
+// POST /api/admin/fleet/agents  body: { strategy } — create ONE agent in the
+// given strategy, auto-naming it from the next free themed name in that pool.
+app.post('/api/admin/fleet/agents', requireAdmin, async (req, res) => {
+  try {
+    const fleet = await import('./services/fleet')
+    const body = (req.body ?? {}) as { strategy?: unknown }
+    const strategy = typeof body.strategy === 'string' ? body.strategy : ''
+    if (!fleet.FLEET_STRATEGY_KEYS.includes(strategy as any)) {
+      return res.status(400).json({ error: `strategy must be one of: ${fleet.FLEET_STRATEGY_KEYS.join(', ')}` })
+    }
+    const result = await fleet.createNextFleetAgent(strategy as any)
+    if (!result.created || !result.agent) {
+      const msg = result.reason === 'pool_exhausted'
+        ? 'name pool exhausted for this strategy (all 10 themed names are in use)'
+        : (result.reason ?? 'could not create agent')
+      return res.status(409).json({ error: msg })
+    }
+    fleetBalanceCache = null
+    await fleet.logFleet(result.agent.id, 'info', `agent created via panel: ${result.agent.name}`)
+    res.json({
+      ok: true,
+      agent: {
+        id: result.agent.id,
+        name: result.agent.name,
+        strategy: result.agent.strategy,
+        walletAddress: result.agent.walletAddress,
+      },
+    })
+  } catch (err) {
+    console.error('[API] /admin/fleet/agents (create) failed:', err)
+    res.status(500).json({ error: (err as Error).message })
+  }
+})
+
+// DELETE /api/admin/fleet/agents/:id?force=true — remove an agent. FAIL-CLOSED:
+// refuses if the wallet still holds BNB (> dust) or has open positions, because
+// the agent's encrypted key is destroyed with the row (funds unrecoverable).
+// ?force=true overrides the guard. If the on-chain balance can't be read, the
+// delete is refused (unless forced) rather than risking a funded wipe.
+app.delete('/api/admin/fleet/agents/:id', requireAdmin, async (req, res) => {
+  try {
+    const fleet = await import('./services/fleet')
+    const id = String(req.params.id)
+    const agent = await fleet.getFleetAgent(id)
+    if (!agent) return res.status(404).json({ error: 'agent not found' })
+    const force = req.query.force === 'true' || req.query.force === '1'
+
+    if (!force) {
+      const openCounts = await fleet.getOpenPositionCounts()
+      const openCount = openCounts.get(id) ?? 0
+      let bnb = 0
+      try {
+        const { buildBscProvider } = await import('./services/bscProvider')
+        const { ethers } = await import('ethers')
+        const provider = buildBscProvider(process.env.BSC_RPC_URL)
+        const wei = await provider.getBalance(agent.walletAddress)
+        bnb = Number(ethers.formatEther(wei))
+      } catch {
+        // [BLOCKED] prefix so the panel can offer the same force-remove flow it
+        // uses for the funded/open-position guard below.
+        return res.status(503).json({
+          balanceCheckFailed: true,
+          error: `[BLOCKED] could not verify the on-chain balance for "${agent.name}" (RPC unreachable). Deleting now risks destroying the key of a wallet that may still hold funds.`,
+        })
+      }
+      const DUST = 0.0001
+      if (openCount > 0 || bnb > DUST) {
+        return res.status(409).json({
+          blocked: true,
+          openPositions: openCount,
+          walletBnb: bnb,
+          walletAddress: agent.walletAddress,
+          error: `[BLOCKED] "${agent.name}" still holds ${bnb.toFixed(4)} BNB and ${openCount} open position(s). Withdraw the BNB and close positions first, or force-remove (the wallet key is destroyed — funds become UNRECOVERABLE).`,
+        })
+      }
+    }
+
+    const deleted = await fleet.deleteFleetAgent(id)
+    fleetBalanceCache = null
+    await fleet.logFleet(null, 'info', `agent removed via panel: ${agent.name} (${agent.walletAddress})${force ? ' [FORCED]' : ''}`)
+    res.json({ ok: true, deleted, id, forced: force })
+  } catch (err) {
+    console.error('[API] /admin/fleet/agents/:id (delete) failed:', err)
     res.status(500).json({ error: (err as Error).message })
   }
 })
@@ -5863,10 +6182,11 @@ app.get('/api/topaz/positions', requireTgUser, async (req, res) => {
       where: { userId: user.id, chain: 'BSC', isActive: true },
     })
     if (!w) return res.json({ ok: true, positions: [], note: 'no_bsc_wallet' })
-    const { listOpenLpPositions } = await import('./services/topazTrading')
+    const { listOpenLpPositions, priceV3PositionsUsd } = await import('./services/topazTrading')
     const positions = await listOpenLpPositions(w.address, { withEmissions: true })
+    const priced = await priceV3PositionsUsd(positions)
     // Convert bigints for JSON
-    const safe = positions.map(p => ({
+    const safe = priced.map(p => ({
       ...p,
       tokenId: p.tokenId.toString(),
       liquidity: p.liquidity.toString(),
@@ -5894,16 +6214,34 @@ app.get('/api/topaz/balances', requireTgUser, async (req, res) => {
       where: { userId: user.id, chain: 'BSC', isActive: true },
     })
     if (!w) return res.json({ ok: true, balances: [], lpPositions: [], note: 'no_bsc_wallet' })
-    const { getUserWalletBalances, listV2LpPositions } = await import('./services/topazTrading')
+    const {
+      getUserWalletBalances, listV2LpPositions,
+      getTopazTokenPrices, priceWalletBalancesUsd, priceV2LpPositionsUsd,
+    } = await import('./services/topazTrading')
     const [balances, lpPositions] = await Promise.all([
       getUserWalletBalances(w.address),
       listV2LpPositions(w.address),
     ])
+    // Fetch all token prices in one DexScreener round-trip, then share the
+    // map across both valuations so we don't hit the API twice.
+    const addrSet = new Set<string>()
+    if (cfg.wbnbToken) addrSet.add(cfg.wbnbToken.toLowerCase())
+    if (cfg.topazToken) addrSet.add(cfg.topazToken.toLowerCase())
+    for (const b of balances) if (b.address) addrSet.add(b.address.toLowerCase())
+    for (const p of lpPositions) {
+      addrSet.add(p.token0.toLowerCase())
+      addrSet.add(p.token1.toLowerCase())
+    }
+    const prices = await getTopazTokenPrices([...addrSet])
+    const [pricedBalances, pricedLp] = await Promise.all([
+      priceWalletBalancesUsd(balances, { prices }),
+      priceV2LpPositionsUsd(lpPositions, { prices }),
+    ])
     res.json({
       ok: true,
       userWallet: w.address,
-      balances: balances.map(b => ({ ...b, raw: b.raw.toString() })),
-      lpPositions: lpPositions.map(p => ({
+      balances: pricedBalances.map(b => ({ ...b, raw: b.raw.toString() })),
+      lpPositions: pricedLp.map(p => ({
         ...p,
         walletBalance: p.walletBalance.toString(),
         stakedBalance: p.stakedBalance.toString(),
@@ -6072,22 +6410,57 @@ app.post('/api/topaz/claim', requireTgUser, async (req, res) => {
   try {
     const user = (req as any).user as { id: string } | undefined
     if (!user?.id) return res.status(401).json({ ok: false, error: 'unauthorized' })
-    const { gauge, kind, tokenId } = req.body || {}
-    if (!gauge) return res.status(400).json({ ok: false, error: 'gauge required' })
-    if (kind !== 'v2' && kind !== 'v3') {
-      return res.status(400).json({ ok: false, error: "kind must be 'v2' or 'v3'" })
-    }
-    if (kind === 'v3' && !tokenId) {
-      return res.status(400).json({ ok: false, error: 'tokenId required for v3 claim' })
-    }
-    const { claimGaugeRewards } = await import('./services/topazTrading')
+    const { parseClaimRequest, claimGaugeRewards } = await import('./services/topazTrading')
+    const parsed = parseClaimRequest(req.body)
+    if (!parsed.ok) return res.status(400).json({ ok: false, error: parsed.error })
     const r = await claimGaugeRewards({
-      gauge,
-      kind,
-      tokenId: tokenId ? BigInt(tokenId) : undefined,
+      gauge: parsed.value.gauge,
+      kind: parsed.value.kind,
+      tokenId: parsed.value.tokenId,
       userId: user.id,
     })
     res.json({ ...r, claimed: r.claimed?.toString() })
+  } catch (err) {
+    res.status(500).json({ ok: false, error: (err as Error).message })
+  }
+})
+
+// Claim emissions across every gauge with claimable > 0 in one request.
+// Discovers the caller's v2 + v3 positions, then claims each sequentially
+// from their own BSC wallet, returning per-gauge success/failure so the
+// mini-app can show an aggregate result.
+app.post('/api/topaz/claim-all', requireTgUser, async (req, res) => {
+  try {
+    const user = (req as any).user as { id: string } | undefined
+    if (!user?.id) return res.status(401).json({ ok: false, error: 'unauthorized' })
+    const { claimAllGaugeRewards } = await import('./services/topazTrading')
+    // Optional retry subset: the mini-app can post only the still-failing rows
+    // ({ gauge, kind, tokenId }) so a "Retry all" lands in one round-trip
+    // instead of one request per gauge. Omit/empty = claim everything.
+    let targets: Array<{ gauge: string; kind: 'v2' | 'v3'; tokenId?: string }> | undefined
+    const raw = (req.body as any)?.targets
+    if (Array.isArray(raw)) {
+      const parsed: Array<{ gauge: string; kind: 'v2' | 'v3'; tokenId?: string }> = []
+      for (const t of raw) {
+        const gauge = typeof t?.gauge === 'string' ? t.gauge.trim() : ''
+        const kind = t?.kind === 'v2' || t?.kind === 'v3' ? t.kind : null
+        if (!gauge || !kind) continue
+        const tokenId =
+          t?.tokenId !== undefined && t?.tokenId !== null && `${t.tokenId}` !== ''
+            ? `${t.tokenId}`
+            : undefined
+        parsed.push({ gauge, kind, tokenId })
+      }
+      // A targets array that parses to nothing means the client meant to scope
+      // the claim but sent no valid rows — refuse rather than silently claiming
+      // everything, which would surprise a retry-only caller.
+      if (parsed.length === 0) {
+        return res.status(400).json({ ok: false, error: 'no valid targets' })
+      }
+      targets = parsed
+    }
+    const r = await claimAllGaugeRewards({ userId: user.id, targets })
+    res.json(r)
   } catch (err) {
     res.status(500).json({ ok: false, error: (err as Error).message })
   }
@@ -8089,8 +8462,9 @@ app.get('/api/fourmeme/launches/live', requireTgUser, async (req, res) => {
       id: string
       token_address: string
       initial_liquidity_bnb: string | null
+      tokens_received_wei: string | null
     }>>`
-      SELECT "id","token_address","initial_liquidity_bnb"
+      SELECT "id","token_address","initial_liquidity_bnb","tokens_received_wei"
         FROM "token_launches"
        WHERE "user_id" = ${user.id}
          AND "status" = 'launched'
@@ -8105,6 +8479,7 @@ app.get('/api/fourmeme/launches/live', requireTgUser, async (req, res) => {
       graduatedToPancake?: boolean
       pnlPct?: number | null
       currentValueBnb?: string | null
+      pnlBasis?: 'exact' | 'estimated' | null
       error?: string
     }> = {}
     await Promise.all(rows.map(async (r) => {
@@ -8112,25 +8487,48 @@ app.get('/api/fourmeme/launches/live', requireTgUser, async (req, res) => {
         const info = await getTokenInfo(r.token_address)
         let pnlPct: number | null = null
         let currentValueBnb: string | null = null
+        // `exact` when tokensReceived came from the recorded launch
+        // receipt, `estimated` when derived from the curve's avg fill
+        // price. Lets the mini-app show the user how trustworthy the
+        // PnL is.
+        let pnlBasis: 'exact' | 'estimated' | null = null
         const initialBnbStr = r.initial_liquidity_bnb
+        // Prefer the exact tokens-received recorded at launch (Task #67).
+        // Parse defensively: legacy/backfilled rows have NULL and bad
+        // values must not throw — both paths fall back to the estimate.
+        let recordedTokensWei: bigint | null = null
+        if (r.tokens_received_wei != null && /^\d+$/.test(String(r.tokens_received_wei))) {
+          try {
+            const parsed = BigInt(r.tokens_received_wei)
+            if (parsed > 0n) recordedTokensWei = parsed
+          } catch {
+            recordedTokensWei = null
+          }
+        }
         if (info.quoteIsBnb && initialBnbStr) {
           const initialBnb = Number(initialBnbStr)
           const boughtTokensWei = info.maxOffersWei - info.offersWei
-          if (
-            Number.isFinite(initialBnb) && initialBnb > 0 &&
-            boughtTokensWei > 0n && info.fundsWei > 0n && info.lastPriceWei > 0n
-          ) {
+          if (Number.isFinite(initialBnb) && initialBnb > 0 && info.lastPriceWei > 0n) {
             const initialBnbWei = BigInt(Math.round(initialBnb * 1e18))
-            // tokensReceived ≈ initialBnbWei / avgPrice
-            //               = initialBnbWei * boughtTokensWei / fundsWei
-            const tokensReceivedWei = (initialBnbWei * boughtTokensWei) / info.fundsWei
-            // currentValueBnbWei = tokensReceivedWei * lastPriceWei / 1e18
-            //   (lastPriceWei is BNB-wei per 1 token-wei * 1e18 scaling)
-            const currentValueWei = (tokensReceivedWei * info.lastPriceWei) / (10n ** 18n)
-            currentValueBnb = (Number(currentValueWei) / 1e18).toString()
-            const initialF = Number(initialBnbWei)
-            if (initialF > 0) {
-              pnlPct = (Number(currentValueWei - initialBnbWei) / initialF) * 100
+            let tokensReceivedWei: bigint | null = null
+            if (recordedTokensWei != null) {
+              tokensReceivedWei = recordedTokensWei
+              pnlBasis = 'exact'
+            } else if (boughtTokensWei > 0n && info.fundsWei > 0n) {
+              // Fallback estimate: tokensReceived ≈ initialBnbWei / avgPrice
+              //                                   = initialBnbWei * boughtTokensWei / fundsWei
+              tokensReceivedWei = (initialBnbWei * boughtTokensWei) / info.fundsWei
+              pnlBasis = 'estimated'
+            }
+            if (tokensReceivedWei != null) {
+              // currentValueBnbWei = tokensReceivedWei * lastPriceWei / 1e18
+              //   (lastPriceWei is BNB-wei per 1 token-wei * 1e18 scaling)
+              const currentValueWei = (tokensReceivedWei * info.lastPriceWei) / (10n ** 18n)
+              currentValueBnb = (Number(currentValueWei) / 1e18).toString()
+              const initialF = Number(initialBnbWei)
+              if (initialF > 0) {
+                pnlPct = (Number(currentValueWei - initialBnbWei) / initialF) * 100
+              }
             }
           }
         }
@@ -8141,6 +8539,7 @@ app.get('/api/fourmeme/launches/live', requireTgUser, async (req, res) => {
           graduatedToPancake: info.graduatedToPancake,
           pnlPct,
           currentValueBnb,
+          pnlBasis,
         }
       } catch (e: any) {
         live[r.id] = { error: e?.message ?? String(e) }
@@ -9770,8 +10169,15 @@ app.get('/api/admin/ai-usage', requireAdmin, async (req, res) => {
         outputTokens: acc.outputTokens + r.outputTokens,
         totalTokens: acc.totalTokens + r.totalTokens,
         estimatedUsd: acc.estimatedUsd + r.estimatedUsd,
+        // Estimated-vs-measured split (Task #39): how much of the headline
+        // spend is inferred from legacy rows rather than precisely measured.
+        legacyCallCount: acc.legacyCallCount + r.legacyCallCount,
+        legacyEstimatedUsd: acc.legacyEstimatedUsd + r.legacyEstimatedUsd,
       }),
-      { calls: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedUsd: 0 },
+      {
+        calls: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0,
+        estimatedUsd: 0, legacyCallCount: 0, legacyEstimatedUsd: 0,
+      },
     )
     res.json({
       window: report.window,

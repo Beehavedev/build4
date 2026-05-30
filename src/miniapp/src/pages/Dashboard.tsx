@@ -1014,18 +1014,34 @@ function FourMemeLaunchesSection() {
     }
   }
 
-  // Lazily fetch curve state for each launched row.
+  // Lazily fetch curve state for each launched row, then poll every 30s
+  // so the price/PnL/fill numbers stay live. Curve prices move quickly on
+  // a fresh four.meme token, so a one-shot fetch goes stale fast. Only the
+  // `live` map updates, so the values refresh in place without rebuilding
+  // the row list. Polling pauses while the tab is hidden to avoid wasted
+  // RPC, and resumes (with an immediate fetch) when the tab is shown again.
   useEffect(() => {
     if (!rows || rows.length === 0) return
     const hasLaunched = rows.some((r) => r.status === 'launched' && r.tokenAddress)
     if (!hasLaunched) return
     let cancelled = false
-    apiFetch<{ ok: boolean; live: Record<string, LiveLaunchInfo> }>(
-      '/api/fourmeme/launches/live',
-    )
-      .then((j) => { if (!cancelled && j?.ok) setLive(j.live ?? {}) })
-      .catch(() => { /* silent — row still renders with status only */ })
-    return () => { cancelled = true }
+    const fetchLive = () => {
+      if (cancelled || document.visibilityState !== 'visible') return
+      apiFetch<{ ok: boolean; live: Record<string, LiveLaunchInfo> }>(
+        '/api/fourmeme/launches/live',
+      )
+        .then((j) => { if (!cancelled && j?.ok) setLive(j.live ?? {}) })
+        .catch(() => { /* silent — row still renders with status only */ })
+    }
+    fetchLive()
+    const interval = setInterval(fetchLive, 30_000)
+    const onVisible = () => { if (document.visibilityState === 'visible') fetchLive() }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
   }, [rows])
   if (!rows || rows.length === 0) return null
   return (

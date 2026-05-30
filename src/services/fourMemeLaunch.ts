@@ -38,6 +38,11 @@ const FOUR_MEME_FACTORY_V2 = '0x5c952063c7fc8610FFDB798152D69F0B9550762b'
 // historical four.meme launches on BscScan.
 const TOKEN_CREATE_EVENT_TOPIC =
   '0x396d5e902b675b032348d3d2e9517ee8f0c4a926603fbc075d3d282ff00cad20'
+// Canonical ERC-20 Transfer(address,address,uint256) topic0. Used to
+// recover the exact token amount the dev's initial buy received from
+// the launch tx receipt.
+const ERC20_TRANSFER_EVENT_TOPIC =
+  '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef'
 
 // Inline ABI — only the launch entrypoint. Trading uses
 // src/abi/fourMeme/TokenManager2.lite.abi.json which doesn't include
@@ -89,6 +94,10 @@ export interface LaunchResult {
   bnbSpentWei: string
   initialBuyBnb: string
   imageUrl: string | null
+  // Exact tokens the dev's initial buy received (token-wei, decimal
+  // text). Null when there was no initial buy or the receipt couldn't
+  // be parsed.
+  tokensReceivedWei?: string | null
 }
 
 export function validateLaunchParams(p: LaunchParams): void {
@@ -451,6 +460,45 @@ export function parseTokenAddressFromReceipt(receipt: ethers.TransactionReceipt)
   return null
 }
 
+// Sum the exact token amount the dev's initial buy received, parsed
+// from the launch tx receipt. We look for ERC-20 Transfer events
+// emitted by the freshly-created token contract whose `to` is the dev
+// wallet. Summing (rather than taking the first) is defensive against
+// the curve splitting the buy across multiple transfers. Returns null
+// when there was no initial buy or no matching transfer was found —
+// callers must tolerate null and fall back to the rough estimate.
+export function parseTokensReceivedFromReceipt(
+  receipt: ethers.TransactionReceipt,
+  tokenAddress: string | null,
+  recipient: string,
+): bigint | null {
+  if (!tokenAddress || !ethers.isAddress(tokenAddress)) return null
+  let recipientTopic: string
+  try {
+    // topics[2] (`to`) is a 32-byte left-padded address.
+    recipientTopic = ethers.zeroPadValue(ethers.getAddress(recipient), 32).toLowerCase()
+  } catch {
+    return null
+  }
+  const tokenAddr = ethers.getAddress(tokenAddress)
+  let total = 0n
+  let matched = false
+  for (const log of receipt.logs) {
+    try {
+      if (log.topics?.[0]?.toLowerCase() !== ERC20_TRANSFER_EVENT_TOPIC) continue
+      if (ethers.getAddress(log.address) !== tokenAddr) continue
+      if (log.topics?.[2]?.toLowerCase() !== recipientTopic) continue
+      if (!log.data || log.data === '0x') continue
+      const [value] = ethers.AbiCoder.defaultAbiCoder().decode(['uint256'], log.data)
+      total += value as bigint
+      matched = true
+    } catch {
+      /* skip malformed log */
+    }
+  }
+  return matched ? total : null
+}
+
 // Hard ceiling on any *extra* BNB the four.meme upstream API can ask
 // for above the user's declared initial buy. The marketing-site
 // launcher historically saw `value` come back equal to the preSale
@@ -514,6 +562,10 @@ async function recordLaunchResult(
     launchUrl?: string | null
     imageUrl?: string | null
     errorMessage?: string | null
+    // Exact tokens-received from the initial buy (token-wei, decimal
+    // text). Null when there was no initial buy or the receipt couldn't
+    // be parsed; COALESCE keeps any prior value.
+    tokensReceivedWei?: string | null
   },
 ): Promise<void> {
   try {
@@ -524,7 +576,8 @@ async function recordLaunchResult(
          "token_address" = COALESCE($4, "token_address"),
          "launch_url" = COALESCE($5, "launch_url"),
          "image_url" = COALESCE($6, "image_url"),
-         "error_message" = COALESCE($7, "error_message")
+         "error_message" = COALESCE($7, "error_message"),
+         "tokens_received_wei" = COALESCE($8, "tokens_received_wei")
        WHERE "id" = $1`,
       id,
       patch.status,
@@ -533,6 +586,7 @@ async function recordLaunchResult(
       patch.launchUrl ?? null,
       patch.imageUrl ?? null,
       patch.errorMessage ? patch.errorMessage.substring(0, 500) : null,
+      patch.tokensReceivedWei ?? null,
     )
   } catch (err: any) {
     console.warn('[fourMemeLaunch] result update failed:', err?.message ?? err)
@@ -665,12 +719,22 @@ export async function launchFourMemeToken(
       ? `https://four.meme/token/${tokenAddress}`
       : `https://bscscan.com/tx/${receipt.hash}`
 
+    // Record the exact tokens the dev's initial buy received so PnL on
+    // the launch-history card is trustworthy rather than estimated. Only
+    // meaningful when there was an initial buy; null otherwise and the
+    // live endpoint falls back to the rough estimate.
+    const tokensReceivedWei =
+      preSaleWei > 0n
+        ? parseTokensReceivedFromReceipt(receipt, tokenAddress, wallet.address)
+        : null
+
     await recordLaunchResult(launchId, {
       status: 'launched',
       txHash: receipt.hash,
       tokenAddress,
       launchUrl,
       imageUrl,
+      tokensReceivedWei: tokensReceivedWei != null ? tokensReceivedWei.toString() : null,
     })
 
     return {
@@ -680,6 +744,7 @@ export async function launchFourMemeToken(
       bnbSpentWei: txData.value.toString(),
       initialBuyBnb: preSaleEth,
       imageUrl,
+      tokensReceivedWei: tokensReceivedWei != null ? tokensReceivedWei.toString() : null,
     }
   } catch (err: any) {
     await recordLaunchResult(launchId, {
@@ -699,6 +764,100 @@ export async function launchFourMemeTokenForUser(
   const { address, privateKey } = await loadUserBscPrivateKey(userId)
   const result = await launchFourMemeToken(privateKey, params, { userId })
   return { ...result, walletAddress: address }
+}
+
+// ── Launch-health aggregator ─────────────────────────────────────────
+// Ops visibility: how often launches stall. Counts token_launches rows
+// by status over a trailing window (default 24h) plus the top
+// error_message buckets so admins can spot a four.meme upstream outage
+// or process-crash regression early instead of waiting for user
+// complaints. Read-only, idempotent, and silent on table-missing
+// (returns zeroed counts) so the admin endpoint never 500s on a fresh
+// deploy where the table hasn't been created yet.
+export interface LaunchHealthErrorBucket {
+  errorMessage: string
+  count: number
+}
+
+export interface LaunchHealthSnapshot {
+  windowHours: number
+  total: number
+  byStatus: Record<string, number>
+  staleByUser: Array<{ userId: string; count: number }>
+  topErrors: LaunchHealthErrorBucket[]
+}
+
+function isMissingTableError(err: any): boolean {
+  return /relation .*token_launches.* does not exist/i.test(String(err?.message ?? err))
+}
+
+export async function getLaunchHealth(windowHours = 24): Promise<LaunchHealthSnapshot> {
+  const hours = Number.isFinite(windowHours) && windowHours > 0 ? windowHours : 24
+  const empty: LaunchHealthSnapshot = {
+    windowHours: hours,
+    total: 0,
+    byStatus: {},
+    staleByUser: [],
+    topErrors: [],
+  }
+  try {
+    const statusRows = await db.$queryRawUnsafe<Array<{ status: string; count: bigint | number }>>(
+      `SELECT "status", COUNT(*) AS count
+         FROM "token_launches"
+        WHERE "created_at" >= now() - ($1 || ' hours')::interval
+        GROUP BY "status"`,
+      String(hours),
+    )
+    const byStatus: Record<string, number> = {}
+    let total = 0
+    for (const r of statusRows) {
+      const n = Number(r.count) || 0
+      byStatus[r.status ?? 'unknown'] = n
+      total += n
+    }
+
+    // Which users are seeing stale launches — helps tell a single
+    // crash-looping user apart from a platform-wide upstream outage.
+    const staleRows = await db.$queryRawUnsafe<Array<{ user_id: string | null; count: bigint | number }>>(
+      `SELECT "user_id", COUNT(*) AS count
+         FROM "token_launches"
+        WHERE "status" = 'stale'
+          AND "created_at" >= now() - ($1 || ' hours')::interval
+        GROUP BY "user_id"
+        ORDER BY count DESC
+        LIMIT 10`,
+      String(hours),
+    )
+    const staleByUser = staleRows.map((r) => ({
+      userId: r.user_id ?? 'unknown',
+      count: Number(r.count) || 0,
+    }))
+
+    // Top error buckets across failed + stale rows. A spiking bucket
+    // usually means a specific four.meme upstream error is recurring.
+    const errorRows = await db.$queryRawUnsafe<Array<{ error_message: string | null; count: bigint | number }>>(
+      `SELECT "error_message", COUNT(*) AS count
+         FROM "token_launches"
+        WHERE "error_message" IS NOT NULL
+          AND "status" IN ('failed', 'stale')
+          AND "created_at" >= now() - ($1 || ' hours')::interval
+        GROUP BY "error_message"
+        ORDER BY count DESC
+        LIMIT 10`,
+      String(hours),
+    )
+    const topErrors = errorRows.map((r) => ({
+      errorMessage: r.error_message ?? 'unknown',
+      count: Number(r.count) || 0,
+    }))
+
+    return { windowHours: hours, total, byStatus, staleByUser, topErrors }
+  } catch (err: any) {
+    if (!isMissingTableError(err)) {
+      console.warn('[fourMemeLaunch] getLaunchHealth failed:', String(err?.message ?? err))
+    }
+    return empty
+  }
 }
 
 // ── Stale-launch sweeper ─────────────────────────────────────────────
@@ -781,6 +940,60 @@ export async function expireStalePendingApprovals(ttlHours?: number): Promise<nu
   }
 }
 
+// ── Approval near-expiry finder (Task #73) ───────────────────────────
+// Companion to expireStalePendingApprovals above. The expiry sweeper
+// silently flips stale pending_user_approval rows to 'expired' once
+// they cross the TTL. This finder surfaces rows that are *approaching*
+// that deadline — older than `warnFraction` of the TTL (default 80%)
+// but not yet eligible for expiry — so the runner can DM the owner one
+// last nudge before their proposal disappears.
+//
+// The lower bound (created_at >= now() - TTL) deliberately excludes
+// rows that are already past the TTL: those belong to the expiry
+// sweeper, and nudging a row we're about to expire would be pointless.
+// Scope is global (every user) like the expiry sweep. Idempotent and
+// silent on table-missing.
+export interface NearingExpiryApprovalRow {
+  id: string
+  user_id: string | null
+  agent_id: string | null
+  metadata: string | null
+  token_name: string
+  token_symbol: string
+  created_at: Date
+}
+
+export async function findApprovalsNearingExpiry(
+  ttlHours?: number,
+  warnFraction = 0.8,
+): Promise<NearingExpiryApprovalRow[]> {
+  const hours = resolveApprovalTtlHours(ttlHours)
+  const frac =
+    Number.isFinite(warnFraction) && warnFraction > 0 && warnFraction < 1
+      ? warnFraction
+      : 0.8
+  const warnAfterHours = hours * frac
+  try {
+    const rows = await db.$queryRawUnsafe<NearingExpiryApprovalRow[]>(
+      `SELECT "id","user_id","agent_id","metadata","token_name","token_symbol","created_at"
+         FROM "token_launches"
+        WHERE "status" = 'pending_user_approval'
+          AND "created_at" <  now() - ($1 || ' hours')::interval
+          AND "created_at" >= now() - ($2 || ' hours')::interval
+        ORDER BY "created_at" ASC`,
+      String(warnAfterHours),
+      String(hours),
+    )
+    return rows
+  } catch (err: any) {
+    const msg = String(err?.message ?? err)
+    if (!/relation .*token_launches.* does not exist/i.test(msg)) {
+      console.warn('[fourMemeLaunch] findApprovalsNearingExpiry failed:', msg)
+    }
+    return []
+  }
+}
+
 export class LaunchRetryError extends Error {
   code: string
   constructor(msg: string, code = 'LAUNCH_RETRY_INVALID') {
@@ -816,9 +1029,18 @@ export class LaunchApprovalError extends Error {
 // initialBuyBnb / imageUrl row. The original row is left as-is for
 // audit; the retry creates a fresh row. We refuse to retry rows that
 // are still 'pending' (active) or already 'launched'.
+//
+// `deps.launchForUser` is a test-only seam so the on-chain/network
+// launch can be intercepted in unit tests without touching the
+// ownership/status guards above it. Production callers never pass it,
+// so the real `launchFourMemeTokenForUser` is used.
+export interface RetryLaunchDeps {
+  launchForUser?: typeof launchFourMemeTokenForUser
+}
 export async function retryLaunchForUser(
   userId: string,
   launchId: string,
+  deps: RetryLaunchDeps = {},
 ): Promise<LaunchResult & { walletAddress: string; previousLaunchId: string }> {
   if (!isFourMemeLaunchEnabled()) {
     throw new LaunchRetryError('four.meme launch is disabled', 'FOUR_MEME_LAUNCH_DISABLED')
@@ -868,7 +1090,8 @@ export async function retryLaunchForUser(
     )
   }
 
-  const result = await launchFourMemeTokenForUser(userId, {
+  const launchForUser = deps.launchForUser ?? launchFourMemeTokenForUser
+  const result = await launchForUser(userId, {
     tokenName: row.token_name,
     tokenSymbol: row.token_symbol,
     tokenDescription: row.token_description ?? undefined,
@@ -944,10 +1167,23 @@ export async function rejectPendingLaunch(opts: {
 // token_launches row is reused (existingLaunchId) so the audit trail
 // is a single row that walks pending_user_approval → pending →
 // launched/failed.
-export async function executeApprovedLaunch(opts: {
-  launchId: string
-  userId: string
-}): Promise<LaunchResult & { walletAddress: string }> {
+//
+// `deps.loadUserBscPrivateKey` / `deps.launchFourMemeToken` are
+// test-only seams so the wallet-decrypt and on-chain/network launch
+// can be intercepted in unit tests without touching the
+// ownership/status/proposal guards above them. Production callers never
+// pass them, so the real implementations are used.
+export interface ExecuteApprovedLaunchDeps {
+  loadUserBscPrivateKey?: typeof loadUserBscPrivateKey
+  launchFourMemeToken?: typeof launchFourMemeToken
+}
+export async function executeApprovedLaunch(
+  opts: {
+    launchId: string
+    userId: string
+  },
+  deps: ExecuteApprovedLaunchDeps = {},
+): Promise<LaunchResult & { walletAddress: string }> {
   const row = await loadPendingApprovalRow(opts.launchId)
   if (!row) throw new LaunchApprovalError('NOT_FOUND', 'Launch proposal not found.')
   if (row.user_id !== opts.userId) {
@@ -960,8 +1196,10 @@ export async function executeApprovedLaunch(opts: {
   if (!frozen) {
     throw new LaunchApprovalError('INVALID_PROPOSAL', 'Stored proposal is unreadable.')
   }
-  const { address, privateKey } = await loadUserBscPrivateKey(opts.userId)
-  const result = await launchFourMemeToken(
+  const loadPk = deps.loadUserBscPrivateKey ?? loadUserBscPrivateKey
+  const launchToken = deps.launchFourMemeToken ?? launchFourMemeToken
+  const { address, privateKey } = await loadPk(opts.userId)
+  const result = await launchToken(
     privateKey,
     {
       tokenName: frozen.tokenName,

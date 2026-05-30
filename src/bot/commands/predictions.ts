@@ -61,6 +61,10 @@ export async function handlePredictions(ctx: Context) {
       const claimSuffix = !p.paperTrade && p.status === 'resolved_win' ? ' _(unclaimed on-chain)_' : ''
       text += `${statusEmoji(p.status)}${mode} *${escapeMd(p.outcomeLabel)}* @ ${(p.entryPrice * 100).toFixed(0)}% — $${p.usdtIn.toFixed(2)} → ${fmtPnl(p.pnl)}${claimSuffix}\n`
       text += `   _${escapeMd(titleRaw)}_\n`
+      // Why the stale-sweep auto-closed this position, when it did.
+      if (p.closeReason) {
+        text += `   ⏱️ _auto-closed: ${escapeMd(p.closeReason)}_\n`
+      }
       // Per-provider swarm reasoning quotes (one truncated line per provider).
       // Only positions opened on the swarm path have this populated.
       if (Array.isArray(p.providers)) {

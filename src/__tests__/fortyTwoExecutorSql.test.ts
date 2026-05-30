@@ -7,6 +7,7 @@ import {
   openPredictionPosition,
   closePredictionPosition,
   closeUserPredictionPosition,
+  evaluateStaleExit,
   claimUserResolvedForMarket,
   claimAllAgentResolved,
   settleResolvedPositions,
@@ -154,6 +155,7 @@ function stubPosition(overrides: Partial<OutcomePositionRow> = {}): OutcomePosit
     txHashOpen: '0xopen',
     txHashClose: null,
     reasoning: null,
+    closeReason: null,
     openedAt: new Date(),
     closedAt: null,
     outcomeTokenAmount: 5,
@@ -1405,4 +1407,55 @@ test('claimAllAgentResolved leaves rows as resolved_win when the claim tx fails 
     restoreWallet()
     restoreEnv()
   }
+})
+
+// ── evaluateStaleExit — auto-close exit-rule decision logic ──────────────
+// Pure function powering autoCloseStalePositions. These lock in the two
+// exit rules so a refactor can't silently let agents ride a dead position
+// to a guaranteed loss, or conversely start dumping healthy positions.
+
+const EXIT_OPTS = { dropThreshold: 0.30, hoursWindow: 2 }
+
+test('evaluateStaleExit: closes when implied prob fell ≥30% from entry (well before end)', () => {
+  // 0.50 → 0.34 is a 32% relative drop, market not near end.
+  const reason = evaluateStaleExit({ entryProb: 0.5, currentProb: 0.34, hoursToEnd: 48, ...EXIT_OPTS })
+  assert.ok(reason, 'a 32% drop should trigger a close')
+  assert.match(reason!, /implied prob fell/)
+})
+
+test('evaluateStaleExit: holds when prob drop is below the threshold and far from end', () => {
+  // 0.50 → 0.40 is only a 20% relative drop, plenty of time left.
+  const reason = evaluateStaleExit({ entryProb: 0.5, currentProb: 0.40, hoursToEnd: 48, ...EXIT_OPTS })
+  assert.equal(reason, null, 'a 20% drop with time left must NOT close')
+})
+
+test('evaluateStaleExit: closes when <2h to end and currently losing', () => {
+  // Small drop (only 6% relative) that would NOT trip rule A, but we're
+  // inside the 2h window and underwater → rule B fires.
+  const reason = evaluateStaleExit({ entryProb: 0.5, currentProb: 0.47, hoursToEnd: 1.5, ...EXIT_OPTS })
+  assert.ok(reason, 'losing inside the end window should trigger a close')
+  assert.match(reason!, /to market end and losing/)
+})
+
+test('evaluateStaleExit: holds when <2h to end but currently winning', () => {
+  // Inside the window but the outcome got MORE likely → not losing, hold.
+  const reason = evaluateStaleExit({ entryProb: 0.5, currentProb: 0.62, hoursToEnd: 1.0, ...EXIT_OPTS })
+  assert.equal(reason, null, 'a winning position near end must NOT be auto-closed')
+})
+
+test('evaluateStaleExit: holds when losing but still outside the end window', () => {
+  // Losing but 5h out and the drop is under threshold → neither rule fires.
+  const reason = evaluateStaleExit({ entryProb: 0.5, currentProb: 0.47, hoursToEnd: 5, ...EXIT_OPTS })
+  assert.equal(reason, null, 'a small loss far from end must NOT close')
+})
+
+test('evaluateStaleExit: skips positions whose market already ended', () => {
+  // hoursToEnd <= 0 → cannot trade; settlement handles it, never auto-close.
+  const reason = evaluateStaleExit({ entryProb: 0.5, currentProb: 0.10, hoursToEnd: -1, ...EXIT_OPTS })
+  assert.equal(reason, null, 'past-end markets must be left to settlement')
+})
+
+test('evaluateStaleExit: skips when entry probability is unusable (0)', () => {
+  const reason = evaluateStaleExit({ entryProb: 0, currentProb: 0.10, hoursToEnd: 10, ...EXIT_OPTS })
+  assert.equal(reason, null, 'cannot measure a drop without a positive entry prob')
 })

@@ -1,9 +1,25 @@
 import { useState, useEffect } from 'react'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import { apiFetch, getFourMemePositions, type FourMemePosition } from '../api'
+import { useAutoRefresh } from '../hooks/useAutoRefresh'
 
 interface PortfolioProps {
   userId: string | null
+}
+
+// Telegram WebApp init data must accompany every protected /api/me/* and
+// /api/predictions/* call — without it the server's requireTgUser
+// middleware returns 401 and the sell/claim request silently fails.
+// Mirrors the identical helper in Predictions.tsx. (Most reads here go
+// through apiFetch, which sets this header itself; we only need the raw
+// helper for the sell/claim POSTs that inspect both HTTP-error and
+// ok:false response bodies.)
+function tgHeaders(extra?: Record<string, string>): Record<string, string> {
+  const initData: string = (window as any)?.Telegram?.WebApp?.initData ?? ''
+  return {
+    ...(extra ?? {}),
+    ...(initData ? { 'X-Telegram-Init-Data': initData } : {}),
+  }
 }
 
 type Range = '7d' | '30d' | 'all'
@@ -21,6 +37,11 @@ interface PredictionPosition {
   marketAddress: string
   outcomeLabel: string | null
   usdtIn: number | null
+  // entryPrice on a 42.space outcome token is the implied probability the
+  // market priced the outcome at when the position opened (0..1). We surface
+  // it directly as "entry probability".
+  entryPrice?: number | null
+  outcomeTokenAmount?: number | null
   payoutUsdt: number | null
   pnl: number | null
   status: string
@@ -30,88 +51,219 @@ interface PredictionPosition {
   currentValueUsdt: number | null
 }
 
+// Polymarket position row, mirrored from the shape the Predictions
+// Polymarket tab consumes (GET /api/polymarket/positions → raw
+// PolymarketPosition rows). Polymarket positions carry no live
+// mark-to-market, so PnL is only known for resolved rows: a winning
+// outcome pays $1/share (pnl = shares − cost), a losing one forfeits the
+// stake (pnl = −cost). Open rows show entry + size with no live PnL.
+interface PolyPosition {
+  id: string
+  conditionId: string
+  tokenId: string
+  marketTitle: string
+  outcomeLabel: string
+  side: string
+  sizeUsdc: number
+  entryPrice: number
+  fillSize: number | null
+  status: string
+  errorMessage: string | null
+  openedAt: string
+  closedAt?: string | null
+}
+
 export default function Portfolio({ userId }: PortfolioProps) {
   const [data, setData] = useState<any>(null)
   const [range, setRange] = useState<Range>('30d')
   const [loading, setLoading] = useState(true)
   const [wallet, setWallet] = useState<WalletInfo | null>(null)
   const [predictions, setPredictions] = useState<PredictionPosition[]>([])
+  // Polymarket positions — the second prediction venue. Same source the
+  // Predictions Polymarket tab consumes (/api/polymarket/positions).
+  const [polyPositions, setPolyPositions] = useState<PolyPosition[]>([])
+  // Per-user paper-vs-live opt-in for 42.space prediction trades. Mirrors
+  // the bot's /predictions "Enable LIVE trading" / "Switch to paper-trade"
+  // callbacks and the same toggle on the Predictions tab — all three write
+  // the one User.fortyTwoLiveTrade flag. null = unknown (fetch pending, or
+  // the mini-app was opened outside Telegram and the endpoint 401'd, in
+  // which case we hide the toggle rather than show a misleading default).
+  const [predLiveMode, setPredLiveMode] = useState<boolean | null>(null)
+  const [predModeBusy, setPredModeBusy] = useState(false)
   // four.meme bags the user has launched (and possibly already sold).
   // Refreshed on the same poll cadence as the rest of the page so the
   // live bag value tracks the curve in real time.
   const [fourMemeBags, setFourMemeBags] = useState<FourMemePosition[]>([])
 
-  // 1s realtime polling on every Portfolio data source. The user's
-  // directive: every venue surface (Aster perps, Hyperliquid clearing,
-  // 42.space prediction holdings, BSC wallet USDT) must reflect live
-  // venue state with a 1-second refresh interval.
-  //
-  // Operational safeguards:
-  //   - Per-endpoint in-flight mutex so a slow upstream (BSC RPC stall,
-  //     HL clearinghouse latency) cannot stack overlapping requests.
-  //   - Visibility gate: pause polling when the tab/mini-app is hidden
-  //     so we don't burn quota or hammer venues for a screen the user
-  //     can't see; resumes on the next visibility flip.
-  //   - Each fetch tolerates its own failures so a stray dropped poll
-  //     just holds the previous snapshot — no flash of empty state.
+  // Live data loaders. The user's directive: every venue surface (Aster
+  // perps, Hyperliquid clearing, 42.space prediction holdings, BSC wallet
+  // USDT) must reflect live venue state on a 1-second refresh. Each loader
+  // tolerates its own failure so a stray dropped poll just holds the previous
+  // snapshot — no flash of empty state.
+  const loadPortfolio = async () => {
+    try {
+      const r = await fetch(`/api/portfolio/${userId}`)
+      const d = await r.json()
+      setData(d)
+    } catch { /* keep last good state */ } finally { setLoading(false) }
+  }
+  const loadWallet = async () => {
+    try {
+      const w = await apiFetch<WalletInfo>('/api/me/wallet')
+      if (w) setWallet(w)
+    } catch { /* keep last good state */ }
+  }
+  const loadPredictions = async () => {
+    try {
+      const r = await apiFetch<{ ok: boolean; positions: PredictionPosition[] }>('/api/me/positions')
+      setPredictions(r?.positions ?? [])
+    } catch { /* keep last good state */ }
+  }
+  const loadBags = async () => {
+    try {
+      const r = await getFourMemePositions()
+      if (r?.ok) setFourMemeBags(r.positions ?? [])
+    } catch { /* keep last good state */ }
+  }
+  const loadPolyPositions = async () => {
+    try {
+      const r = await apiFetch<{ ok: boolean; positions: PolyPosition[] }>('/api/polymarket/positions')
+      if (r?.ok) setPolyPositions(r.positions ?? [])
+    } catch { /* keep last good state — e.g. opened outside Telegram */ }
+  }
+
+  // Fast group on a 1s cadence; bags ride a slower 5s cadence because each row
+  // is N on-chain calls (balanceOf + quoteSell). Both are gated on userId,
+  // paused while the paper/live toggle is being written, single-flighted, and
+  // skipped while the tab is hidden — all via the shared useAutoRefresh hook.
+  useAutoRefresh(
+    async () => { await Promise.allSettled([loadPortfolio(), loadWallet(), loadPredictions(), loadPolyPositions()]) },
+    { intervalMs: 1000, enabled: !!userId, paused: predModeBusy },
+  )
+  useAutoRefresh(loadBags, { intervalMs: 5000, enabled: !!userId, paused: predModeBusy })
+
+  // Paper/live opt-in is read once on mount (and on userId change). It only
+  // changes when the user flips it here or on the Predictions tab, so it
+  // doesn't need the 1s poll cadence the position values ride. Also clears the
+  // initial loading state when there's no userId to load for.
   useEffect(() => {
     if (!userId) { setLoading(false); return }
     let cancelled = false
-    let portfolioBusy = false
-    let walletBusy = false
-    let predBusy = false
-    let bagsBusy = false
-    const loadPortfolio = () => {
-      if (portfolioBusy || cancelled) return
-      portfolioBusy = true
-      fetch(`/api/portfolio/${userId}`)
-        .then(r => r.json())
-        .then(d => { if (!cancelled) { setData(d); setLoading(false) } })
-        .catch(() => { if (!cancelled) setLoading(false) })
-        .finally(() => { portfolioBusy = false })
-    }
-    const loadWallet = () => {
-      if (walletBusy || cancelled) return
-      walletBusy = true
-      apiFetch<WalletInfo>('/api/me/wallet')
-        .then((w) => { if (!cancelled && w) setWallet(w) })
-        .catch(() => { /* keep last good state */ })
-        .finally(() => { walletBusy = false })
-    }
-    const loadPredictions = () => {
-      if (predBusy || cancelled) return
-      predBusy = true
-      apiFetch<{ ok: boolean; positions: PredictionPosition[] }>('/api/me/positions')
-        .then((r) => { if (!cancelled) setPredictions(r?.positions ?? []) })
-        .catch(() => { /* keep last good state */ })
-        .finally(() => { predBusy = false })
-    }
-    const loadBags = () => {
-      if (bagsBusy || cancelled) return
-      bagsBusy = true
-      getFourMemePositions()
-        .then((r) => { if (!cancelled && r?.ok) setFourMemeBags(r.positions ?? []) })
-        .catch(() => { /* keep last good state */ })
-        .finally(() => { bagsBusy = false })
-    }
-    loadPortfolio()
-    loadWallet()
-    loadPredictions()
-    loadBags()
-    const t = setInterval(() => {
-      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
-      loadPortfolio()
-      loadWallet()
-      loadPredictions()
-    }, 1000)
-    // Bags involve N on-chain calls per row (balanceOf + quoteSell) so
-    // they ride a slower 5s cadence to keep BSC dataseed traffic sane.
-    const tBags = setInterval(() => {
-      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
-      loadBags()
-    }, 5000)
-    return () => { cancelled = true; clearInterval(t); clearInterval(tBags) }
+    apiFetch<{ ok: boolean; liveOptIn: boolean }>('/api/me/predictions-mode')
+      .then((r) => { if (!cancelled) setPredLiveMode(typeof r?.liveOptIn === 'boolean' ? r.liveOptIn : null) })
+      .catch(() => { if (!cancelled) setPredLiveMode(null) })
+    return () => { cancelled = true }
   }, [userId])
+
+  // ── Inline Sell / Claim on the Prediction Positions panel ──────────
+  // Gives the Portfolio panel action parity with the Predictions tab so
+  // users can exit an open live position or claim a resolved win without
+  // switching tabs. Mirrors the patterns in Predictions.tsx
+  // (sellPosition / claimPosition / sellLocks).
+  //
+  //   - actionBusy  : positionId currently mid-request (one at a time).
+  //   - actionMsg   : transient success/error feedback banner.
+  //   - sellLocks   : per-position terminal sell-failure memory so a row
+  //                   that reverted with market_ended / market_resolved /
+  //                   market_finalised / no_balance swaps its Sell button
+  //                   for a calmer 'Trading closed' state instead of
+  //                   re-prompting the user to re-tap and hit the same
+  //                   revert.
+  const [actionBusy, setActionBusy] = useState<string | null>(null)
+  const [actionMsg, setActionMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
+  const [sellLocks, setSellLocks] = useState<Record<string, string>>({})
+
+  // Force an immediate prediction-positions refresh after an action so the
+  // panel reflects the new state without waiting on the 1s poll tick. Uses
+  // the same endpoint + tolerant failure handling as the poller.
+  async function reloadPredictions() {
+    try {
+      const r = await apiFetch<{ ok: boolean; positions: PredictionPosition[] }>('/api/me/positions')
+      setPredictions(r?.positions ?? [])
+    } catch {
+      /* keep last good state — a dropped refresh just holds the snapshot */
+    }
+  }
+
+  async function sellPosition(positionId: string) {
+    if (actionBusy) return
+    setActionBusy(positionId)
+    setActionMsg(null)
+    try {
+      const r = await fetch('/api/predictions/sell', {
+        method: 'POST',
+        headers: tgHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ positionId }),
+      })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok || !j.ok) {
+        setActionMsg({ kind: 'err', text: j?.reason || j?.error || `HTTP ${r.status}` })
+        // Lock terminal failure modes so the row swaps its CTA next render.
+        // 'no_balance' counts here too — the position appears open in our DB
+        // but the wallet no longer holds the tokens (already-closed-out
+        // edge case), so re-tapping Sell will keep failing.
+        const terminal = ['market_ended', 'market_resolved', 'market_finalised', 'no_balance']
+        if (typeof j?.code === 'string' && terminal.includes(j.code)) {
+          setSellLocks((prev) => ({ ...prev, [positionId]: j.code }))
+        }
+      } else {
+        const pnl = typeof j.pnl === 'number' ? j.pnl : 0
+        setActionMsg({ kind: 'ok', text: `Closed — PnL ${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)}` })
+        await reloadPredictions()
+      }
+    } catch (e) {
+      setActionMsg({ kind: 'err', text: (e as Error).message })
+    } finally {
+      setActionBusy(null)
+    }
+  }
+
+  async function claimPosition(positionId: string) {
+    if (actionBusy) return
+    setActionBusy(positionId)
+    setActionMsg(null)
+    try {
+      const r = await fetch('/api/predictions/claim', {
+        method: 'POST',
+        headers: tgHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ positionId }),
+      })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok || !j.ok) {
+        setActionMsg({ kind: 'err', text: j?.reason || j?.error || `HTTP ${r.status}` })
+      } else {
+        setActionMsg({
+          kind: 'ok',
+          text: `Claimed ${j.claimedPositions ?? 1} position${(j.claimedPositions ?? 1) > 1 ? 's' : ''} — payout $${(j.payoutUsdt ?? 0).toFixed(2)}`,
+        })
+        await reloadPredictions()
+      }
+    } catch (e) {
+      setActionMsg({ kind: 'err', text: (e as Error).message })
+    } finally {
+      setActionBusy(null)
+    }
+  }
+
+  // Flip the per-user 42.space paper/live opt-in. Optimistically reflects
+  // the requested state and reconciles with the server's authoritative
+  // value on response so a rejected/clamped write self-corrects.
+  async function togglePredMode(next: boolean) {
+    if (predModeBusy) return
+    setPredModeBusy(true)
+    try {
+      const r = await apiFetch<{ ok: boolean; liveOptIn: boolean }>('/api/me/predictions-mode', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: next }),
+      })
+      if (r?.ok) setPredLiveMode(r.liveOptIn === true)
+    } catch {
+      /* keep last good state — a failed flip leaves the toggle as-is */
+    } finally {
+      setPredModeBusy(false)
+    }
+  }
 
   // Strip anything that isn't a real, on-venue trade. The user's
   // directive is "no fakes ever" — paper trades and the legacy `mock`
@@ -659,6 +811,400 @@ export default function Portfolio({ userId }: PortfolioProps) {
           })}
         </div>
       )}
+
+      {/* ── Prediction Positions ──────────────────────────────────────────
+          Dedicated visibility for 42.space outcome-token positions, giving
+          predictions the same portfolio surface perps already have. Unlike
+          the Trade History card below (which strips paper rows), this panel
+          shows BOTH paper and live positions, each tagged with a PAPER/LIVE
+          badge, because seeing how the paper book is performing is the whole
+          point of paper mode. Each row surfaces:
+            - entry probability  (entryPrice — the outcome's implied prob at open)
+            - now / implied prob (live curve quote ÷ tokens held)
+            - PnL                (live mark-to-market for open rows; realised
+                                  pnl on closed/resolved/claimed rows)
+          A paper/live mode toggle mirrors the bot's /predictions callbacks. */}
+      {(() => {
+        // Newest first, but float open positions to the top so the user's
+        // active exposure is always above the resolved/closed history.
+        const rows = [...predictions].sort((a, b) => {
+          const aOpen = a.status === 'open' ? 1 : 0
+          const bOpen = b.status === 'open' ? 1 : 0
+          if (aOpen !== bOpen) return bOpen - aOpen
+          const ta = a.closedAt ? new Date(a.closedAt).getTime() : new Date(a.openedAt).getTime()
+          const tb = b.closedAt ? new Date(b.closedAt).getTime() : new Date(b.openedAt).getTime()
+          return tb - ta
+        })
+        const openCount = rows.filter((p) => p.status === 'open').length
+        const resolvedCount = rows.length - openCount
+        const fmtPct = (p: number | null | undefined) =>
+          p == null || !isFinite(p) ? '—' : `${Math.max(0, Math.min(100, p * 100)).toFixed(0)}%`
+        return (
+          <div className="card" style={{ marginBottom: 16 }} data-testid="card-prediction-positions">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, gap: 10, flexWrap: 'wrap' }}>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>
+                <span style={{
+                  fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 3,
+                  background: '#a855f722', color: '#a855f7', letterSpacing: 0.3,
+                  marginRight: 6, verticalAlign: 'middle',
+                }}>42.space</span>
+                Prediction Positions
+              </div>
+              {/* Paper/live mode toggle — only shown once we know the user's
+                  state (hidden when null, i.e. opened outside Telegram). */}
+              {predLiveMode !== null && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }} data-testid="toggle-prediction-mode">
+                  {(['paper', 'live'] as const).map((m) => {
+                    const isLive = m === 'live'
+                    const active = predLiveMode === isLive
+                    return (
+                      <button
+                        key={m}
+                        type="button"
+                        disabled={predModeBusy}
+                        onClick={() => togglePredMode(isLive)}
+                        data-testid={`button-prediction-mode-${m}`}
+                        style={{
+                          padding: '4px 12px', borderRadius: 6, fontSize: 11, fontWeight: 600,
+                          letterSpacing: 0.3, textTransform: 'uppercase',
+                          cursor: predModeBusy ? 'wait' : 'pointer',
+                          border: '1px solid ' + (active ? (isLive ? '#10b981' : '#f59e0b') : '#1e1e2e'),
+                          background: active ? (isLive ? '#10b98122' : '#f59e0b22') : 'transparent',
+                          color: active ? (isLive ? '#10b981' : '#f59e0b') : '#64748b',
+                        }}
+                      >
+                        {m}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Transient sell/claim feedback — green on success, red on
+                failure. Cleared at the start of every new action. */}
+            {actionMsg && (
+              <div
+                data-testid="banner-prediction-action"
+                style={{
+                  marginBottom: 10, padding: '8px 10px', borderRadius: 8, fontSize: 12,
+                  background: actionMsg.kind === 'ok' ? '#10b98115' : '#ef444415',
+                  border: `1px solid ${actionMsg.kind === 'ok' ? '#10b98144' : '#ef444444'}`,
+                  color: actionMsg.kind === 'ok' ? '#10b981' : '#ef4444',
+                }}>
+                {actionMsg.text}
+              </div>
+            )}
+
+            {loading && rows.length === 0 ? (
+              <div style={{ color: '#64748b', fontSize: 13 }}>Loading...</div>
+            ) : rows.length === 0 ? (
+              <div style={{ color: '#64748b', fontSize: 13 }} data-testid="text-no-predictions">
+                No prediction positions yet. Open one from the Predictions tab.
+              </div>
+            ) : (
+              <>
+                <div style={{ fontSize: 10, color: '#64748b', marginBottom: 8 }}>
+                  {openCount} open · {resolvedCount} resolved
+                </div>
+                {rows.slice(0, 15).map((p) => {
+                  const isOpen = p.status === 'open'
+                  // Current implied probability: resolved rows are settled
+                  // (win = 100%, loss = 0%); open rows derive it from the
+                  // live curve quote ÷ tokens held (same units as entryPrice).
+                  const tokens = p.outcomeTokenAmount ??
+                    (p.entryPrice && p.entryPrice > 0 && p.usdtIn != null ? p.usdtIn / p.entryPrice : null)
+                  const currentProb =
+                    p.status === 'resolved_win' || (p.status === 'claimed' && (p.payoutUsdt ?? 0) > 0) ? 1 :
+                    p.status === 'resolved_loss' ? 0 :
+                    (p.currentValueUsdt != null && tokens != null && tokens > 0
+                      ? p.currentValueUsdt / tokens
+                      : null)
+                  // PnL: live mark-to-market for open rows, realised pnl
+                  // otherwise. Falls back to null so the row still renders.
+                  const pnl = isOpen
+                    ? (p.currentValueUsdt != null && p.usdtIn != null ? p.currentValueUsdt - p.usdtIn : null)
+                    : (p.pnl ?? null)
+                  const pnlColor = pnl == null ? '#64748b' : pnl > 0 ? '#10b981' : pnl < 0 ? '#ef4444' : '#64748b'
+                  const statusLabel =
+                    p.status === 'open' ? 'OPEN' :
+                    p.status === 'resolved_win' ? 'WON' :
+                    p.status === 'resolved_loss' ? 'LOST' :
+                    p.status === 'claimed' ? 'CLAIMED' : 'CLOSED'
+                  const statusColor =
+                    p.status === 'open' ? '#60a5fa' :
+                    p.status === 'resolved_win' || p.status === 'claimed' ? '#10b981' :
+                    p.status === 'resolved_loss' ? '#ef4444' : '#94a3b8'
+                  return (
+                    <div key={p.id} style={{
+                      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                      padding: '8px 0', borderBottom: '1px solid #1e1e2e', gap: 10,
+                    }} data-testid={`row-prediction-${p.id}`}>
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: 13, fontWeight: 500 }}>
+                            {p.marketTitle.length > 30 ? p.marketTitle.slice(0, 30) + '…' : p.marketTitle}
+                          </span>
+                          <span style={{
+                            fontSize: 10, padding: '1px 6px', borderRadius: 4,
+                            background: '#3b82f615', color: '#60a5fa',
+                          }}>{p.outcomeLabel ?? '—'}</span>
+                          {/* Paper/live badge — the headline distinction this
+                              panel exists to surface. */}
+                          <span style={{
+                            fontSize: 9, padding: '1px 6px', borderRadius: 4, fontWeight: 700, letterSpacing: 0.4,
+                            background: p.paperTrade ? '#f59e0b22' : '#10b98122',
+                            color: p.paperTrade ? '#f59e0b' : '#10b981',
+                          }} data-testid={`badge-mode-${p.id}`}>
+                            {p.paperTrade ? 'PAPER' : 'LIVE'}
+                          </span>
+                          <span style={{
+                            fontSize: 9, padding: '1px 6px', borderRadius: 4, fontWeight: 700, letterSpacing: 0.4,
+                            background: `${statusColor}22`, color: statusColor,
+                          }} data-testid={`badge-status-${p.id}`}>{statusLabel}</span>
+                        </div>
+                        <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
+                          Entry <span data-testid={`text-entry-prob-${p.id}`}>{fmtPct(p.entryPrice)}</span>
+                          {' → '}
+                          <span data-testid={`text-current-prob-${p.id}`}>{fmtPct(currentProb)}</span>
+                          {p.usdtIn != null && <> · ${p.usdtIn.toFixed(2)} in</>}
+                        </div>
+                      </div>
+                      <div style={{ textAlign: 'right', minWidth: 92, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
+                        {pnl != null ? (
+                          <div style={{ fontSize: 13, fontWeight: 700, color: pnlColor }}
+                               data-testid={`text-pnl-${p.id}`}>
+                            {pnl >= 0 ? '+' : '−'}${Math.abs(pnl).toFixed(2)}
+                          </div>
+                        ) : (
+                          <div style={{ fontSize: 11, color: '#64748b' }}>
+                            {p.status === 'resolved_win' ? 'claim to settle' : '—'}
+                          </div>
+                        )}
+                        {/* Inline actions — live positions only (paper rows
+                            never touch the chain, so they get no button, per
+                            the task). Open → Sell; resolved-win → Claim.
+                            Mirrors the Predictions-tab CTA logic, including
+                            terminal sell-lock swaps. */}
+                        {!p.paperTrade && (() => {
+                          const busy = actionBusy === p.id
+                          const anyBusy = actionBusy !== null
+                          if (p.status === 'open') {
+                            const lock = sellLocks[p.id]
+                            // Market closed pre-resolution — Sell always reverts.
+                            if (lock === 'market_ended' || lock === 'market_finalised') {
+                              return (
+                                <div
+                                  data-testid={`badge-trading-closed-${p.id}`}
+                                  style={{
+                                    padding: '5px 8px', borderRadius: 6, fontSize: 10, fontWeight: 600,
+                                    textAlign: 'center', background: '#1e293b',
+                                    border: '1px solid #334155', color: '#94a3b8', whiteSpace: 'nowrap',
+                                  }}>
+                                  ⏳ Trading closed
+                                </div>
+                              )
+                            }
+                            // Resolved on-chain but our DB lags — offer Claim.
+                            if (lock === 'market_resolved') {
+                              return (
+                                <button
+                                  type="button"
+                                  onClick={() => claimPosition(p.id)}
+                                  disabled={anyBusy}
+                                  data-testid={`button-try-claim-${p.id}`}
+                                  style={{
+                                    padding: '5px 12px', borderRadius: 6, fontSize: 11, fontWeight: 600,
+                                    background: busy ? '#1e1e2e' : '#10b981',
+                                    border: '1px solid #10b981', color: 'white',
+                                    cursor: anyBusy ? 'wait' : 'pointer',
+                                  }}>
+                                  {busy ? 'Claiming…' : 'Try Claim'}
+                                </button>
+                              )
+                            }
+                            if (lock === 'no_balance') {
+                              return (
+                                <div
+                                  data-testid={`badge-no-balance-${p.id}`}
+                                  style={{
+                                    padding: '5px 8px', borderRadius: 6, fontSize: 10, fontWeight: 600,
+                                    textAlign: 'center', background: '#1e293b',
+                                    border: '1px solid #334155', color: '#94a3b8', whiteSpace: 'nowrap',
+                                  }}>
+                                  Refresh
+                                </div>
+                              )
+                            }
+                            return (
+                              <button
+                                type="button"
+                                onClick={() => sellPosition(p.id)}
+                                disabled={anyBusy}
+                                data-testid={`button-sell-${p.id}`}
+                                style={{
+                                  padding: '5px 14px', borderRadius: 6, fontSize: 11, fontWeight: 600,
+                                  background: busy ? '#1e1e2e' : '#7c3aed',
+                                  border: '1px solid #7c3aed', color: 'white',
+                                  cursor: anyBusy ? 'wait' : 'pointer',
+                                }}>
+                                {busy ? 'Selling…' : 'Sell'}
+                              </button>
+                            )
+                          }
+                          if (p.status === 'resolved_win') {
+                            return (
+                              <button
+                                type="button"
+                                onClick={() => claimPosition(p.id)}
+                                disabled={anyBusy}
+                                data-testid={`button-claim-${p.id}`}
+                                style={{
+                                  padding: '5px 12px', borderRadius: 6, fontSize: 11, fontWeight: 600,
+                                  background: busy ? '#1e1e2e' : '#10b981',
+                                  border: '1px solid #10b981', color: 'white',
+                                  cursor: anyBusy ? 'wait' : 'pointer',
+                                }}>
+                                {busy
+                                  ? 'Claiming…'
+                                  : p.payoutUsdt != null
+                                    ? `Claim $${p.payoutUsdt.toFixed(2)}`
+                                    : 'Claim'}
+                              </button>
+                            )
+                          }
+                          return null
+                        })()}
+                      </div>
+                    </div>
+                  )
+                })}
+              </>
+            )}
+          </div>
+        )
+      })()}
+
+      {/* ── Polymarket Positions ───────────────────────────────────────────
+          Sibling to the 42.space panel above so both prediction venues get
+          the same portfolio-level visibility. Backed by the same source the
+          Predictions Polymarket tab consumes (/api/polymarket/positions).
+
+          Polymarket position rows carry NO live mark-to-market (the venue
+          only stores entry price + size + fill), so PnL is only known once a
+          market resolves: a winning outcome redeems at $1/share
+          (pnl = shares − cost), a loss forfeits the stake (pnl = −cost).
+          Open rows therefore show entry price + size with no live PnL,
+          mirroring how the Polymarket tab itself renders them. failed /
+          cancelled orders never deployed capital, so they show no PnL. */}
+      {(() => {
+        // Order: active positions first, then resolved/closed by recency.
+        // 'placed' | 'matched' | 'filled' are all live (book may still be
+        // filling asynchronously — see PredictionsPolymarket SELL comment).
+        const isActive = (s: string) => s === 'placed' || s === 'matched' || s === 'filled'
+        const rows = [...polyPositions].sort((a, b) => {
+          const aOpen = isActive(a.status) ? 1 : 0
+          const bOpen = isActive(b.status) ? 1 : 0
+          if (aOpen !== bOpen) return bOpen - aOpen
+          const ta = a.closedAt ? new Date(a.closedAt).getTime() : new Date(a.openedAt).getTime()
+          const tb = b.closedAt ? new Date(b.closedAt).getTime() : new Date(b.openedAt).getTime()
+          return tb - ta
+        })
+        if (rows.length === 0) return null
+        const openCount = rows.filter((p) => isActive(p.status)).length
+        const resolvedCount = rows.length - openCount
+        const fmtCents = (p: number) =>
+          !isFinite(p) ? '—' : `${Math.max(0, Math.min(100, p * 100)).toFixed(1)}¢`
+        return (
+          <div className="card" style={{ marginBottom: 16 }} data-testid="card-polymarket-positions">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, gap: 10, flexWrap: 'wrap' }}>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>
+                <span style={{
+                  fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 3,
+                  background: '#3b82f622', color: '#60a5fa', letterSpacing: 0.3,
+                  marginRight: 6, verticalAlign: 'middle',
+                }}>POLY</span>
+                Polymarket Positions
+              </div>
+              <div style={{ fontSize: 10, color: '#64748b' }}>
+                {openCount} open · {resolvedCount} resolved
+              </div>
+            </div>
+            {rows.slice(0, 15).map((p) => {
+              // Shares = recorded fill, or implied (cost ÷ entry) when the
+              // SDK didn't report a fill size — same fallback the Polymarket
+              // tab uses to size a SELL.
+              const shares = (p.fillSize && p.fillSize > 0)
+                ? p.fillSize
+                : (p.entryPrice > 0 ? p.sizeUsdc / p.entryPrice : 0)
+              const isResolvedWin  = p.status === 'resolved_win'
+              const isResolvedLoss = p.status === 'resolved_loss'
+              // PnL is only definable for resolved rows; open positions have
+              // no live mark and failed/cancelled never spent capital.
+              const pnl = isResolvedWin
+                ? shares - p.sizeUsdc
+                : isResolvedLoss ? -p.sizeUsdc : null
+              const pnlColor = pnl == null ? '#64748b' : pnl > 0 ? '#10b981' : pnl < 0 ? '#ef4444' : '#64748b'
+              const statusLabel =
+                isResolvedWin ? 'WON' :
+                isResolvedLoss ? 'LOST' :
+                p.status === 'failed' ? 'FAILED' :
+                p.status === 'cancelled' ? 'CANCELLED' :
+                'OPEN'
+              const statusColor =
+                isResolvedWin ? '#10b981' :
+                isResolvedLoss ? '#ef4444' :
+                p.status === 'failed' || p.status === 'cancelled' ? '#94a3b8' :
+                '#60a5fa'
+              return (
+                <div key={p.id} style={{
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  padding: '8px 0', borderBottom: '1px solid #1e1e2e', gap: 10,
+                }} data-testid={`row-poly-portfolio-${p.id}`}>
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 13, fontWeight: 500 }}>
+                        {p.marketTitle.length > 30 ? p.marketTitle.slice(0, 30) + '…' : p.marketTitle}
+                      </span>
+                      <span style={{
+                        fontSize: 10, padding: '1px 6px', borderRadius: 4,
+                        background: '#3b82f615', color: '#60a5fa',
+                      }}>{p.side} {p.outcomeLabel}</span>
+                      <span style={{
+                        fontSize: 9, padding: '1px 6px', borderRadius: 4, fontWeight: 700, letterSpacing: 0.4,
+                        background: '#3b82f622', color: '#60a5fa',
+                      }} data-testid={`badge-poly-venue-${p.id}`}>POLY</span>
+                      <span style={{
+                        fontSize: 9, padding: '1px 6px', borderRadius: 4, fontWeight: 700, letterSpacing: 0.4,
+                        background: `${statusColor}22`, color: statusColor,
+                      }} data-testid={`badge-poly-status-${p.id}`}>{statusLabel}</span>
+                    </div>
+                    <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
+                      Entry <span data-testid={`text-poly-entry-${p.id}`}>{fmtCents(p.entryPrice)}</span>
+                      {' · '}${p.sizeUsdc.toFixed(2)} in
+                    </div>
+                    {p.errorMessage && (
+                      <div style={{ fontSize: 10, color: '#f59e0b', marginTop: 2 }}>{p.errorMessage}</div>
+                    )}
+                  </div>
+                  <div style={{ textAlign: 'right', minWidth: 78 }}>
+                    {pnl != null ? (
+                      <div style={{ fontSize: 13, fontWeight: 700, color: pnlColor }}
+                           data-testid={`text-poly-pnl-${p.id}`}>
+                        {pnl >= 0 ? '+' : '−'}${Math.abs(pnl).toFixed(2)}
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: 11, color: '#64748b' }}>
+                        {isActive(p.status) ? 'open' : '—'}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )
+      })()}
 
       {/* Trade history — every open holding + closed trade across every
           venue (Aster perps, Hyperliquid perps, 42.space predictions),

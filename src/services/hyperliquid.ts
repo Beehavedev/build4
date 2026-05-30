@@ -1293,3 +1293,58 @@ export async function transferSpotPerp(
     return { success: false, error: msg, unifiedAccount }
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Native withdrawal to Arbitrum (withdraw3)
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// IMPORTANT — source account: HL's `withdraw3` debits the user's *PERPS*
+// (HyperCore margin) account, NOT spot. USDC sitting on the spot sub-account
+// is NOT directly withdrawable — it must first be moved to perps via
+// `usdClassTransfer` (transferSpotPerp(.., toPerp:true)). This is the exact
+// opposite of what some of our older UI copy implied ("move to spot to
+// withdraw"); the authoritative HL flow is:
+//
+//     Spot USDC → [usdClassTransfer toPerp:true] → Perp USDC → [withdraw3] → Arbitrum
+//
+// HL charges a flat $1 fee, deducted from the HL balance (not netted from the
+// withdrawn amount), and the transfer takes ~5 minutes to finalise on Arbitrum.
+// Must be signed by the user's MASTER key (agents cannot withdraw) — callers
+// decrypt the wallet PK exactly like approveAgent / transferSpotPerp.
+//
+// `amountUsd` is the amount credited to the destination on Arbitrum. Callers
+// are responsible for ensuring the perps account holds at least
+// `amountUsd + HL_WITHDRAW_FEE_USD` before calling.
+
+/** Flat fee HL charges per native withdrawal, deducted from the HL balance. */
+export const HL_WITHDRAW_FEE_USD = 1
+
+export async function withdrawToArbitrum(
+  userPrivateKey: string,
+  amountUsd:      number,
+  destination:    string,
+): Promise<{ success: boolean; error?: string }> {
+  if (!Number.isFinite(amountUsd) || amountUsd <= 0) {
+    return { success: false, error: 'Amount must be > 0' }
+  }
+  if (!/^0x[0-9a-fA-F]{40}$/.test(destination)) {
+    return { success: false, error: 'Invalid destination address' }
+  }
+  try {
+    const userWallet = new ethers.Wallet(userPrivateKey)
+    const client = new hl.ExchangeClient({ transport, wallet: userWallet as any })
+    // HL caps the amount string at 6 decimals — round DOWN so we never try to
+    // withdraw more than the user actually has after fee headroom checks.
+    const amountStr = (Math.floor(amountUsd * 1_000_000) / 1_000_000).toString()
+    await client.withdraw3({ destination: destination as `0x${string}`, amount: amountStr })
+    // Perps balance just dropped — drop cached account state so the next
+    // /account read reflects the post-withdrawal balance.
+    invalidateHlAccountCache(userWallet.address)
+    return { success: true }
+  } catch (err: any) {
+    const raw = err?.response?.data ?? err?.message ?? 'withdraw3 failed'
+    const msg = typeof raw === 'string' ? raw : JSON.stringify(raw)
+    console.error('[HL] withdrawToArbitrum failed:', amountUsd, '→', destination, '→', msg)
+    return { success: false, error: msg }
+  }
+}

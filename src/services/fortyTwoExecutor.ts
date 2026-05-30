@@ -499,6 +499,7 @@ export interface OutcomePositionRow {
   txHashOpen: string | null;
   txHashClose: string | null;
   reasoning: string | null;
+  closeReason: string | null;
   openedAt: Date;
   closedAt: Date | null;
   outcomeTokenAmount: number | null;
@@ -1362,6 +1363,199 @@ export async function settleResolvedPositions(opts: { agentId?: string; userId?:
     }
   }
   return settled;
+}
+
+/** One position the stale-sweep closed, with the reason it matched. */
+export interface AutoClosedPosition {
+  positionId: string;
+  userId: string;
+  agentId: string | null;
+  marketTitle: string;
+  outcomeLabel: string;
+  reason: string;
+  pnl: number;
+  paperTrade: boolean;
+}
+
+export interface AutoCloseResult {
+  scanned: number;
+  closed: AutoClosedPosition[];
+  errors: Array<{ positionId: string; reason: string }>;
+}
+
+/**
+ * Decide whether an open position has turned stale enough to auto-close, and
+ * return a human-readable reason if so (else null). Pure function so the exit
+ * rules can be unit-tested without the DB / on-chain / close plumbing.
+ *
+ * Both probabilities are implied probabilities in [0,1]: `entryProb` is what
+ * was recorded at open, `currentProb` is the live on-chain value now.
+ */
+export function evaluateStaleExit(args: {
+  entryProb: number;
+  currentProb: number;
+  hoursToEnd: number;
+  dropThreshold: number; // fraction, e.g. 0.30 for a 30% relative drop
+  hoursWindow: number;   // hours-before-end threshold for the losing rule
+}): string | null {
+  const { entryProb, currentProb, hoursToEnd, dropThreshold, hoursWindow } = args;
+  // Need a usable entry probability to measure a relative drop.
+  if (!(entryProb > 0)) return null;
+  // Market already ended (or end unknown-but-past) — can't trade; settlement
+  // handles it once the answer lands on chain.
+  if (!(hoursToEnd > 0)) return null;
+
+  const relativeDrop = (entryProb - currentProb) / entryProb;
+  const losing = currentProb < entryProb;
+  const pct = (p: number) => `${(p * 100).toFixed(0)}%`;
+
+  if (relativeDrop >= dropThreshold) {
+    return `implied prob fell ${(relativeDrop * 100).toFixed(0)}% from entry (${pct(entryProb)} → ${pct(currentProb)})`;
+  }
+  if (hoursToEnd <= hoursWindow && losing) {
+    return `${hoursToEnd.toFixed(1)}h to market end and losing (${pct(entryProb)} → ${pct(currentProb)})`;
+  }
+  return null;
+}
+
+/**
+ * Auto-close stale prediction positions before their market ends.
+ *
+ * Why: agents only close a 42.space position when Claude emits
+ * `CLOSE_PREDICTION` in its sidecar — which the prompt rarely produces
+ * because the LLM has no clean way to discover its open positions per
+ * market. As a market approaches `timestampEnd`, holding a low-probability
+ * outcome locks in a loss. This periodic sweep exits positions that have
+ * clearly turned against the holder, independent of the LLM.
+ *
+ * Exit rules (both evaluated against live on-chain implied probability vs.
+ * the recorded entry probability):
+ *   A. Implied probability fell ≥ `FT_AUTOCLOSE_PROB_DROP_PCT`% (default 30)
+ *      from entry — relative drop, so a 0.50 → 0.34 entry/now triggers.
+ *   B. < `FT_AUTOCLOSE_HOURS_BEFORE_END`h (default 2) remain to
+ *      `timestampEnd` AND the position is currently losing (implied prob
+ *      now below entry).
+ *
+ * Markets that are already finalised, already past `timestampEnd` (can't
+ * trade — settlement handles those), or whose entry probability is unknown
+ * are skipped. Closes route through the same `closePredictionPosition`
+ * (agent rows) / `closeUserPredictionPosition` (manual rows) flows used
+ * everywhere else, so paper vs. live mode and wallet routing are honoured.
+ *
+ * Gated by `FT_AUTOCLOSE_ENABLED` (default on; set to "false" to disable).
+ * Never throws — per-position failures are collected in `errors` so one bad
+ * market can't sink the rest of the sweep.
+ */
+export async function autoCloseStalePositions(): Promise<AutoCloseResult> {
+  const result: AutoCloseResult = { scanned: 0, closed: [], errors: [] };
+
+  if (process.env.FT_AUTOCLOSE_ENABLED === 'false') return result;
+
+  const dropPct = Number(process.env.FT_AUTOCLOSE_PROB_DROP_PCT ?? '30');
+  const hoursBeforeEnd = Number(process.env.FT_AUTOCLOSE_HOURS_BEFORE_END ?? '2');
+  const dropThreshold = (Number.isFinite(dropPct) ? dropPct : 30) / 100;
+  const hoursWindow = Number.isFinite(hoursBeforeEnd) ? hoursBeforeEnd : 2;
+
+  const open = await db.$queryRawUnsafe<OutcomePositionRow[]>(
+    `SELECT * FROM "OutcomePosition" WHERE status = 'open'`,
+  );
+  result.scanned = open.length;
+  if (open.length === 0) return result;
+
+  // Group by market so we only read each market's on-chain state once.
+  const byMarket = new Map<string, OutcomePositionRow[]>();
+  for (const p of open) {
+    if (!byMarket.has(p.marketAddress)) byMarket.set(p.marketAddress, []);
+    byMarket.get(p.marketAddress)!.push(p);
+  }
+
+  for (const [addr, positions] of byMarket) {
+    let market: Market42;
+    try {
+      market = await __testDeps.getMarketByAddress(addr);
+    } catch (err) {
+      for (const pos of positions) {
+        result.errors.push({ positionId: pos.id, reason: `market lookup failed: ${(err as Error).message}` });
+      }
+      continue;
+    }
+    let state;
+    try {
+      state = await __testDeps.readMarketOnchain(market);
+    } catch (err) {
+      for (const pos of positions) {
+        result.errors.push({ positionId: pos.id, reason: `on-chain read failed: ${(err as Error).message}` });
+      }
+      continue;
+    }
+
+    // Resolved markets settle via settleResolvedPositions, not here.
+    if (state.isFinalised) continue;
+
+    const now = Date.now();
+    // end unknown (0) → treat as far future so only the prob-drop rule can fire.
+    const hoursToEnd = state.timestampEnd > 0
+      ? (state.timestampEnd * 1000 - now) / 3_600_000
+      : Number.POSITIVE_INFINITY;
+    // Market already ended but not finalised — can't trade; let settlement
+    // pick it up once the answer lands on chain.
+    if (hoursToEnd <= 0) continue;
+
+    for (const pos of positions) {
+      const outcome = state.outcomes.find((o) => o.tokenId === pos.tokenId);
+      if (!outcome) continue;
+
+      const reason = evaluateStaleExit({
+        entryProb: pos.entryPrice,
+        currentProb: outcome.impliedProbability,
+        hoursToEnd,
+        dropThreshold,
+        hoursWindow,
+      });
+      if (!reason) continue;
+
+      try {
+        const closeRes = pos.agentId
+          ? await closePredictionPosition(
+              { agentId: pos.agentId, userId: pos.userId, agentMaxPositionSize: 0 },
+              pos.id,
+            )
+          : await closeUserPredictionPosition(pos.userId, pos.id);
+
+        if (!closeRes.ok) {
+          result.errors.push({ positionId: pos.id, reason: closeRes.reason });
+          continue;
+        }
+
+        // Record WHY it closed so /predictions and notifications can show it.
+        // Best-effort — the position is already closed even if this write fails.
+        try {
+          await db.$executeRawUnsafe(
+            `UPDATE "OutcomePosition" SET "closeReason" = $1 WHERE id = $2`,
+            reason,
+            pos.id,
+          );
+        } catch (err) {
+          console.warn(`[fortyTwo] autoClose: failed to record closeReason for ${pos.id}: ${(err as Error).message}`);
+        }
+
+        result.closed.push({
+          positionId: pos.id,
+          userId: pos.userId,
+          agentId: pos.agentId,
+          marketTitle: pos.marketTitle,
+          outcomeLabel: pos.outcomeLabel,
+          reason,
+          pnl: closeRes.pnl,
+          paperTrade: pos.paperTrade,
+        });
+      } catch (err) {
+        result.errors.push({ positionId: pos.id, reason: (err as Error).message });
+      }
+    }
+  }
+
+  return result;
 }
 
 /** True if user has explicitly opted in to live (non-paper) outcome trading. */

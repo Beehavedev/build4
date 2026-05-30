@@ -55,12 +55,19 @@ export interface TopazTradingDeps {
   buildProvider: () => ethers.AbstractProvider
   loadWallet: (walletId: string) => Promise<{ address: string; privateKey: string }>
   now: () => number
+  // Broker-fee charger seam. Defaults to the real implementation in
+  // brokerFees.ts (which builds its own BSC provider + broadcasts the
+  // transfer). Overridable so the fee pre-deduction path can be unit
+  // tested without a live RPC. Production behaviour is unchanged.
+  chargeErc20Fee: typeof import('./brokerFees').chargeErc20Fee
 }
 
 const defaultDeps: TopazTradingDeps = {
   buildProvider: () => buildBscProvider(process.env.BSC_RPC_URL),
   loadWallet: defaultLoadWallet,
   now: () => Date.now(),
+  chargeErc20Fee: (pk, token, gross, ctx, label) =>
+    import('./brokerFees').then((m) => m.chargeErc20Fee(pk, token, gross, ctx, label)),
 }
 
 let activeDeps: TopazTradingDeps = defaultDeps
@@ -166,7 +173,7 @@ export async function resolveSigner(
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
-function computeDeadline(cfg: TopazConfig, override?: number): number {
+export function computeDeadline(cfg: TopazConfig, override?: number): number {
   const sec = override && override > 0 ? Math.floor(override) : cfg.defaultDeadlineSec
   // Mandatory: deadline must always be strictly in the future. We
   // assert here so a caller passing a stale value blows up early.
@@ -177,7 +184,7 @@ function computeDeadline(cfg: TopazConfig, override?: number): number {
   return deadline
 }
 
-function applySlippage(quoted: bigint, slippageBps: number): bigint {
+export function applySlippage(quoted: bigint, slippageBps: number): bigint {
   // amountOutMin = quoted × (1 - slippage/10000). We round DOWN
   // (integer division) so the minOut is conservative — never round
   // up, that would refuse fills that match our intended slippage.
@@ -211,6 +218,88 @@ async function ensureAllowance(
   // This is the same pattern Polymarket's relayer uses (uint256 max).
   const tx = await erc.approve(spender, ethers.MaxUint256)
   await tx.wait(1)
+}
+
+// ── Pool-state cache (view valuation only) ─────────────────────────────────
+//
+// Building the Topaz page does per-pool on-chain reads (v2 reserves +
+// totalSupply, v3 slot0) for every LP position. Under repeated refreshes that
+// hammers the BSC RPC. We cache the raw read per pool address for a short TTL
+// so successive page loads reuse the same snapshot. Only the read-only
+// *valuation* paths (priceV2LpPositionsUsd / priceV3PositionsUsd) use this —
+// trade-execution and brain paths still call getPoolStats() for a fresh read,
+// since quoting/slippage must never run on a stale snapshot. We never cache
+// failures: a throwing read falls through to a fresh read next time so the
+// view self-heals.
+const POOL_STATE_CACHE_TTL_MS = 20_000
+
+interface V2PoolState {
+  reserve0: bigint
+  reserve1: bigint
+  totalSupply: bigint
+  dec0: number
+  dec1: number
+}
+interface V3PoolState {
+  sqrtPriceX96: bigint
+  dec0: number
+  dec1: number
+}
+const v2PoolStateCache = new Map<string, { state: V2PoolState; ts: number }>()
+const v3PoolStateCache = new Map<string, { state: V3PoolState; ts: number }>()
+
+/** Test/ops helper: clear the Topaz pool-state valuation cache. */
+export function __resetTopazPoolStateCache(): void {
+  v2PoolStateCache.clear()
+  v3PoolStateCache.clear()
+}
+
+async function readV2PoolStateCached(
+  poolAddr: string,
+  token0: string,
+  token1: string,
+  provider: ethers.Provider,
+): Promise<V2PoolState> {
+  const key = poolAddr.toLowerCase()
+  const now = Date.now()
+  const cached = v2PoolStateCache.get(key)
+  if (cached && now - cached.ts < POOL_STATE_CACHE_TTL_MS) return cached.state
+  const pair = new ethers.Contract(poolAddr, TOPAZ_V2_PAIR_ABI, provider)
+  const erc0 = new ethers.Contract(token0, ERC20_ABI, provider)
+  const erc1 = new ethers.Contract(token1, ERC20_ABI, provider)
+  const [reserve0, reserve1, totalSupply, dec0, dec1] = await Promise.all([
+    pair.reserve0() as Promise<bigint>,
+    pair.reserve1() as Promise<bigint>,
+    pair.totalSupply() as Promise<bigint>,
+    (erc0.decimals() as Promise<bigint>).then((d) => Number(d)).catch(() => 18),
+    (erc1.decimals() as Promise<bigint>).then((d) => Number(d)).catch(() => 18),
+  ])
+  const state: V2PoolState = { reserve0, reserve1, totalSupply, dec0, dec1 }
+  v2PoolStateCache.set(key, { state, ts: now })
+  return state
+}
+
+async function readV3PoolStateCached(
+  poolAddr: string,
+  token0: string,
+  token1: string,
+  provider: ethers.Provider,
+): Promise<V3PoolState> {
+  const key = poolAddr.toLowerCase()
+  const now = Date.now()
+  const cached = v3PoolStateCache.get(key)
+  if (cached && now - cached.ts < POOL_STATE_CACHE_TTL_MS) return cached.state
+  const pool = new ethers.Contract(poolAddr, TOPAZ_CL_POOL_ABI, provider)
+  const erc0 = new ethers.Contract(token0, ERC20_ABI, provider)
+  const erc1 = new ethers.Contract(token1, ERC20_ABI, provider)
+  const [slot0, dec0, dec1] = await Promise.all([
+    pool.slot0() as Promise<[bigint, bigint, bigint, bigint, bigint, boolean]>,
+    (erc0.decimals() as Promise<bigint>).then((d) => Number(d)).catch(() => 18),
+    (erc1.decimals() as Promise<bigint>).then((d) => Number(d)).catch(() => 18),
+  ])
+  const state: V3PoolState = { sqrtPriceX96: slot0[0], dec0, dec1 }
+  v3PoolStateCache.set(key, { state, ts: now })
+  return state
 }
 
 // ── Read paths ───────────────────────────────────────────────────────────
@@ -388,12 +477,11 @@ export async function swap(
     // quote reflects the actual net amount that will be swapped.
     let netAmountIn = args.amountIn
     if (args.feeCtx && args.amountIn > 0n) {
-      const { chargeErc20Fee } = await import('./brokerFees')
       // signer.privateKey is available on ethers.Wallet — resolveSigner
       // always returns a Wallet (never a JsonRpcSigner) in this codebase.
       const pk = (signer as any).privateKey as string
       if (!pk) throw new Error('topaz_fee_unsupported_signer')
-      const r = await chargeErc20Fee(pk, args.tokenIn, args.amountIn, {
+      const r = await activeDeps.chargeErc20Fee(pk, args.tokenIn, args.amountIn, {
         ...args.feeCtx, venue: 'topaz', side: 'swap',
       })
       netAmountIn = r.netWei
@@ -782,6 +870,164 @@ export async function claimGaugeRewards(
   }
 }
 
+// ── Claim-request validation (shared with POST /api/topaz/claim) ──────────
+
+export interface ParsedClaimRequest {
+  gauge: string
+  kind: 'v2' | 'v3'
+  tokenId?: bigint
+}
+
+export type ClaimRequestResult =
+  | { ok: true; value: ParsedClaimRequest }
+  | { ok: false; error: string }
+
+/**
+ * Validate + normalize a raw /api/topaz/claim request body. Centralized
+ * so the HTTP endpoint stays thin and the rules are unit-testable without
+ * booting the whole server. Mirrors the on-chain guards in
+ * claimGaugeRewards: a malformed gauge address is rejected up-front
+ * (fail-closed) rather than discovered downstream as a 500.
+ */
+export function parseClaimRequest(body: unknown): ClaimRequestResult {
+  const b = (body ?? {}) as { gauge?: unknown; kind?: unknown; tokenId?: unknown }
+  if (!b.gauge || typeof b.gauge !== 'string') {
+    return { ok: false, error: 'gauge required' }
+  }
+  if (!ethers.isAddress(b.gauge)) {
+    return { ok: false, error: `topaz_invalid_gauge:${b.gauge}` }
+  }
+  if (b.kind !== 'v2' && b.kind !== 'v3') {
+    return { ok: false, error: "kind must be 'v2' or 'v3'" }
+  }
+  if (b.kind === 'v3' && !b.tokenId) {
+    return { ok: false, error: 'tokenId required for v3 claim' }
+  }
+  let tokenId: bigint | undefined
+  if (b.tokenId !== undefined && b.tokenId !== null && b.tokenId !== '') {
+    try {
+      tokenId = BigInt(b.tokenId as string | number | bigint)
+    } catch {
+      return { ok: false, error: 'tokenId must be an integer' }
+    }
+    if (tokenId <= 0n) return { ok: false, error: 'tokenId must be a positive integer' }
+  }
+  return { ok: true, value: { gauge: b.gauge, kind: b.kind, tokenId } }
+}
+
+export interface ClaimAllResultItem {
+  gauge: string
+  kind: 'v2' | 'v3'
+  tokenId?: string
+  label: string
+  ok: boolean
+  txHash?: string
+  error?: string
+}
+
+export interface ClaimAllResult {
+  ok: boolean
+  claimedCount: number
+  failedCount: number
+  results: ClaimAllResultItem[]
+  error?: string
+}
+
+// A single position the caller wants claimed, used to scope claimAllGaugeRewards
+// to a subset (e.g. retrying only the gauges that failed a previous run).
+export interface ClaimTarget {
+  gauge: string
+  kind: 'v2' | 'v3'
+  tokenId?: string | bigint
+}
+
+// Stable identity for a claim position: (kind, lowercased gauge, tokenId). Used
+// to match caller-supplied targets against discovered positions. v2 positions
+// have no tokenId so it collapses to an empty segment.
+function claimItemKey(kind: 'v2' | 'v3', gauge: string, tokenId?: bigint): string {
+  return `${kind}:${gauge.toLowerCase()}:${tokenId !== undefined ? tokenId.toString() : ''}`
+}
+
+function claimTargetKey(t: ClaimTarget): string {
+  const tokenId = t.tokenId !== undefined && t.tokenId !== null && `${t.tokenId}` !== ''
+    ? BigInt(t.tokenId)
+    : undefined
+  return claimItemKey(t.kind, t.gauge, tokenId)
+}
+
+/**
+ * Claim every open gauge with claimable > 0 for the caller's wallet in a
+ * single action. Discovers both v3 NFT positions (CLGauge.getReward by
+ * tokenId) and v2 LP positions (Gauge.getReward by address), then claims
+ * each sequentially, reporting per-gauge success/failure. We claim
+ * sequentially rather than via multicall because every gauge.getReward
+ * pays out to the position owner directly — there's no router-level
+ * batch-claim entrypoint on Topaz, and sequential txns keep nonce
+ * handling simple on the user's single custodial wallet. A failure on one
+ * gauge never aborts the rest; the caller surfaces the aggregate.
+ */
+export async function claimAllGaugeRewards(
+  args: { userId?: string; targets?: ClaimTarget[] },
+): Promise<ClaimAllResult> {
+  try {
+    // Resolve the signer once to learn which wallet to enumerate. This
+    // also fails closed early if the user has no active BSC wallet.
+    const { address } = await resolveSigner({ userId: args.userId })
+    const [v3, v2] = await Promise.all([
+      listOpenLpPositions(address, { withEmissions: true }),
+      listV2LpPositions(address),
+    ])
+    let items: Array<{ gauge: string; kind: 'v2' | 'v3'; tokenId?: bigint; label: string }> = []
+    for (const p of v3) {
+      if (p.gauge && p.claimable !== undefined && p.claimable > 0n) {
+        items.push({ gauge: p.gauge, kind: 'v3', tokenId: p.tokenId, label: `#${p.tokenId.toString()}` })
+      }
+    }
+    for (const p of v2) {
+      if (p.gauge && p.claimable > 0n) {
+        items.push({ gauge: p.gauge, kind: 'v2', label: `${p.token0Symbol}/${p.token1Symbol}` })
+      }
+    }
+    // Optional retry path: when the caller passes a target subset (e.g. only
+    // the gauges that failed a previous claim-all), keep just those positions
+    // and skip everything else. Targets are matched on (kind, gauge, tokenId)
+    // — the same identity the mini-app keys rows by. A target that no longer
+    // has claimable emissions simply won't appear in `items` and is dropped.
+    if (args.targets && args.targets.length > 0) {
+      const wanted = new Set(args.targets.map(claimTargetKey))
+      items = items.filter((it) => wanted.has(claimItemKey(it.kind, it.gauge, it.tokenId)))
+    }
+    if (items.length === 0) {
+      return { ok: true, claimedCount: 0, failedCount: 0, results: [] }
+    }
+    const results: ClaimAllResultItem[] = []
+    let claimedCount = 0
+    let failedCount = 0
+    for (const item of items) {
+      const r = await claimGaugeRewards({
+        gauge: item.gauge,
+        kind: item.kind,
+        tokenId: item.tokenId,
+        userId: args.userId,
+      })
+      if (r.ok) claimedCount++
+      else failedCount++
+      results.push({
+        gauge: item.gauge,
+        kind: item.kind,
+        tokenId: item.tokenId?.toString(),
+        label: item.label,
+        ok: r.ok,
+        txHash: r.txHash,
+        error: r.error,
+      })
+    }
+    return { ok: failedCount === 0, claimedCount, failedCount, results }
+  } catch (err) {
+    return { ok: false, claimedCount: 0, failedCount: 0, results: [], error: (err as Error).message }
+  }
+}
+
 export async function getClaimableEmissions(
   gauge: string,
   walletAddr: string,
@@ -870,6 +1116,10 @@ export interface OpenLpPosition {
   // (no subgraph / unmatched) — the caller renders "—" rather than a fake 0.
   gauge?: string
   claimable?: bigint
+  // The CL pool address backing this position, resolved during emissions
+  // enrichment by matching (token0, token1, tickSpacing) against the
+  // subgraph-ranked v3 gauges. Needed to read slot0 for USD valuation.
+  pool?: string
 }
 
 export interface V2LpPosition {
@@ -1024,20 +1274,28 @@ async function enrichV3Emissions(
   const gauges = await getTopGaugesByApr(50)
   const v3Gauges = gauges.filter((g) => g.isV3 && ethers.isAddress(g.pool) && ethers.isAddress(g.gauge))
   if (v3Gauges.length === 0) return
-  // Build pool-key → gauge map by reading each v3 pool's identity once.
+  // Build pool-key → gauge/pool maps by reading each v3 pool's identity once.
   const keyToGauge = new Map<string, string>()
+  const keyToPool = new Map<string, string>()
   for (const g of v3Gauges) {
     try {
       const stats = await getPoolStats(g.pool)
       if (stats.type !== 'v3' || stats.tickSpacing === undefined) continue
-      keyToGauge.set(v3Key(stats.token0, stats.token1, stats.tickSpacing), ethers.getAddress(g.gauge))
+      const key = v3Key(stats.token0, stats.token1, stats.tickSpacing)
+      keyToGauge.set(key, ethers.getAddress(g.gauge))
+      keyToPool.set(key, ethers.getAddress(g.pool))
     } catch (e) {
       void e
     }
   }
   if (keyToGauge.size === 0) return
   for (const p of positions) {
-    const gauge = keyToGauge.get(v3Key(p.token0, p.token1, p.tickSpacing))
+    const key = v3Key(p.token0, p.token1, p.tickSpacing)
+    // Record the backing pool even when the gauge match fails, so USD
+    // valuation can still read slot0.
+    const pool = keyToPool.get(key)
+    if (pool) p.pool = pool
+    const gauge = keyToGauge.get(key)
     if (!gauge) continue
     p.gauge = gauge
     try {
@@ -1052,6 +1310,222 @@ async function enrichV3Emissions(
 
 function v3Key(token0: string, token1: string, tickSpacing: number): string {
   return `${token0.toLowerCase()}-${token1.toLowerCase()}-${tickSpacing}`
+}
+
+// ── USD valuation ────────────────────────────────────────────────────────
+//
+// Approximate USD figures for the mini-app's Topaz page. Every value is
+// best-effort: any token DexScreener can't price, or any pool read that
+// reverts, yields `null` so the UI shows "—" instead of a fabricated $0.
+
+const Q96 = 2 ** 96
+
+export interface PricedWalletBalance extends WalletTokenBalance {
+  priceUsd: number | null
+  usdValue: number | null
+}
+
+export interface PricedV2LpPosition extends V2LpPosition {
+  // USD value of (wallet + staked) LP tokens.
+  usdValue: number | null
+  // USD value of claimable TOPAZ emissions.
+  claimableUsd: number | null
+}
+
+export interface PricedV3Position extends OpenLpPosition {
+  usdValue: number | null
+  claimableUsd: number | null
+}
+
+function finiteOrNull(n: number | null | undefined): number | null {
+  if (n == null || !Number.isFinite(n)) return null
+  return n
+}
+
+/**
+ * Compute the underlying token0/token1 amounts (in raw on-chain units, as
+ * floats) for a concentrated-liquidity position given the pool's current
+ * sqrtPriceX96 and the position's tick range + liquidity. Standard Uniswap
+ * v3 math; floats are fine here because the figure is an approximation.
+ */
+export function v3UnderlyingAmounts(
+  sqrtPriceX96: bigint,
+  tickLower: number,
+  tickUpper: number,
+  liquidity: bigint,
+): { amount0: number; amount1: number } {
+  const L = Number(liquidity)
+  const sqrtP = Number(sqrtPriceX96) / Q96
+  const sa = Math.pow(1.0001, tickLower / 2)
+  const sb = Math.pow(1.0001, tickUpper / 2)
+  if (!Number.isFinite(L) || L <= 0 || !Number.isFinite(sqrtP) || sqrtP <= 0 || sb <= sa) {
+    return { amount0: 0, amount1: 0 }
+  }
+  let amount0 = 0
+  let amount1 = 0
+  if (sqrtP <= sa) {
+    amount0 = L * (1 / sa - 1 / sb)
+  } else if (sqrtP >= sb) {
+    amount1 = L * (sb - sa)
+  } else {
+    amount0 = L * (1 / sqrtP - 1 / sb)
+    amount1 = L * (sqrtP - sa)
+  }
+  return { amount0: Math.max(0, amount0), amount1: Math.max(0, amount1) }
+}
+
+/**
+ * USD spot prices for a set of BSC token addresses via DexScreener, with
+ * USDT pinned to $1 (it's the USD anchor — DexScreener occasionally returns
+ * 0.999x which would make balances look slightly off).
+ */
+export async function getTopazTokenPrices(
+  addresses: string[],
+  opts: { fetchImpl?: typeof fetch } = {},
+): Promise<Record<string, number>> {
+  const { fetchBscTokenPricesUsd } = await import('./dexScreener')
+  const prices = await fetchBscTokenPricesUsd(addresses, opts)
+  const cfg = getTopazConfig()
+  if (cfg.usdtToken) {
+    const k = cfg.usdtToken.toLowerCase()
+    if (prices[k] === undefined) prices[k] = 1
+  }
+  return prices
+}
+
+/**
+ * Attach approximate USD prices + values to wallet balances. Native BNB is
+ * priced via WBNB (cfg.wbnbToken). Pass a shared `prices` map to avoid an
+ * extra DexScreener round-trip when the caller already fetched one.
+ */
+export async function priceWalletBalancesUsd(
+  balances: WalletTokenBalance[],
+  opts: { fetchImpl?: typeof fetch; prices?: Record<string, number> } = {},
+): Promise<PricedWalletBalance[]> {
+  const cfg = getTopazConfig()
+  const wbnb = cfg.wbnbToken ? cfg.wbnbToken.toLowerCase() : null
+  let prices = opts.prices
+  if (!prices) {
+    const addrs = balances
+      .map((b) => (b.address ? b.address.toLowerCase() : wbnb))
+      .filter((a): a is string => !!a)
+    prices = await getTopazTokenPrices(addrs, opts)
+  }
+  return balances.map((b) => {
+    const key = b.address ? b.address.toLowerCase() : wbnb
+    const price = key ? prices![key] ?? null : null
+    const usdValue = price != null ? Number(b.formatted) * price : null
+    return { ...b, priceUsd: finiteOrNull(price), usdValue: finiteOrNull(usdValue) }
+  })
+}
+
+/**
+ * Attach approximate USD value to each v2 LP position. The LP share is
+ * priced from the pool's reserves: value = (reserve0·p0 + reserve1·p1) ×
+ * (heldLP / totalSupply). When only one side of the pair is priceable we
+ * approximate the pool as 2× the priced side (valid for balanced pools).
+ */
+export async function priceV2LpPositionsUsd(
+  positions: V2LpPosition[],
+  opts: { fetchImpl?: typeof fetch; prices?: Record<string, number> } = {},
+): Promise<PricedV2LpPosition[]> {
+  if (positions.length === 0) return []
+  const cfg = getTopazConfig()
+  const provider = activeDeps.buildProvider()
+  let prices = opts.prices
+  if (!prices) {
+    const addrs = new Set<string>()
+    for (const p of positions) {
+      addrs.add(p.token0.toLowerCase())
+      addrs.add(p.token1.toLowerCase())
+    }
+    if (cfg.topazToken) addrs.add(cfg.topazToken.toLowerCase())
+    prices = await getTopazTokenPrices([...addrs], opts)
+  }
+  const topazPrice = cfg.topazToken ? prices[cfg.topazToken.toLowerCase()] ?? null : null
+  const out: PricedV2LpPosition[] = []
+  for (const p of positions) {
+    let usdValue: number | null = null
+    try {
+      const { reserve0, reserve1, totalSupply, dec0, dec1 } = await readV2PoolStateCached(
+        p.pool,
+        p.token0,
+        p.token1,
+        provider,
+      )
+      const price0 = prices[p.token0.toLowerCase()] ?? null
+      const price1 = prices[p.token1.toLowerCase()] ?? null
+      const side0 = price0 != null ? (Number(reserve0) / 10 ** dec0) * price0 : null
+      const side1 = price1 != null ? (Number(reserve1) / 10 ** dec1) * price1 : null
+      let reserveUsd: number | null = null
+      if (side0 != null && side1 != null) reserveUsd = side0 + side1
+      else if (side0 != null) reserveUsd = side0 * 2
+      else if (side1 != null) reserveUsd = side1 * 2
+      if (reserveUsd != null && totalSupply > 0n) {
+        const share = Number(p.walletBalance + p.stakedBalance) / Number(totalSupply)
+        usdValue = reserveUsd * share
+      }
+    } catch (e) {
+      void e
+    }
+    const claimableUsd = topazPrice != null ? (Number(p.claimable) / 1e18) * topazPrice : null
+    out.push({ ...p, usdValue: finiteOrNull(usdValue), claimableUsd: finiteOrNull(claimableUsd) })
+  }
+  return out
+}
+
+/**
+ * Attach approximate USD value to each v3 NFT position. Requires the
+ * position's backing pool (set during emissions enrichment) to read the
+ * current sqrtPrice; positions whose pool couldn't be resolved get a null
+ * value rather than a guess.
+ */
+export async function priceV3PositionsUsd(
+  positions: OpenLpPosition[],
+  opts: { fetchImpl?: typeof fetch; prices?: Record<string, number> } = {},
+): Promise<PricedV3Position[]> {
+  if (positions.length === 0) return []
+  const cfg = getTopazConfig()
+  const provider = activeDeps.buildProvider()
+  let prices = opts.prices
+  if (!prices) {
+    const addrs = new Set<string>()
+    for (const p of positions) {
+      addrs.add(p.token0.toLowerCase())
+      addrs.add(p.token1.toLowerCase())
+    }
+    if (cfg.topazToken) addrs.add(cfg.topazToken.toLowerCase())
+    prices = await getTopazTokenPrices([...addrs], opts)
+  }
+  const topazPrice = cfg.topazToken ? prices[cfg.topazToken.toLowerCase()] ?? null : null
+  const out: PricedV3Position[] = []
+  for (const p of positions) {
+    let usdValue: number | null = null
+    try {
+      if (p.pool && ethers.isAddress(p.pool)) {
+        const { sqrtPriceX96, dec0, dec1 } = await readV3PoolStateCached(
+          p.pool,
+          p.token0,
+          p.token1,
+          provider,
+        )
+        const { amount0, amount1 } = v3UnderlyingAmounts(sqrtPriceX96, p.tickLower, p.tickUpper, p.liquidity)
+        const price0 = prices[p.token0.toLowerCase()] ?? null
+        const price1 = prices[p.token1.toLowerCase()] ?? null
+        const usd0 = price0 != null ? (amount0 / 10 ** dec0) * price0 : 0
+        const usd1 = price1 != null ? (amount1 / 10 ** dec1) * price1 : 0
+        if (price0 != null || price1 != null) usdValue = usd0 + usd1
+      }
+    } catch (e) {
+      void e
+    }
+    const claimableUsd =
+      p.claimable !== undefined && topazPrice != null
+        ? (Number(p.claimable) / 1e18) * topazPrice
+        : null
+    out.push({ ...p, usdValue: finiteOrNull(usdValue), claimableUsd: finiteOrNull(claimableUsd) })
+  }
+  return out
 }
 
 // ── Gauge ranking (subgraph) ─────────────────────────────────────────────

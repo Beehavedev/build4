@@ -16,6 +16,9 @@
  *
  *   npx tsx scripts/seedFleet.ts
  *
+ * (Or use the "Seed 50 agents" button on the /fleet admin panel, which calls
+ * the same shared seedFleetAgents() under the hood.)
+ *
  * After seeding, the fundable wallet addresses are printed (grouped by
  * strategy) and also visible on the /fleet admin panel.
  */
@@ -24,53 +27,15 @@ import { ensureNewTables } from '../src/ensureTables'
 import {
   FLEET_STRATEGIES,
   FLEET_STRATEGY_KEYS,
-  createFleetAgent,
+  seedFleetAgents,
   listFleetAgents,
 } from '../src/services/fleet'
-
-function randInt(min: number, max: number): number {
-  return Math.floor(Math.random() * (max - min + 1)) + min
-}
 
 async function main() {
   console.log('[seedFleet] ensuring tables…')
   await ensureNewTables()
 
-  let created = 0
-  let skipped = 0
-
-  for (const key of FLEET_STRATEGY_KEYS) {
-    const profile = FLEET_STRATEGIES[key]
-    if (profile.names.length !== 10) {
-      throw new Error(`Strategy ${key} must define exactly 10 names (has ${profile.names.length})`)
-    }
-    for (const name of profile.names) {
-      // maxTradeSizeBnb ranges are stored ×1000 in the profile (integer
-      // bps-of-BNB) so randomization stays integer; divide back to BNB.
-      const maxTradeSizeBnb = randInt(profile.maxTradeSizeBnb.min, profile.maxTradeSizeBnb.max) / 1000
-      const res = await createFleetAgent({
-        name,
-        strategy: key,
-        riskLevel: profile.risk,
-        maxTradeSizeBnb,
-        dailyTradeLimit: randInt(profile.dailyTradeLimit.min, profile.dailyTradeLimit.max),
-        cooldownSec: randInt(profile.cooldownSec.min, profile.cooldownSec.max),
-        jitterSec: randInt(profile.jitterSec.min, profile.jitterSec.max),
-        maxPositions: randInt(profile.maxPositions.min, profile.maxPositions.max),
-        minTrust: randInt(profile.minTrust.min, profile.minTrust.max),
-        takeProfitPct: randInt(profile.takeProfitPct.min, profile.takeProfitPct.max),
-        stopLossPct: randInt(profile.stopLossPct.min, profile.stopLossPct.max),
-        exitFillPct: randInt(profile.exitFillPct.min, profile.exitFillPct.max),
-        maxDailyLossBnb: profile.maxDailyLossBnb,
-        slippageBps: profile.slippageBps,
-        watchlist: null,
-        assignedTo: null,
-      })
-      if (res.created) created += 1
-      else skipped += 1
-    }
-  }
-
+  const { created, skipped } = await seedFleetAgents()
   console.log(`[seedFleet] done — created=${created} skipped(existing)=${skipped}`)
 
   // Print fundable addresses grouped by strategy.

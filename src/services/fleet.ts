@@ -397,6 +397,116 @@ export async function createFleetAgent(input: CreateFleetAgentInput): Promise<{ 
   return { created: true, agent: await getFleetAgent(id) }
 }
 
+// ── Bulk seed / single-create / delete (shared by panel + seed script) ────
+
+function fleetRandInt(min: number, max: number): number {
+  return Math.floor(Math.random() * (max - min + 1)) + min
+}
+
+/**
+ * Build a randomized CreateFleetAgentInput for one agent of `strategy` with a
+ * given themed `name`. Knobs are randomized within the strategy's ranges so the
+ * agents in a group are diversified, not clones. (maxTradeSizeBnb ranges are
+ * stored ×1000 as integers in the profile, so divide back to BNB.)
+ */
+function buildFleetAgentInput(strategy: FleetStrategy, name: string): CreateFleetAgentInput {
+  const profile = FLEET_STRATEGIES[strategy]
+  return {
+    name,
+    strategy,
+    riskLevel: profile.risk,
+    maxTradeSizeBnb: fleetRandInt(profile.maxTradeSizeBnb.min, profile.maxTradeSizeBnb.max) / 1000,
+    dailyTradeLimit: fleetRandInt(profile.dailyTradeLimit.min, profile.dailyTradeLimit.max),
+    cooldownSec: fleetRandInt(profile.cooldownSec.min, profile.cooldownSec.max),
+    jitterSec: fleetRandInt(profile.jitterSec.min, profile.jitterSec.max),
+    maxPositions: fleetRandInt(profile.maxPositions.min, profile.maxPositions.max),
+    minTrust: fleetRandInt(profile.minTrust.min, profile.minTrust.max),
+    takeProfitPct: fleetRandInt(profile.takeProfitPct.min, profile.takeProfitPct.max),
+    stopLossPct: fleetRandInt(profile.stopLossPct.min, profile.stopLossPct.max),
+    exitFillPct: fleetRandInt(profile.exitFillPct.min, profile.exitFillPct.max),
+    maxDailyLossBnb: profile.maxDailyLossBnb,
+    slippageBps: profile.slippageBps,
+    watchlist: null,
+    assignedTo: null,
+  }
+}
+
+/**
+ * Seed the whole fleet — up to 50 agents (5 strategies × 10 themed names).
+ * Idempotent: createFleetAgent() does ON CONFLICT (name) DO NOTHING, so
+ * re-running never duplicates or burns a fresh wallet for an already-seeded
+ * name. Shared by scripts/seedFleet.ts and the /fleet panel "Seed" button.
+ * Requires MASTER_ENCRYPTION_KEY (wallet encryption is fail-closed).
+ */
+export async function seedFleetAgents(): Promise<{ created: number; skipped: number }> {
+  // Pre-fetch existing names so reruns skip already-seeded agents WITHOUT
+  // generating/encrypting a throwaway wallet for each (createFleetAgent mints a
+  // fresh wallet in memory before its ON CONFLICT insert would discard it). The
+  // ON CONFLICT (name) DO NOTHING inside createFleetAgent remains the race
+  // safety-net; this set just avoids the wasted keygen on the common rerun path.
+  const existingRows = await db.$queryRawUnsafe<Array<{ name: string }>>(`SELECT "name" FROM "fleet_agents"`)
+  const taken = new Set(existingRows.map((r) => r.name))
+  let created = 0
+  let skipped = 0
+  for (const key of FLEET_STRATEGY_KEYS) {
+    const profile = FLEET_STRATEGIES[key]
+    if (profile.names.length !== 10) {
+      throw new Error(`Strategy ${key} must define exactly 10 names (has ${profile.names.length})`)
+    }
+    for (const name of profile.names) {
+      if (taken.has(name)) {
+        skipped += 1
+        continue
+      }
+      const res = await createFleetAgent(buildFleetAgentInput(key, name))
+      if (res.created) {
+        created += 1
+        taken.add(name)
+      } else {
+        skipped += 1
+      }
+    }
+  }
+  return { created, skipped }
+}
+
+/**
+ * Create ONE agent in `strategy`, auto-assigning the next unused themed name
+ * from that strategy's pool. reason='pool_exhausted' when all 10 names in the
+ * group are already taken.
+ */
+export async function createNextFleetAgent(
+  strategy: FleetStrategy,
+): Promise<{ created: boolean; agent: FleetAgent | null; reason?: string }> {
+  const profile = FLEET_STRATEGIES[strategy]
+  if (!profile) return { created: false, agent: null, reason: 'unknown_strategy' }
+  const rows = await db.$queryRawUnsafe<Array<{ name: string }>>(
+    `SELECT "name" FROM "fleet_agents" WHERE "strategy" = $1`,
+    strategy,
+  )
+  const taken = new Set(rows.map((r) => r.name))
+  const free = profile.names.find((n) => !taken.has(n))
+  if (!free) return { created: false, agent: null, reason: 'pool_exhausted' }
+  const res = await createFleetAgent(buildFleetAgentInput(strategy, free))
+  if (!res.created) return { created: false, agent: res.agent, reason: 'name_conflict' }
+  return { created: true, agent: res.agent }
+}
+
+/**
+ * Hard-delete a fleet agent (its encrypted wallet key goes with it). Returns
+ * true if a row was removed. The caller MUST enforce funds/position safety —
+ * this is unconditional. The fleet_* child tables carry no FK to fleet_agents,
+ * so child rows are cleaned up explicitly to avoid orphaned trades/positions/logs.
+ */
+export async function deleteFleetAgent(id: string): Promise<boolean> {
+  await db.$executeRawUnsafe(`DELETE FROM "fleet_low_balance_acks" WHERE "agent_id" = $1`, id)
+  await db.$executeRawUnsafe(`DELETE FROM "fleet_logs" WHERE "agent_id" = $1`, id)
+  await db.$executeRawUnsafe(`DELETE FROM "fleet_trades" WHERE "agent_id" = $1`, id)
+  await db.$executeRawUnsafe(`DELETE FROM "fleet_positions" WHERE "agent_id" = $1`, id)
+  const res = await db.$executeRawUnsafe(`DELETE FROM "fleet_agents" WHERE id = $1`, id)
+  return Number(res) > 0
+}
+
 /** Decrypt a fleet agent's private key (key namespace = agent id). */
 export function decryptFleetAgentKey(agent: FleetAgent): string {
   return decryptPrivateKey(agent.encryptedPk, agent.id)

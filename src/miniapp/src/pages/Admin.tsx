@@ -272,6 +272,181 @@ function BroadcastPanel() {
   )
 }
 
+interface LaunchHealth {
+  windowHours: number
+  total: number
+  byStatus: Record<string, number>
+  staleByUser: Array<{ userId: string; count: number }>
+  topErrors: Array<{ errorMessage: string; count: number }>
+}
+
+const HEALTH_STATUS_ORDER = ['launched', 'pending', 'pending_user_approval', 'stale', 'failed', 'expired', 'rejected']
+const HEALTH_STATUS_COLORS: Record<string, string> = {
+  launched: '#22c55e',
+  pending: '#eab308',
+  pending_user_approval: '#eab308',
+  stale: '#f97316',
+  failed: '#ef4444',
+  expired: '#94a3b8',
+  rejected: '#94a3b8',
+}
+
+function FourMemeHealthPanel() {
+  const [data, setData] = useState<LaunchHealth | null>(null)
+  const [err, setErr]   = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  async function load() {
+    setBusy(true)
+    setErr(null)
+    try {
+      const r = await apiFetch<{ ok: boolean } & LaunchHealth>('/api/admin/fourmeme/health')
+      setData(r)
+    } catch (e) {
+      setErr((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  useEffect(() => {
+    load()
+    const t = setInterval(load, 60_000)
+    return () => clearInterval(t)
+  }, [])
+
+  const statuses = data
+    ? Object.keys(data.byStatus).sort((a, b) => {
+        const ia = HEALTH_STATUS_ORDER.indexOf(a)
+        const ib = HEALTH_STATUS_ORDER.indexOf(b)
+        return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib)
+      })
+    : []
+
+  return (
+    <div style={{ marginBottom: 32 }} data-testid="panel-fourmeme-health">
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+        <h2 style={{ color: '#fff', margin: 0 }}>Launch Health</h2>
+        <button
+          onClick={load}
+          disabled={busy}
+          data-testid="button-refresh-launch-health"
+          style={{
+            background: '#1e1e2e',
+            color: '#cbd5e1',
+            border: '1px solid #2a2a3e',
+            borderRadius: 8,
+            padding: '4px 12px',
+            fontSize: 12,
+            cursor: busy ? 'default' : 'pointer',
+          }}
+        >
+          {busy ? 'Refreshing…' : 'Refresh'}
+        </button>
+      </div>
+      <p style={{ color: '#94a3b8', fontSize: 13, margin: '0 0 12px' }}>
+        four.meme launches in the last {data?.windowHours ?? 24}h. A spike in{' '}
+        <span style={{ color: '#f97316' }}>stale</span> or{' '}
+        <span style={{ color: '#ef4444' }}>failed</span> usually means an upstream
+        outage or a process-crash regression.
+      </p>
+
+      {err && (
+        <div
+          data-testid="text-launch-health-error"
+          style={{ background: '#3b1818', color: '#fca5a5', padding: '8px 12px', borderRadius: 8, marginBottom: 12, fontSize: 13 }}
+        >
+          {err}
+        </div>
+      )}
+
+      {!data ? (
+        <div style={{ color: '#94a3b8' }}>Loading…</div>
+      ) : (
+        <>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+            {statuses.length === 0 ? (
+              <div style={{ color: '#64748b', fontSize: 13 }} data-testid="text-launch-health-empty">
+                No launches in this window.
+              </div>
+            ) : (
+              statuses.map((s) => (
+                <div
+                  key={s}
+                  data-testid={`stat-launch-${s}`}
+                  style={{
+                    background: '#12121a',
+                    border: '1px solid #1e1e2e',
+                    borderRadius: 10,
+                    padding: '8px 14px',
+                    minWidth: 96,
+                  }}
+                >
+                  <div style={{ fontSize: 22, fontWeight: 700, color: HEALTH_STATUS_COLORS[s] ?? '#cbd5e1' }}>
+                    {data.byStatus[s]}
+                  </div>
+                  <div style={{ fontSize: 11, color: '#94a3b8' }}>{s}</div>
+                </div>
+              ))
+            )}
+          </div>
+
+          {data.topErrors.length > 0 && (
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ color: '#cbd5e1', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>Top errors</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {data.topErrors.map((e, i) => (
+                  <div
+                    key={i}
+                    data-testid={`row-launch-error-${i}`}
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      gap: 12,
+                      background: '#12121a',
+                      border: '1px solid #1e1e2e',
+                      borderRadius: 8,
+                      padding: '6px 10px',
+                      fontSize: 12,
+                    }}
+                  >
+                    <span style={{ color: '#fca5a5', wordBreak: 'break-word' }}>{e.errorMessage}</span>
+                    <span style={{ color: '#fff', fontWeight: 600, flexShrink: 0 }}>{e.count}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {data.staleByUser.length > 0 && (
+            <div>
+              <div style={{ color: '#cbd5e1', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>Stale by user</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {data.staleByUser.map((u) => (
+                  <div
+                    key={u.userId}
+                    data-testid={`row-stale-user-${u.userId}`}
+                    style={{
+                      background: '#12121a',
+                      border: '1px solid #1e1e2e',
+                      borderRadius: 8,
+                      padding: '4px 10px',
+                      fontSize: 12,
+                      color: '#cbd5e1',
+                    }}
+                  >
+                    {u.userId} <span style={{ color: '#f97316', fontWeight: 600 }}>×{u.count}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
 export default function Admin() {
   const [rates, setRates] = useState<CostRate[]>([])
   const [loading, setLoading] = useState(true)
@@ -364,6 +539,8 @@ export default function Admin() {
   return (
     <div style={{ padding: '16px 0' }} data-testid="page-admin">
       <BroadcastPanel />
+
+      <FourMemeHealthPanel />
 
       <WalletRecoveryPanel />
 

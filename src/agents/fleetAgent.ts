@@ -405,4 +405,4 @@ async function closePosition(p: any, agent: FleetAgent, proceedsBnb: number, rea
 // Test-only handle on the module-private trade functions so the concurrency
 // suite (fleetAgent.test.ts) can drive the REAL open/close paths. Not used by
 // production code.
-export const __test = { openPosition, closePosition, evaluateExit, reapStaleExitClaims }
+export const __test = { openPosition, closePosition, evaluateExit, reapStaleExitClaims, pickCandidate }

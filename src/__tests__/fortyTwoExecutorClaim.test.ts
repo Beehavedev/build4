@@ -128,7 +128,7 @@ function stubPosition(overrides: Partial<OutcomePositionRow> = {}): OutcomePosit
     marketAddress: MARKET_ADDR, marketTitle: 'Q?', tokenId: 1, outcomeLabel: 'YES',
     usdtIn: 2, entryPrice: 0.5, exitPrice: null, payoutUsdt: null, pnl: null,
     status: 'open', paperTrade: false, txHashOpen: '0xopen', txHashClose: null,
-    reasoning: null, openedAt: new Date(), closedAt: null,
+    reasoning: null, closeReason: null, openedAt: new Date(), closedAt: null,
     outcomeTokenAmount: 4, providers: null, ...overrides,
   }
 }

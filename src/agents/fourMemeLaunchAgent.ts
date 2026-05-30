@@ -401,28 +401,14 @@ async function tickOneAgent(
     })
   }
 
-  if (lifetimeCount >= MAX_LAUNCHES_LIFETIME) {
+  // Cap + dedup decision (pure, regression-tested via evaluateLaunchCaps).
+  // Order matters: lifetime ceiling, then daily cap, then pending dedup.
+  const capDecision = evaluateLaunchCaps({ lifetimeCount, recent24hCount, pendingAnyCount })
+  if (capDecision.blocked) {
     return await skip(null, {
       action: 'SKIP', name: '', ticker: '', description: '',
       initialBuyBnb: 0, conviction: 0,
-      reasoning: `lifetime_cap_reached: ${lifetimeCount}/${MAX_LAUNCHES_LIFETIME} launches ever`,
-    })
-  }
-  if (recent24hCount >= MAX_LAUNCHES_PER_DAY) {
-    return await skip(null, {
-      action: 'SKIP', name: '', ticker: '', description: '',
-      initialBuyBnb: 0, conviction: 0,
-      reasoning: `daily_cap_reached: ${recent24hCount}/${MAX_LAUNCHES_PER_DAY} launches in last 24h`,
-    })
-  }
-  // Pending dedup — applies regardless of age. Even a stuck/abandoned
-  // pending row from days ago should block until status is resolved
-  // (operator can manually mark 'failed' to clear it).
-  if (pendingAnyCount > 0) {
-    return await skip(null, {
-      action: 'SKIP', name: '', ticker: '', description: '',
-      initialBuyBnb: 0, conviction: 0,
-      reasoning: `pending_launch_exists: ${pendingAnyCount} pending row(s) — clear or wait for completion`,
+      reasoning: capDecision.reason!,
     })
   }
 
@@ -496,26 +482,20 @@ async function tickOneAgent(
   }
 
   // Sanitize + clamp the proposal before handing to the launcher.
-  const cleanName = (proposal.name ?? '').trim().slice(0, 100)
-  const cleanTicker = (proposal.ticker ?? '').trim().toUpperCase().slice(0, 10)
+  const { cleanName, cleanTicker, valid: nameTickerValid } =
+    sanitizeNameTicker(proposal.name, proposal.ticker)
   const cleanDesc = (proposal.description ?? '').trim().slice(0, 500)
   // Demo Day — user-set initial dev buy WINS over the LLM proposal.
   // The user is paying for the buy with their own BNB so they get to
   // pick the size; the LLM only controls name/ticker/description/
   // conviction. Still clamped to MAX_INITIAL_BUY_BNB defensively in
   // case a stale value sneaks through.
-  let userInitialBuy: number | null = null
-  if (agent.fourMemeLaunchInitialBuyBnb && agent.fourMemeLaunchInitialBuyBnb.trim() !== '') {
-    const n = Number(agent.fourMemeLaunchInitialBuyBnb)
-    if (Number.isFinite(n) && n > 0) userInitialBuy = n
-  }
-  const proposedBuy = Number.isFinite(proposal.initialBuyBnb) ? proposal.initialBuyBnb : 0
-  const clampedBuy = Math.max(
-    0,
-    Math.min(MAX_INITIAL_BUY_BNB, userInitialBuy != null ? userInitialBuy : proposedBuy),
+  const clampedBuy = clampInitialBuyBnb(
+    agent.fourMemeLaunchInitialBuyBnb,
+    proposal.initialBuyBnb,
   )
 
-  if (cleanName.length < 2 || cleanTicker.length < 1 || !/^[A-Z0-9$]+$/.test(cleanTicker)) {
+  if (!nameTickerValid) {
     return await skip(proposal, {
       ...proposal,
       action: 'SKIP',
@@ -803,6 +783,87 @@ export function parseProposal(raw: string): LaunchProposal {
   }
 }
 
+// ── Launch cap / dedup decision (pure, regression-tested) ────────────
+// Given the three counts the cap query produces for an agent, decide
+// whether this tick must be BLOCKED from launching, and why. The order
+// is significant and must match the historical guard order:
+//   1. lifetime ceiling (MAX_LAUNCHES_LIFETIME) — hard, never exceeded.
+//   2. daily cap (MAX_LAUNCHES_PER_DAY) — at most 1 launch per 24h.
+//   3. pending dedup — any 'pending' row (any age) blocks until resolved.
+// Keeping this pure means a refactor that weakens the daily cap or the
+// dedup is caught by a deterministic unit test, not just in production.
+export function evaluateLaunchCaps(counts: {
+  lifetimeCount: number
+  recent24hCount: number
+  pendingAnyCount: number
+}): { blocked: boolean; reason: string | null } {
+  const { lifetimeCount, recent24hCount, pendingAnyCount } = counts
+  if (lifetimeCount >= MAX_LAUNCHES_LIFETIME) {
+    return {
+      blocked: true,
+      reason: `lifetime_cap_reached: ${lifetimeCount}/${MAX_LAUNCHES_LIFETIME} launches ever`,
+    }
+  }
+  if (recent24hCount >= MAX_LAUNCHES_PER_DAY) {
+    return {
+      blocked: true,
+      reason: `daily_cap_reached: ${recent24hCount}/${MAX_LAUNCHES_PER_DAY} launches in last 24h`,
+    }
+  }
+  // Pending dedup — applies regardless of age. Even a stuck/abandoned
+  // pending row from days ago should block until status is resolved
+  // (operator can manually mark 'failed' to clear it).
+  if (pendingAnyCount > 0) {
+    return {
+      blocked: true,
+      reason: `pending_launch_exists: ${pendingAnyCount} pending row(s) — clear or wait for completion`,
+    }
+  }
+  return { blocked: false, reason: null }
+}
+
+// ── Proposal sanitizers (pure, regression-tested) ────────────────────
+// Clamp the effective initial dev-buy to the Module 4 hard cap.
+// User-configured value (decimal string) WINS over the LLM proposal,
+// but both are clamped to [0, MAX_INITIAL_BUY_BNB]. A blank / non-finite
+// / non-positive user value falls back to the LLM's (also clamped),
+// and a non-finite proposal value degrades to 0. This is the guard that
+// bounds how much user BNB a single autonomous launch can ever spend.
+export function clampInitialBuyBnb(
+  userInitialBuyRaw: string | null,
+  proposedBuyBnb: number,
+): number {
+  let userInitialBuy: number | null = null
+  if (userInitialBuyRaw && userInitialBuyRaw.trim() !== '') {
+    const n = Number(userInitialBuyRaw)
+    if (Number.isFinite(n) && n > 0) userInitialBuy = n
+  }
+  const proposedBuy = Number.isFinite(proposedBuyBnb) ? proposedBuyBnb : 0
+  return Math.max(
+    0,
+    Math.min(MAX_INITIAL_BUY_BNB, userInitialBuy != null ? userInitialBuy : proposedBuy),
+  )
+}
+
+// Sanitize + validate the LLM-proposed name/ticker. Trims, upper-cases
+// the ticker, length-clamps both, and returns a `valid` flag mirroring
+// the launch gate's reject rule: name ≥ 2 chars, ticker ≥ 1 char and
+// only [A-Z0-9$]. Rejecting here prevents a malformed proposal from
+// reaching the on-chain launcher.
+export function sanitizeNameTicker(
+  rawName: string,
+  rawTicker: string,
+): { cleanName: string; cleanTicker: string; valid: boolean } {
+  const cleanName = (rawName ?? '').trim().slice(0, 100)
+  const cleanTicker = (rawTicker ?? '').trim().toUpperCase().slice(0, 10)
+  const valid = !(
+    cleanName.length < 2 ||
+    cleanTicker.length < 1 ||
+    !/^[A-Z0-9$]+$/.test(cleanTicker)
+  )
+  return { cleanName, cleanTicker, valid }
+}
+
 // ── Brain-feed log helper ────────────────────────────────────────────
 async function logDecision(
   agent: LaunchAgentRow,
@@ -981,6 +1042,11 @@ async function notifyUserOfPendingApproval(
   params: LaunchParams,
   proposal: LaunchProposal,
   launchId: string,
+  // Task #73 — when `nudge` is set the message is a near-expiry reminder
+  // rather than the first-time proposal. Same Approve/Reject buttons and
+  // body; only the header changes so the owner gets one last chance to
+  // act before the expiry sweeper discards the row.
+  opts: { nudge?: boolean } = {},
 ): Promise<void> {
   // Late-import the runner + grammy types to avoid a require cycle and
   // to keep the agent loadable in environments where the bot isn't wired
@@ -997,13 +1063,20 @@ async function notifyUserOfPendingApproval(
   const kb = new InlineKeyboard()
     .text('✅ Approve', `flm_approve_${launchId}`)
     .text('❌ Reject',  `flm_reject_${launchId}`)
+  const header = opts.nudge
+    ? `⏳ *Launch approval expiring soon — ${agent.name}*\n\n` +
+      `You haven't approved this proposal yet and it's about to expire.\n\n`
+    : `🎰 *Launch proposal from ${agent.name}*\n\n`
+  const footer = opts.nudge
+    ? `Approve now to fire it before the window closes, or reject to discard.`
+    : `Approve to fire the launch with these exact params, or reject to discard.`
   const text =
-    `🎰 *Launch proposal from ${agent.name}*\n\n` +
+    header +
     `Token: *${params.tokenName}* ($${params.tokenSymbol})\n` +
     `Initial buy: ${params.initialBuyBnb} BNB\n` +
     `Conviction: ${(proposal.conviction * 100).toFixed(0)}%\n\n` +
     `_${proposal.reasoning?.slice(0, 240) ?? '(no rationale)'}_\n\n` +
-    `Approve to fire the launch with these exact params, or reject to discard.`
+    footer
   try {
     await bot.api.sendMessage(userRow.telegramId.toString(), text, {
       parse_mode: 'Markdown',
@@ -1014,6 +1087,102 @@ async function notifyUserOfPendingApproval(
     // mini-app card so they can act on it from there.
     console.warn('[fourMemeLaunchAgent] sendMessage failed:', err?.message ?? err)
   }
+}
+
+// ── Task #73: near-expiry approval nudge sweep ───────────────────────
+// Registered on a timer by the runner. Finds pending_user_approval rows
+// approaching their TTL (via findApprovalsNearingExpiry) and DMs each
+// owner one reminder with the same Approve/Reject buttons the original
+// proposal carried. Idempotent via an in-memory dedup set keyed by row
+// id — each row is nudged at most once per process lifetime. (A restart
+// could re-nudge a row still inside its warn window; harmless, and the
+// row is gone from the query the moment the owner acts or it expires.)
+const nudgedApprovalIds = new Set<string>()
+// Bound the set so a long-lived process can't leak: if a row's owner
+// never acts, the expiry sweeper removes it from the result set anyway,
+// and we periodically intersect against the live nearing-expiry ids.
+function pruneNudgeDedup(liveIds: Set<string>): void {
+  for (const id of nudgedApprovalIds) {
+    if (!liveIds.has(id)) nudgedApprovalIds.delete(id)
+  }
+}
+
+export async function nudgeApprovalsNearingExpiry(): Promise<{
+  found: number
+  nudged: number
+  errors: number
+}> {
+  const { findApprovalsNearingExpiry } = await import('../services/fourMemeLaunch')
+  const rows = await findApprovalsNearingExpiry()
+  const liveIds = new Set(rows.map((r) => r.id))
+  pruneNudgeDedup(liveIds)
+
+  let nudged = 0
+  let errors = 0
+  for (const row of rows) {
+    if (nudgedApprovalIds.has(row.id)) continue
+    if (!row.user_id) {
+      // No owner to DM — mark as handled so we don't re-scan it forever.
+      nudgedApprovalIds.add(row.id)
+      continue
+    }
+    try {
+      // Reconstruct the frozen proposal the row was created with so the
+      // nudge shows the same token/conviction/rationale the owner saw.
+      let meta: any = {}
+      try {
+        meta = row.metadata ? JSON.parse(row.metadata) : {}
+      } catch {
+        meta = {}
+      }
+      const params: LaunchParams = {
+        tokenName: typeof meta.tokenName === 'string' ? meta.tokenName : row.token_name,
+        tokenSymbol:
+          typeof meta.tokenSymbol === 'string' ? meta.tokenSymbol : row.token_symbol,
+        tokenDescription:
+          typeof meta.tokenDescription === 'string' ? meta.tokenDescription : '',
+        initialBuyBnb:
+          typeof meta.initialBuyBnb === 'string' ? meta.initialBuyBnb : '0',
+      }
+      const proposal: LaunchProposal = {
+        action: 'LAUNCH',
+        name: params.tokenName,
+        ticker: params.tokenSymbol,
+        description: params.tokenDescription ?? '',
+        initialBuyBnb: Number(params.initialBuyBnb) || 0,
+        conviction: typeof meta.conviction === 'number' ? meta.conviction : 0,
+        reasoning: typeof meta.reasoning === 'string' ? meta.reasoning : '',
+      }
+
+      // Look up the agent name for the header; fall back gracefully.
+      let agentName = 'your launch agent'
+      if (row.agent_id) {
+        try {
+          const a = await db.$queryRawUnsafe<Array<{ name: string }>>(
+            `SELECT "name" FROM "Agent" WHERE "id" = $1 LIMIT 1`,
+            row.agent_id,
+          )
+          if (a[0]?.name) agentName = a[0].name
+        } catch {
+          /* best-effort */
+        }
+      }
+      const agentStub = { userId: row.user_id, name: agentName } as LaunchAgentRow
+
+      await notifyUserOfPendingApproval(agentStub, params, proposal, row.id, {
+        nudge: true,
+      })
+      nudgedApprovalIds.add(row.id)
+      nudged++
+    } catch (err: any) {
+      errors++
+      console.warn(
+        '[fourMemeLaunchAgent] approval nudge failed:',
+        err?.message ?? err,
+      )
+    }
+  }
+  return { found: rows.length, nudged, errors }
 }
 
 // Convenience wrapper used by the early-return SKIP paths above.
@@ -1483,4 +1652,11 @@ export async function tickAllFourMemeTakeProfit(): Promise<TakeProfitSweepResult
 
 // Test-only surface. Exposes the TP stale-claim reaper so the regression
 // suite can prove a crash-stranded claim sentinel becomes re-claimable.
-export const __test = { reapStaleTpClaims, TP_CLAIM_LEASE_SEC }
+export const __test = {
+  reapStaleTpClaims,
+  TP_CLAIM_LEASE_SEC,
+  MAX_INITIAL_BUY_BNB,
+  MAX_LAUNCHES_PER_DAY,
+  MAX_LAUNCHES_LIFETIME,
+  MIN_CONVICTION,
+}

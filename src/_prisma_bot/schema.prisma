@@ -74,6 +74,11 @@ model User {
   // single-provider Anthropic. When true, every trading tick is run across
   // all configured providers and the quorum verdict wins.
   swarmEnabled      Boolean   @default(false)
+  // True once the user has enrolled in the Aster builder program (one-time
+  // approveBuilder signature). Added via ALTER in ensureTables.ts — MUST be
+  // declared here too or `db push --accept-data-loss` drops it every deploy,
+  // forcing a needless re-enroll.
+  asterBuilderEnrolled Boolean @default(false)
   // Set true when Telegram returns 403 (user blocked bot or deactivated chat).
   // Broadcast endpoint skips these so we don't burn rate-limit budget on
   // unreachable chats.
@@ -150,6 +155,11 @@ model Agent {
 
   // On-chain identity — every BUILD4 agent lives in its own wallet
   walletAddress   String?   @unique
+  // Campaign-mode wallet pin (Path A): NULL = fall back to the user's
+  // primary BSC wallet; non-NULL pins this agent's 42.space trades to a
+  // specific Wallet.id. MUST be declared here — `db push` drops it
+  // otherwise, which would un-pin every campaign agent on each deploy.
+  walletId        String?
   encryptedPK     String?
   onchainTxHash   String?
   onchainChain    String?   @default("BSC")
@@ -175,6 +185,11 @@ model Agent {
   currentPair      String?
   lastScanScore    Int?
 
+  // House/system agents minted by BUILD4 itself. Flagged so they can be
+  // filtered out of user-facing lists. MUST be declared here so `db push`
+  // doesn't drop it (and silently un-flag house agents) on each deploy.
+  isHouseAgent     Boolean  @default(false)
+
   // Polymarket Phase 3 — see prisma/schema.prisma for the full doc-comment.
   polymarketEnabled       Boolean  @default(false)
   polymarketMaxSizeUsdc   Float    @default(5)
@@ -199,6 +214,42 @@ model Agent {
   // knob. 14 days = roughly biweekly capital recycling.
   predictionEdgeThreshold    Float?  @default(0.05)
   predictionMaxDurationDays  Float?  @default(14)
+
+  // four.meme integration — see src/ensureTables.ts for the canonical
+  // doc-comments. These MUST be declared here too: Render's deploy runs
+  // `prisma db push --accept-data-loss` against this schema, which DROPS
+  // any column not declared here. They were previously only added in
+  // ensureTables.ts, so every deploy silently wiped them back to their
+  // defaults (e.g. the per-agent launch toggle reset to false for all
+  // users). Keep these in sync with the ALTER TABLE statements in
+  // ensureTables.ts.
+  fourMemeEnabled                Boolean  @default(false)
+  fourMemeLaunchEnabled          Boolean  @default(false)
+  lastFourMemeLaunchTickAt       DateTime?
+  fourMemeLaunchRequiresApproval Boolean  @default(false)
+  fourMemeLaunchIntervalMinutes  Int?
+  fourMemeLaunchInitialBuyBnb    String?
+  fourMemeLaunchTakeProfitPct    Int?
+
+  // four.meme SNIPE family — per-agent opt-in + tuning knobs for sniping
+  // other people's fresh bonding-curve launches. Same drop-on-deploy
+  // hazard as the launch columns: declared here so `db push` keeps them.
+  // Keep in sync with the ALTER TABLE statements in ensureTables.ts.
+  fourMemeSnipeEnabled        Boolean   @default(false)
+  lastFourMemeSnipeTickAt     DateTime?
+  fourMemeSnipeBuyBnb         String?
+  fourMemeSnipeMinTrust       Int?
+  fourMemeSnipeMaxPositions   Int?
+  fourMemeSnipeTakeProfitPct  Int?
+  fourMemeSnipeStopLossPct    Int?
+  fourMemeSnipeExitFillPct    Int?
+
+  // Topaz ve(3,3) LP-farming (Phase 1). Same drop-on-deploy hazard —
+  // declared here so `db push` keeps them. Matches the NOT NULL DEFAULT
+  // ALTERs in ensureTables.ts.
+  topazEnabled     Boolean   @default(false)
+  topazMaxSizeUsdt Float     @default(50)
+  lastTopazTickAt  DateTime?
 
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @default(now()) @updatedAt
@@ -378,6 +429,10 @@ model OutcomePosition {
   txHashOpen      String?
   txHashClose     String?
   reasoning       String?
+  // Human-readable reason a position was auto-closed by the stale-sweep
+  // (e.g. "implied prob fell 34% from entry"). Null for manual/agent
+  // LLM closes and resolution settlements.
+  closeReason     String?
   // Per-provider swarm telemetry captured at open (see ProviderCostRate).
   providers       Json?
 

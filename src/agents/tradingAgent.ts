@@ -41,7 +41,7 @@ import { executeOpen, executeClose, isLiveVenueRejection } from './exchangeAdapt
 let _useRawSqlOnly = false
 let _staleClientWarned = false
 
-async function _writeAgentLogRaw(d: any): Promise<void> {
+export async function _writeAgentLogRaw(d: any): Promise<void> {
   // Raw SQL fallback. Bypasses Prisma's typed-client validation entirely
   // so the new `exchange` column (added by ensureTables on every boot)
   // can be written even when the deployed Prisma client doesn't know

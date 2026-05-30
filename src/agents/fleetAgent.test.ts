@@ -25,7 +25,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { db } from '../db'
 import { __test, __testDeps } from './fleetAgent'
-import { getTodayStats, getOpenPositionCounts, getOpenTokensByAgent } from '../services/fleet'
+import { getTodayStats, getOpenPositionCounts, getOpenTokensByAgent, agentOpenGate } from '../services/fleet'
 import type { FleetAgent, FleetCandidate } from '../services/fleet'
 
 // ── Reachability + self-provisioning ───────────────────────────────────────
@@ -750,5 +750,141 @@ test('getOpenPositionCounts/getOpenTokensByAgent count only open rows per agent 
     // cleanup() only knows AGENT_ID; remove agent B's rows explicitly too.
     await cleanup()
     try { await db.$executeRawUnsafe(`DELETE FROM "fleet_positions" WHERE "agent_id" = $1`, AGENT_B) } catch { /* best-effort */ }
+  }
+})
+
+// ───────────────────────────────────────────────────────────────────────────
+// 10) END-TO-END open-gate cap: getOpenPositionCounts() → agentOpenGate().
+//     Test 9 proves the COUNT query in isolation; this proves the COMPOSITION
+//     that production actually runs (tickAllFleetAgents): the real per-agent
+//     open count is fed straight into agentOpenGate(), which must return
+//     'max_positions' once the cap is reached and stay clear below it. A
+//     regression in either the threshold comparison or the count wiring would
+//     let an agent exceed maxPositions. Driven against REAL Postgres.
+// ───────────────────────────────────────────────────────────────────────────
+test('open-gate enforces the cap end-to-end: real open count at maxPositions blocks, below it clears', async (t) => {
+  if (!(await dbReachable())) { t.skip('No reachable Postgres (DATABASE_URL) — open-gate cap test skipped'); return }
+  await ensureFleetTables()
+  await cleanup()
+
+  // Agent with an explicit small cap so we can straddle it precisely.
+  const agent = makeAgent()
+  agent.maxPositions = 2
+
+  let pseq = 0
+  async function seedOpen(token: string): Promise<void> {
+    pseq += 1
+    await db.$executeRawUnsafe(
+      `INSERT INTO "fleet_positions" (
+         "id","agent_id","token_address","version","entry_bnb_wei","entry_cost_bnb",
+         "tokens_wei","entry_fill_pct","trust_at_entry","mock","status"
+       ) VALUES ($1,$2,$3,2,'10000000000000000',0.01,'1000000000000000000',0.1,80,false,'open')`,
+      `fpos_itest_cap_${SUFFIX}_${pseq}`, agent.id, token,
+    )
+  }
+
+  try {
+    // ── Below the cap (1 open < cap 2): the real count must clear the gate. ──
+    await seedOpen('0x' + '1'.repeat(40))
+    let counts = await getOpenPositionCounts()
+    assert.equal(counts.get(agent.id), 1, 'precondition: exactly one open position seeded')
+    assert.equal(
+      agentOpenGate(agent, undefined, counts.get(agent.id) ?? 0),
+      null,
+      'below the cap the real open count must leave the gate clear',
+    )
+
+    // ── At the cap (2 open === cap 2): the gate must block with max_positions.─
+    await seedOpen('0x' + '2'.repeat(40))
+    counts = await getOpenPositionCounts()
+    assert.equal(counts.get(agent.id), 2, 'precondition: a second open position seeded (now at the cap)')
+    assert.equal(
+      agentOpenGate(agent, undefined, counts.get(agent.id) ?? 0),
+      'max_positions',
+      'at the cap the real open count must block the open with max_positions',
+    )
+
+    // ── Over the cap (3 open > cap 2): a closed row must NOT relieve the cap.─
+    // Add a third OPEN and a CLOSED row; only the opens count, so we stay over.
+    await seedOpen('0x' + '3'.repeat(40))
+    await db.$executeRawUnsafe(
+      `INSERT INTO "fleet_positions" (
+         "id","agent_id","token_address","version","entry_bnb_wei","entry_cost_bnb",
+         "tokens_wei","entry_fill_pct","trust_at_entry","mock","status"
+       ) VALUES ($1,$2,$3,2,'10000000000000000',0.01,'1000000000000000000',0.1,80,false,'closed')`,
+      `fpos_itest_cap_${SUFFIX}_closed`, agent.id, '0x' + '4'.repeat(40),
+    )
+    counts = await getOpenPositionCounts()
+    assert.equal(counts.get(agent.id), 3, 'a closed position must not be counted — only the 3 opens')
+    assert.equal(
+      agentOpenGate(agent, undefined, counts.get(agent.id) ?? 0),
+      'max_positions',
+      'over the cap the gate must keep blocking (closed rows do not relieve the cap)',
+    )
+  } finally {
+    await cleanup()
+  }
+})
+
+// ───────────────────────────────────────────────────────────────────────────
+// 11) END-TO-END held-token dedupe: getOpenTokensByAgent() → pickCandidate().
+//     Test 9 proves the held-token SET query (incl. lowercasing) in isolation;
+//     this proves the COMPOSITION production runs: the real held-token set is
+//     fed into pickCandidate(), which must SKIP any candidate whose token the
+//     agent already holds — case-insensitively, since on-chain addresses arrive
+//     in mixed case but the held set is lowercased. A regression in the
+//     dedupe wiring would let an agent re-buy a bag it already holds. Driven
+//     against REAL Postgres.
+// ───────────────────────────────────────────────────────────────────────────
+test('open-gate dedupes held tokens end-to-end: a candidate the agent already holds is skipped case-insensitively', async (t) => {
+  if (!(await dbReachable())) { t.skip('No reachable Postgres (DATABASE_URL) — open-gate dedupe test skipped'); return }
+  await ensureFleetTables()
+  await cleanup()
+
+  const agent = makeAgent() // momentum, minTrust 0 — makeCandidate() passes its filter
+
+  // The agent already holds this token. It is stored MIXED-CASE on the row so
+  // we prove the held set is lowercased AND the dedupe compares lowercased.
+  const HELD_MIXED = '0x' + 'AbCdEf'.repeat(6) + 'AbCd' // 40 mixed-case hex chars
+  const FRESH = '0x' + 'f'.repeat(40)                   // a token the agent does NOT hold
+
+  await db.$executeRawUnsafe(
+    `INSERT INTO "fleet_positions" (
+       "id","agent_id","token_address","version","entry_bnb_wei","entry_cost_bnb",
+       "tokens_wei","entry_fill_pct","trust_at_entry","mock","status"
+     ) VALUES ($1,$2,$3,2,'10000000000000000',0.01,'1000000000000000000',0.1,80,false,'open')`,
+    `fpos_itest_dedupe_${SUFFIX}`, agent.id, HELD_MIXED,
+  )
+
+  try {
+    // The REAL held-token feed the open sweep consults for this agent.
+    const held = (await getOpenTokensByAgent()).get(agent.id) ?? new Set<string>()
+    assert.ok(held.has(HELD_MIXED.toLowerCase()), 'precondition: the held set carries the lowercased held token')
+
+    // A candidate for the SAME token, but presented UPPER-CASE (as an on-chain
+    // address might arrive). The dedupe must still skip it.
+    const heldCand = makeCandidate()
+    heldCand.tokenAddress = HELD_MIXED.toUpperCase()
+    assert.equal(
+      __test.pickCandidate(agent, [heldCand], new Set<string>(), held),
+      null,
+      'a candidate whose token the agent already holds must be skipped (case-insensitively)',
+    )
+
+    // A candidate for a DIFFERENT token must NOT be skipped — proves the dedupe
+    // only blocks the held token, not every candidate.
+    const freshCand = makeCandidate()
+    freshCand.tokenAddress = FRESH
+    const picked = __test.pickCandidate(agent, [freshCand], new Set<string>(), held)
+    assert.ok(picked, 'a candidate for a token the agent does NOT hold must be eligible')
+    assert.equal(picked!.tokenAddress, FRESH, 'the eligible (un-held) candidate must be the one picked')
+
+    // With BOTH offered, the held one is filtered out and the fresh one wins —
+    // the full composition end-to-end.
+    const both = __test.pickCandidate(agent, [heldCand, freshCand], new Set<string>(), held)
+    assert.ok(both, 'with a held + a fresh candidate offered, one must still be pickable')
+    assert.equal(both!.tokenAddress, FRESH, 'the held candidate is deduped out; only the fresh one is picked')
+  } finally {
+    await cleanup()
   }
 })

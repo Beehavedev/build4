@@ -115,6 +115,160 @@ interface OpenPositionRow {
   openedAt: Date
 }
 
+// ── Raw SQL helpers (extracted for focused unit tests) ─────────────────
+// Every position-accounting / idempotency statement the Topaz agent issues
+// lives here as a one-statement exported helper so src/__tests__/topazSql.test.ts
+// can assert each WHERE/SET clause and the $1/$2 parameter binding order.
+// A swapped placeholder or a renamed column would silently corrupt
+// LP-position accounting and only ever surface in production. Mirrors the
+// _writeAgentLogRaw extraction done for the perp/security paths (Task #42).
+
+// Daily-exposure circuit breaker: sum of entryValueUsdt opened by this
+// agent in the trailing 24h window.
+export async function _sumOpenedLast24hRaw(agentId: string): Promise<number> {
+  const rows = await db.$queryRawUnsafe<Array<{ total: string | null }>>(
+    `SELECT COALESCE(SUM("entryValueUsdt"), 0)::text AS total
+       FROM "TopazPosition"
+      WHERE "agentId" = $1
+        AND "openedAt" >= NOW() - INTERVAL '24 hours'`,
+    agentId,
+  )
+  return Number(rows[0]?.total ?? 0)
+}
+
+// OPEN_LP dedup probe: does this agent already hold an open position on
+// the given pool? Pool match is case-insensitive (LOWER on both sides).
+export async function _findOpenPositionOnPoolRaw(
+  agentId: string,
+  pool: string,
+): Promise<Array<{ id: string }>> {
+  return db.$queryRawUnsafe<Array<{ id: string }>>(
+    `SELECT id FROM "TopazPosition"
+      WHERE "agentId" = $1 AND LOWER("poolAddress") = LOWER($2) AND status = 'open'
+      LIMIT 1`,
+    agentId,
+    pool,
+  )
+}
+
+// Load the active/unpaused agents in the allowlist for a sweep.
+export async function _loadActiveTopazAgentsRaw(ids: string[]): Promise<any[]> {
+  return db.$queryRawUnsafe<any[]>(
+    `SELECT a."id", a."userId", a."name",
+            COALESCE(a."topazEnabled", false) AS "topazEnabled",
+            COALESCE(a."topazMaxSizeUsdt", 50) AS "topazMaxSizeUsdt",
+            a."lastTopazTickAt", a."enabledVenues"
+       FROM "Agent" a
+      WHERE a."isActive" = true AND a."isPaused" = false
+        AND a."id" = ANY($1::text[])`,
+    ids,
+  )
+}
+
+// Stamp the per-agent tick clock so MIN_TICK_INTERVAL_MS throttling works.
+export async function _touchAgentTickRaw(agentId: string): Promise<void> {
+  await db.$executeRawUnsafe(
+    `UPDATE "Agent" SET "lastTopazTickAt" = NOW() WHERE id = $1`,
+    agentId,
+  )
+}
+
+// Load this agent's persisted open positions, newest first.
+export async function _loadOpenPositionsRaw(agentId: string): Promise<OpenPositionRow[]> {
+  return db.$queryRawUnsafe<OpenPositionRow[]>(
+    `SELECT id, "poolAddress", "positionType", "tokenId", "gaugeAddress",
+            "lpAmount"::text AS "lpAmount", "tokenA", "tokenB", "stable",
+            "entryValueUsdt", "openedAt"
+       FROM "TopazPosition"
+      WHERE "agentId" = $1 AND status = 'open'
+      ORDER BY "openedAt" DESC`,
+    agentId,
+  )
+}
+
+// Persist a freshly-opened v2 LP position. Callers pass already-prepared
+// values (pool lowercased, lpAmount stringified, reasoning sliced).
+export async function _insertV2PositionRaw(args: {
+  userId: string
+  agentId: string
+  poolAddress: string
+  entryValueUsdt: number
+  txHashOpen: string | null
+  gaugeAddress: string | null
+  lpAmount: string
+  tokenA: string
+  tokenB: string
+  stable: boolean
+  reasoning: string
+}): Promise<void> {
+  await db.$executeRawUnsafe(
+    `INSERT INTO "TopazPosition"
+       ("userId","agentId","poolAddress","positionType","status","entryValueUsdt",
+        "txHashOpen","gaugeAddress","lpAmount","tokenA","tokenB","stable","reasoning","openedAt")
+     VALUES ($1,$2,$3,'v2-lp','open',$4,$5,$6,$7::numeric,$8,$9,$10,$11,NOW())`,
+    args.userId, args.agentId, args.poolAddress,
+    args.entryValueUsdt, args.txHashOpen, args.gaugeAddress,
+    args.lpAmount, args.tokenA, args.tokenB, args.stable,
+    args.reasoning,
+  )
+}
+
+// Persist a freshly-opened v3 NFT position. Callers pass already-prepared
+// values (pool lowercased, tokenId stringified-or-null, reasoning sliced).
+export async function _insertV3PositionRaw(args: {
+  userId: string
+  agentId: string
+  poolAddress: string
+  entryValueUsdt: number
+  tokenId: string | null
+  tickLower: number
+  tickUpper: number
+  txHashOpen: string | null
+  gaugeAddress: string | null
+  reasoning: string
+}): Promise<void> {
+  await db.$executeRawUnsafe(
+    `INSERT INTO "TopazPosition"
+       ("userId","agentId","poolAddress","positionType","status","entryValueUsdt",
+        "tokenId","tickLower","tickUpper","txHashOpen","gaugeAddress","reasoning","openedAt")
+     VALUES ($1,$2,$3,'v3-nft','open',$4,$5,$6,$7,$8,$9,$10,NOW())`,
+    args.userId, args.agentId, args.poolAddress,
+    args.entryValueUsdt, args.tokenId,
+    args.tickLower, args.tickUpper, args.txHashOpen, args.gaugeAddress,
+    args.reasoning,
+  )
+}
+
+// Mark a position closed and record real exit amounts/value + close tx.
+export async function _closePositionRaw(args: {
+  id: string
+  exitAmt0: number
+  exitAmt1: number
+  exitValueUsdt: number | null
+  txHashClose: string | null
+}): Promise<void> {
+  await db.$executeRawUnsafe(
+    `UPDATE "TopazPosition"
+        SET status = 'closed',
+            "exitAmt0" = $2, "exitAmt1" = $3,
+            "exitValueUsdt" = $4,
+            "txHashClose" = $5,
+            "closedAt" = NOW()
+      WHERE id = $1`,
+    args.id, args.exitAmt0, args.exitAmt1, args.exitValueUsdt, args.txHashClose,
+  )
+}
+
+// Increment claimed-emissions accounting on a position (NULL-safe add).
+export async function _incrementClaimedRaw(positionId: string, claimedHuman: number): Promise<void> {
+  await db.$executeRawUnsafe(
+    `UPDATE "TopazPosition"
+        SET "claimedTopazAmt" = COALESCE("claimedTopazAmt", 0) + $2
+      WHERE id = $1`,
+    positionId, claimedHuman,
+  )
+}
+
 // ── Risk guard ─────────────────────────────────────────────────────────
 // Parity with perp venues' guards (max per-trade size + daily loss).
 // We use "daily exposure" (sum of entryValueUsdt opened in last 24h) as
@@ -148,14 +302,7 @@ async function checkTopazRiskGuard(
   // Daily-exposure circuit breaker.
   const dailyLimit = Number(process.env.TOPAZ_DAILY_BUDGET_USDT ?? DAILY_OPEN_LIMIT_USDT_DEFAULT)
   if (Number.isFinite(dailyLimit) && dailyLimit > 0) {
-    const rows = await db.$queryRawUnsafe<Array<{ total: string | null }>>(
-      `SELECT COALESCE(SUM("entryValueUsdt"), 0)::text AS total
-         FROM "TopazPosition"
-        WHERE "agentId" = $1
-          AND "openedAt" >= NOW() - INTERVAL '24 hours'`,
-      agent.id,
-    )
-    const opened24h = Number(rows[0]?.total ?? 0)
+    const opened24h = await _sumOpenedLast24hRaw(agent.id)
     if (opened24h + decision.amountUsdt > dailyLimit) {
       return { ok: false, reason: `daily_budget_exceeded:$${opened24h.toFixed(0)}+${decision.amountUsdt} > $${dailyLimit}` }
     }
@@ -163,13 +310,7 @@ async function checkTopazRiskGuard(
 
   // OPEN_LP dedup: refuse to open a second LP on a pool we already hold.
   if (decision.action === 'OPEN_LP') {
-    const existing = await db.$queryRawUnsafe<Array<{ id: string }>>(
-      `SELECT id FROM "TopazPosition"
-        WHERE "agentId" = $1 AND LOWER("poolAddress") = LOWER($2) AND status = 'open'
-        LIMIT 1`,
-      agent.id,
-      decision.pool,
-    )
+    const existing = await _findOpenPositionOnPoolRaw(agent.id, decision.pool)
     if (existing.length > 0) {
       return { ok: false, reason: `pool_already_held:${decision.pool}` }
     }
@@ -198,16 +339,7 @@ export async function tickAllTopazAgents(opts: { onlyAgentId?: string; force?: b
   let agents: TopazAgentRow[] = []
   try {
     const ids = opts.onlyAgentId ? [opts.onlyAgentId] : Array.from(cfg.agentAllowlist)
-    const rows = await db.$queryRawUnsafe<any[]>(
-      `SELECT a."id", a."userId", a."name",
-              COALESCE(a."topazEnabled", false) AS "topazEnabled",
-              COALESCE(a."topazMaxSizeUsdt", 50) AS "topazMaxSizeUsdt",
-              a."lastTopazTickAt", a."enabledVenues"
-         FROM "Agent" a
-        WHERE a."isActive" = true AND a."isPaused" = false
-          AND a."id" = ANY($1::text[])`,
-      ids,
-    )
+    const rows = await _loadActiveTopazAgentsRaw(ids)
     // Subscription soft-pause: drop agents whose owner's subscription
     // expired (no-op when SUBSCRIPTION_ENFORCED is off).
     const { filterAgentsByActiveSubscription } = await import('../services/subscriptions')
@@ -268,21 +400,10 @@ async function tickOneAgent(
   topGauges: RankedGauge[],
   chainPositions: OpenLpPosition[],
 ): Promise<{ actionsTaken: number; actionsSkipped: number }> {
-  await db.$executeRawUnsafe(
-    `UPDATE "Agent" SET "lastTopazTickAt" = NOW() WHERE id = $1`,
-    agent.id,
-  )
+  await _touchAgentTickRaw(agent.id)
 
   // Load this agent's persisted open positions + claimable rewards.
-  const openRows = await db.$queryRawUnsafe<OpenPositionRow[]>(
-    `SELECT id, "poolAddress", "positionType", "tokenId", "gaugeAddress",
-            "lpAmount"::text AS "lpAmount", "tokenA", "tokenB", "stable",
-            "entryValueUsdt", "openedAt"
-       FROM "TopazPosition"
-      WHERE "agentId" = $1 AND status = 'open'
-      ORDER BY "openedAt" DESC`,
-    agent.id,
-  )
+  const openRows = await _loadOpenPositionsRaw(agent.id)
 
   const claimables: Array<{ row: OpenPositionRow; earned: bigint }> = []
   for (const row of openRows) {
@@ -451,16 +572,19 @@ async function executeOpenLp(
       const stk = await stakeInGauge({ gauge, kind: 'v2', lpAmount: minted })
       if (stk.ok) stakeTx = stk.txHash ?? null
     }
-    await db.$executeRawUnsafe(
-      `INSERT INTO "TopazPosition"
-         ("userId","agentId","poolAddress","positionType","status","entryValueUsdt",
-          "txHashOpen","gaugeAddress","lpAmount","tokenA","tokenB","stable","reasoning","openedAt")
-       VALUES ($1,$2,$3,'v2-lp','open',$4,$5,$6,$7::numeric,$8,$9,$10,$11,NOW())`,
-      agent.userId, agent.id, pair.toLowerCase(),
-      decision.amountUsdt, addR.txHash ?? null, gauge,
-      minted.toString(), stats.token0, stats.token1, !!stats.stable,
-      `[TOPAZ OPEN_LP v2] ${decision.reasoning} :: stake=${stakeTx ?? 'none'}`.slice(0, 500),
-    )
+    await _insertV2PositionRaw({
+      userId: agent.userId,
+      agentId: agent.id,
+      poolAddress: pair.toLowerCase(),
+      entryValueUsdt: decision.amountUsdt,
+      txHashOpen: addR.txHash ?? null,
+      gaugeAddress: gauge,
+      lpAmount: minted.toString(),
+      tokenA: stats.token0,
+      tokenB: stats.token1,
+      stable: !!stats.stable,
+      reasoning: `[TOPAZ OPEN_LP v2] ${decision.reasoning} :: stake=${stakeTx ?? 'none'}`.slice(0, 500),
+    })
     return { execution: `open_v2_lp_ok:${addR.txHash} stake=${stakeTx ?? 'none'}`, txHash: addR.txHash ?? null, executed: true }
   }
 
@@ -497,16 +621,18 @@ async function executeOpenLp(
     const stk = await stakeInGauge({ gauge, kind: 'v3', tokenId })
     if (stk.ok) stakeTx = stk.txHash ?? null
   }
-  await db.$executeRawUnsafe(
-    `INSERT INTO "TopazPosition"
-       ("userId","agentId","poolAddress","positionType","status","entryValueUsdt",
-        "tokenId","tickLower","tickUpper","txHashOpen","gaugeAddress","reasoning","openedAt")
-     VALUES ($1,$2,$3,'v3-nft','open',$4,$5,$6,$7,$8,$9,$10,NOW())`,
-    agent.userId, agent.id, decision.pool.toLowerCase(),
-    decision.amountUsdt, tokenId?.toString() ?? null,
-    decision.tickLower, decision.tickUpper, mintR.txHash ?? null, gauge,
-    `[TOPAZ OPEN_LP v3] ${decision.reasoning} :: stake=${stakeTx ?? 'none'}`.slice(0, 500),
-  )
+  await _insertV3PositionRaw({
+    userId: agent.userId,
+    agentId: agent.id,
+    poolAddress: decision.pool.toLowerCase(),
+    entryValueUsdt: decision.amountUsdt,
+    tokenId: tokenId?.toString() ?? null,
+    tickLower: decision.tickLower,
+    tickUpper: decision.tickUpper,
+    txHashOpen: mintR.txHash ?? null,
+    gaugeAddress: gauge,
+    reasoning: `[TOPAZ OPEN_LP v3] ${decision.reasoning} :: stake=${stakeTx ?? 'none'}`.slice(0, 500),
+  })
   return { execution: `open_v3_lp_ok:${mintR.txHash} stake=${stakeTx ?? 'none'}`, txHash: mintR.txHash ?? null, executed: true }
 }
 
@@ -622,20 +748,13 @@ async function executeCloseLp(
     exitValueUsdt = Number(ethers.formatUnits(exitAmt1, 18)) * 2
   }
 
-  await db.$executeRawUnsafe(
-    `UPDATE "TopazPosition"
-        SET status = 'closed',
-            "exitAmt0" = $2, "exitAmt1" = $3,
-            "exitValueUsdt" = $4,
-            "txHashClose" = $5,
-            "closedAt" = NOW()
-      WHERE id = $1`,
-    target.id,
-    Number(ethers.formatUnits(exitAmt0, 18)),
-    Number(ethers.formatUnits(exitAmt1, 18)),
+  await _closePositionRaw({
+    id: target.id,
+    exitAmt0: Number(ethers.formatUnits(exitAmt0, 18)),
+    exitAmt1: Number(ethers.formatUnits(exitAmt1, 18)),
     exitValueUsdt,
-    closeTx,
-  )
+    txHashClose: closeTx,
+  })
   return { execution: `close_lp_ok:${closeTx} unstake=${unstakeTx ?? 'none'} exit0=${exitAmt0} exit1=${exitAmt1}`, txHash: closeTx, executed: true }
 }
 
@@ -675,12 +794,7 @@ async function executeClaim(
         // most ve(3,3) emission tokens). USD value left NULL (no oracle).
         const claimedHuman = Number(ethers.formatUnits(delta, 18))
         claimed.push(`${row.poolAddress.slice(0, 10)}…=${claimedHuman.toFixed(4)}`)
-        await db.$executeRawUnsafe(
-          `UPDATE "TopazPosition"
-              SET "claimedTopazAmt" = COALESCE("claimedTopazAmt", 0) + $2
-            WHERE id = $1`,
-          row.id, claimedHuman,
-        )
+        await _incrementClaimedRaw(row.id, claimedHuman)
       }
     } catch { /* skip this one */ }
   }

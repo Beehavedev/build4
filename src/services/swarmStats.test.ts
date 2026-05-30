@@ -28,6 +28,8 @@ test('formatSwarmStats renders per-provider rows + totals', () => {
         // 1.5M * $3 + 0.5M * $15 = 4.5 + 7.5 = $12
         estimatedUsd: 12,
         costRate: { input: 3, output: 15 },
+        legacyCallCount: 0,
+        legacyEstimatedUsd: 0,
       },
       {
         provider: 'xai',
@@ -39,6 +41,8 @@ test('formatSwarmStats renders per-provider rows + totals', () => {
         // 0.4M * $0.3 + 0.1M * $0.5 = 0.12 + 0.05 = $0.17
         estimatedUsd: 0.17,
         costRate: { input: 0.3, output: 0.5 },
+        legacyCallCount: 0,
+        legacyEstimatedUsd: 0,
       },
     ],
   }
@@ -82,6 +86,12 @@ test('getSwarmStats reads only AgentLog (not OutcomePosition) and computes USD w
   assert.match(capturedSql, /tokens_used/)
   assert.match(capturedSql, /tokens_used, 0\) \* 0\.7/)
   assert.match(capturedSql, /tokens_used, 0\) \* 0\.3/)
+  // Estimated-vs-measured split (Task #39): the SQL must additionally report
+  // how many rows (and tokens) were legacy/inferred so the dashboard can show
+  // what share of the cost is estimated rather than measured.
+  assert.match(capturedSql, /legacy_call_count/)
+  assert.match(capturedSql, /legacy_input_tokens/)
+  assert.match(capturedSql, /legacy_output_tokens/)
   // Regression guard: `jsonb_array_elements` raises Postgres 22023
   // ("cannot extract elements from a scalar") if any AgentLog row stored
   // a JSONB scalar (e.g. JSON null, object, string) under `providers`
@@ -107,6 +117,83 @@ test('getSwarmStats reads only AgentLog (not OutcomePosition) and computes USD w
   assert.equal(report.quorum!.noQuorumTicks, 1)
   assert.equal(report.quorum!.quorumTicks, 4)
   assert.equal(report.quorum!.noQuorumRate, 0.2)
+})
+
+test('getSwarmStats surfaces legacy (estimated) call count + USD per provider', async () => {
+  const report = await getSwarmStats('7d', {
+    query: async () => [
+      // anthropic: 5 calls total, 2 of them legacy. Legacy tokens were split
+      // 70/30 in SQL → 700k input / 300k output. legacyEstimatedUsd =
+      // 0.7M * $3 + 0.3M * $15 = 2.1 + 4.5 = $6.60.
+      {
+        provider: 'anthropic',
+        call_count: 5n,
+        input_tokens: 1_700_000n,
+        output_tokens: 800_000n,
+        median_latency_ms: 900,
+        legacy_call_count: 2n,
+        legacy_input_tokens: 700_000n,
+        legacy_output_tokens: 300_000n,
+      },
+    ],
+    loadCostRates: async () => [],
+    quorumQuery: async () => [{ swarm_ticks: 0n, no_quorum_ticks: 0n }],
+  })
+  const anthropic = report.rows.find((r) => r.provider === 'anthropic')!
+  assert.equal(anthropic.legacyCallCount, 2)
+  // 0.7M * $3 + 0.3M * $15 = $6.60
+  assert.equal(anthropic.legacyEstimatedUsd, 6.6)
+})
+
+test('formatSwarmStats shows estimated-vs-measured split when legacy rows exist', () => {
+  const report: SwarmStatsReport = {
+    window: '7d',
+    since: new Date(),
+    rows: [
+      {
+        provider: 'anthropic',
+        callCount: 10,
+        inputTokens: 2_000_000,
+        outputTokens: 1_000_000,
+        totalTokens: 3_000_000,
+        medianLatencyMs: 1000,
+        // 2M * $3 + 1M * $15 = $21
+        estimatedUsd: 21,
+        costRate: { input: 3, output: 15 },
+        legacyCallCount: 3,
+        // half of the cost came from inferred legacy rows
+        legacyEstimatedUsd: 10.5,
+      },
+    ],
+  }
+  const out = formatSwarmStats(report)
+  // per-provider legacy note
+  assert.match(out, /3 legacy est \(50% of \$\)/)
+  // totals legacy line
+  assert.match(out, /of which ~\$10\.50 \(50\.0%\) is estimated from legacy rows/)
+})
+
+test('formatSwarmStats omits legacy split when all rows are measured', () => {
+  const report: SwarmStatsReport = {
+    window: '24h',
+    since: new Date(),
+    rows: [
+      {
+        provider: 'xai',
+        callCount: 4,
+        inputTokens: 100,
+        outputTokens: 100,
+        totalTokens: 200,
+        medianLatencyMs: 50,
+        estimatedUsd: 0.001,
+        costRate: { input: 0.3, output: 0.5 },
+        legacyCallCount: 0,
+        legacyEstimatedUsd: 0,
+      },
+    ],
+  }
+  const out = formatSwarmStats(report)
+  assert.doesNotMatch(out, /legacy/)
 })
 
 test('SWARM_COST_USD_PER_MTOKENS env override accepts both number (legacy) and {input,output}', async () => {
@@ -175,6 +262,8 @@ test('formatSwarmStats appends quorum line with warning when rate >= 25%', () =>
         medianLatencyMs: 100,
         estimatedUsd: 0.01,
         costRate: { input: 3, output: 15 },
+        legacyCallCount: 0,
+        legacyEstimatedUsd: 0,
       },
     ],
     quorum: { swarmTicks: 8, noQuorumTicks: 3, quorumTicks: 5, noQuorumRate: 0.375 },
@@ -199,6 +288,8 @@ test('formatSwarmStats omits warning flag when no-quorum rate is healthy', () =>
         medianLatencyMs: 100,
         estimatedUsd: 0.01,
         costRate: { input: 3, output: 15 },
+        legacyCallCount: 0,
+        legacyEstimatedUsd: 0,
       },
     ],
     quorum: { swarmTicks: 100, noQuorumTicks: 5, quorumTicks: 95, noQuorumRate: 0.05 },

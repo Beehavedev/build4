@@ -128,6 +128,35 @@ export function initRunner(bot: Bot) {
   cron.schedule('*/10 * * * *', tickFortyTwo)
   setTimeout(tickFortyTwo, 8_000)
 
+  // 42.space auto-close stale positions — every 5 min. Closes open
+  // prediction positions whose implied probability has dropped sharply
+  // from entry, or that are within 2h of market end and losing, so agents
+  // don't ride a low-probability outcome to a guaranteed loss. Owners are
+  // notified per closure. Single-flight via `fortyTwoAutoCloseInflight`.
+  const tickFortyTwoAutoClose = async () => {
+    if (fortyTwoAutoCloseInflight) return
+    fortyTwoAutoCloseInflight = true
+    try {
+      const { autoCloseStalePositions } = await import('../services/fortyTwoExecutor')
+      const r = await autoCloseStalePositions()
+      if (r.closed.length > 0 || r.errors.length > 0) {
+        console.log(`[fortyTwoAutoClose] scanned=${r.scanned} closed=${r.closed.length} errors=${r.errors.length}`)
+      }
+      for (const c of r.closed) {
+        await notifyPredictionAutoClosed(c)
+      }
+      for (const e of r.errors) {
+        console.warn(`[fortyTwoAutoClose] close failed position=${e.positionId}: ${e.reason}`)
+      }
+    } catch (err) {
+      console.error('[fortyTwoAutoClose] sweep failed:', (err as Error).message)
+    } finally {
+      fortyTwoAutoCloseInflight = false
+    }
+  }
+  cron.schedule('*/5 * * * *', tickFortyTwoAutoClose)
+  setTimeout(tickFortyTwoAutoClose, 12_000)
+
   // Daily summary — 09:00 UTC
   cron.schedule('0 9 * * *', async () => {
     await sendDailySummaries()
@@ -520,6 +549,30 @@ export function initRunner(bot: Bot) {
   setTimeout(sweepStaleApprovals, 15_000)
   setInterval(sweepStaleApprovals, 60 * 60 * 1000)
 
+  // Task #73 — nudge owners before their approval requests expire. The
+  // expiry sweep above silently flips stale pending_user_approval rows
+  // to 'expired'; without warning, an owner who meant to approve just
+  // sees the proposal vanish. This sweep DMs each owner once when their
+  // row crosses ~80% of the TTL, with the same Approve/Reject buttons.
+  // Runs every 30 min for responsiveness within the warn window; the
+  // helper is idempotent (in-memory dedup) and never throws.
+  const sweepApprovalNudges = async () => {
+    try {
+      const { nudgeApprovalsNearingExpiry } = await import('./fourMemeLaunchAgent')
+      const r = await nudgeApprovalsNearingExpiry()
+      if (r.nudged > 0 || r.errors > 0) {
+        console.log(
+          `[fourMemeLaunch] approval nudge sweep: found=${r.found} ` +
+            `nudged=${r.nudged} errors=${r.errors}`,
+        )
+      }
+    } catch (err) {
+      console.error('[fourMemeLaunch] approval nudge sweep failed:', (err as Error).message)
+    }
+  }
+  setTimeout(sweepApprovalNudges, 25_000)
+  setInterval(sweepApprovalNudges, 30 * 60 * 1000)
+
   // ── BUILD4 × 42.space "Agent vs Community" 48h campaign ──────────────
   // 12 rounds of BTC 8h Price Markets, one round per 4h UTC boundary
   // (00/04/08/12/16/20). For each round we fire 4 ticks:
@@ -605,6 +658,16 @@ export function initRunner(bot: Bot) {
     // up to 5 min for the watchdog. Same idempotency guard protects us.
     setTimeout(() => { void fireCampaignTick('ENTRY') }, 10_000)
 
+    // ── Campaign wallet low-balance watchdog ────────────────────────────
+    // A correctly-configured campaign can still silently fail mid-run if
+    // the pinned agent's BSC wallet runs out of BNB (gas) or USDT (stake).
+    // Read the wallet balance every 15 min and DM the admin allowlist when
+    // it drops below a configurable threshold (deduped — one DM per drop,
+    // re-armed on recovery). Boot-time check ~30s in so a redeploy onto an
+    // already-low wallet surfaces immediately.
+    cron.schedule('*/15 * * * *', () => { void checkCampaignWalletBalance(bot) }, cronOpts)
+    setTimeout(() => { void checkCampaignWalletBalance(bot) }, 30_000)
+
     console.log(
       '[Runner] 42.space campaign scheduler ARMED — ENTRY +5m + every-5min watchdog, ' +
         'REASSESS +1h30m/+3h, FINAL +3h45m past every 4h UTC boundary; ' +
@@ -612,7 +675,165 @@ export function initRunner(bot: Bot) {
     )
   }
 
+  // ── Campaign env-var sanity check (runs regardless of FT_CAMPAIGN_MODE) ──
+  // FT_CAMPAIGN_MODE and FT_CAMPAIGN_AGENT_ID must be set together. Setting
+  // one without the other silently puts the bot in a broken state: MODE=true
+  // with no agent arms the scheduler against nothing, while AGENT_ID set with
+  // MODE off leaves the pinned agent trading through the regular (wrong)
+  // wallet path. We also confirm the pinned agent actually exists in the DB
+  // and has a walletId bound, since an unbound agent can't resolve a signer.
+  // Misconfigs log a loud warning AND DM the admin allowlist so deploy
+  // mistakes surface immediately rather than after a missed campaign round.
+  setTimeout(() => { void validateCampaignEnv(bot) }, 12_000)
+
   console.log('[Runner] Agent runner initialized')
+}
+
+/**
+ * Validate the campaign env vars on boot. No-op when neither FT_CAMPAIGN_MODE
+ * nor FT_CAMPAIGN_AGENT_ID is set (a deploy that isn't running a campaign).
+ * On any misconfiguration, logs a loud warning and DMs the admin allowlist.
+ */
+async function validateCampaignEnv(bot: Bot | null): Promise<void> {
+  try {
+    const mode = process.env.FT_CAMPAIGN_MODE === 'true'
+    const agentId = (process.env.FT_CAMPAIGN_AGENT_ID ?? '').trim()
+    const startMs = (process.env.FT_CAMPAIGN_START_MS ?? '').trim()
+
+    // Nothing campaign-related is configured — not running a campaign, no-op.
+    if (!mode && !agentId) return
+
+    const problems: string[] = []
+
+    // 1. MODE and AGENT_ID must be set together.
+    if (mode && !agentId) {
+      problems.push('FT_CAMPAIGN_MODE=true but FT_CAMPAIGN_AGENT_ID is unset — the campaign scheduler is armed with no agent to run.')
+    }
+    if (!mode && agentId) {
+      problems.push('FT_CAMPAIGN_AGENT_ID is set but FT_CAMPAIGN_MODE is not "true" — the campaign scheduler is OFF, so the pinned agent will trade via the regular (wrong) wallet path.')
+    }
+
+    // 2. The pinned agent must exist in the DB and have a walletId bound.
+    if (agentId) {
+      try {
+        const rows = await db.$queryRawUnsafe<Array<{ name: string; walletId: string | null }>>(
+          `SELECT name, "walletId" FROM "Agent" WHERE id = $1 LIMIT 1`,
+          agentId,
+        )
+        if (!rows.length) {
+          problems.push(`FT_CAMPAIGN_AGENT_ID=${agentId} was not found in the Agent table.`)
+        } else if (!rows[0].walletId) {
+          problems.push(`Campaign agent "${rows[0].name}" (${agentId}) has no walletId bound — campaign trades can't resolve a signer.`)
+        }
+      } catch (dbErr) {
+        problems.push(`Could not verify FT_CAMPAIGN_AGENT_ID against the DB: ${(dbErr as Error).message}`)
+      }
+    }
+
+    // 3. FT_CAMPAIGN_START_MS, when set, must be a positive integer (ms epoch).
+    if (startMs && !(Number.isFinite(Number(startMs)) && Number(startMs) > 0)) {
+      problems.push(`FT_CAMPAIGN_START_MS=${startMs} is not a positive integer (expected unix ms of round 1).`)
+    }
+
+    if (problems.length === 0) {
+      console.log('[Runner] Campaign env vars validated OK.')
+      return
+    }
+
+    const logBody = problems.map((p) => `  - ${p}`).join('\n')
+    console.warn(
+      `\n${'='.repeat(60)}\n` +
+        `[Runner] ⚠️  CAMPAIGN ENV MISCONFIGURED — bot may be in a broken state:\n` +
+        `${logBody}\n` +
+        `${'='.repeat(60)}\n`,
+    )
+
+    const { sendAdminAlert } = await import('../services/adminAlerts')
+    const dmBody = problems.map((p) => `• ${p}`).join('\n')
+    await sendAdminAlert(
+      bot,
+      `⚠️ *Campaign env misconfigured*\n\n` +
+        `The bot just booted with a broken campaign config:\n\n${dmBody}\n\n` +
+        `Fix the env vars and redeploy, or run /campaignstatus to inspect.`,
+    )
+  } catch (err) {
+    console.error('[Runner] validateCampaignEnv crashed:', (err as Error).message)
+  }
+}
+
+// ── Campaign wallet low-balance watchdog state ─────────────────────────────
+// A correctly-configured campaign can still silently fail mid-run if the
+// pinned agent's BSC wallet runs out of BNB (gas) or USDT (stake) to place
+// trades. The watchdog cron below reads the wallet balance periodically and
+// DMs the admin allowlist when it drops below a configurable threshold. We
+// dedupe with a module-level latch so we send ONE DM per drop instead of
+// spamming every tick; the latch clears once the balance recovers above the
+// threshold so a future drop re-alerts.
+let campaignLowBalanceAlerted = false
+
+async function checkCampaignWalletBalance(bot: Bot | null): Promise<void> {
+  try {
+    const bnbThreshold = Math.max(
+      0,
+      parseFloat(process.env.FT_CAMPAIGN_LOW_BNB_THRESHOLD ?? '0.005') || 0.005,
+    )
+    const usdtThreshold = Math.max(
+      0,
+      parseFloat(process.env.FT_CAMPAIGN_LOW_USDT_THRESHOLD ?? '60') || 60,
+    )
+
+    const { readCampaignWalletBalance } = await import('../services/fortyTwoCampaign')
+    const bal = await readCampaignWalletBalance()
+    if (!bal.ok) {
+      // Misconfig / flaky RPC — the boot-time env check already covers
+      // misconfig loudly, so here we just log and skip rather than alert.
+      console.warn(`[fortyTwoCampaign] balance watchdog skipped: ${bal.error}`)
+      return
+    }
+
+    const bnb = bal.bnb ?? 0
+    const usdt = bal.usdt ?? 0
+    const lowBnb = bnb < bnbThreshold
+    const lowUsdt = usdt < usdtThreshold
+
+    if (!lowBnb && !lowUsdt) {
+      // Healthy — re-arm the latch so a future drop alerts again.
+      if (campaignLowBalanceAlerted) {
+        console.log(
+          `[fortyTwoCampaign] wallet balance recovered (BNB=${bnb.toFixed(5)} ` +
+            `USDT=$${usdt.toFixed(2)}); re-arming low-balance alert.`,
+        )
+      }
+      campaignLowBalanceAlerted = false
+      return
+    }
+
+    // Already alerted on this drop — stay quiet until it recovers.
+    if (campaignLowBalanceAlerted) return
+
+    const reasons: string[] = []
+    if (lowBnb) reasons.push(`BNB ${bnb.toFixed(5)} below ${bnbThreshold} (gas for trades/claims)`)
+    if (lowUsdt) reasons.push(`USDT $${usdt.toFixed(2)} below $${usdtThreshold} (position stake)`)
+
+    console.warn(
+      `[fortyTwoCampaign] ⚠️  campaign wallet low on funds: ${reasons.join('; ')} ` +
+        `addr=${bal.address}`,
+    )
+
+    const { sendAdminAlert } = await import('../services/adminAlerts')
+    await sendAdminAlert(
+      bot,
+      `⚠️ *Campaign wallet low on funds*\n\n` +
+        `The campaign agent's BSC wallet is running low and may fail to place ` +
+        `trades or claim payouts:\n\n` +
+        reasons.map((r) => `• ${r}`).join('\n') +
+        `\n\nWallet: \`${bal.address}\`\n\n` +
+        `Top it up to keep the campaign running.`,
+    )
+    campaignLowBalanceAlerted = true
+  } catch (err) {
+    console.error('[fortyTwoCampaign] checkCampaignWalletBalance crashed:', (err as Error).message)
+  }
 }
 
 // In-flight guard for the Polymarket autonomous sweep. The sweep is
@@ -622,6 +843,9 @@ let polymarketTickInflight = false
 
 // In-flight guard for the dedicated 42.space regular sweep (*/10 cron).
 let fortyTwoTickInflight = false
+
+// In-flight guard for the 42.space auto-close stale-position sweep (*/5 cron).
+let fortyTwoAutoCloseInflight = false
 
 // Task #149 — single-flight guards for the three four.meme snipe sweeps.
 // The scanner does bounded RPC log scans; the buy/exit sweeps fire
@@ -792,6 +1016,10 @@ async function runFleetLowBalanceWatch() {
     const acked = await getLowBalanceAckedIds()
 
     const newlyLow: Array<{ id: string; name: string; addr: string; bnb: number; threshold: number }> = []
+    // Agents that were silenced by an admin ack and have now refilled above
+    // threshold — we close the loop with a one-line "re-armed" notice so admins
+    // know their top-up landed and alerts are live again.
+    const recoveredAcked: Array<{ id: string; name: string; addr: string; bnb: number; threshold: number }> = []
 
     const results = await Promise.allSettled(
       agents.map(async (a) => {
@@ -818,24 +1046,46 @@ async function runFleetLowBalanceWatch() {
         // Recovered (or never low) — clear so a future drain re-alerts.
         fleetLowBalanceAlerted.delete(id)
         // Auto-clear a persisted ack now that the wallet refilled above
-        // threshold, so the next drain alerts again.
+        // threshold, so the next drain alerts again. Only acked agents reach
+        // here — record successful clears so we can tell admins the silenced
+        // wallet they topped up is back above threshold.
         if (acked.has(id)) {
-          await clearFleetLowBalanceAck(id).catch((e) =>
-            console.warn(`[FleetLowBalance] Failed to auto-clear ack for ${id}:`, e?.message ?? e),
-          )
+          await clearFleetLowBalanceAck(id)
+            .then(() => recoveredAcked.push({ id, name, addr, bnb, threshold }))
+            .catch((e) =>
+              console.warn(`[FleetLowBalance] Failed to auto-clear ack for ${id}:`, e?.message ?? e),
+            )
         }
       }
     }
 
-    if (newlyLow.length === 0) return
+    if (newlyLow.length === 0 && recoveredAcked.length === 0) return
 
     const { sendAdminAlert, hasAdminTargets } = await import('../services/adminAlerts')
     if (!hasAdminTargets()) {
-      console.warn(`[FleetLowBalance] ${newlyLow.length} agent(s) low on BNB but ADMIN_TELEGRAM_IDS not set — alert dropped.`)
+      if (newlyLow.length > 0)
+        console.warn(`[FleetLowBalance] ${newlyLow.length} agent(s) low on BNB but ADMIN_TELEGRAM_IDS not set — alert dropped.`)
       return
     }
 
     const fmtAddr = (a: string) => `${a.slice(0, 8)}…${a.slice(-4)}`
+
+    // Close the loop on acked wallets that refilled: a one-line "re-armed"
+    // notice per recovered agent so admins know their top-up landed and the
+    // agent will alert again on a future drain. Only fires for agents that were
+    // actually acked, so normal recoveries stay silent.
+    if (recoveredAcked.length > 0) {
+      const recLines = recoveredAcked
+        .slice(0, 20)
+        .map((l) => `✅ ${escapeMd(l.name)} \`${fmtAddr(l.addr)}\` wallet refilled to *${l.bnb.toFixed(4)}* BNB \\(above ${l.threshold.toFixed(4)}\\) — low\\-balance alerts re\\-armed`)
+      const recMore = recoveredAcked.length > 20 ? `\n…and ${recoveredAcked.length - 20} more` : ''
+      const recText = `${recLines.join('\n')}${recMore}`
+      const recRes = await sendAdminAlert(botRef, recText)
+      console.log(`[FleetLowBalance] Recovery notice sent to ${recRes.sent}/${recRes.attempted} admins (${recRes.failed} failed) for ${recoveredAcked.length} re-armed agent(s).`)
+    }
+
+    if (newlyLow.length === 0) return
+
     const lines = newlyLow
       .slice(0, 20)
       .map((l) => `• ${escapeMd(l.name)} \`${fmtAddr(l.addr)}\`: *${l.bnb.toFixed(4)}* BNB \\(below ${l.threshold.toFixed(4)}\\)`)
@@ -1357,4 +1607,53 @@ ${decision.keyRisks?.length > 0 ? `⚠️ *Risks:*\n${decision.keyRisks.map((r: 
   bot.api
     .sendMessage(telegramId, msg, { parse_mode: 'Markdown' })
     .catch(() => {})
+}
+
+// Telegram Markdown (legacy, not V2) escape — only the chars that break the
+// legacy parser. Matches the conservative escaping in commands/predictions.ts
+// so auto-close notifications render market titles/labels safely.
+function escapeMdLegacy(s: string): string {
+  return (s ?? '').replace(/([_*`\[\]])/g, '\\$1')
+}
+
+/**
+ * Notify a position owner that the stale-sweep auto-closed one of their
+ * 42.space prediction positions. Resolves the owner's telegramId from the
+ * userId, then sends a one-shot Markdown message. Best-effort: a blocked
+ * bot or missing user is swallowed so the sweep never throws.
+ */
+async function notifyPredictionAutoClosed(c: {
+  positionId: string
+  userId: string
+  marketTitle: string
+  outcomeLabel: string
+  reason: string
+  pnl: number
+  paperTrade: boolean
+}): Promise<void> {
+  if (!botRef) return
+  let telegramId: bigint | null = null
+  try {
+    const u = await db.user.findUnique({ where: { id: c.userId }, select: { telegramId: true } })
+    telegramId = u?.telegramId ?? null
+  } catch {
+    return
+  }
+  if (!telegramId) return
+
+  const mode = c.paperTrade ? '📝 Paper' : '🔴 Live'
+  const sign = c.pnl >= 0 ? '+' : ''
+  const title = c.marketTitle.length > 60 ? c.marketTitle.slice(0, 57) + '…' : c.marketTitle
+  const msg =
+    `⏱️ *Prediction position auto-closed*\n\n` +
+    `${mode} — *${escapeMdLegacy(c.outcomeLabel)}*\n` +
+    `_${escapeMdLegacy(title)}_\n\n` +
+    `*PnL:* ${sign}$${c.pnl.toFixed(2)} USDT\n` +
+    `*Reason:* ${escapeMdLegacy(c.reason)}`
+
+  try {
+    await botRef.api.sendMessage(telegramId.toString(), msg, { parse_mode: 'Markdown' })
+  } catch {
+    // User may have blocked the bot — ignore.
+  }
 }

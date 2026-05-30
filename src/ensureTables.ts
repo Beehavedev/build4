@@ -290,6 +290,13 @@ export async function ensureNewTables() {
   await run(`ALTER TABLE "token_launches" ADD COLUMN IF NOT EXISTS "sold_at" TIMESTAMPTZ`)
   await run(`ALTER TABLE "token_launches" ADD COLUMN IF NOT EXISTS "sold_proceeds_bnb" TEXT`)
   await run(`ALTER TABLE "token_launches" ADD COLUMN IF NOT EXISTS "sold_tx_hash" TEXT`)
+  // Exact tokens the dev's initial buy received, parsed from the launch
+  // tx receipt's ERC-20 Transfer event (token-wei, decimal text). When
+  // present, /api/fourmeme/launches/live uses this for trustworthy PnL
+  // instead of the rough avg-fill-price estimate. NULL on legacy /
+  // backfilled rows (no initial buy, parse miss) → endpoint falls back
+  // to the estimate, so no NaN / render error.
+  await run(`ALTER TABLE "token_launches" ADD COLUMN IF NOT EXISTS "tokens_received_wei" TEXT`)
 
   // four_meme_holdings — Demo Day: tracks tokens the user TRADED
   // (manually bought via /api/fourmeme/buy) so the Portfolio "Token
@@ -671,6 +678,8 @@ export async function ensureNewTables() {
   await run(`ALTER TABLE "OutcomePosition" ADD COLUMN IF NOT EXISTS "outcomeTokenAmount" DOUBLE PRECISION`)
   // Per-provider swarm telemetry — populated when the agent ran a swarm tick.
   await run(`ALTER TABLE "OutcomePosition" ADD COLUMN IF NOT EXISTS "providers" JSONB`)
+  // Reason a position was auto-closed by the stale-sweep (Task #9).
+  await run(`ALTER TABLE "OutcomePosition" ADD COLUMN IF NOT EXISTS "closeReason" TEXT`)
   await run(`CREATE INDEX IF NOT EXISTS "OutcomePosition_userId_idx" ON "OutcomePosition"("userId")`)
   await run(`CREATE INDEX IF NOT EXISTS "OutcomePosition_agentId_idx" ON "OutcomePosition"("agentId")`)
   await run(`CREATE INDEX IF NOT EXISTS "OutcomePosition_status_idx" ON "OutcomePosition"("status")`)

@@ -789,6 +789,61 @@ async function loadCampaignContext(): Promise<CampaignContext | null> {
   };
 }
 
+// ── Campaign wallet balance ───────────────────────────────────────────────
+
+export interface CampaignWalletBalance {
+  ok: boolean;
+  address?: string;
+  bnb?: number;
+  usdt?: number;
+  error?: string;
+}
+
+/**
+ * Read the campaign agent's pinned BSC wallet balance (native BNB + USDT).
+ *
+ * Resolves the wallet via Agent.walletId → Wallet.address, then reads the
+ * on-chain balances through the hardened BSC provider. Returns a structured
+ * result rather than throwing so a flaky RPC or a misconfig can't crash the
+ * caller's cron — callers should treat `ok:false` as "skip this tick".
+ *
+ * Used by the runner's low-balance watchdog to DM admins when the campaign
+ * wallet runs low on gas (BNB) or stake (USDT) mid-run.
+ */
+export async function readCampaignWalletBalance(): Promise<CampaignWalletBalance> {
+  const agentId = (process.env.FT_CAMPAIGN_AGENT_ID ?? '').trim();
+  if (!agentId) return { ok: false, error: 'FT_CAMPAIGN_AGENT_ID unset' };
+
+  let walletId: string | null = null;
+  try {
+    const rows = await db.$queryRawUnsafe<Array<{ walletId: string | null }>>(
+      `SELECT "walletId" FROM "Agent" WHERE id = $1 LIMIT 1`,
+      agentId,
+    );
+    if (!rows.length) return { ok: false, error: `campaign agent ${agentId} not found in DB` };
+    walletId = rows[0].walletId;
+  } catch (err) {
+    return { ok: false, error: `agent lookup failed: ${(err as Error).message}` };
+  }
+  if (!walletId) return { ok: false, error: 'campaign agent has no walletId bound' };
+
+  let address: string | undefined;
+  try {
+    const w = await db.wallet.findFirst({ where: { id: walletId, chain: 'BSC' } });
+    if (!w?.address) return { ok: false, error: `wallet ${walletId} not found or has no address` };
+    address = w.address;
+  } catch (err) {
+    return { ok: false, error: `wallet lookup failed: ${(err as Error).message}` };
+  }
+
+  const { getWalletBalances } = await import('./wallet');
+  const bal = await getWalletBalances(address, 'BSC');
+  if (bal.error) {
+    return { ok: false, address, error: `balance read failed: ${bal.error}` };
+  }
+  return { ok: true, address, bnb: bal.native, usdt: bal.usdt };
+}
+
 // ── TA packet ─────────────────────────────────────────────────────────────
 
 interface TAPacket {

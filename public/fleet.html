@@ -239,6 +239,7 @@
     // env gate are on. DB-on but env-off = effectively still mock.
     const effectiveLive = dbLive && envLive;
     const paused = s.globalPaused;
+    const stratOpts = (state.strategies || []).map(function (st) { return '<option value="' + st.key + '">' + esc(st.label) + '</option>'; }).join("");
     const modePill = effectiveLive
       ? '<span class="pill live">LIVE TRADING</span>'
       : '<span class="pill mock">MOCK MODE</span>';
@@ -267,12 +268,60 @@
           '<button class="ok" ' + (busy ? "disabled" : "") + ' onclick="setAll(\'active\')">Activate all</button>' +
           '<button ' + (busy ? "disabled" : "") + ' onclick="setAll(\'paused\')">Pause all</button>' +
         '</div></div>' +
+        '<div><div class="label">Create</div><div class="row">' +
+          '<button class="primary" ' + (busy ? "disabled" : "") + ' onclick="seedFleet()">Seed 50 agents</button>' +
+          '<select id="newAgentStrategy" style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:8px">' + stratOpts + '</select>' +
+          '<button ' + (busy ? "disabled" : "") + ' onclick="addAgent()">Add one</button>' +
+        '</div></div>' +
       '</div></div>' + envWarn;
   }
 
   function confirmLive(next) {
     if (next && !window.confirm("Enable LIVE trading? Agents will spend REAL BNB from their wallets on four.meme — but ONLY if FLEET_LIVE_TRADING and FOUR_MEME_ENABLED are also set in this environment. Make sure wallets are funded and you have reviewed the agents.")) return;
     setSettings({ liveTrading: next });
+  }
+
+  // Bulk-seed up to 50 agents (5 strategies × 10), each with a fresh wallet.
+  // Idempotent server-side, so re-running only tops up what's missing.
+  function seedFleet() {
+    if (!window.confirm("Seed the full fleet — create up to 50 agents (5 strategies × 10), each with its own fresh BSC wallet?\n\nIdempotent: agents that already exist are kept (no duplicates). Requires MASTER_ENCRYPTION_KEY in this environment.")) return;
+    return act(async function () {
+      const r = await api("/api/admin/fleet/seed", { method: "POST" });
+      window.alert("Fleet seed complete.\nCreated: " + r.created + "\nSkipped (already existed): " + r.skipped + "\n\nFund the new wallets, then Activate the agents you want trading.");
+    });
+  }
+
+  // Create a single agent in the selected strategy (auto-named server-side).
+  function addAgent() {
+    const sel = document.getElementById("newAgentStrategy");
+    const strategy = sel ? sel.value : "";
+    if (!strategy) return;
+    return act(async function () {
+      const r = await api("/api/admin/fleet/agents", { method: "POST", body: JSON.stringify({ strategy: strategy }) });
+      window.alert("Created agent: " + r.agent.name + " (" + r.agent.strategy + ")\nWallet: " + r.agent.walletAddress + "\n\nFund this wallet, then Activate the agent.");
+    });
+  }
+
+  // Remove an agent. Server fail-closes if the wallet holds BNB or has open
+  // positions; on a [BLOCKED] response we offer an explicit force-remove.
+  function removeAgent(id) {
+    const a = (state && state.agents) ? state.agents.find(function (x) { return x.id === id; }) : null;
+    const name = a ? a.name : id;
+    if (!window.confirm('Remove agent "' + name + '"?\n\nThis permanently deletes the agent AND its wallet key. It is blocked if the wallet holds BNB or has open positions.')) return;
+    return act(async function () {
+      try {
+        await api("/api/admin/fleet/agents/" + encodeURIComponent(id), { method: "DELETE" });
+      } catch (e) {
+        if (/\[BLOCKED\]/.test(e.message)) {
+          if (window.confirm(e.message + "\n\nFORCE-REMOVE anyway? The wallet key will be destroyed and any funds will be PERMANENTLY UNRECOVERABLE.")) {
+            await api("/api/admin/fleet/agents/" + encodeURIComponent(id) + "?force=true", { method: "DELETE" });
+            return;
+          }
+          throw new Error("Removal cancelled — agent not empty.");
+        }
+        throw e;
+      }
+    });
   }
 
   function statsBar() {
@@ -318,6 +367,7 @@
       '<td>' + (a.status === "active"
         ? '<button ' + (busy ? "disabled" : "") + ' onclick="setStatus(\'' + a.id + '\',\'paused\')">Pause</button>'
         : '<button class="ok" ' + (busy ? "disabled" : "") + ' onclick="setStatus(\'' + a.id + '\',\'active\')">Activate</button>') +
+        ' <button class="danger" ' + (busy ? "disabled" : "") + ' onclick="removeAgent(\'' + a.id + '\')">Remove</button>' +
       '</td></tr>';
     if (isOpen) row += detailRow(a);
     return row;

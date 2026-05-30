@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import PredictionsPolymarket from './PredictionsPolymarket'
+import { useAutoRefresh } from '../hooks/useAutoRefresh'
 
 // Venue tags shown in the top tab strip. '42' = 42.space (BSC, native AMM-style
 // outcome tokens). 'poly' = Polymarket (Polygon, CLOB v2 via Builder Program).
@@ -465,23 +466,30 @@ export default function Predictions() {
     }
   }
 
+  // Initial load (non-silent → drives the first-paint loading/refreshing
+  // state) plus the one-shot paper/live mode read.
   useEffect(() => {
     load()
     loadMode()
     loadMyPositions()
-    // 1s real-time refresh — markets, prices and the user's open
-    // positions all repull every second so 42.space (BSC on-chain)
-    // surfaces feel as live as the perps venues. Both `load()` and
-    // `loadMyPositions()` carry their own in-flight mutex so a slow
-    // BSC RPC tick cannot stack overlapping requests, and we skip
-    // polling entirely when the mini-app is hidden so we don't burn
-    // quota for a tab the user isn't looking at.
-    const poll = setInterval(() => {
-      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
-      load(true); loadMyPositions()
-    }, 1000)
+  }, [])
+
+  // 1s real-time refresh — markets, prices and the user's open positions all
+  // repull every second so 42.space (BSC on-chain) surfaces feel as live as
+  // the perps venues. Silent (keeps the last snapshot on a dropped poll),
+  // single-flighted, paused while a sell/claim/mode write is in flight, and
+  // skipped while the tab is hidden — all via the shared hook. immediate:false
+  // because the mount effect owns first paint.
+  useAutoRefresh(
+    async () => { await Promise.allSettled([load(true), loadMyPositions()]) },
+    { intervalMs: 1000, immediate: false, paused: actionBusy !== null || modeBusy },
+  )
+
+  // Separate 1s clock tick drives the relative-time labels (e.g. "ends in
+  // 3m"); it's display state, not data, so it stays out of the data refresh.
+  useEffect(() => {
     const tick = setInterval(() => setNowTick((n) => n + 1), 1000)
-    return () => { clearInterval(poll); clearInterval(tick) }
+    return () => clearInterval(tick)
   }, [])
 
   const apiStatus = error ? 'down' : data?.meta.apiStatus ?? 'live'

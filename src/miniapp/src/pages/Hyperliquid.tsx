@@ -9,6 +9,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { apiFetch } from '../api'
+import { useAutoRefresh } from '../hooks/useAutoRefresh'
 import { NativeChart } from '../components/NativeChart'
 import { MarketTicker, fmtUsd, fmtUsdRaw } from '../components/MarketTicker'
 
@@ -123,17 +124,34 @@ export default function Hyperliquid() {
   // USDC landed on the spot sub-account instead of perps.
   const [movingSpot, setMovingSpot] = useState(false)
   const [spotMsg, setSpotMsg]       = useState<string | null>(null)
+  // Optional partial-move amount (USDC) for spot → perps. Mirror of
+  // perpsAmount below — empty string = move everything, matching the
+  // backend's "omit/0 = move full available spot balance" behavior.
+  const [spotAmount, setSpotAmount] = useState('')
+  // Set when ANY Hyperliquid action's backend response carries
+  // `needsRecovery:true` — i.e. the server couldn't decrypt the user's
+  // wallet PK with any candidate key, so the wallet is in the broken-
+  // encryption set. When true we surface a persistent wallet-recovery
+  // banner that routes the user to Admin → Wallet recovery, instead of
+  // burying the hint in a transient per-action toast that the user can't
+  // act on. Shared across endpoints (spot↔perps, order, …) so the recovery
+  // hint is consistent no matter which action tripped it.
+  const [needsRecovery, setNeedsRecovery] = useState(false)
   // Per-coin close-position state. Tracks which row is currently submitting
   //   a reduce-only market close so we can disable that row's button +
   //   show a spinner without freezing the whole positions card. `closeMsg`
   //   surfaces a transient success/error banner under the positions list.
   const [closingCoin, setClosingCoin] = useState<string | null>(null)
   const [closeMsg, setCloseMsg]       = useState<string | null>(null)
-  // Perps → spot in-app transfer state. Mirror of the above. Needed before
-  // a user can withdraw to Arbitrum, because HL withdrawals are only
-  // possible from the spot sub-account.
-  const [movingPerps, setMovingPerps] = useState(false)
-  const [perpsMsg, setPerpsMsg]       = useState<string | null>(null)
+  // In-app HL → Arbitrum withdrawal state. `withdraw3` debits the PERPS
+  // account, so the withdrawal draws from `withdrawableUsdc`; when that's
+  // short but spot USDC covers the gap, the server auto-sweeps spot→perps
+  // first (one tap). `wdDest` defaults to the user's own wallet address.
+  const [withdrawing, setWithdrawing] = useState(false)
+  const [wdAmount, setWdAmount]       = useState('')
+  const [wdDest, setWdDest]           = useState('')
+  const [wdMsg, setWdMsg]             = useState<string | null>(null)
+  const [wdMsgIsErr, setWdMsgIsErr]   = useState(false)
 
   // Live mark prices for OPEN POSITIONS, polled every second so PnL ticks
   // visibly while you stare at the page (instead of being stuck at the
@@ -267,7 +285,7 @@ export default function Hyperliquid() {
       }
       const r = await apiFetch<{
         success: boolean; error?: string; sz?: number; markPrice?: number;
-        needsBuilderApproval?: boolean; needsApprove?: boolean;
+        needsBuilderApproval?: boolean; needsApprove?: boolean; needsRecovery?: boolean;
         stopLoss?: { status: 'placed' | 'skipped' | 'failed'; price?: number; error?: string };
       }>(
         '/api/hyperliquid/order',
@@ -306,6 +324,9 @@ export default function Hyperliquid() {
           r.needsBuilderApproval ||
           /(builder|must approve)/i.test(r.error ?? '')
         if (isBuilderReject) setNeedsBuilderApproval(true)
+        // Broken-encryption wallet — route to the shared recovery banner so
+        // the hint is consistent across every HL action, not just transfers.
+        if (r.needsRecovery) setNeedsRecovery(true)
         // Server says we're not onboarded but our cached account.onboarded
         // is true — force the activate UI to show so the user has a path
         // forward instead of an order form that always rejects.
@@ -338,6 +359,9 @@ export default function Hyperliquid() {
         /(builder|must approve)/i.test(msg) ||
         /(builder|must approve)/i.test(body?.error ?? '')
       if (isBuilderReject) setNeedsBuilderApproval(true)
+      // Broken-encryption wallet — HTTP 400 lands us here, so check the
+      // structured body and light the shared recovery banner.
+      if (body?.needsRecovery) setNeedsRecovery(true)
       // Same self-heal as the success branch: server says we're not
       // onboarded → flip to activate UI even if cached account says we
       // are. The server returns HTTP 400 for this so we land here, not
@@ -512,50 +536,112 @@ export default function Hyperliquid() {
     setMovingSpot(true)
     setSpotMsg(null)
     try {
-      const r = await apiFetch<{ success: boolean; amount?: number; error?: string }>(
+      // Empty / 0 / blank input means "move everything" (backend treats
+      // amount<=0 as move-all). Otherwise cap to the available spot balance
+      // shown on screen so the user can't ask for more than is movable.
+      const avail = account?.spotUsdc ?? 0
+      const parsed = spotAmount.trim() === '' ? 0 : Number(spotAmount)
+      if (!Number.isFinite(parsed) || parsed < 0) {
+        setSpotMsg('Enter a valid amount')
+        setMovingSpot(false)
+        return
+      }
+      const amount = parsed > 0 ? Math.min(parsed, avail) : 0
+      const r = await apiFetch<{ success: boolean; amount?: number; error?: string; needsRecovery?: boolean }>(
         '/api/hyperliquid/spot-to-perps',
-        { method: 'POST', body: JSON.stringify({}) },
+        { method: 'POST', body: JSON.stringify(amount > 0 ? { amount } : {}) },
       )
       if (r.success) {
         setSpotMsg(`Moved $${(r.amount ?? 0).toFixed(2)} to perps. Reloading…`)
+        setSpotAmount('')
         // Give HL a beat to settle then refresh — the perps clearinghouse
         // sometimes lags the transfer ack by a second or two.
         await new Promise((res) => setTimeout(res, 1500))
         await load()
+      } else if (r.needsRecovery) {
+        // Broken-encryption wallet — a per-action toast is a dead end here
+        // (the fix lives in Admin → Wallet recovery, not on this screen).
+        // Light the persistent banner instead and don't clutter the CTA
+        // with a duplicate error string.
+        setNeedsRecovery(true)
       } else {
         setSpotMsg(r.error ?? 'Transfer failed')
       }
     } catch (e: any) {
-      setSpotMsg(e?.message ?? 'Transfer failed')
+      // The recovery case comes back as HTTP 400, so apiFetch throws and we
+      // land here — NOT in the else above. Inspect the structured body for
+      // needsRecovery and light the banner instead of a dead-end toast.
+      if (e?.body?.needsRecovery) {
+        setNeedsRecovery(true)
+      } else {
+        setSpotMsg(e?.message ?? 'Transfer failed')
+      }
     } finally {
       setMovingSpot(false)
     }
   }
 
-  // Perps → spot internal transfer. Counterpart to moveSpotToPerps. POSTs
-  // to /api/hyperliquid/perps-to-spot which signs a usdClassTransfer with
-  // toPerp=false using the user's master key. Needed because HL only
-  // permits withdrawals to Arbitrum from the spot sub-account, so users
-  // who want to take profits have to move free margin off perps first.
-  const movePerpsToSpot = async () => {
-    setMovingPerps(true)
-    setPerpsMsg(null)
+  // Flat fee HL charges per native withdrawal (mirrors HL_WITHDRAW_FEE_USD on
+  // the server). Surfaced in the UI so the user knows the true cost.
+  const HL_WITHDRAW_FEE = 1
+
+  // In-app HL → Arbitrum withdrawal. Withdraws from the PERPS account
+  // (withdraw3); when perps free margin is short but spot USDC covers the
+  // gap, the server auto-sweeps spot→perps first so this stays one tap.
+  // Confirms first because withdrawals are irreversible and take ~5 min.
+  const withdrawHl = async () => {
+    if (withdrawing || !account) return
+    const amt = Number(wdAmount)
+    if (!Number.isFinite(amt) || amt < 2) {
+      setWdMsg('Enter an amount of at least $2.'); setWdMsgIsErr(true); return
+    }
+    const dest = (wdDest.trim() || account.walletAddress || '')
+    if (!/^0x[0-9a-fA-F]{40}$/.test(dest)) {
+      setWdMsg('Enter a valid 0x destination address.'); setWdMsgIsErr(true); return
+    }
+    const willSweep = !account.unifiedAccount &&
+      (amt + HL_WITHDRAW_FEE) > account.withdrawableUsdc &&
+      account.spotUsdc > 0
+    const sweepAmt = willSweep
+      ? Math.min(account.spotUsdc, (amt + HL_WITHDRAW_FEE) - account.withdrawableUsdc)
+      : 0
+    const confirmMsg =
+      `Withdraw $${amt.toFixed(2)} USDC to\n${dest}\n(Arbitrum)` +
+      (willSweep ? `\n\nThis first moves $${sweepAmt.toFixed(2)} from your spot balance to perps.` : '') +
+      `\n\nHL charges a $${HL_WITHDRAW_FEE} fee and the transfer takes ~5 minutes. Continue?`
+    const tg = (window as any).Telegram?.WebApp
+    const confirmed = await new Promise<boolean>((resolve) => {
+      if (tg?.showConfirm) tg.showConfirm(confirmMsg, (ok: boolean) => resolve(Boolean(ok)))
+      else resolve(window.confirm(confirmMsg))
+    })
+    if (!confirmed) return
+
+    setWithdrawing(true)
+    setWdMsgIsErr(false)
+    setWdMsg(willSweep ? `Moving $${sweepAmt.toFixed(2)} from spot to perps…` : 'Submitting withdrawal…')
     try {
-      const r = await apiFetch<{ success: boolean; amount?: number; error?: string }>(
-        '/api/hyperliquid/perps-to-spot',
-        { method: 'POST', body: JSON.stringify({}) },
-      )
+      const r = await apiFetch<{
+        success: boolean; amount?: number; swept?: number; fee?: number; error?: string
+      }>('/api/hyperliquid/withdraw', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amount: amt, destination: dest, autoSweep: true }),
+      })
       if (r.success) {
-        setPerpsMsg(`Moved $${(r.amount ?? 0).toFixed(2)} to spot. Reloading…`)
+        const sweptBit = (r.swept ?? 0) > 0 ? ` (moved $${(r.swept ?? 0).toFixed(2)} from spot first)` : ''
+        setWdMsg(`Withdrawal of $${(r.amount ?? amt).toFixed(2)} USDC to Arbitrum submitted${sweptBit}. Funds arrive in ~5 min.`)
+        setWdMsgIsErr(false)
+        setWdAmount('')
         await new Promise((res) => setTimeout(res, 1500))
         await load()
       } else {
-        setPerpsMsg(r.error ?? 'Transfer failed')
+        setWdMsg(r.error ?? 'Withdrawal failed'); setWdMsgIsErr(true)
+        await load()
       }
     } catch (e: any) {
-      setPerpsMsg(e?.message ?? 'Transfer failed')
+      setWdMsg(e?.message ?? 'Withdrawal failed'); setWdMsgIsErr(true)
     } finally {
-      setMovingPerps(false)
+      setWithdrawing(false)
     }
   }
 
@@ -726,7 +812,17 @@ export default function Hyperliquid() {
   //     the order ticket alive while sizing
   //   - per-position mark prices: every 1s — so PnL on every open
   //     position ticks in real time
-  useEffect(() => { load(); const t = setInterval(load, 5000); return () => clearInterval(t) }, [])
+  // Account + all mids + arbitrum on a 5s cadence via the shared hook: loads
+  // on mount, single-flighted (a slow HL read can't stack overlapping polls),
+  // paused while any HL write is in flight (activate / spot↔perps move / close
+  // / withdraw / order / builder approval / agent resign) so a background poll
+  // never races a mutation, and skipped while the tab is hidden. load()'s own
+  // sticky/transient-zero guards keep the balance card from flickering.
+  useAutoRefresh(load, {
+    intervalMs: 5000,
+    paused: activating || movingSpot || closingCoin !== null || withdrawing
+      || placing || approvingBuilder || resigning,
+  })
 
   // Recent fills polling — kept on its own slow cadence (20s) and gated
   // on `account.onboarded` so we never call the endpoint for a user that
@@ -827,6 +923,44 @@ export default function Hyperliquid() {
           Perps · USDC · L1 DEX
         </div>
       </div>
+
+      {/* Wallet-recovery banner — shown whenever ANY HL action's backend
+          response carried needsRecovery (the server couldn't decrypt this
+          user's wallet PK with any candidate key). A per-action toast is a
+          dead end because the fix lives in Admin → Wallet recovery, so we
+          surface a persistent banner that routes the user there via the
+          shared b4-nav event. Stays up until the page is reloaded — the
+          underlying encryption stays broken until recovery is run. */}
+      {needsRecovery && (
+        <div
+          data-testid="banner-wallet-recovery"
+          style={{
+            marginBottom: 12, padding: 12, borderRadius: 10,
+            background: '#1f1530', border: '1px solid #4c1d95',
+            color: '#ddd6fe', fontSize: 13, lineHeight: 1.5,
+          }}
+        >
+          <div style={{ fontWeight: 600, color: '#fff', marginBottom: 4 }}>
+            Wallet recovery needed
+          </div>
+          <div style={{ marginBottom: 10 }}>
+            We couldn't decrypt your wallet, so transfers and orders can't be
+            signed. Re-encrypt your private key from Admin → Wallet recovery,
+            then try again.
+          </div>
+          <button
+            onClick={() => window.dispatchEvent(new CustomEvent('b4-nav', { detail: 'admin' }))}
+            data-testid="button-go-wallet-recovery"
+            style={{
+              padding: '8px 14px', borderRadius: 8, border: 'none',
+              background: 'linear-gradient(90deg,#7c3aed,#a78bfa)', color: '#fff',
+              fontSize: 13, fontWeight: 600, cursor: 'pointer',
+            }}
+          >
+            Go to Wallet recovery
+          </button>
+        </div>
+      )}
 
       {/* Venue switcher — symmetric to the one on the Trade page so the
           user can hop back to Aster from the same top bar. Without this
@@ -1521,23 +1655,48 @@ export default function Hyperliquid() {
                 <div style={{ marginBottom: 8 }}>
                   You have <b>${account.spotUsdc.toFixed(2)} USDC on your HL spot account</b>{' '}
                   but $0 on perps. HL keeps spot and perps as separate sub-accounts —
-                  move it across to start trading.
+                  move it across (all or part) to start trading.
                 </div>
-                <button
-                  onClick={moveSpotToPerps}
-                  disabled={movingSpot}
-                  data-testid="button-hl-spot-to-perps"
-                  style={{
-                    width: '100%', padding: '10px 14px', borderRadius: 8,
-                    background: movingSpot ? '#4c1d95' : 'linear-gradient(90deg,#7c3aed,#a78bfa)',
-                    color: '#fff', border: 'none', fontSize: 13, fontWeight: 600,
-                    cursor: movingSpot ? 'wait' : 'pointer',
-                  }}
-                >
-                  {movingSpot
-                    ? 'Moving…'
-                    : `Move $${account.spotUsdc.toFixed(2)} to Perps`}
-                </button>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  {/* Optional partial amount. Blank = move everything (the
+                      original one-tap behavior). Capped to the available spot
+                      balance in moveSpotToPerps before the request is sent.
+                      Mirror of the perps→spot input below. */}
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min={0}
+                    max={account.spotUsdc}
+                    step="0.01"
+                    placeholder="All"
+                    value={spotAmount}
+                    onChange={(e) => setSpotAmount(e.target.value)}
+                    disabled={movingSpot}
+                    data-testid="input-hl-spot-to-perps-amount"
+                    style={{
+                      width: 90, padding: '10px 10px', borderRadius: 8,
+                      background: '#0f172a', color: '#fff',
+                      border: '1px solid #4c1d95', fontSize: 13,
+                    }}
+                  />
+                  <button
+                    onClick={moveSpotToPerps}
+                    disabled={movingSpot}
+                    data-testid="button-hl-spot-to-perps"
+                    style={{
+                      flex: 1, padding: '10px 14px', borderRadius: 8,
+                      background: movingSpot ? '#4c1d95' : 'linear-gradient(90deg,#7c3aed,#a78bfa)',
+                      color: '#fff', border: 'none', fontSize: 13, fontWeight: 600,
+                      cursor: movingSpot ? 'wait' : 'pointer',
+                    }}
+                  >
+                    {movingSpot
+                      ? 'Moving…'
+                      : spotAmount.trim() === ''
+                        ? `Move $${account.spotUsdc.toFixed(2)} to Perps`
+                        : 'Move to Perps'}
+                  </button>
+                </div>
                 {spotMsg && (
                   <div
                     data-testid="text-hl-spot-msg"
@@ -1593,48 +1752,111 @@ export default function Hyperliquid() {
                 </span>
               </div>
             )}
-            {/* Perps → spot move. HL withdrawals to Arbitrum are only
-                possible from the spot sub-account, so users who want to
-                take profits need a one-tap way to sweep free margin
-                across without leaving for app.hyperliquid.xyz. Only
-                surfaces when there's actually free margin to move and
-                the user is onboarded (avoids cluttering empty/onboard
-                states). Mirrors the spot→perps button above. */}
-            {!account.unifiedAccount && account.onboarded && account.withdrawableUsdc >= 0.01 && (
-              <div style={{ marginTop: 10 }} data-testid="card-hl-perps-to-spot">
-                <button
-                  onClick={movePerpsToSpot}
-                  disabled={movingPerps}
-                  data-testid="button-hl-perps-to-spot"
-                  style={{
-                    width: '100%', padding: '10px 14px', borderRadius: 8,
-                    background: movingPerps ? '#1e3a8a' : 'linear-gradient(90deg,#2563eb,#60a5fa)',
-                    color: '#fff', border: 'none', fontSize: 13, fontWeight: 600,
-                    cursor: movingPerps ? 'wait' : 'pointer',
-                  }}
-                >
-                  {movingPerps
-                    ? 'Moving…'
-                    : `Move $${account.withdrawableUsdc.toFixed(2)} to Spot (for withdrawal)`}
-                </button>
-                <div style={{ fontSize: 10, color: '#64748b', marginTop: 6, lineHeight: 1.4 }}>
-                  HL withdrawals to Arbitrum can only be made from the spot account.
-                  Move free margin here first, then withdraw from your wallet.
-                </div>
-                {perpsMsg && (
-                  <div
-                    data-testid="text-hl-perps-msg"
+            {/* Withdraw to Arbitrum. HL's withdraw3 debits the PERPS
+                account, so the usable balance = perps withdrawable + (for
+                non-unified accounts) spot USDC that we can sweep across
+                first. One tap: when perps free margin is short but spot
+                covers the gap, the server moves the shortfall spot→perps
+                before withdrawing. Only surfaces when the user is
+                onboarded and has at least the $2 minimum available
+                (avoids cluttering empty/onboard states). */}
+            {account.onboarded && (() => {
+              const usableSpot   = account.unifiedAccount ? 0 : account.spotUsdc
+              const feasibleTotal = account.withdrawableUsdc + usableSpot
+              const maxWithdraw   = Math.max(0, feasibleTotal - HL_WITHDRAW_FEE)
+              if (feasibleTotal < 2) return null
+              const amtNum = Number(wdAmount)
+              const willSweep = !account.unifiedAccount &&
+                Number.isFinite(amtNum) && amtNum > 0 &&
+                (amtNum + HL_WITHDRAW_FEE) > account.withdrawableUsdc &&
+                account.spotUsdc > 0
+              const sweepAmt = willSweep
+                ? Math.min(account.spotUsdc, (amtNum + HL_WITHDRAW_FEE) - account.withdrawableUsdc)
+                : 0
+              return (
+                <div style={{ marginTop: 10 }} data-testid="card-hl-withdraw">
+                  <div style={{ fontSize: 12, fontWeight: 600, color: '#e2e8f0', marginBottom: 6 }}>
+                    Withdraw to Arbitrum
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      placeholder="Amount (USDC)"
+                      value={wdAmount}
+                      onChange={(e) => setWdAmount(e.target.value)}
+                      disabled={withdrawing}
+                      data-testid="input-hl-withdraw-amount"
+                      style={{
+                        flex: 1, minWidth: 0, padding: '9px 10px', borderRadius: 8,
+                        background: '#0f172a', color: '#fff', fontSize: 13,
+                        border: '1px solid #334155',
+                      }}
+                    />
+                    <button
+                      onClick={() => setWdAmount(maxWithdraw.toFixed(2))}
+                      disabled={withdrawing}
+                      data-testid="button-hl-withdraw-max"
+                      style={{
+                        padding: '9px 12px', borderRadius: 8, background: '#1e293b',
+                        color: '#93c5fd', border: '1px solid #334155', fontSize: 12,
+                        fontWeight: 600, cursor: withdrawing ? 'wait' : 'pointer',
+                      }}
+                    >
+                      Max
+                    </button>
+                  </div>
+                  <input
+                    type="text"
+                    placeholder={`Destination (default: your wallet ${account.walletAddress.slice(0, 6)}…${account.walletAddress.slice(-4)})`}
+                    value={wdDest}
+                    onChange={(e) => setWdDest(e.target.value)}
+                    disabled={withdrawing}
+                    data-testid="input-hl-withdraw-dest"
                     style={{
-                      marginTop: 8, padding: 6, borderRadius: 4, fontSize: 11,
-                      background: perpsMsg.startsWith('Moved') ? '#064e3b' : '#7f1d1d',
-                      color: perpsMsg.startsWith('Moved') ? '#a7f3d0' : '#fecaca',
+                      width: '100%', boxSizing: 'border-box', padding: '9px 10px',
+                      borderRadius: 8, background: '#0f172a', color: '#fff', fontSize: 12,
+                      border: '1px solid #334155', marginBottom: 6,
+                    }}
+                  />
+                  <button
+                    onClick={withdrawHl}
+                    disabled={withdrawing}
+                    data-testid="button-hl-withdraw"
+                    style={{
+                      width: '100%', padding: '10px 14px', borderRadius: 8,
+                      background: withdrawing ? '#065f46' : 'linear-gradient(90deg,#059669,#34d399)',
+                      color: '#fff', border: 'none', fontSize: 13, fontWeight: 600,
+                      cursor: withdrawing ? 'wait' : 'pointer',
                     }}
                   >
-                    {perpsMsg}
+                    {withdrawing ? 'Processing…' : 'Withdraw to Arbitrum'}
+                  </button>
+                  <div style={{ fontSize: 10, color: '#64748b', marginTop: 6, lineHeight: 1.4 }}>
+                    Up to <b>${maxWithdraw.toFixed(2)}</b> available
+                    {usableSpot > 0 && !account.unifiedAccount && (
+                      <> (${account.withdrawableUsdc.toFixed(2)} perps + ${account.spotUsdc.toFixed(2)} spot)</>
+                    )}.
+                    {' '}HL charges a ${HL_WITHDRAW_FEE} fee; funds arrive on Arbitrum in ~5 min.
+                    {willSweep && (
+                      <> Moves <b>${sweepAmt.toFixed(2)}</b> from spot to perps first.</>
+                    )}
                   </div>
-                )}
-              </div>
-            )}
+                  {wdMsg && (
+                    <div
+                      data-testid="text-hl-withdraw-msg"
+                      style={{
+                        marginTop: 8, padding: 6, borderRadius: 4, fontSize: 11,
+                        background: wdMsgIsErr ? '#7f1d1d' : '#064e3b',
+                        color: wdMsgIsErr ? '#fecaca' : '#a7f3d0',
+                      }}
+                    >
+                      {wdMsg}
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
             {(!account.onboarded || forceActivateUi) && (() => {
               // Activation gating mirrors the backend check in
               // /api/hyperliquid/approve: HL needs ≥ $1 of equity to

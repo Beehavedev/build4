@@ -12,6 +12,8 @@ interface ProviderRow {
   medianLatencyMs: number
   estimatedUsd: number
   costRate: { input: number; output: number }
+  legacyCallCount?: number
+  legacyEstimatedUsd?: number
 }
 
 interface DailyBucket {
@@ -40,6 +42,8 @@ interface UsageResponse {
     outputTokens: number
     totalTokens: number
     estimatedUsd: number
+    legacyCallCount?: number
+    legacyEstimatedUsd?: number
   }
   rows: ProviderRow[]
   daily: DailyBucket[]
@@ -201,7 +205,17 @@ export default function AiUsage() {
         <div style={{
           display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8, marginBottom: 16,
         }}>
-          <Kpi label="Total spend" value={fmtUsd(usage.totals.estimatedUsd)} testid="kpi-spend" highlight />
+          <Kpi
+            label="Total spend"
+            value={fmtUsd(usage.totals.estimatedUsd)}
+            testid="kpi-spend"
+            highlight
+            sub={
+              (usage.totals.legacyEstimatedUsd ?? 0) > 0 && usage.totals.estimatedUsd > 0
+                ? `${(((usage.totals.legacyEstimatedUsd ?? 0) / usage.totals.estimatedUsd) * 100).toFixed(1)}% est. from legacy`
+                : 'fully measured'
+            }
+          />
           <Kpi label="Total calls" value={usage.totals.calls.toLocaleString()} testid="kpi-calls" />
           <Kpi label="Input tokens" value={fmtTokens(usage.totals.inputTokens)} testid="kpi-input" />
           <Kpi label="Output tokens" value={fmtTokens(usage.totals.outputTokens)} testid="kpi-output" />
@@ -277,6 +291,15 @@ export default function AiUsage() {
                     <span>{fmtTokens(r.outputTokens)} out</span>
                     <span>p50 {r.medianLatencyMs}ms</span>
                     <span>${r.costRate.input}/${r.costRate.output} per Mtok</span>
+                    {(r.legacyCallCount ?? 0) > 0 && (
+                      <span data-testid={`text-legacy-${r.provider}`} style={{ color: '#f59e0b' }}>
+                        {r.legacyCallCount} legacy est ·{' '}
+                        {r.estimatedUsd > 0
+                          ? `${(((r.legacyEstimatedUsd ?? 0) / r.estimatedUsd) * 100).toFixed(0)}%`
+                          : '0%'}{' '}
+                        of $ inferred
+                      </span>
+                    )}
                   </div>
                 </div>
               )
@@ -377,7 +400,7 @@ export default function AiUsage() {
   )
 }
 
-function Kpi({ label, value, testid, highlight = false }: { label: string; value: string; testid: string; highlight?: boolean }) {
+function Kpi({ label, value, testid, highlight = false, sub }: { label: string; value: string; testid: string; highlight?: boolean; sub?: string }) {
   return (
     <div
       data-testid={testid}
@@ -393,6 +416,11 @@ function Kpi({ label, value, testid, highlight = false }: { label: string; value
       }}>
         {value}
       </div>
+      {sub && (
+        <div data-testid={`${testid}-sub`} style={{ fontSize: 9, color: 'var(--text-secondary)', marginTop: 2 }}>
+          {sub}
+        </div>
+      )}
     </div>
   )
 }

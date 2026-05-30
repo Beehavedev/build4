@@ -12,6 +12,19 @@
 const DEXSCREENER_BASE = 'https://api.dexscreener.com'
 const FETCH_TIMEOUT_MS = 8_000
 
+// Short-lived in-memory cache for BSC token USD spot prices (keyed by
+// lowercased address). The Topaz page triggers fresh price lookups on every
+// load; a small TTL lets repeated refreshes reuse prices instead of re-hitting
+// DexScreener (and risking rate limits). We cache misses too (price = null) so
+// unpriceable tokens don't get re-fetched on every load within the window.
+const PRICE_CACHE_TTL_MS = 30_000
+const bscPriceCache = new Map<string, { price: number | null; ts: number }>()
+
+/** Test/ops helper: clear the BSC USD price cache. */
+export function __resetBscPriceCache(): void {
+  bscPriceCache.clear()
+}
+
 export interface DexToken {
   address: string
   symbol: string
@@ -171,6 +184,87 @@ export async function fetchLatestBnbLaunches(
   } finally {
     clearTimeout(timer)
   }
+}
+
+/**
+ * Fetch USD spot prices for a set of BSC token addresses via DexScreener's
+ * /tokens/v1/bsc/{addrs} batch endpoint (public, no key). For each token we
+ * take the highest-liquidity pair's priceUsd as the representative price.
+ * Returns a map keyed by lowercased address. Tokens DexScreener can't price
+ * are simply absent from the map — callers degrade to "—" rather than
+ * showing a fabricated $0.
+ */
+export async function fetchBscTokenPricesUsd(
+  addresses: string[],
+  opts: { fetchImpl?: typeof fetch } = {},
+): Promise<Record<string, number>> {
+  const fetchImpl = opts.fetchImpl ?? fetch
+  const uniq = Array.from(
+    new Set(addresses.map((a) => a.toLowerCase()).filter((a) => !!a)),
+  )
+  const out: Record<string, number> = {}
+  if (uniq.length === 0) return out
+
+  // Serve fresh cache hits and only fetch the addresses that are stale/missing.
+  const now = Date.now()
+  const toFetch: string[] = []
+  for (const a of uniq) {
+    const cached = bscPriceCache.get(a)
+    if (cached && now - cached.ts < PRICE_CACHE_TTL_MS) {
+      if (cached.price !== null) out[a] = cached.price
+    } else {
+      toFetch.push(a)
+    }
+  }
+  if (toFetch.length === 0) return out
+
+  const fetched: Record<string, number> = {}
+  // DexScreener caps the batch token endpoint at 30 addresses per call.
+  const chunkSize = 30
+  for (let i = 0; i < toFetch.length; i += chunkSize) {
+    const chunk = toFetch.slice(i, i + chunkSize)
+    const url = `${DEXSCREENER_BASE}/tokens/v1/bsc/${chunk.join(',')}`
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
+    try {
+      const r = await fetchImpl(url, { signal: controller.signal })
+      if (!r.ok) {
+        console.warn(`[dexScreener] token prices HTTP ${r.status}`)
+        continue
+      }
+      const pairs = (await r.json()) as RawPair[]
+      if (!Array.isArray(pairs)) continue
+      // Keep the highest-liquidity pair per base token as its price source.
+      const bestLiq: Record<string, number> = {}
+      for (const p of pairs) {
+        const addr = p.baseToken?.address?.toLowerCase()
+        if (!addr) continue
+        const price = parseFloat(p.priceUsd ?? '0') || 0
+        if (price <= 0) continue
+        const liq = p.liquidity?.usd ?? 0
+        if (fetched[addr] === undefined || liq > (bestLiq[addr] ?? -1)) {
+          fetched[addr] = price
+          bestLiq[addr] = liq
+        }
+      }
+    } catch (err) {
+      console.warn('[dexScreener] token prices fetch failed:', (err as Error).message)
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+
+  // Merge freshly fetched prices into the result and refresh the cache. Cache
+  // misses (no price returned) as null so we don't re-query them next load.
+  for (const a of toFetch) {
+    if (fetched[a] !== undefined) {
+      out[a] = fetched[a]
+      bscPriceCache.set(a, { price: fetched[a], ts: now })
+    } else {
+      bscPriceCache.set(a, { price: null, ts: now })
+    }
+  }
+  return out
 }
 
 /** Fetch the best pair for a single token address on BSC. */
