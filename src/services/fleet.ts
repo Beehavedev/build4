@@ -512,6 +512,117 @@ export function decryptFleetAgentKey(agent: FleetAgent): string {
   return decryptPrivateKey(agent.encryptedPk, agent.id)
 }
 
+// ── Bulk key export + balance sweep (admin recovery tools) ───────────────
+// These operate on REAL wallets regardless of the live/mock trading gate:
+// they don't trade, they recover funds/keys. Both need MASTER_ENCRYPTION_KEY
+// (decrypt is fail-closed) and are only ever reachable via requireAdmin routes.
+
+export interface FleetKeyExportRow {
+  id: string
+  name: string
+  strategy: FleetStrategy
+  walletAddress: string
+  privateKey: string
+  error?: string
+}
+
+/**
+ * Decrypt every fleet agent's private key for a one-file export. Per-agent
+ * try/catch so a single un-decryptable row (e.g. a key written under a
+ * different MASTER_ENCRYPTION_KEY) doesn't abort the whole export — that row
+ * carries an `error` and an empty privateKey instead.
+ */
+export async function exportFleetKeys(): Promise<FleetKeyExportRow[]> {
+  const agents = await listFleetAgents()
+  return agents.map((a) => {
+    try {
+      return { id: a.id, name: a.name, strategy: a.strategy, walletAddress: a.walletAddress, privateKey: decryptFleetAgentKey(a) }
+    } catch (e) {
+      return { id: a.id, name: a.name, strategy: a.strategy, walletAddress: a.walletAddress, privateKey: '', error: (e as Error).message }
+    }
+  })
+}
+
+export interface FleetSweepRow {
+  id: string
+  name: string
+  walletAddress: string
+  balanceBnb: number
+  sentBnb: number
+  txHash: string | null
+  status: 'swept' | 'skipped' | 'error'
+  reason?: string
+}
+
+export interface FleetSweepSummary {
+  destination: string
+  results: FleetSweepRow[]
+  totalSentBnb: number
+  swept: number
+  skipped: number
+  errored: number
+}
+
+/**
+ * Send every fleet wallet's BNB balance (minus a gas reserve) to `destination`.
+ * A plain-EOA transfer costs 21000 gas; we reserve gasPrice×21000 with a 20%
+ * buffer against price drift and skip wallets that can't cover it. All agents
+ * are processed in parallel (each wallet is an independent signer with its own
+ * nonce) and failures are isolated per-agent — a bad RPC or a revert on one
+ * wallet never blocks the others. Fail-closed on an invalid destination.
+ */
+export async function sweepAllFleetBalances(destination: string): Promise<FleetSweepSummary> {
+  const { ethers } = await import('ethers')
+  if (!ethers.isAddress(destination)) {
+    throw new Error(`destination is not a valid address: ${destination}`)
+  }
+  const dest = ethers.getAddress(destination)
+  const { buildBscProvider } = await import('./bscProvider')
+  const provider = buildBscProvider(process.env.BSC_RPC_URL)
+  const agents = await listFleetAgents()
+
+  const feeData = await provider.getFeeData()
+  const gasPrice = feeData.gasPrice ?? ethers.parseUnits('1', 'gwei')
+  const gasLimit = 21_000n
+  const gasReserve = (gasPrice * gasLimit * 12n) / 10n // 20% buffer
+
+  const sweepOne = async (agent: FleetAgent): Promise<FleetSweepRow> => {
+    const base = { id: agent.id, name: agent.name, walletAddress: agent.walletAddress }
+    let balWei: bigint
+    try {
+      balWei = await provider.getBalance(agent.walletAddress)
+    } catch (e) {
+      return { ...base, balanceBnb: 0, sentBnb: 0, txHash: null, status: 'error', reason: `balance read failed: ${(e as Error).message}` }
+    }
+    const balanceBnb = Number(ethers.formatEther(balWei))
+    if (balWei <= gasReserve) {
+      return { ...base, balanceBnb, sentBnb: 0, txHash: null, status: 'skipped', reason: 'balance below gas reserve' }
+    }
+    let pk: string
+    try {
+      pk = decryptFleetAgentKey(agent)
+    } catch (e) {
+      return { ...base, balanceBnb, sentBnb: 0, txHash: null, status: 'error', reason: `key decrypt failed: ${(e as Error).message}` }
+    }
+    const value = balWei - gasReserve
+    try {
+      const signer = new ethers.Wallet(pk, provider)
+      const tx = await signer.sendTransaction({ to: dest, value, gasLimit, gasPrice })
+      await tx.wait(1)
+      return { ...base, balanceBnb, sentBnb: Number(ethers.formatEther(value)), txHash: tx.hash, status: 'swept' }
+    } catch (e: any) {
+      return { ...base, balanceBnb, sentBnb: 0, txHash: null, status: 'error', reason: e?.shortMessage ?? e?.message ?? String(e) }
+    }
+  }
+
+  const results = await Promise.all(agents.map(sweepOne))
+  const totalSentBnb = results.reduce((s, r) => s + r.sentBnb, 0)
+  const swept = results.filter((r) => r.status === 'swept').length
+  const skipped = results.filter((r) => r.status === 'skipped').length
+  const errored = results.filter((r) => r.status === 'error').length
+  return { destination: dest, results, totalSentBnb, swept, skipped, errored }
+}
+
 export async function setFleetAgentStatus(id: string, status: 'active' | 'paused'): Promise<void> {
   await db.$executeRawUnsafe(`UPDATE "fleet_agents" SET "status" = $1 WHERE id = $2`, status, id)
 }

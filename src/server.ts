@@ -6114,6 +6114,62 @@ app.get('/api/admin/fleet/logs', requireAdmin, async (req, res) => {
   }
 })
 
+// GET /api/admin/fleet/export-keys — decrypt EVERY fleet wallet's private key
+// and stream them as a single CSV download (name,strategy,wallet,private_key,id).
+// Real keys leave the server here, so it's requireAdmin-only and the action is
+// logged (count only — never the keys). Needs MASTER_ENCRYPTION_KEY to decrypt.
+app.get('/api/admin/fleet/export-keys', requireAdmin, async (_req, res) => {
+  try {
+    const fleet = await import('./services/fleet')
+    const rows = await fleet.exportFleetKeys()
+    // Quote/escape delimiters AND neutralize spreadsheet formula injection: a
+    // value starting with = + - @ (or a leading control char) is prefixed with
+    // a single quote so Excel/Sheets treat it as text, not a formula.
+    const csvEsc = (s: string) => {
+      let v = s
+      if (/^[=+\-@\t\r]/.test(v)) v = "'" + v
+      return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v
+    }
+    const header = 'name,strategy,wallet_address,private_key,agent_id,error'
+    const body = rows
+      .map((r) => [r.name, r.strategy, r.walletAddress, r.privateKey, r.id, r.error ?? ''].map((v) => csvEsc(String(v))).join(','))
+      .join('\n')
+    const failed = rows.filter((r) => r.error).length
+    await fleet.logFleet(null, 'info', `private keys exported via panel (${rows.length} agents, ${failed} failed)`)
+    // Secret material in the body — keep it out of any cache.
+    res.setHeader('Cache-Control', 'no-store')
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8')
+    res.setHeader('Content-Disposition', `attachment; filename="fleet-keys-${new Date().toISOString().slice(0, 10)}.csv"`)
+    res.send(header + '\n' + body + '\n')
+  } catch (err) {
+    console.error('[API] /admin/fleet/export-keys failed:', err)
+    res.status(500).json({ error: (err as Error).message })
+  }
+})
+
+// POST /api/admin/fleet/sweep  body: { destination } — send every fleet wallet's
+// BNB (minus a gas reserve) to one admin-specified address. NOT gated by the
+// live/mock trading switch: this recovers funds, it doesn't trade. Per-agent
+// failures are isolated and returned in `results`. Needs MASTER_ENCRYPTION_KEY.
+app.post('/api/admin/fleet/sweep', requireAdmin, async (req, res) => {
+  try {
+    const fleet = await import('./services/fleet')
+    const body = (req.body ?? {}) as { destination?: unknown }
+    const destination = typeof body.destination === 'string' ? body.destination.trim() : ''
+    if (!destination) return res.status(400).json({ error: 'destination wallet address is required' })
+    if (!/^0x[a-fA-F0-9]{40}$/.test(destination)) {
+      return res.status(400).json({ error: `destination is not a valid 0x wallet address: ${destination}` })
+    }
+    const out = await fleet.sweepAllFleetBalances(destination)
+    fleetBalanceCache = null
+    await fleet.logFleet(null, 'info', `sweep → ${out.destination}: swept=${out.swept} skipped=${out.skipped} errored=${out.errored} total=${out.totalSentBnb.toFixed(6)} BNB`)
+    res.json({ ok: true, ...out })
+  } catch (err) {
+    console.error('[API] /admin/fleet/sweep failed:', err)
+    res.status(500).json({ error: (err as Error).message })
+  }
+})
+
 // ── Public TOPAZ surface (mini-app + web dApp) ─────────────────────────
 // Phase 2 (multi-user): all WRITES execute from the caller's own active
 // BSC custodial wallet — signer is resolved by Telegram user id via

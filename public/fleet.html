@@ -273,6 +273,13 @@
           '<select id="newAgentStrategy" style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:8px">' + stratOpts + '</select>' +
           '<button ' + (busy ? "disabled" : "") + ' onclick="addAgent()">Add one</button>' +
         '</div></div>' +
+        '<div><div class="label">Keys</div><div class="row">' +
+          '<button ' + (busy ? "disabled" : "") + ' onclick="exportKeys()">Export all keys</button>' +
+        '</div></div>' +
+        '<div><div class="label">Sweep balances → wallet</div><div class="row">' +
+          '<input id="sweepDest" placeholder="0x destination wallet" style="width:210px" />' +
+          '<button class="danger" ' + (busy ? "disabled" : "") + ' onclick="sweepAll()">Sweep all</button>' +
+        '</div></div>' +
       '</div></div>' + envWarn;
   }
 
@@ -299,6 +306,50 @@
     return act(async function () {
       const r = await api("/api/admin/fleet/agents", { method: "POST", body: JSON.stringify({ strategy: strategy }) });
       window.alert("Created agent: " + r.agent.name + " (" + r.agent.strategy + ")\nWallet: " + r.agent.walletAddress + "\n\nFund this wallet, then Activate the agent.");
+    });
+  }
+
+  // Download a CSV of EVERY agent's private key. Uses a raw fetch (not api(),
+  // which assumes JSON) so we can stream the file as a Blob and trigger a
+  // browser download with the admin token attached.
+  async function exportKeys() {
+    if (!window.confirm("Export ALL fleet agent private keys to a CSV file?\n\nThis file contains the FULL private keys for every agent wallet — anyone with it can move the funds. Store it securely (offline) and delete it when you're done.")) return;
+    const token = getToken();
+    if (!token) return;
+    busy = true; errMsg = ""; render();
+    try {
+      const r = await fetch("/api/admin/fleet/export-keys", { headers: { "x-admin-token": token } });
+      if (!r.ok) {
+        const t = await r.text(); let j; try { j = JSON.parse(t); } catch { j = {}; }
+        throw new Error(j.error || ("HTTP " + r.status));
+      }
+      const blob = await r.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = "fleet-keys-" + new Date().toISOString().slice(0, 10) + ".csv";
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) { errMsg = e.message; }
+    finally { busy = false; render(); }
+  }
+
+  // Sweep every fleet wallet's BNB (minus gas) to an admin-entered address.
+  function sweepAll() {
+    const el = document.getElementById("sweepDest");
+    const dest = el ? el.value.trim() : "";
+    if (!dest) { errMsg = "Enter a destination wallet address first."; render(); return; }
+    if (!/^0x[a-fA-F0-9]{40}$/.test(dest)) { errMsg = "That doesn't look like a valid 0x wallet address."; render(); return; }
+    if (!window.confirm("Sweep ALL BNB from every fleet wallet to:\n\n" + dest + "\n\nEach agent's full balance (minus gas) is sent to that address. This CANNOT be undone. Continue?")) return;
+    return act(async function () {
+      const r = await api("/api/admin/fleet/sweep", { method: "POST", body: JSON.stringify({ destination: dest }) });
+      const errLines = (r.results || []).filter(function (x) { return x.status === "error"; })
+        .map(function (x) { return "• " + x.name + ": " + (x.reason || "error"); }).join("\n");
+      window.alert("Sweep complete → " + r.destination +
+        "\n\nSwept: " + r.swept +
+        "\nSkipped (empty / below gas): " + r.skipped +
+        "\nErrors: " + r.errored +
+        "\nTotal sent: " + (Number(r.totalSentBnb) || 0).toFixed(6) + " BNB" +
+        (errLines ? "\n\nFailed:\n" + errLines : ""));
     });
   }
 
