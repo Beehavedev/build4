@@ -983,8 +983,15 @@ export async function ensureNewTables() {
     "id" TEXT PRIMARY KEY,
     "live_trading" BOOLEAN NOT NULL DEFAULT false,
     "global_paused" BOOLEAN NOT NULL DEFAULT true,
+    "swarm_provider" TEXT,
     "updated_at" TIMESTAMPTZ NOT NULL DEFAULT now()
   )`)
+  // swarm_provider — single-LLM the /fleet panel picks for the brain at runtime
+  // (overrides the FLEET_SWARM_PROVIDERS env allowlist). Added via ALTER so an
+  // already-deployed prod table (created before this column) gains it without a
+  // manual migration. Mirrored in src/_prisma_bot/schema.prisma so the deploy's
+  // `prisma db push` does NOT drop it.
+  await run(`ALTER TABLE "fleet_settings" ADD COLUMN IF NOT EXISTS "swarm_provider" TEXT`)
   await run(`INSERT INTO "fleet_settings" ("id") VALUES ('singleton') ON CONFLICT ("id") DO NOTHING`)
 
   // fleet_agents — the 50 community agents. Each has its own BSC wallet

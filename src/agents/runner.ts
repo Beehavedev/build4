@@ -307,6 +307,10 @@ export function initRunner(bot: Bot) {
     if (fleetOpenTickInflight) return
     fleetOpenTickInflight = true
     try {
+      // Refresh the panel's single-LLM brain selection once per tick so a
+      // /fleet dropdown change takes effect without a redeploy.
+      const { refreshSwarmSelection } = await import('./fleetBrain')
+      await refreshSwarmSelection()
       const { tickAllFleetAgents } = await import('./fleetAgent')
       const r = await tickAllFleetAgents()
       if (r.bought > 0 || r.errors > 0) {
@@ -325,6 +329,8 @@ export function initRunner(bot: Bot) {
     if (fleetExitTickInflight) return
     fleetExitTickInflight = true
     try {
+      const { refreshSwarmSelection } = await import('./fleetBrain')
+      await refreshSwarmSelection()
       const { tickAllFleetExits } = await import('./fleetAgent')
       const r = await tickAllFleetExits()
       if (r.sold > 0 || r.errors > 0 || r.reaped > 0) {

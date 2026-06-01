@@ -220,6 +220,49 @@
     return act(() => api("/api/admin/fleet/agents/" + encodeURIComponent(id), { method: "PATCH", body: JSON.stringify(patch) }));
   }
 
+  // ── AI brain LLM selector + live diagnostic ───────────────────────────────
+  // setSwarmProvider persists the single brain LLM (overrides the env
+  // allowlist). "" clears the override back to the env default.
+  function setSwarmProvider(p) {
+    return setSettings({ swarmProvider: p || null });
+  }
+  let aiTest = null; // { loading } | { results:[...] } | { error }
+  async function testLLMs() {
+    aiTest = { loading: true }; render();
+    try {
+      const r = await api("/api/admin/ai-test");
+      aiTest = { results: r.results || [], testedAt: r.testedAt };
+    } catch (e) { aiTest = { error: e.message }; }
+    render();
+  }
+  // <select> of the brain LLM. First option = env default (shows the effective
+  // providers the backend reports). Current selection comes from settings.
+  function providerSelect() {
+    var sel = (state.settings && state.settings.swarmProvider) || "";
+    var envLabel = "Env default (" + (((state.swarmProviders || []).join(", ")) || "xai") + ")";
+    var opts = [["", envLabel], ["anthropic", "Anthropic (Claude)"], ["xai", "xAI (Grok)"], ["hyperbolic", "Hyperbolic"], ["akash", "Akash"]];
+    return '<select ' + (busy ? "disabled" : "") + ' onchange="setSwarmProvider(this.value)" style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:8px">' +
+      opts.map(function (o) { return '<option value="' + o[0] + '"' + (o[0] === sel ? " selected" : "") + '>' + esc(o[1]) + '</option>'; }).join("") +
+      '</select>';
+  }
+  // Results card for the "Test all LLMs" probe — per-provider OK/FAIL + latency,
+  // the real HTTP status on failure, and a 'parked' badge when the breaker is open.
+  function aiTestView() {
+    if (!aiTest) return "";
+    if (aiTest.loading) return '<div class="dim" style="font-size:11px;margin-top:6px">Testing all LLMs…</div>';
+    if (aiTest.error) return '<div class="err" style="margin-top:6px">' + esc(aiTest.error) + '</div>';
+    var rows = (aiTest.results || []).map(function (r) {
+      var badge = r.ok
+        ? '<span class="pill active">OK ' + r.latencyMs + 'ms</span>'
+        : '<span class="pill live">FAIL ' + (r.status || "-") + '</span>';
+      var parked = r.circuitTripped ? ' <span class="pill mock" title="circuit breaker parked">parked</span>' : "";
+      var cfg = r.configured ? "" : ' <span class="pill mock" title="no API key in this environment">no key</span>';
+      var err = r.ok ? "" : ' <span class="neg" style="font-size:11px">' + esc(r.error || "") + '</span>';
+      return '<div style="margin-top:4px"><b>' + esc(r.provider) + '</b> <span class="dim" style="font-size:11px">' + esc(r.model || "") + '</span> ' + badge + parked + cfg + err + '</div>';
+    }).join("");
+    return '<div class="card" style="margin-top:6px;padding:8px">' + (rows || '<span class="dim">no providers</span>') + '</div>';
+  }
+
   async function toggleDetail(id) {
     if (detail === id) { detail = null; detailTrades = null; render(); return; }
     detail = id; detailTrades = null; render();
@@ -288,8 +331,13 @@
         '<div><div class="label">AI brain (' + swarmLabel() + ')</div><div class="row">' +
           '<button class="primary" ' + (busy ? "disabled" : "") + ' onclick="setAllSwarm(true)">Enable all</button>' +
           '<button ' + (busy ? "disabled" : "") + ' onclick="setAllSwarm(false)">Disable all</button>' +
-          '<div class="dim" style="font-size:11px;margin-top:4px">env gate: ' +
+        '</div>' +
+        '<div class="row" style="margin-top:6px">' + providerSelect() +
+          '<button ' + (busy ? "disabled" : "") + ' onclick="testLLMs()">Test all LLMs</button>' +
+        '</div>' +
+        '<div class="dim" style="font-size:11px;margin-top:4px">Single brain LLM (overrides env). env gate: ' +
             (state.swarmEnvEnabled ? '<span class="pos">FLEET_SWARM_ENABLED set</span>' : '<span class="neg">FLEET_SWARM_ENABLED not set</span>') + '</div>' +
+          aiTestView() +
         '</div></div>' +
         '<div><div class="label">Create</div><div class="row">' +
           '<button class="primary" ' + (busy ? "disabled" : "") + ' onclick="seedFleet()">Seed 50 agents</button>' +

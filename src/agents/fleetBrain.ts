@@ -25,17 +25,40 @@
  */
 
 import { runSwarmDecision, type SwarmResult } from '../swarm/swarm'
-import { getProviderStatus, resolveProviders, type Provider } from '../services/inference'
+import { getProviderStatus, isProvider, resolveProviders, type Provider } from '../services/inference'
 
 /** Master env gate. With this off the brain is never consulted. */
 export function isFleetSwarmEnabled(): boolean {
   return process.env.FLEET_SWARM_ENABLED === 'true'
 }
 
-/** The configured swarm provider allowlist (FLEET_SWARM_PROVIDERS, default
- *  `xai` only). Single source of truth for liveProviders() AND the /fleet panel
- *  label, so the UI shows the real model count instead of a hardcoded number. */
+/** The persisted single-LLM selection from the /fleet panel
+ *  (fleet_settings.swarm_provider), cached in-process. `undefined` = never
+ *  loaded; `null` = explicitly "use the env default". Refreshed each fleet tick
+ *  and on every settings POST so a panel change takes effect without a redeploy. */
+let swarmSelectionCache: Provider | null | undefined = undefined
+
+/** Reload the panel's single-LLM selection from the DB into the in-process
+ *  cache. Best-effort: on any error (e.g. DB unreachable in unit tests) the
+ *  previous cache is preserved and configuredSwarmProviders() falls back to the
+ *  FLEET_SWARM_PROVIDERS env allowlist. Kept OUT of the per-agent hot path so
+ *  unit tests never hit the DB — the runner calls this once per tick. */
+export async function refreshSwarmSelection(): Promise<void> {
+  try {
+    const { getFleetSettings } = await import('../services/fleet')
+    const sel = (await getFleetSettings()).swarmProvider
+    swarmSelectionCache = sel && isProvider(sel) ? sel : null
+  } catch {
+    // keep previous cache; env fallback applies until the next successful load
+  }
+}
+
+/** The configured swarm provider allowlist. A panel selection (cached from
+ *  fleet_settings.swarm_provider) wins; otherwise the FLEET_SWARM_PROVIDERS env
+ *  allowlist (default `xai` only). Single source of truth for liveProviders()
+ *  AND the /fleet panel label, so the UI shows the real model count. */
 export function configuredSwarmProviders(): Provider[] {
+  if (swarmSelectionCache) return [swarmSelectionCache]
   return resolveProviders('FLEET_SWARM_PROVIDERS', ['xai'])
 }
 
@@ -212,7 +235,7 @@ function liveProviders(): Provider[] {
   // Scope the fleet swarm to an allow-list (default: xai only) so it runs on the
   // chosen model(s) without disturbing other surfaces' provider keys. Override
   // with FLEET_SWARM_PROVIDERS (comma-separated) to add models back.
-  const allow = resolveProviders('FLEET_SWARM_PROVIDERS', ['xai'])
+  const allow = configuredSwarmProviders()
   return (Object.keys(status) as Provider[]).filter((p) => status[p].live && allow.includes(p))
 }
 

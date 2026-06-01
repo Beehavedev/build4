@@ -5801,6 +5801,7 @@ app.get('/api/admin/fleet/state', requireAdmin, async (_req, res) => {
     })
 
     const brainMod = await import('./agents/fleetBrain')
+    await brainMod.refreshSwarmSelection()
     const swarmProviders = brainMod.configuredSwarmProviders()
     res.json({
       ok: true,
@@ -5875,12 +5876,30 @@ app.get('/api/admin/fleet/balances', requireAdmin, async (_req, res) => {
 app.post('/api/admin/fleet/settings', requireAdmin, async (req, res) => {
   try {
     const fleet = await import('./services/fleet')
-    const body = (req.body ?? {}) as { liveTrading?: unknown; globalPaused?: unknown }
-    const patch: { liveTrading?: boolean; globalPaused?: boolean } = {}
+    const { isProvider } = await import('./services/inference')
+    const body = (req.body ?? {}) as { liveTrading?: unknown; globalPaused?: unknown; swarmProvider?: unknown }
+    const patch: { liveTrading?: boolean; globalPaused?: boolean; swarmProvider?: string | null } = {}
     if (typeof body.liveTrading === 'boolean') patch.liveTrading = body.liveTrading
     if (typeof body.globalPaused === 'boolean') patch.globalPaused = body.globalPaused
+    // swarmProvider: '' / null clears the override (back to env default); a
+    // non-empty string must be a known provider id.
+    if (body.swarmProvider === null || body.swarmProvider === '') {
+      patch.swarmProvider = null
+    } else if (typeof body.swarmProvider === 'string') {
+      if (!isProvider(body.swarmProvider)) {
+        return res.status(400).json({ error: `unknown provider: ${body.swarmProvider}` })
+      }
+      patch.swarmProvider = body.swarmProvider
+    }
     const settings = await fleet.setFleetSettings(patch)
-    await fleet.logFleet(null, 'info', `settings updated → live=${settings.liveTrading} paused=${settings.globalPaused}`)
+    // Push the new selection into the running brain's in-process cache so it
+    // takes effect on the very next tick (no redeploy, no waiting for the
+    // per-tick refresh).
+    if (patch.swarmProvider !== undefined) {
+      const brainMod = await import('./agents/fleetBrain')
+      await brainMod.refreshSwarmSelection()
+    }
+    await fleet.logFleet(null, 'info', `settings updated → live=${settings.liveTrading} paused=${settings.globalPaused} brain=${settings.swarmProvider ?? 'env-default'}`)
     res.json({ ok: true, settings })
   } catch (err) {
     console.error('[API] /admin/fleet/settings failed:', err)
@@ -10400,6 +10419,36 @@ app.get('/api/admin/ai-credits', requireAdmin, async (_req, res) => {
     res.json({ providers: out, fetchedAt: new Date().toISOString() })
   } catch (err) {
     console.error('[API] /admin/ai-credits failed:', err)
+    res.status(500).json({ error: 'Internal error' })
+  }
+})
+
+// GET /api/admin/ai-test — live one-shot probe of EVERY LLM provider. Unlike
+// /ai-credits (which only reports env-key presence + circuit-park state), this
+// actually CALLS each provider and returns the real HTTP status + error body,
+// so the /fleet panel can tell a healthy provider from a 401 (bad key) / 403
+// (no permission). Bypasses the circuit breaker and never trips it.
+app.get('/api/admin/ai-test', requireAdmin, async (_req, res) => {
+  try {
+    const { ALL_PROVIDERS, probeProvider, getCircuitState, getProviderStatus } = await import('./services/inference')
+    const status = getProviderStatus()
+    const circuits = getCircuitState()
+    const now = Date.now()
+    const results = await Promise.all(
+      ALL_PROVIDERS.map(async (provider) => {
+        const probe = await probeProvider(provider)
+        const parkedUntil = circuits[provider] ?? 0
+        return {
+          ...probe,
+          configured: status[provider]?.live ?? false,
+          circuitTripped: parkedUntil > now,
+          circuitParkedUntil: parkedUntil > now ? new Date(parkedUntil).toISOString() : null,
+        }
+      }),
+    )
+    res.json({ results, testedAt: new Date().toISOString() })
+  } catch (err) {
+    console.error('[API] /admin/ai-test failed:', err)
     res.status(500).json({ error: 'Internal error' })
   }
 })

@@ -56,6 +56,9 @@ export interface FleetAgent {
 export interface FleetSettings {
   liveTrading: boolean
   globalPaused: boolean
+  /** Single-LLM the /fleet panel selected for the brain (overrides the
+   *  FLEET_SWARM_PROVIDERS env allowlist). null = use the env default. */
+  swarmProvider: string | null
   updatedAt: Date
 }
 
@@ -279,25 +282,27 @@ export async function getFleetSettings(): Promise<FleetSettings> {
   const rows = await db.$queryRawUnsafe<any[]>(`SELECT * FROM "fleet_settings" WHERE id = 'singleton'`)
   if (rows.length === 0) {
     await db.$executeRawUnsafe(`INSERT INTO "fleet_settings" ("id") VALUES ('singleton') ON CONFLICT ("id") DO NOTHING`)
-    return { liveTrading: false, globalPaused: true, updatedAt: new Date() }
+    return { liveTrading: false, globalPaused: true, swarmProvider: null, updatedAt: new Date() }
   }
   const r = rows[0]
   return {
     liveTrading: !!r.live_trading,
     globalPaused: !!r.global_paused,
+    swarmProvider: r.swarm_provider ?? null,
     updatedAt: new Date(r.updated_at),
   }
 }
 
-export async function setFleetSettings(patch: { liveTrading?: boolean; globalPaused?: boolean }): Promise<FleetSettings> {
+export async function setFleetSettings(patch: { liveTrading?: boolean; globalPaused?: boolean; swarmProvider?: string | null }): Promise<FleetSettings> {
   const cur = await getFleetSettings()
   const next = {
     liveTrading: typeof patch.liveTrading === 'boolean' ? patch.liveTrading : cur.liveTrading,
     globalPaused: typeof patch.globalPaused === 'boolean' ? patch.globalPaused : cur.globalPaused,
+    swarmProvider: patch.swarmProvider !== undefined ? patch.swarmProvider : cur.swarmProvider,
   }
   await db.$executeRawUnsafe(
-    `UPDATE "fleet_settings" SET "live_trading" = $1, "global_paused" = $2, "updated_at" = NOW() WHERE id = 'singleton'`,
-    next.liveTrading, next.globalPaused,
+    `UPDATE "fleet_settings" SET "live_trading" = $1, "global_paused" = $2, "swarm_provider" = $3, "updated_at" = NOW() WHERE id = 'singleton'`,
+    next.liveTrading, next.globalPaused, next.swarmProvider,
   )
   return getFleetSettings()
 }

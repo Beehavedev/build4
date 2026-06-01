@@ -309,6 +309,63 @@ export async function callLLM(args: CallLLMArgs): Promise<CallLLMResult> {
   }
 }
 
+/** All known providers in display order — for admin diagnostics + validation. */
+export const ALL_PROVIDERS: Provider[] = ['anthropic', 'xai', 'hyperbolic', 'akash']
+
+/** Type-guard: true when `s` is a known provider id. */
+export function isProvider(s: string): s is Provider {
+  return Object.prototype.hasOwnProperty.call(PROVIDERS, s)
+}
+
+export interface ProviderProbe {
+  provider: Provider
+  ok: boolean
+  /** HTTP status from the provider (200 on success, 0 for network/missing-key, 401/402/403/etc on failure). */
+  status: number
+  latencyMs: number
+  model: string
+  /** Short error/body snippet on failure, null on success. */
+  error: string | null
+}
+
+/**
+ * Live one-shot diagnostic call to a single provider. Unlike callLLM it
+ * deliberately BYPASSES the circuit breaker (so the result reflects the
+ * provider's true current state, not a parked 503) and never trips the breaker
+ * itself (a diagnostic must not knock a provider offline). Returns the real
+ * HTTP status + a short error snippet on failure — the exact thing the /fleet
+ * panel needs to tell 401 (bad key) from 403 (permission) from 200 (healthy).
+ */
+export async function probeProvider(provider: Provider): Promise<ProviderProbe> {
+  const cfg = PROVIDERS[provider]
+  const started = Date.now()
+  const args: CallLLMArgs = {
+    provider,
+    system: 'You are a connectivity probe.',
+    user: 'Reply with the single word: ok',
+    maxTokens: 5,
+    temperature: 0,
+    timeoutMs: 12_000,
+  }
+  try {
+    const resolved = resolveCall(args, cfg)
+    if (provider === 'anthropic') await callAnthropic(args, resolved)
+    else await callOpenAICompat(args, resolved, cfg.baseUrl)
+    return { provider, ok: true, status: 200, latencyMs: Date.now() - started, model: resolved.model, error: null }
+  } catch (err) {
+    const ie = err instanceof InferenceError ? err : null
+    const raw = ie ? ie.body || ie.message : (err as Error)?.message ?? 'unknown error'
+    return {
+      provider,
+      ok: false,
+      status: ie?.status ?? 0,
+      latencyMs: Date.now() - started,
+      model: cfg.defaultModel,
+      error: String(raw).replace(/\s+/g, ' ').slice(0, 240),
+    }
+  }
+}
+
 function isTextBlock(block: ContentBlock): block is TextBlock {
   return block.type === 'text'
 }

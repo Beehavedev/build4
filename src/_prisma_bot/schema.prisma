@@ -516,10 +516,11 @@ model PolymarketPosition {
 // ═══════════════════════════════════════════════════════════════════════════
 
 model FleetSettings {
-  id           String   @id
-  liveTrading  Boolean  @default(false) @map("live_trading")
-  globalPaused Boolean  @default(true) @map("global_paused")
-  updatedAt    DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+  id            String   @id
+  liveTrading   Boolean  @default(false) @map("live_trading")
+  globalPaused  Boolean  @default(true) @map("global_paused")
+  swarmProvider String?  @map("swarm_provider")
+  updatedAt     DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
 
   @@map("fleet_settings")
 }

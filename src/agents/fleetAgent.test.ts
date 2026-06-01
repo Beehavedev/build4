@@ -261,7 +261,7 @@ test('overlapping closes sell once: the CAS lock serializes two exit ticks', asy
   let liveSells = 0
   const restore = withDeps({
     isFourMemeEnabled: () => true,
-    getFleetSettings: async () => ({ liveTrading: true, globalPaused: false, updatedAt: new Date() }),
+    getFleetSettings: async () => ({ liveTrading: true, globalPaused: false, swarmProvider: null, updatedAt: new Date() }),
     decryptFleetAgentKey: () => '0x' + '1'.repeat(64),
     sellTokenForBnb: async () => { liveSells += 1; return { txHash: '0xsell', estimatedBnbWei: 2n * 10n ** 16n } as any },
   })
@@ -319,7 +319,7 @@ test('global pause flipped mid-precheck fails closed: no sell, position stays op
   // flips pause between snapshot and sell. It must return paused → fail closed.
   const restore = withDeps({
     isFourMemeEnabled: () => true,
-    getFleetSettings: async () => ({ liveTrading: true, globalPaused: true, updatedAt: new Date() }),
+    getFleetSettings: async () => ({ liveTrading: true, globalPaused: true, swarmProvider: null, updatedAt: new Date() }),
     decryptFleetAgentKey: () => '0x' + '1'.repeat(64),
     sellTokenForBnb: async () => { liveSells += 1; return { txHash: '0xsell', estimatedBnbWei: 2n * 10n ** 16n } as any },
   })
@@ -439,7 +439,7 @@ test('a failed live sell releases the lock: closePosition re-throws and the posi
   let liveSells = 0
   const restore = withDeps({
     isFourMemeEnabled: () => true,
-    getFleetSettings: async () => ({ liveTrading: true, globalPaused: false, updatedAt: new Date() }),
+    getFleetSettings: async () => ({ liveTrading: true, globalPaused: false, swarmProvider: null, updatedAt: new Date() }),
     decryptFleetAgentKey: () => '0x' + '1'.repeat(64),
     sellTokenForBnb: async () => { liveSells += 1; throw new Error('boom: sell reverted') },
   })
@@ -590,7 +590,7 @@ test('a crashed-worker stale claim is reaped: the position becomes re-claimable 
     let blockedSells = 0
     const restoreBlocked = withDeps({
       isFourMemeEnabled: () => true,
-      getFleetSettings: async () => ({ liveTrading: true, globalPaused: false, updatedAt: new Date() }),
+      getFleetSettings: async () => ({ liveTrading: true, globalPaused: false, swarmProvider: null, updatedAt: new Date() }),
       decryptFleetAgentKey: () => '0x' + '1'.repeat(64),
       sellTokenForBnb: async () => { blockedSells += 1; return { txHash: '0xsell', estimatedBnbWei: 2n * 10n ** 16n } as any },
     })
@@ -617,7 +617,7 @@ test('a crashed-worker stale claim is reaped: the position becomes re-claimable 
     let retrySells = 0
     const restore = withDeps({
       isFourMemeEnabled: () => true,
-      getFleetSettings: async () => ({ liveTrading: true, globalPaused: false, updatedAt: new Date() }),
+      getFleetSettings: async () => ({ liveTrading: true, globalPaused: false, swarmProvider: null, updatedAt: new Date() }),
       decryptFleetAgentKey: () => '0x' + '1'.repeat(64),
       sellTokenForBnb: async () => { retrySells += 1; return { txHash: '0xsell', estimatedBnbWei: 2n * 10n ** 16n } as any },
     })
@@ -1007,7 +1007,7 @@ test('ride-through bag survives graduation and exits on PancakeSwap (venue dispa
   const HIGH_SLIPPAGE = 9999 // far above the pancake hard ceiling (500 bps)
   const restoreSell = withDeps({
     isFourMemeEnabled: () => false, // graduated bag must ignore this switch
-    getFleetSettings: async () => ({ liveTrading: true, globalPaused: false, updatedAt: new Date() }),
+    getFleetSettings: async () => ({ liveTrading: true, globalPaused: false, swarmProvider: null, updatedAt: new Date() }),
     decryptFleetAgentKey: () => '0x' + '1'.repeat(64),
     pancakeSellTokenForBnb: async (_pk: any, _t: any, _w: any, opts: any) => {
       pancakeSells += 1; sawSlippageBps = opts?.slippageBps
