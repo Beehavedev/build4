@@ -1,3 +1,4 @@
+import { InputFile } from 'grammy'
 import type { Bot } from 'grammy'
 
 /**
@@ -48,6 +49,39 @@ export async function sendAdminAlert(
     } catch (err: any) {
       failed++
       console.error(`[AdminAlert] Failed to send to ${id}:`, err?.message ?? err)
+    }
+    await new Promise((r) => setTimeout(r, 40))
+  }
+  return { attempted: ids.length, sent, failed }
+}
+
+/**
+ * Push a file (e.g. a fleet backup CSV) to every admin Telegram account as a
+ * document. Same fail-soft contract as sendAdminAlert: no-op (logged) when no
+ * bot or no ADMIN_TELEGRAM_IDS are configured. A Buffer/Uint8Array is sent
+ * inline via grammY's InputFile so nothing touches disk.
+ */
+export async function sendAdminDocument(
+  bot: Bot | null,
+  file: Buffer | Uint8Array,
+  filename: string,
+  caption?: string,
+): Promise<AdminAlertResult> {
+  const ids = parseAdminIds()
+  if (!bot || ids.length === 0) {
+    if (ids.length === 0) console.log('[AdminAlert] No ADMIN_TELEGRAM_IDS configured; skipping document.')
+    return { attempted: 0, sent: 0, failed: 0 }
+  }
+
+  let sent = 0
+  let failed = 0
+  for (const id of ids) {
+    try {
+      await bot.api.sendDocument(id, new InputFile(file, filename), caption ? { caption } : {})
+      sent++
+    } catch (err: any) {
+      failed++
+      console.error(`[AdminAlert] Failed to send document to ${id}:`, err?.message ?? err)
     }
     await new Promise((r) => setTimeout(r, 40))
   }

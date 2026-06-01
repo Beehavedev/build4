@@ -25,16 +25,25 @@
  */
 
 import { runSwarmDecision, type SwarmResult } from '../swarm/swarm'
-import { getProviderStatus, type Provider } from '../services/inference'
+import { getProviderStatus, resolveProviders, type Provider } from '../services/inference'
 
 /** Master env gate. With this off the brain is never consulted. */
 export function isFleetSwarmEnabled(): boolean {
   return process.env.FLEET_SWARM_ENABLED === 'true'
 }
 
+/** The configured swarm provider allowlist (FLEET_SWARM_PROVIDERS, default
+ *  `xai` only). Single source of truth for liveProviders() AND the /fleet panel
+ *  label, so the UI shows the real model count instead of a hardcoded number. */
+export function configuredSwarmProviders(): Provider[] {
+  return resolveProviders('FLEET_SWARM_PROVIDERS', ['xai'])
+}
+
 const VERDICT_TTL_SEC = Math.max(15, Math.round(Number(process.env.FLEET_SWARM_VERDICT_TTL_SEC) || 120))
 const SWARM_TIMEOUT_MS = Math.max(5_000, Math.round(Number(process.env.FLEET_SWARM_TIMEOUT_MS) || 20_000))
-const SWARM_QUORUM = Math.max(2, Math.round(Number(process.env.FLEET_SWARM_QUORUM) || 2))
+// Quorum floor is 1: with a single-LLM swarm (e.g. xai only) one agreeing vote
+// is the consensus. Default 1; raise via FLEET_SWARM_QUORUM when running >1 provider.
+const SWARM_QUORUM = Math.max(1, Math.round(Number(process.env.FLEET_SWARM_QUORUM) || 1))
 
 // Test seam — the concurrency/routing tests stub the swarm + provider list here
 // so they never hit a real LLM. Production calls through these indirections.
@@ -200,7 +209,11 @@ export function __clearVerdictCache(): void {
 
 function liveProviders(): Provider[] {
   const status = __brainTestDeps.getProviderStatus()
-  return (Object.keys(status) as Provider[]).filter((p) => status[p].live)
+  // Scope the fleet swarm to an allow-list (default: xai only) so it runs on the
+  // chosen model(s) without disturbing other surfaces' provider keys. Override
+  // with FLEET_SWARM_PROVIDERS (comma-separated) to add models back.
+  const allow = resolveProviders('FLEET_SWARM_PROVIDERS', ['xai'])
+  return (Object.keys(status) as Provider[]).filter((p) => status[p].live && allow.includes(p))
 }
 
 function votesFrom<T extends EntryDecision | ExitDecision>(res: SwarmResult<T>): ProviderVote[] {

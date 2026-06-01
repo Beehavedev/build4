@@ -18,7 +18,7 @@
 import { ethers } from 'ethers'
 import { getMarketByAddress, type Market42 } from '../services/fortyTwo'
 import { readMarketOnchain, type OnchainMarketState } from '../services/fortyTwoOnchain'
-import { callLLM, type Provider } from '../services/inference'
+import { callLLM, resolveProviders, type Provider } from '../services/inference'
 import { fetchTrendingNews, type NewsSignal } from '../services/newsService'
 import {
   houseOpenFortyTwoPosition,
@@ -28,7 +28,9 @@ import {
 import { logHouseBrain, getHouseWalletAddress } from '../services/houseAgent'
 import { getBot } from './runner'
 
-const SWARM_PROVIDERS: Provider[] = ['anthropic', 'xai', 'hyperbolic', 'akash']
+// Default to xai only (cost). Override with HOUSE_SWARM_PROVIDERS (comma-separated)
+// to restore the multi-LLM swarm; the vote thresholds below scale with this count.
+const SWARM_PROVIDERS: Provider[] = resolveProviders('HOUSE_SWARM_PROVIDERS', ['xai'])
 
 // Conviction → size tier (USDT). Each tier is capped by HOUSE_42SPACE_MAX_USD.
 const SIZE_LOW = 25
@@ -421,7 +423,15 @@ function aggregateSportsVotes(
     o.impliedProbability > best.impliedProbability ? o : best,
   ).index
 
-  if (parsed.length < 3) {
+  // Thresholds scale with the configured provider count so the swarm degrades
+  // correctly to a single LLM (n=1 ⇒ that one parsed vote decides) and still
+  // demands a 3/4 parse + ≥2-vote agreement when run as the full 4-provider swarm.
+  const n = SWARM_PROVIDERS.length
+  const minParsed = Math.max(1, n - 1)
+  const majorityNeeded = Math.floor(n / 2) + 1
+  const minPlurality = Math.min(2, n)
+
+  if (parsed.length < minParsed) {
     return {
       bucketIndex: crowdBucket,
       sizeUsdt: 0,
@@ -436,8 +446,8 @@ function aggregateSportsVotes(
 
   const topCount = sorted[0][1]
   const runnerUpCount = sorted[1]?.[1] ?? 0
-  const hasMajority = topCount >= 3
-  const hasClearPlurality = topCount >= 2 && topCount > runnerUpCount
+  const hasMajority = topCount >= majorityNeeded
+  const hasClearPlurality = topCount >= minPlurality && topCount > runnerUpCount
 
   if (!hasMajority && !hasClearPlurality) {
     return {

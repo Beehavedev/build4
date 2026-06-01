@@ -199,11 +199,20 @@
   function setAll(status) {
     return act(() => api("/api/admin/fleet/agents/status", { method: "POST", body: JSON.stringify({ status }) }));
   }
+  // Real model count from the backend (FLEET_SWARM_PROVIDERS allowlist, default
+  // 'xai' only) — never a hardcoded number, so the panel can't misrepresent it.
+  function swarmCount() {
+    return (state && (state.swarmProviderCount || (state.swarmProviders && state.swarmProviders.length))) || 1;
+  }
+  function swarmLabel() {
+    var n = swarmCount();
+    return n === 1 ? "single-LLM" : (n + "-LLM");
+  }
   function setAllSwarm(enabled) {
     return act(async function () {
       const r = await api("/api/admin/fleet/agents/swarm", { method: "POST", body: JSON.stringify({ enabled }) });
       if (enabled && r && r.envActive === false) {
-        window.alert("Brain enabled on all agents, but FLEET_SWARM_ENABLED is NOT set in this environment — the 4-LLM brain stays INACTIVE (no LLM spend) until that env flag is set. Set FLEET_SWARM_ENABLED=true in prod to actually run the swarm.");
+        window.alert("Brain enabled on all agents, but FLEET_SWARM_ENABLED is NOT set in this environment — the " + swarmLabel() + " brain stays INACTIVE (no LLM spend) until that env flag is set. Set FLEET_SWARM_ENABLED=true in prod to actually run the swarm.");
       }
     });
   }
@@ -276,7 +285,7 @@
           '<button class="ok" ' + (busy ? "disabled" : "") + ' onclick="setAll(\'active\')">Activate all</button>' +
           '<button ' + (busy ? "disabled" : "") + ' onclick="setAll(\'paused\')">Pause all</button>' +
         '</div></div>' +
-        '<div><div class="label">AI brain (4-LLM)</div><div class="row">' +
+        '<div><div class="label">AI brain (' + swarmLabel() + ')</div><div class="row">' +
           '<button class="primary" ' + (busy ? "disabled" : "") + ' onclick="setAllSwarm(true)">Enable all</button>' +
           '<button ' + (busy ? "disabled" : "") + ' onclick="setAllSwarm(false)">Disable all</button>' +
           '<div class="dim" style="font-size:11px;margin-top:4px">env gate: ' +
@@ -290,6 +299,11 @@
         '<div><div class="label">Keys</div><div class="row">' +
           '<button ' + (busy ? "disabled" : "") + ' onclick="exportKeys()">Export all keys</button>' +
         '</div></div>' +
+        '<div><div class="label">Backup / Restore (full)</div><div class="row">' +
+          '<button ' + (busy ? "disabled" : "") + ' onclick="backupFleet()">Backup all (CSV)</button>' +
+          '<input type="file" id="restoreFile" accept=".csv,text/csv" style="color:var(--text);font-size:12px;max-width:200px" />' +
+          '<button ' + (busy ? "disabled" : "") + ' onclick="restoreFleet()">Restore from CSV</button>' +
+        '</div><div class="dim" style="font-size:11px;margin-top:4px">Full snapshot (agents + wallets + keys + config). Restore is additive (skips existing) and re-encrypts keys under THIS bot — restore on the production bot that will trade them.</div></div>' +
         '<div><div class="label">Sweep balances → wallet</div><div class="row">' +
           '<input id="sweepDest" placeholder="0x destination wallet" style="width:210px" />' +
           '<button class="danger" ' + (busy ? "disabled" : "") + ' onclick="sweepAll()">Sweep all</button>' +
@@ -345,6 +359,49 @@
       URL.revokeObjectURL(url);
     } catch (e) { errMsg = e.message; }
     finally { busy = false; render(); }
+  }
+
+  // Download a FULL restorable backup CSV (agents + wallets + keys + config).
+  async function backupFleet() {
+    if (!window.confirm("Download a FULL fleet backup (CSV)?\n\nIt contains every agent's config AND its FULL private key — anyone with this file can move the funds. Store it securely (offline) and delete it when done.\n\nNote: a backup is a point-in-time snapshot. Restoring it later brings the agents+wallets back, but CANNOT replay trades the agents made after this download.")) return;
+    const token = getToken();
+    if (!token) return;
+    busy = true; errMsg = ""; render();
+    try {
+      const r = await fetch("/api/admin/fleet/backup", { headers: { "x-admin-token": token } });
+      if (!r.ok) {
+        const t = await r.text(); let j; try { j = JSON.parse(t); } catch { j = {}; }
+        throw new Error(j.error || ("HTTP " + r.status));
+      }
+      const blob = await r.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = "fleet-backup-" + new Date().toISOString().slice(0, 10) + ".csv";
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) { errMsg = e.message; }
+    finally { busy = false; render(); }
+  }
+
+  // Restore agents from a previously-downloaded backup CSV. Additive: agents
+  // that already exist (by id or name) are skipped. Keys are re-encrypted under
+  // THIS bot's key, so this must run on the bot that will trade them.
+  function restoreFleet() {
+    const input = document.getElementById("restoreFile");
+    const file = input && input.files && input.files[0];
+    if (!file) { errMsg = "Choose a backup CSV file first."; render(); return; }
+    if (!window.confirm('Restore fleet agents from "' + file.name + '"?\n\nAgents that already exist (by id or name) are skipped — nothing is overwritten. Keys are re-encrypted under THIS environment, so only restore on the bot that will actually trade these wallets.\n\nRestored agents always come back PAUSED — you must re-activate them once you have confirmed their wallets are funded.')) return;
+    return act(async function () {
+      const csv = await file.text();
+      const r = await api("/api/admin/fleet/restore", { method: "POST", body: JSON.stringify({ csv: csv }) });
+      var msg = "Restore complete.\nRestored: " + r.restored + "\nSkipped (already existed): " + r.skippedExisting + "\nFailed: " + r.failed + "\n(of " + r.total + " rows)";
+      if (r.errors && r.errors.length) {
+        msg += "\n\nErrors:\n" + r.errors.slice(0, 10).map(function (e) { return "• " + e.name + ": " + e.error; }).join("\n");
+        if (r.errors.length > 10) msg += "\n…and " + (r.errors.length - 10) + " more";
+      }
+      if (input) input.value = "";
+      window.alert(msg);
+    });
   }
 
   // Sweep every fleet wallet's BNB (minus gas) to an admin-entered address.
@@ -480,7 +537,7 @@
       '<div class="row" style="margin-top:8px">' + knobs + '</div>' +
       '<div class="row" style="margin-top:8px;align-items:center;gap:10px">' +
         '<button class="primary" ' + (busy ? "disabled" : "") + ' onclick="saveAgent(\'' + a.id + '\')">Save knobs</button>' +
-        '<span class="label" style="margin:0">AI brain (4-LLM):</span>' +
+        '<span class="label" style="margin:0">AI brain (' + swarmLabel() + '):</span>' +
         '<button class="' + (a.swarmEnabled ? "ok" : "") + '" ' + (busy ? "disabled" : "") +
           ' onclick="patchAgent(\'' + a.id + '\',{swarmEnabled:' + (!a.swarmEnabled) + '})">' +
           (a.swarmEnabled ? "On — click to disable" : "Off — click to enable") + '</button>' +
@@ -544,7 +601,7 @@
     if (brainLogs === null) { refreshBrain(); return '<div class="card dim">Loading brain feed…</div>'; }
     const envOn = !!(state && state.swarmEnvEnabled);
     const banner = '<div class="card" style="margin-bottom:10px">' +
-      '<div class="between"><div><b>4-LLM AI brain</b> · env gate FLEET_SWARM_ENABLED: ' +
+      '<div class="between"><div><b>' + swarmLabel() + ' AI brain</b> · env gate FLEET_SWARM_ENABLED: ' +
         '<span class="pill ' + (envOn ? "active" : "paused") + '">' + (envOn ? "ON" : "OFF") + '</span>' +
         (envOn ? "" : ' <span class="dim">— per-agent toggles have no effect until the env gate is on</span>') +
       '</div><button onclick="refreshBrain()">Refresh</button></div></div>';

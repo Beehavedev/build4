@@ -353,6 +353,52 @@ export function initRunner(bot: Bot) {
   })
   setTimeout(() => { void runFleetLowBalanceWatch() }, 40_000)
 
+  // Fleet auto-snapshot — scheduled off-server backstop. Pushes a full backup
+  // CSV (the same file the /fleet "Backup all" button produces, restorable via
+  // "Restore from CSV") to admin Telegram on a timer so a restore file always
+  // exists OFF the database — the safety net if the prod fleet ever vanishes
+  // (e.g. a Render DB recovery/restore). Opt-in because real private keys leave
+  // the server: set FLEET_AUTOSNAPSHOT_ENABLED=true. Default cadence 06:00 UTC
+  // daily; override with FLEET_AUTOSNAPSHOT_CRON. Empty fleet = no-op (so a
+  // post-wipe run can't overwrite the value of an earlier good snapshot).
+  if (process.env.FLEET_AUTOSNAPSHOT_ENABLED === 'true') {
+    cron.schedule(process.env.FLEET_AUTOSNAPSHOT_CRON ?? '0 6 * * *', () => {
+      void runFleetAutoSnapshot()
+    }, { timezone: 'UTC' })
+    // Boot catch-up: if the last successful snapshot is >20h old (or none
+    // exists), fire one ~60s after start so a redeploy across the daily cron
+    // time can't skip a day. The age guard stops a burst of redeploys from
+    // snapshotting on every boot.
+    setTimeout(() => { void runFleetAutoSnapshotCatchUp() }, 60_000)
+  }
+
+  // Competition bridge — push a per-agent fleet snapshot (volume + traded
+  // tokens) to the build4.io competition site so every fleet agent shows on the
+  // public leaderboard with live volume + on-chain PnL. Fail-closed: the push
+  // helper is a no-op unless COMPETITION_BRIDGE_ENABLED='true' AND both
+  // COMPETITION_SITE_URL + FLEET_BRIDGE_SECRET are set, so this is safe to leave
+  // armed. Single-flighted; boot catch-up ~45s after start then every 120s.
+  let competitionBridgeInflight = false
+  const tickCompetitionBridge = async () => {
+    if (competitionBridgeInflight) return
+    competitionBridgeInflight = true
+    try {
+      const { pushFleetSnapshotToSite } = await import('../services/competitionBridge')
+      const r = await pushFleetSnapshotToSite()
+      if (!r.skipped && !r.ok) {
+        console.error(`[competitionBridge] push failed: status=${r.status ?? '-'} ${r.error ?? ''}`.trim())
+      } else if (r.ok) {
+        console.log(`[competitionBridge] synced ${r.agents} agents`)
+      }
+    } catch (err) {
+      console.error('[competitionBridge] tick failed:', (err as Error).message)
+    } finally {
+      competitionBridgeInflight = false
+    }
+  }
+  setTimeout(tickCompetitionBridge, 45_000)
+  setInterval(tickCompetitionBridge, 120_000)
+
   // Demo Day — autonomous take-profit sweep for already-launched dev
   // bags. Independent of the launch sweep above so a slow LLM round
   // can't block exits, and vice versa. Per-agent TP% lives on the
@@ -973,6 +1019,55 @@ async function runSwarmDivergenceWatch() {
 // re-ping admins every interval. An agent is removed from the set once its
 // wallet refills above the threshold, so a later re-drain alerts again.
 const fleetLowBalanceAlerted = new Set<string>()
+
+// Scheduled off-server fleet backup. Exports the full backup CSV and sends it
+// to admin Telegram as a document. No-op when no admin targets are configured
+// or the fleet is empty. Best-effort — a send failure is logged, never thrown,
+// so a flaky Telegram call can't take down the runner.
+async function runFleetAutoSnapshot(): Promise<void> {
+  try {
+    const { hasAdminTargets, sendAdminDocument } = await import('../services/adminAlerts')
+    if (!hasAdminTargets()) {
+      console.log('[FleetSnapshot] No ADMIN_TELEGRAM_IDS configured; skipping snapshot.')
+      return
+    }
+    const fleet = await import('../services/fleet')
+    const rows = await fleet.exportFleetBackup()
+    if (rows.length === 0) {
+      console.log('[FleetSnapshot] Fleet is empty; skipping snapshot (nothing to back up).')
+      return
+    }
+    const csv = fleet.serializeFleetBackupCsv(rows)
+    const failed = rows.filter((r) => r.error).length
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')
+    const filename = `fleet-autosnapshot-${stamp}.csv`
+    const caption =
+      `🛟 Fleet auto-snapshot — ${rows.length} agent(s)` +
+      (failed > 0 ? `, ${failed} un-decryptable` : '') +
+      `.\nRestore via the /fleet panel "Restore from CSV" on THIS bot.`
+    const res = await sendAdminDocument(botRef, Buffer.from(csv, 'utf-8'), filename, caption)
+    await fleet.logFleet(null, 'info', `auto-snapshot sent to ${res.sent}/${res.attempted} admin(s) (${rows.length} agents, ${failed} failed)`)
+  } catch (e) {
+    console.error('[FleetSnapshot] auto-snapshot failed:', (e as Error).message)
+  }
+}
+
+// Snapshot is considered "fresh" if one ran within this window; a boot catch-up
+// only fires when the last snapshot is older (or absent).
+const AUTOSNAPSHOT_MAX_AGE_MS = 20 * 60 * 60 * 1000
+async function runFleetAutoSnapshotCatchUp(): Promise<void> {
+  try {
+    const { lastAutoSnapshotAt } = await import('../services/fleet')
+    const last = await lastAutoSnapshotAt()
+    if (last && Date.now() - last.getTime() < AUTOSNAPSHOT_MAX_AGE_MS) {
+      console.log('[FleetSnapshot] Recent snapshot exists; skipping boot catch-up.')
+      return
+    }
+    await runFleetAutoSnapshot()
+  } catch (e) {
+    console.error('[FleetSnapshot] boot catch-up failed:', (e as Error).message)
+  }
+}
 
 async function runFleetLowBalanceWatch() {
   try {

@@ -5800,11 +5800,15 @@ app.get('/api/admin/fleet/state', requireAdmin, async (_req, res) => {
       }
     })
 
+    const brainMod = await import('./agents/fleetBrain')
+    const swarmProviders = brainMod.configuredSwarmProviders()
     res.json({
       ok: true,
       settings,
       liveEnvEnabled: fleet.isFleetLiveTradingEnabled(),
-      swarmEnvEnabled: (await import('./agents/fleetBrain')).isFleetSwarmEnabled(),
+      swarmEnvEnabled: brainMod.isFleetSwarmEnabled(),
+      swarmProviders,
+      swarmProviderCount: swarmProviders.length,
       strategies,
       agents: agentsOut,
       totalAgents: agentsOut.length,
@@ -6170,6 +6174,52 @@ app.get('/api/admin/fleet/export-keys', requireAdmin, async (_req, res) => {
     res.send(header + '\n' + body + '\n')
   } catch (err) {
     console.error('[API] /admin/fleet/export-keys failed:', err)
+    res.status(500).json({ error: (err as Error).message })
+  }
+})
+
+// GET /api/admin/fleet/backup — a FULL restorable snapshot of every fleet
+// agent (all config columns + agent id + decrypted private_key), streamed as a
+// single CSV. Superset of export-keys: this is the file you re-upload to
+// /restore. Real keys leave the server, so requireAdmin-only + logged (count
+// only). Restore it back into the SAME bot — keys re-encrypt under this env's key.
+app.get('/api/admin/fleet/backup', requireAdmin, async (_req, res) => {
+  try {
+    const fleet = await import('./services/fleet')
+    const rows = await fleet.exportFleetBackup()
+    const csv = fleet.serializeFleetBackupCsv(rows)
+    const failed = rows.filter((r) => r.error).length
+    await fleet.logFleet(null, 'info', `full backup exported via panel (${rows.length} agents, ${failed} failed)`)
+    res.setHeader('Cache-Control', 'no-store')
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8')
+    res.setHeader('Content-Disposition', `attachment; filename="fleet-backup-${new Date().toISOString().slice(0, 10)}.csv"`)
+    res.send(csv)
+  } catch (err) {
+    console.error('[API] /admin/fleet/backup failed:', err)
+    res.status(500).json({ error: (err as Error).message })
+  }
+})
+
+// POST /api/admin/fleet/restore  body: { csv } — restore agents from a backup
+// CSV produced by /backup. Additive: rows whose id/name already exist are
+// skipped (never clobbers a live agent). Each key is re-encrypted under THIS
+// env's key, so restore on the bot that will trade them. requireAdmin + the
+// keys in the body are never logged (count only).
+app.post('/api/admin/fleet/restore', requireAdmin, async (req, res) => {
+  try {
+    const body = (req.body ?? {}) as { csv?: unknown }
+    const csv = typeof body.csv === 'string' ? body.csv : ''
+    if (!csv.trim()) return res.status(400).json({ error: 'csv body is required' })
+    const fleet = await import('./services/fleet')
+    // Quote-aware parse (shared with the serializer; reverses the formula-guard
+    // and strips the Excel BOM). Returns [] when there are no data rows.
+    const rows = fleet.parseFleetBackupCsv(csv)
+    if (rows.length === 0) return res.status(400).json({ error: 'csv has no data rows' })
+    const out = await fleet.importFleetBackup(rows)
+    await fleet.logFleet(null, 'info', `fleet restored via panel: restored=${out.restored} skipped=${out.skippedExisting} failed=${out.failed} (of ${out.total})`)
+    res.json({ ok: true, ...out })
+  } catch (err) {
+    console.error('[API] /admin/fleet/restore failed:', err)
     res.status(500).json({ error: (err as Error).message })
   }
 })

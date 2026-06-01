@@ -78,6 +78,28 @@ export function getProviderConfig(provider: Provider): ProviderConfig {
   return PROVIDERS[provider]
 }
 
+/**
+ * Resolve a comma-separated provider allow-list from an env var, validated
+ * against the known providers. Falls back to `fallback` when unset/empty/all-invalid.
+ * Lets the house + fleet swarms run on a chosen subset (e.g. xai only, for cost)
+ * WITHOUT touching API keys that other surfaces (per-user trading, inference
+ * fallback) still depend on. Case-insensitive; unknown names are dropped.
+ */
+export function resolveProviders(envVar: string, fallback: Provider[]): Provider[] {
+  const raw = (process.env[envVar] ?? '').trim()
+  if (!raw) return fallback
+  const valid = new Set(Object.keys(PROVIDERS) as Provider[])
+  const picked = raw
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter((s): s is Provider => valid.has(s as Provider))
+  // Dedupe (order-preserving): a list like "xai,xai" must not double-weight a
+  // provider as two separate swarm votes — that would skew quorum/consensus
+  // math on funded decisions.
+  const deduped = Array.from(new Set(picked))
+  return deduped.length > 0 ? deduped : fallback
+}
+
 export function getProviderStatus(): Record<Provider, { live: boolean; envVar: string; defaultModel: string }> {
   const out = {} as Record<Provider, { live: boolean; envVar: string; defaultModel: string }>
   for (const [key, cfg] of Object.entries(PROVIDERS) as [Provider, ProviderConfig][]) {

@@ -545,6 +545,302 @@ export async function exportFleetKeys(): Promise<FleetKeyExportRow[]> {
   })
 }
 
+// ── Full-fidelity backup / restore ───────────────────────────────────────
+// exportFleetBackup round-trips EVERY column needed to recreate an agent
+// byte-identically — crucially the agent `id` (the key namespace) and the
+// decrypted private_key. importFleetBackup re-inserts those rows, re-encrypting
+// each key under its original id with THIS environment's master key. That means
+// a backup is portable only back into the SAME bot (same WALLET_ENCRYPTION_KEY);
+// importing elsewhere would store keys the trading bot can't decrypt → stranded
+// funds. A backup is a point-in-time SNAPSHOT: it captures agents + wallets +
+// config, NOT positions/trades/PnL accrued after the export.
+
+export interface FleetBackupRow {
+  id: string
+  name: string
+  strategy: FleetStrategy
+  walletAddress: string
+  privateKey: string
+  riskLevel: RiskLevel
+  maxTradeSizeBnb: number
+  dailyTradeLimit: number
+  cooldownSec: number
+  jitterSec: number
+  maxPositions: number
+  minTrust: number
+  takeProfitPct: number
+  stopLossPct: number
+  exitFillPct: number
+  maxDailyLossBnb: number
+  slippageBps: number
+  watchlist: string
+  status: 'active' | 'paused'
+  assignedTo: string
+  swarmEnabled: boolean
+  error?: string
+}
+
+/** Column order for the backup CSV — also the accepted import header. */
+export const FLEET_BACKUP_COLUMNS: Array<keyof FleetBackupRow> = [
+  'id', 'name', 'strategy', 'walletAddress', 'privateKey', 'riskLevel',
+  'maxTradeSizeBnb', 'dailyTradeLimit', 'cooldownSec', 'jitterSec',
+  'maxPositions', 'minTrust', 'takeProfitPct', 'stopLossPct', 'exitFillPct',
+  'maxDailyLossBnb', 'slippageBps', 'watchlist', 'status', 'assignedTo',
+  'swarmEnabled', 'error',
+]
+
+/**
+ * Snapshot every fleet agent into a restorable backup. Per-agent try/catch so a
+ * single un-decryptable row (key written under a different master key) carries
+ * an `error` + empty privateKey instead of aborting the whole backup.
+ */
+export async function exportFleetBackup(): Promise<FleetBackupRow[]> {
+  const agents = await listFleetAgents()
+  return agents.map((a) => {
+    const base = {
+      id: a.id,
+      name: a.name,
+      strategy: a.strategy,
+      walletAddress: a.walletAddress,
+      riskLevel: a.riskLevel,
+      maxTradeSizeBnb: a.maxTradeSizeBnb,
+      dailyTradeLimit: a.dailyTradeLimit,
+      cooldownSec: a.cooldownSec,
+      jitterSec: a.jitterSec,
+      maxPositions: a.maxPositions,
+      minTrust: a.minTrust,
+      takeProfitPct: a.takeProfitPct,
+      stopLossPct: a.stopLossPct,
+      exitFillPct: a.exitFillPct,
+      maxDailyLossBnb: a.maxDailyLossBnb,
+      slippageBps: a.slippageBps,
+      watchlist: a.watchlist && a.watchlist.length > 0 ? JSON.stringify(a.watchlist) : '',
+      status: a.status,
+      assignedTo: a.assignedTo ?? '',
+      swarmEnabled: a.swarmEnabled,
+    }
+    try {
+      return { ...base, privateKey: decryptFleetAgentKey(a) }
+    } catch (e) {
+      return { ...base, privateKey: '', error: (e as Error).message }
+    }
+  })
+}
+
+/**
+ * Serialize backup rows into the canonical CSV (header + formula-injection-
+ * escaped body + trailing newline). Single source of truth shared by the
+ * /api/admin/fleet/backup endpoint and the scheduled auto-snapshot so both
+ * files are byte-identical and round-trip through importFleetBackup unchanged.
+ */
+export function serializeFleetBackupCsv(rows: FleetBackupRow[]): string {
+  const csvEsc = (s: string) => {
+    let v = s
+    if (/^[=+\-@\t\r]/.test(v)) v = "'" + v
+    return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v
+  }
+  const cols = FLEET_BACKUP_COLUMNS
+  const header = cols.join(',')
+  const body = rows
+    .map((r) => cols.map((c) => csvEsc(String((r as any)[c] ?? ''))).join(','))
+    .join('\n')
+  return header + '\n' + body + '\n'
+}
+
+/**
+ * Parse a backup CSV (as produced by serializeFleetBackupCsv) into header→value
+ * maps for importFleetBackup. Quote-aware (RFC-4180 doubled quotes), strips a
+ * UTF-8 BOM off the first header cell (Excel adds one), skips blank trailing
+ * lines, and reverses the spreadsheet formula-injection guard (a leading
+ * apostrophe) ONLY when it actually guards a formula-trigger char (=,+,-,@,tab,
+ * CR) — so a legitimate value beginning with ' is left intact. Returns [] when
+ * the CSV has no data rows. Lives here (not inline in the route) so the parse is
+ * the single source of truth and unit-testable alongside the serializer.
+ */
+export function parseFleetBackupCsv(csv: string): Array<Record<string, string>> {
+  const records: string[][] = []
+  let field = ''
+  let record: string[] = []
+  let inQuotes = false
+  for (let i = 0; i < csv.length; i++) {
+    const c = csv[i]
+    if (inQuotes) {
+      if (c === '"') {
+        if (csv[i + 1] === '"') { field += '"'; i++ } else { inQuotes = false }
+      } else { field += c }
+      continue
+    }
+    if (c === '"') { inQuotes = true; continue }
+    if (c === ',') { record.push(field); field = ''; continue }
+    if (c === '\r') { continue }
+    if (c === '\n') { record.push(field); records.push(record); field = ''; record = []; continue }
+    field += c
+  }
+  if (field.length > 0 || record.length > 0) { record.push(field); records.push(record) }
+  if (records.length < 2) return []
+  // Strip a UTF-8 BOM off the first header cell so "id" matches (not "\uFEFFid").
+  if (records[0].length > 0) records[0][0] = records[0][0].replace(/^\uFEFF/, '')
+  const header = records[0].map((h) => h.trim())
+  const rows: Array<Record<string, string>> = []
+  for (let r = 1; r < records.length; r++) {
+    const rec = records[r]
+    if (rec.length === 1 && rec[0].trim() === '') continue
+    const obj: Record<string, string> = {}
+    header.forEach((h, idx) => {
+      let v = rec[idx] ?? ''
+      if (v.length > 1 && v[0] === "'" && /^[=+\-@\t\r]/.test(v[1])) v = v.slice(1)
+      obj[h] = v
+    })
+    rows.push(obj)
+  }
+  return rows
+}
+
+/**
+ * Timestamp of the most recent successful auto-snapshot (parsed from fleet_logs),
+ * or null if none has run. Used by the runner's boot catch-up to decide whether a
+ * daily snapshot was missed across a redeploy. Best-effort: returns null on error.
+ */
+export async function lastAutoSnapshotAt(): Promise<Date | null> {
+  try {
+    const rows = await db.$queryRawUnsafe<Array<{ created_at: Date }>>(
+      `SELECT "created_at" FROM "fleet_logs" WHERE "agent_id" IS NULL AND "message" LIKE 'auto-snapshot sent%' ORDER BY "created_at" DESC LIMIT 1`,
+    )
+    return rows.length > 0 ? new Date(rows[0].created_at) : null
+  } catch {
+    return null
+  }
+}
+
+export interface FleetImportResult {
+  total: number
+  restored: number
+  skippedExisting: number
+  failed: number
+  errors: Array<{ name: string; error: string }>
+}
+
+// Table defaults — fall-backs for any numeric column missing/garbled in a
+// hand-edited backup (our own export always populates them).
+const FLEET_DEFAULTS = {
+  maxTradeSizeBnb: 0.01, dailyTradeLimit: 10, cooldownSec: 300, jitterSec: 60,
+  maxPositions: 3, minTrust: 60, takeProfitPct: 50, stopLossPct: 35,
+  exitFillPct: 90, maxDailyLossBnb: 0.05, slippageBps: 500,
+}
+
+/**
+ * Restore agents from a parsed backup (array of header→value maps). Each row is
+ * validated (known strategy + the private_key must DERIVE the recorded
+ * wallet_address — funds-safety against a corrupted file), re-encrypted under
+ * its original id, and INSERTed ON CONFLICT(id) DO NOTHING. Rows whose id OR
+ * name already exists are skipped (restore is additive — it never clobbers a
+ * live agent). Requires the master key (encrypt is fail-closed).
+ */
+export async function importFleetBackup(rows: Array<Record<string, string>>): Promise<FleetImportResult> {
+  const { ethers } = await import('ethers')
+  const existing = await db.$queryRawUnsafe<Array<{ id: string; name: string }>>(`SELECT "id","name" FROM "fleet_agents"`)
+  const takenIds = new Set(existing.map((r) => r.id))
+  const takenNames = new Set(existing.map((r) => r.name))
+  const result: FleetImportResult = { total: rows.length, restored: 0, skippedExisting: 0, failed: 0, errors: [] }
+
+  const pick = (row: Record<string, string>, ...keys: string[]): string => {
+    for (const k of keys) {
+      const v = row[k]
+      if (typeof v === 'string' && v.trim() !== '') return v.trim()
+    }
+    return ''
+  }
+  const numOr = (row: Record<string, string>, key: string, fallback: number): number => {
+    const raw = pick(row, key)
+    const n = Number(raw)
+    return Number.isFinite(n) ? n : fallback
+  }
+
+  for (const row of rows) {
+    const name = pick(row, 'name')
+    try {
+      const id = pick(row, 'id', 'agent_id')
+      const pk = pick(row, 'privateKey', 'private_key')
+      const walletAddress = pick(row, 'walletAddress', 'wallet_address')
+      const strategy = pick(row, 'strategy') as FleetStrategy
+      if (!id || !name) throw new Error('missing id or name')
+      if (!FLEET_STRATEGY_KEYS.includes(strategy)) throw new Error(`unknown strategy "${strategy}"`)
+      if (!/^0x[0-9a-fA-F]{64}$/.test(pk)) throw new Error('missing or malformed private_key')
+      // Funds-safety: the key MUST control the recorded wallet. A mismatch means
+      // the row is corrupt — refuse it rather than restore an unspendable agent.
+      let derived: string
+      try {
+        derived = new ethers.Wallet(pk).address
+      } catch {
+        throw new Error('private_key is not a valid key')
+      }
+      if (walletAddress && derived.toLowerCase() !== walletAddress.toLowerCase()) {
+        throw new Error(`private_key does not match wallet_address (key controls ${derived})`)
+      }
+      if (takenIds.has(id) || takenNames.has(name)) {
+        result.skippedExisting += 1
+        continue
+      }
+
+      const prof = FLEET_STRATEGIES[strategy]
+      const riskRaw = pick(row, 'riskLevel', 'risk_level')
+      const riskLevel: RiskLevel = riskRaw === 'low' || riskRaw === 'high' || riskRaw === 'medium' ? riskRaw : prof.risk
+      // Funds-safety: restored agents always come back PAUSED regardless of the
+      // backup's recorded status — an admin must consciously re-activate them so
+      // a restore never silently resumes live on-chain trading.
+      const status = 'paused'
+      const swarmRaw = pick(row, 'swarmEnabled', 'swarm_enabled').toLowerCase()
+      const swarmEnabled = swarmRaw === 'true' || swarmRaw === 't' || swarmRaw === '1'
+      const wlRaw = pick(row, 'watchlist')
+      let watchlistJson: string | null = null
+      if (wlRaw) {
+        try {
+          const parsed = JSON.parse(wlRaw)
+          if (Array.isArray(parsed) && parsed.length > 0) watchlistJson = JSON.stringify(parsed.map(String))
+        } catch { /* malformed watchlist → none */ }
+      }
+      const assignedTo = pick(row, 'assignedTo', 'assigned_to') || null
+      const encrypted = encryptPrivateKey(pk, id)
+
+      const ins = await db.$executeRawUnsafe(
+        `INSERT INTO "fleet_agents" (
+           "id","name","strategy","wallet_address","encrypted_pk","risk_level",
+           "max_trade_size_bnb","daily_trade_limit","cooldown_sec","jitter_sec",
+           "max_positions","min_trust","take_profit_pct","stop_loss_pct","exit_fill_pct",
+           "max_daily_loss_bnb","slippage_bps","watchlist","status","assigned_to","swarm_enabled"
+         ) VALUES (
+           $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21
+         ) ON CONFLICT ("id") DO NOTHING`,
+        id, name, strategy, derived, encrypted, riskLevel,
+        numOr(row, 'maxTradeSizeBnb', FLEET_DEFAULTS.maxTradeSizeBnb),
+        numOr(row, 'dailyTradeLimit', FLEET_DEFAULTS.dailyTradeLimit),
+        numOr(row, 'cooldownSec', FLEET_DEFAULTS.cooldownSec),
+        numOr(row, 'jitterSec', FLEET_DEFAULTS.jitterSec),
+        numOr(row, 'maxPositions', FLEET_DEFAULTS.maxPositions),
+        numOr(row, 'minTrust', FLEET_DEFAULTS.minTrust),
+        numOr(row, 'takeProfitPct', FLEET_DEFAULTS.takeProfitPct),
+        numOr(row, 'stopLossPct', FLEET_DEFAULTS.stopLossPct),
+        numOr(row, 'exitFillPct', FLEET_DEFAULTS.exitFillPct),
+        numOr(row, 'maxDailyLossBnb', FLEET_DEFAULTS.maxDailyLossBnb),
+        numOr(row, 'slippageBps', FLEET_DEFAULTS.slippageBps),
+        watchlistJson, status, assignedTo, swarmEnabled,
+      )
+      if (Number(ins) > 0) {
+        result.restored += 1
+        takenIds.add(id)
+        takenNames.add(name)
+      } else {
+        // Lost a race to another insert on the same id.
+        result.skippedExisting += 1
+      }
+    } catch (e) {
+      result.failed += 1
+      result.errors.push({ name: name || '(unknown)', error: (e as Error).message })
+    }
+  }
+  return result
+}
+
 export interface FleetSweepRow {
   id: string
   name: string

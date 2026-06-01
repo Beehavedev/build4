@@ -1024,10 +1024,12 @@ export async function ensureNewTables() {
   // decisions through the swarm (confirm/veto + HOLD/SELL); flagged-off agents
   // stay purely mechanical. Default false so enabling the env gate alone is
   // inert until an operator opts agents in from the /fleet panel (no surprise
-  // LLM spend). NOTE: fleet_* tables are ensureTables-only (absent from
-  // src/_prisma_bot/schema.prisma), so `db push --accept-data-loss` never
-  // manages — and thus never drops — this column. The Agent/User drift trap
-  // (schemaDrift.test.ts) does not apply here.
+  // LLM spend). NOTE: fleet_* tables are NOW also declared in
+  // src/_prisma_bot/schema.prisma (so `db push --accept-data-loss` stops
+  // dropping the whole fleet on every deploy). That means the Agent/User drift
+  // trap DOES now apply to fleet columns: any new fleet_agents/fleet_positions
+  // column added here MUST also be declared (matching type+default) on the
+  // FleetAgent/FleetPosition model, or db push will reset it on the next deploy.
   await run(`ALTER TABLE "fleet_agents" ADD COLUMN IF NOT EXISTS "swarm_enabled" BOOLEAN NOT NULL DEFAULT false`)
 
   // fleet_positions — open/closed bags per (agent, token). mock=true means
@@ -1067,7 +1069,8 @@ export async function ensureNewTables() {
   //   venue        — 'fourmeme' while on the bonding curve, flips to 'pancake'
   //     after migration so the exit sweep quotes/sells on the right router.
   //   peak_pnl_pct — running peak PnL% (post-grad), backs the trailing stop.
-  // Same ensureTables-only safety as swarm_enabled above (no db-push drop).
+  // These columns are mirrored on the FleetPosition model in schema.prisma —
+  // keep them in sync (see the swarm_enabled note above re: the drift trap).
   await run(`ALTER TABLE "fleet_positions" ADD COLUMN IF NOT EXISTS "ride_through" BOOLEAN NOT NULL DEFAULT false`)
   await run(`ALTER TABLE "fleet_positions" ADD COLUMN IF NOT EXISTS "venue" TEXT NOT NULL DEFAULT 'fourmeme'`)
   await run(`ALTER TABLE "fleet_positions" ADD COLUMN IF NOT EXISTS "peak_pnl_pct" DOUBLE PRECISION`)

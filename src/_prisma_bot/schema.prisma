@@ -500,3 +500,135 @@ model PolymarketPosition {
   @@index([status])
   @@index([conditionId])
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Community Trading Fleet (fleet_*)
+//
+// These tables are also created at runtime via raw `CREATE TABLE IF NOT EXISTS`
+// in src/ensureTables.ts and are read/written purely via raw SQL (no Prisma
+// model methods). They are declared here SOLELY so `prisma db push
+// --accept-data-loss` (the Render deploy step) STOPS DROPPING them on every
+// deploy — without these models the whole fleet (agent wallets + encrypted
+// keys) was wiped on each release. Every column/type/default below must stay
+// byte-for-byte in sync with the ensureTables.ts DDL, or db push will ALTER
+// the live column on deploy. TIMESTAMPTZ columns therefore carry an explicit
+// @db.Timestamptz(6) to match (Prisma's bare DateTime is timestamp(3)).
+// ═══════════════════════════════════════════════════════════════════════════
+
+model FleetSettings {
+  id           String   @id
+  liveTrading  Boolean  @default(false) @map("live_trading")
+  globalPaused Boolean  @default(true) @map("global_paused")
+  updatedAt    DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  @@map("fleet_settings")
+}
+
+model FleetAgent {
+  id              String    @id
+  name            String    @unique(map: "fleet_agents_name_key")
+  strategy        String
+  walletAddress   String    @map("wallet_address")
+  encryptedPk     String    @map("encrypted_pk")
+  riskLevel       String    @default("medium") @map("risk_level")
+  maxTradeSizeBnb Float     @default(0.01) @map("max_trade_size_bnb")
+  dailyTradeLimit Int       @default(10) @map("daily_trade_limit")
+  cooldownSec     Int       @default(300) @map("cooldown_sec")
+  jitterSec       Int       @default(60) @map("jitter_sec")
+  maxPositions    Int       @default(3) @map("max_positions")
+  minTrust        Int       @default(60) @map("min_trust")
+  takeProfitPct   Int       @default(50) @map("take_profit_pct")
+  stopLossPct     Int       @default(35) @map("stop_loss_pct")
+  exitFillPct     Int       @default(90) @map("exit_fill_pct")
+  maxDailyLossBnb Float     @default(0.05) @map("max_daily_loss_bnb")
+  slippageBps     Int       @default(500) @map("slippage_bps")
+  watchlist       String?
+  status          String    @default("paused")
+  assignedTo      String?   @map("assigned_to")
+  lastTickAt      DateTime? @map("last_tick_at") @db.Timestamptz(6)
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  swarmEnabled    Boolean   @default(false) @map("swarm_enabled")
+
+  @@index([strategy], map: "fleet_agents_strategy_idx")
+  @@index([status], map: "fleet_agents_status_idx")
+  @@map("fleet_agents")
+}
+
+model FleetPosition {
+  id              String    @id
+  agentId         String    @map("agent_id")
+  tokenAddress    String    @map("token_address")
+  tokenSymbol     String?   @map("token_symbol")
+  version         Int?
+  entryBnbWei     String    @map("entry_bnb_wei")
+  entryCostBnb    Float?    @map("entry_cost_bnb")
+  tokensWei       String    @map("tokens_wei")
+  buyTx           String?   @map("buy_tx")
+  entryFillPct    Float?    @map("entry_fill_pct")
+  trustAtEntry    Int?      @map("trust_at_entry")
+  mock            Boolean   @default(true)
+  status          String    @default("open")
+  exitReason      String?   @map("exit_reason")
+  exitProceedsBnb Float?    @map("exit_proceeds_bnb")
+  exitTx          String?   @map("exit_tx")
+  claimToken      String?   @map("claim_token")
+  claimAt         DateTime? @map("claim_at") @db.Timestamptz(6)
+  openedAt        DateTime  @default(now()) @map("opened_at") @db.Timestamptz(6)
+  closedAt        DateTime? @map("closed_at") @db.Timestamptz(6)
+  rideThrough     Boolean   @default(false) @map("ride_through")
+  venue           String    @default("fourmeme")
+  peakPnlPct      Float?    @map("peak_pnl_pct")
+
+  // NOTE: the partial unique index fleet_positions_open_unique
+  // (agent_id, token_address) WHERE status='open' — the double-open guard —
+  // CANNOT be expressed in Prisma (no partial-index support). It stays owned
+  // by ensureTables.ts (CREATE UNIQUE INDEX IF NOT EXISTS ... WHERE ...).
+  // db push may drop it on deploy; ensureTables recreates it on the next boot
+  // before any agent ticks, so the guard is restored before live trading.
+  @@index([agentId, status], map: "fleet_positions_agent_status_idx")
+  @@index([status], map: "fleet_positions_status_idx")
+  @@map("fleet_positions")
+}
+
+model FleetTrade {
+  id           String   @id
+  agentId      String   @map("agent_id")
+  positionId   String?  @map("position_id")
+  side         String
+  tokenAddress String   @map("token_address")
+  tokenSymbol  String?  @map("token_symbol")
+  amountBnb    Float?   @map("amount_bnb")
+  tokensWei    String?  @map("tokens_wei")
+  priceBnb     Float?   @map("price_bnb")
+  pnlBnb       Float?   @map("pnl_bnb")
+  status       String   @default("filled")
+  mock         Boolean  @default(true)
+  txHash       String?  @map("tx_hash")
+  reason       String?
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([agentId, createdAt(sort: Desc)], map: "fleet_trades_agent_idx")
+  @@index([createdAt(sort: Desc)], map: "fleet_trades_created_idx")
+  @@map("fleet_trades")
+}
+
+model FleetLog {
+  id        String   @id @default(dbgenerated("gen_random_uuid()::text"))
+  agentId   String?  @map("agent_id")
+  level     String   @default("info")
+  message   String
+  meta      String?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([agentId, createdAt(sort: Desc)], map: "fleet_logs_agent_idx")
+  @@index([createdAt(sort: Desc)], map: "fleet_logs_created_idx")
+  @@map("fleet_logs")
+}
+
+model FleetLowBalanceAck {
+  agentId String   @id @map("agent_id")
+  ackedBy String?  @map("acked_by")
+  ackedAt DateTime @default(now()) @map("acked_at") @db.Timestamptz(6)
+
+  @@map("fleet_low_balance_acks")
+}

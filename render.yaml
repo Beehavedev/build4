@@ -1,6 +1,6 @@
 databases:
   - name: build4db
-    plan: free
+    plan: pro-8gb
     databaseName: build4db
     user: build4
 
@@ -8,7 +8,7 @@ services:
   - type: web
     name: build4-telegram-bot
     runtime: node
-    plan: starter
+    plan: pro
     # Pre-step: drop the legacy `Agent_walletAddress_key` unique index if it
     # exists. An older deploy created this index manually before the @unique
     # was added to the Prisma schema, so `db push` now collides with itself

@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { callLLM, getProviderStatus, InferenceError, __setTestDeps, __resetTestDeps } from './inference'
+import { callLLM, getProviderStatus, resolveProviders, InferenceError, __setTestDeps, __resetTestDeps } from './inference'
 
 function mockFetch(captured: { url?: string; init?: RequestInit }, body: any, status = 200) {
   return async (url: any, init: any) => {
@@ -261,4 +261,22 @@ test('getProviderStatus reflects env var presence', () => {
   assert.equal(after.xai.envVar, 'XAI_API_KEY')
   delete process.env.XAI_API_KEY
   delete process.env.ANTHROPIC_API_KEY
+})
+
+test('resolveProviders: falls back when unset/empty/all-invalid, validates, and dedupes', () => {
+  const ENV = 'TEST_SWARM_PROVIDERS'
+  const fallback = ['xai'] as const
+  delete process.env[ENV]
+  assert.deepEqual(resolveProviders(ENV, [...fallback]), ['xai'], 'unset → fallback')
+  process.env[ENV] = '   '
+  assert.deepEqual(resolveProviders(ENV, [...fallback]), ['xai'], 'blank → fallback')
+  process.env[ENV] = 'nope,bogus'
+  assert.deepEqual(resolveProviders(ENV, [...fallback]), ['xai'], 'all-invalid → fallback')
+  // Case-insensitive, trims, drops unknowns.
+  process.env[ENV] = ' XAI , Anthropic , nope '
+  assert.deepEqual(resolveProviders(ENV, [...fallback]), ['xai', 'anthropic'])
+  // Dedupe (order-preserving) so a misconfig never double-weights a swarm vote.
+  process.env[ENV] = 'xai,xai,anthropic,xai'
+  assert.deepEqual(resolveProviders(ENV, [...fallback]), ['xai', 'anthropic'])
+  delete process.env[ENV]
 })

@@ -36,7 +36,7 @@ import {
   calculateBollingerBands,
   type OHLCV,
 } from '../agents/indicators';
-import { callLLM, type Provider } from './inference';
+import { callLLM, resolveProviders, type Provider } from './inference';
 import { openPredictionPosition, isCampaignAgent } from './fortyTwoExecutor';
 import { getBot } from '../agents/runner';
 
@@ -51,7 +51,10 @@ export const CAMPAIGN_FOLLOWUP_BUDGET_USDT = 50;
 /** Fixed entry size — every ENTRY tick deploys exactly this much. */
 export const CAMPAIGN_ENTRY_USDT = 50;
 
-const SWARM_PROVIDERS: Provider[] = ['anthropic', 'xai', 'hyperbolic', 'akash'];
+// Default to xai only (cost). Override with HOUSE_SWARM_PROVIDERS (comma-separated)
+// to restore the multi-LLM swarm. The entry/reassess aggregators already degrade
+// to a single parsed vote (plurality of 1), so no threshold change is needed here.
+const SWARM_PROVIDERS: Provider[] = resolveProviders('HOUSE_SWARM_PROVIDERS', ['xai']);
 
 // ── Public entry point: run one tick of the campaign agent ────────────────
 
