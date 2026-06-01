@@ -45,6 +45,7 @@ function makeAgent(over: Partial<FleetAgent> = {}): FleetAgent {
     slippageBps: 500,
     watchlist: null,
     status: 'active',
+    swarmEnabled: false,
     assignedTo: null,
     lastTickAt: null,
     createdAt: new Date(),

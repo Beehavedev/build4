@@ -199,6 +199,14 @@
   function setAll(status) {
     return act(() => api("/api/admin/fleet/agents/status", { method: "POST", body: JSON.stringify({ status }) }));
   }
+  function setAllSwarm(enabled) {
+    return act(async function () {
+      const r = await api("/api/admin/fleet/agents/swarm", { method: "POST", body: JSON.stringify({ enabled }) });
+      if (enabled && r && r.envActive === false) {
+        window.alert("Brain enabled on all agents, but FLEET_SWARM_ENABLED is NOT set in this environment — the 4-LLM brain stays INACTIVE (no LLM spend) until that env flag is set. Set FLEET_SWARM_ENABLED=true in prod to actually run the swarm.");
+      }
+    });
+  }
   function patchAgent(id, patch) {
     return act(() => api("/api/admin/fleet/agents/" + encodeURIComponent(id), { method: "PATCH", body: JSON.stringify(patch) }));
   }
@@ -267,6 +275,12 @@
         '<div><div class="label">Bulk</div><div class="row">' +
           '<button class="ok" ' + (busy ? "disabled" : "") + ' onclick="setAll(\'active\')">Activate all</button>' +
           '<button ' + (busy ? "disabled" : "") + ' onclick="setAll(\'paused\')">Pause all</button>' +
+        '</div></div>' +
+        '<div><div class="label">AI brain (4-LLM)</div><div class="row">' +
+          '<button class="primary" ' + (busy ? "disabled" : "") + ' onclick="setAllSwarm(true)">Enable all</button>' +
+          '<button ' + (busy ? "disabled" : "") + ' onclick="setAllSwarm(false)">Disable all</button>' +
+          '<div class="dim" style="font-size:11px;margin-top:4px">env gate: ' +
+            (state.swarmEnvEnabled ? '<span class="pos">FLEET_SWARM_ENABLED set</span>' : '<span class="neg">FLEET_SWARM_ENABLED not set</span>') + '</div>' +
         '</div></div>' +
         '<div><div class="label">Create</div><div class="row">' +
           '<button class="primary" ' + (busy ? "disabled" : "") + ' onclick="seedFleet()">Seed 50 agents</button>' +
@@ -464,7 +478,15 @@
       '<div class="between"><div class="mono dim">' + esc(a.walletAddress) + '</div>' +
         '<div class="dim">last tick: ' + (a.lastTickAt ? esc(new Date(a.lastTickAt).toLocaleString()) : "never") + '</div></div>' +
       '<div class="row" style="margin-top:8px">' + knobs + '</div>' +
-      '<div class="row" style="margin-top:8px"><button class="primary" ' + (busy ? "disabled" : "") + ' onclick="saveAgent(\'' + a.id + '\')">Save knobs</button></div>' +
+      '<div class="row" style="margin-top:8px;align-items:center;gap:10px">' +
+        '<button class="primary" ' + (busy ? "disabled" : "") + ' onclick="saveAgent(\'' + a.id + '\')">Save knobs</button>' +
+        '<span class="label" style="margin:0">AI brain (4-LLM):</span>' +
+        '<button class="' + (a.swarmEnabled ? "ok" : "") + '" ' + (busy ? "disabled" : "") +
+          ' onclick="patchAgent(\'' + a.id + '\',{swarmEnabled:' + (!a.swarmEnabled) + '})">' +
+          (a.swarmEnabled ? "On — click to disable" : "Off — click to enable") + '</button>' +
+        '<span class="dim" style="font-size:11px">' +
+          (state.swarmEnvEnabled ? "" : "(env gate FLEET_SWARM_ENABLED off — brain inactive)") + '</span>' +
+      '</div>' +
       '<div style="height:12px"></div><div class="label">Recent trades</div>' + trades +
       '</div></td></tr>';
   }
@@ -508,21 +530,60 @@
     return cards;
   }
 
+  // ── AI brain feed: per-provider votes + quorum from the 'decision' logs ─────
+  let brainLogs = null;
+  async function refreshBrain() {
+    try {
+      const r = await api("/api/admin/fleet/logs?limit=200");
+      brainLogs = (r.logs || []).filter(l => l.level === "decision");
+    } catch (e) { brainLogs = []; }
+    if (activeTab === "brain") render();
+  }
+
+  function brainView() {
+    if (brainLogs === null) { refreshBrain(); return '<div class="card dim">Loading brain feed…</div>'; }
+    const envOn = !!(state && state.swarmEnvEnabled);
+    const banner = '<div class="card" style="margin-bottom:10px">' +
+      '<div class="between"><div><b>4-LLM AI brain</b> · env gate FLEET_SWARM_ENABLED: ' +
+        '<span class="pill ' + (envOn ? "active" : "paused") + '">' + (envOn ? "ON" : "OFF") + '</span>' +
+        (envOn ? "" : ' <span class="dim">— per-agent toggles have no effect until the env gate is on</span>') +
+      '</div><button onclick="refreshBrain()">Refresh</button></div></div>';
+    if (!brainLogs.length) return banner + '<div class="card dim">No brain decisions logged yet. Enable the env gate + a per-agent brain toggle, then wait for a tick.</div>';
+    let rows = "";
+    for (const l of brainLogs) {
+      let meta = {}; try { meta = l.meta ? (typeof l.meta === "string" ? JSON.parse(l.meta) : l.meta) : {}; } catch { meta = {}; }
+      const votes = Array.isArray(meta.votes) ? meta.votes : [];
+      const verdict = meta.verdict || "—";
+      const vCls = verdict === "BUY" || verdict === "SELL" ? "pos" : (verdict === "SKIP" ? "neg" : "");
+      let voteCells = votes.length
+        ? votes.map(v => '<span class="pill ' + (v.ok ? "" : "mock") + '" title="' + esc((v.reasoning || v.error || "")) + '">' +
+            esc(v.provider) + ': ' + esc(v.action || (v.error ? "err" : "—")) + '</span>').join(" ")
+        : '<span class="dim">no votes</span>';
+      rows += '<tr><td class="dim">' + esc(new Date(l.created_at).toLocaleString()) + '</td>' +
+        '<td>' + esc(meta.kind || "") + '</td>' +
+        '<td class="' + vCls + '">' + esc(verdict) + (meta.agreement ? ' <span class="dim">(' + esc(meta.agreement) + ')</span>' : "") + '</td>' +
+        '<td>' + voteCells + '</td>' +
+        '<td class="dim">' + esc(l.message || "") + '</td></tr>';
+    }
+    return banner + '<div class="card scroll"><table>' +
+      '<tr><th>When</th><th>Kind</th><th>Verdict</th><th>Provider votes</th><th>Message</th></tr>' +
+      rows + '</table></div>';
+  }
+
   function render() {
     const el = document.getElementById("app");
     if (!getToken()) { el.innerHTML = loginView(); const t = document.getElementById("tok"); if (t) t.focus(); return; }
     if (!state) { el.innerHTML = '<div class="card">Loading…' + (errMsg ? '<div class="err">' + esc(errMsg) + '</div>' : "") + '</div>'; return; }
-    const tabs = '<div class="tabs">' +
-      '<div class="tab ' + (activeTab === "agents" ? "active" : "") + '" onclick="activeTab=\'agents\'; render()">Agents</div>' +
-      '<div class="tab ' + (activeTab === "strategies" ? "active" : "") + '" onclick="activeTab=\'strategies\'; render()">Strategies</div>' +
-      '</div>';
+    const tab = (key, label) => '<div class="tab ' + (activeTab === key ? "active" : "") + '" onclick="activeTab=\'' + key + '\'; render()">' + label + '</div>';
+    const tabs = '<div class="tabs">' + tab("agents", "Agents") + tab("strategies", "Strategies") + tab("brain", "AI brain feed") + '</div>';
+    const body = activeTab === "agents" ? agentsView() : activeTab === "strategies" ? strategiesView() : brainView();
     el.innerHTML = header() + statsBar() +
       (errMsg ? '<div class="err">' + esc(errMsg) + '</div>' : "") +
-      tabs + (activeTab === "agents" ? agentsView() : strategiesView());
+      tabs + body;
   }
 
   if (getToken()) refresh(); else render();
-  setInterval(() => { if (getToken() && state && !detail) refresh(); }, 6000);
+  setInterval(() => { if (getToken() && state && !detail) { refresh(); if (activeTab === "brain") refreshBrain(); } }, 6000);
 </script>
 </body>
 </html>

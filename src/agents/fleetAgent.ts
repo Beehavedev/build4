@@ -45,6 +45,33 @@ import {
   buyTokenWithBnb,
   sellTokenForBnb,
 } from '../services/fourMemeTrading'
+import { shouldRideThrough } from '../services/fourMemeTrust'
+import {
+  pancakeQuoteSell,
+  pancakeSellTokenForBnb,
+  PANCAKE_HARD_MAX_SLIPPAGE_BPS,
+} from '../services/pancakeSwapTrading'
+import {
+  isFleetSwarmEnabled,
+  getEntryVerdict,
+  getExitVerdict,
+  type FleetVerdict,
+} from './fleetBrain'
+
+// Trailing-stop giveback (post-graduation only). Once a ride-through bag is on
+// PancakeSwap we track peak PnL%; if it retraces this many points from the peak
+// we exit even before the hard stop-loss fires, locking in the run. Default 20.
+const FLEET_TRAIL_PCT = Math.max(1, Math.round(Number(process.env.FLEET_TRAIL_PCT) || 20))
+
+// Ride-through master gate. Default OFF — with this unset, NO bag is ever held
+// past graduation: a graduated bag force-sells exactly as before (reason
+// 'graduated'), so the feature is a true zero-behavior-change opt-in. Set
+// FLEET_RIDE_THROUGH_ENABLED=true to let high-trust launches migrate onto
+// PancakeSwap and be managed there (TP/SL/trailing). The hard stop-loss and the
+// kill-switch always override regardless of this flag.
+function isFleetRideThroughEnabled(): boolean {
+  return process.env.FLEET_RIDE_THROUGH_ENABLED === 'true'
+}
 
 export interface FleetBuyResult { scanned: number; ticked: number; bought: number; skipped: number; errors: number }
 export interface FleetExitResult { scanned: number; evaluated: number; sold: number; errors: number; reaped: number }
@@ -73,6 +100,8 @@ export const __testDeps = {
   quoteSell,
   buyTokenWithBnb,
   sellTokenForBnb,
+  pancakeQuoteSell,
+  pancakeSellTokenForBnb,
   getFleetSettings,
   decryptFleetAgentKey,
 }
@@ -151,8 +180,46 @@ export async function tickAllFleetAgents(): Promise<FleetBuyResult> {
     const candidate = pickCandidate(agent, candidates, claimed, held)
     if (!candidate) { out.skipped += 1; continue }
 
+    // 4-LLM brain (opt-in): confirm or veto the mechanically-picked candidate.
+    // Gated by BOTH the env master switch and this agent's swarm_enabled flag,
+    // so with either off this block is skipped entirely (zero cost / behavior
+    // change). Fail-safe in every non-BUY case (SKIP consensus, no quorum, no
+    // live providers, or a thrown error): we DON'T buy. The brain can only ever
+    // remove a mechanical buy, never create one.
+    let brainVerdict: FleetVerdict<'BUY' | 'SKIP'> | undefined
+    if (isFleetSwarmEnabled() && agent.swarmEnabled) {
+      try {
+        brainVerdict = await getEntryVerdict({
+          tokenAddress: candidate.tokenAddress,
+          version: candidate.version,
+          trustScore: candidate.trustScore,
+          fillPct: candidate.fillPct,
+          fundsBnb: candidate.fundsBnb,
+          buyerCount: candidate.buyerCount,
+          buyCount: candidate.buyCount,
+          sellCount: candidate.sellCount,
+          volumeBnb: candidate.volumeBnb,
+          devHoldsPct: candidate.devHoldsPct,
+          ageMinutes: candidate.firstSeenAt ? (Date.now() - candidate.firstSeenAt.getTime()) / 60_000 : null,
+        })
+      } catch (err) {
+        out.skipped += 1
+        await logFleet(agent.id, 'decision',
+          `${agent.strategy} brain error — skip ${candidate.tokenAddress.slice(0, 10)}…: ${(err as Error).message}`,
+          { token: candidate.tokenAddress, kind: 'entry' })
+        continue
+      }
+      if (brainVerdict.action !== 'BUY') {
+        out.skipped += 1
+        await logFleet(agent.id, 'decision',
+          `${agent.strategy} VETO ${candidate.tokenAddress.slice(0, 10)}… · ${brainVerdict.summary}`,
+          { token: candidate.tokenAddress, kind: 'entry', verdict: brainVerdict.action, agreement: brainVerdict.agreement, votes: brainVerdict.votes })
+        continue
+      }
+    }
+
     try {
-      const opened = await openPosition(agent, candidate, liveEffective)
+      const opened = await openPosition(agent, candidate, liveEffective, brainVerdict)
       claimed.add(candidate.tokenAddress.toLowerCase())
       if (!opened) { out.skipped += 1; continue } // lost the (agent,token) claim — no spend
       openCounts.set(agent.id, (openCounts.get(agent.id) ?? 0) + 1)
@@ -169,10 +236,17 @@ export async function tickAllFleetAgents(): Promise<FleetBuyResult> {
   return out
 }
 
-async function openPosition(agent: FleetAgent, c: FleetCandidate, live: boolean): Promise<boolean> {
+async function openPosition(agent: FleetAgent, c: FleetCandidate, live: boolean, brain?: FleetVerdict<'BUY' | 'SKIP'>): Promise<boolean> {
   const token = ethers.getAddress(c.tokenAddress)
   const buyWei = ethers.parseEther(agent.maxTradeSizeBnb.toString())
   const posId = `fpos_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
+
+  // Ride-through is decided ONCE, at entry: a very-high-trust launch is NOT
+  // force-sold at graduation — it migrates with the token onto PancakeSwap and
+  // is managed there (see evaluateExit). Same trust threshold as the four.meme
+  // snipe agent (shouldRideThrough / TRUST_VERY_HIGH), but gated behind the
+  // FLEET_RIDE_THROUGH_ENABLED master switch so the default is zero-change.
+  const rideThrough = isFleetRideThroughEnabled() && shouldRideThrough(c.trustScore)
 
   // Real quote regardless of mode (live chain data).
   const info = await __testDeps.getTokenInfo(token)
@@ -192,11 +266,11 @@ async function openPosition(agent: FleetAgent, c: FleetCandidate, live: boolean)
   const claimed = await db.$executeRawUnsafe(
     `INSERT INTO "fleet_positions" (
        "id","agent_id","token_address","version","entry_bnb_wei","entry_cost_bnb",
-       "tokens_wei","buy_tx","entry_fill_pct","trust_at_entry","mock","status"
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,NULL,$8,$9,$10,'open')
+       "tokens_wei","buy_tx","entry_fill_pct","trust_at_entry","mock","ride_through","status"
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,NULL,$8,$9,$10,$11,'open')
      ON CONFLICT ("agent_id", "token_address") WHERE "status" = 'open' DO NOTHING`,
     posId, agent.id, token.toLowerCase(), info.version, buyWei.toString(), entryCostBnb,
-    tokensWei.toString(), info.fillPct, c.trustScore, mock,
+    tokensWei.toString(), info.fillPct, c.trustScore, mock, rideThrough,
   )
   if (Number(claimed) === 0) return false // already holding this token — no spend, no trade row
 
@@ -225,11 +299,19 @@ async function openPosition(agent: FleetAgent, c: FleetCandidate, live: boolean)
      ) VALUES ($1,$2,$3,'buy',$4,$5,$6,$7,'filled',$8,$9,$10)`,
     `ftr_${posId}_b`, agent.id, posId, token.toLowerCase(), entryCostBnb,
     tokensWei.toString(), priceBnb, mock, txHash,
-    `${agent.strategy} entry · trust ${c.trustScore} · fill ${(info.fillPct * 100).toFixed(0)}%`,
+    `${agent.strategy} entry · trust ${c.trustScore} · fill ${(info.fillPct * 100).toFixed(0)}%` +
+      `${rideThrough ? ' · ride-through' : ''}${brain ? ` · ${brain.summary}` : ''}`,
   )
   await logFleet(agent.id, 'trade',
-    `${mock ? '[MOCK] ' : ''}BUY ${agent.maxTradeSizeBnb} BNB → ${token.slice(0, 10)}… (${agent.strategy}, trust ${c.trustScore})`,
-    { token, posId, tokensWei: tokensWei.toString(), mock, txHash })
+    `${mock ? '[MOCK] ' : ''}BUY ${agent.maxTradeSizeBnb} BNB → ${token.slice(0, 10)}… (${agent.strategy}, trust ${c.trustScore}${rideThrough ? ', ride-through' : ''})`,
+    { token, posId, tokensWei: tokensWei.toString(), mock, txHash, rideThrough })
+  // Brain feed: record the per-provider votes behind the confirmed BUY so the
+  // /fleet panel can show WHY the swarm green-lit this entry.
+  if (brain) {
+    await logFleet(agent.id, 'decision',
+      `${agent.strategy} BUY-confirm ${token.slice(0, 10)}… · ${brain.summary}`,
+      { token, posId, kind: 'entry', verdict: brain.action, agreement: brain.agreement, confidence: brain.confidence, votes: brain.votes })
+  }
   return true
 }
 
@@ -296,7 +378,7 @@ export async function tickAllFleetExits(): Promise<FleetExitResult> {
     try {
       const decision = await evaluateExit(p, agent)
       if (decision) {
-        const closed = await closePosition(p, agent, decision.proceedsBnb, decision.reason, !!p.mock)
+        const closed = await closePosition(p, agent, decision.proceedsBnb, decision.reason, !!p.mock, decision.venue)
         if (closed) out.sold += 1
       }
     } catch (err) {
@@ -308,28 +390,120 @@ export async function tickAllFleetExits(): Promise<FleetExitResult> {
   return out
 }
 
-async function evaluateExit(p: any, agent: FleetAgent): Promise<{ proceedsBnb: number; reason: string } | null> {
+async function evaluateExit(p: any, agent: FleetAgent): Promise<{ proceedsBnb: number; reason: string; venue: 'fourmeme' | 'pancake' } | null> {
   const token = ethers.getAddress(p.token_address)
   const tokensWei = BigInt(p.tokens_wei)
   if (tokensWei <= 0n) return null
 
-  const info = await getTokenInfo(token)
-  const sellQuote = await quoteSell(token, tokensWei)
-  const proceedsBnb = Number(ethers.formatEther(sellQuote.fundsWei))
+  const rideThrough = !!p.ride_through
+  const storedVenue: 'fourmeme' | 'pancake' = p.venue === 'pancake' ? 'pancake' : 'fourmeme'
+  const info = await __testDeps.getTokenInfo(token)
+  const graduated = !!info.graduatedToPancake || storedVenue === 'pancake'
+
+  // Quote on the venue that actually holds the liquidity. Once a token
+  // graduates, the bonding curve is closed — the only place to sell is
+  // PancakeSwap — so a graduated bag (ride-through or not) is quoted/sold there.
+  let proceedsBnb: number
+  let venue: 'fourmeme' | 'pancake'
+  if (graduated) {
+    venue = 'pancake'
+    const q = await __testDeps.pancakeQuoteSell(token, tokensWei)
+    proceedsBnb = Number(ethers.formatEther(q.estimatedBnbWei))
+  } else {
+    venue = 'fourmeme'
+    const q = await __testDeps.quoteSell(token, tokensWei)
+    proceedsBnb = Number(ethers.formatEther(q.fundsWei))
+  }
+
   const entryCost = Number(p.entry_cost_bnb) || 0
   const pnlPct = entryCost > 0 ? ((proceedsBnb - entryCost) / entryCost) * 100 : 0
   const fillPct = info.fillPct * 100
 
-  if (info.graduatedToPancake) return { proceedsBnb, reason: 'graduated' }
-  if (pnlPct >= agent.takeProfitPct) return { proceedsBnb, reason: `take_profit +${pnlPct.toFixed(0)}%` }
-  if (pnlPct <= -agent.stopLossPct) return { proceedsBnb, reason: `stop_loss ${pnlPct.toFixed(0)}%` }
-  if (fillPct >= agent.exitFillPct) return { proceedsBnb, reason: `pre_migration fill ${fillPct.toFixed(0)}%` }
+  // Persist the four.meme → pancake transition once, so later ticks quote
+  // pancake directly and the panel shows the live venue.
+  if (venue === 'pancake' && storedVenue !== 'pancake') {
+    await db.$executeRawUnsafe(`UPDATE "fleet_positions" SET "venue" = 'pancake' WHERE "id" = $1`, p.id)
+  }
+
+  // ── HARD STOP-LOSS — unconditional, evaluated FIRST so neither ride-through
+  //    nor the LLM brain can ever block a protective exit. ──
+  if (pnlPct <= -agent.stopLossPct) return { proceedsBnb, reason: `stop_loss ${pnlPct.toFixed(0)}%`, venue }
+
+  if (graduated) {
+    // Non-ride-through bag: legacy behavior — don't hold past migration, exit
+    // now (on pancake). reason kept as 'graduated' for dashboard continuity.
+    if (!rideThrough) return { proceedsBnb, reason: 'graduated', venue }
+
+    // Ride-through bag: actively managed on PancakeSwap. Track peak PnL% for the
+    // trailing stop (persisted so it survives across exit ticks / redeploys).
+    const prevPeak = p.peak_pnl_pct != null ? Number(p.peak_pnl_pct) : pnlPct
+    const peak = Math.max(prevPeak, pnlPct)
+    if (p.peak_pnl_pct == null || peak > prevPeak) {
+      await db.$executeRawUnsafe(`UPDATE "fleet_positions" SET "peak_pnl_pct" = $1 WHERE "id" = $2`, peak, p.id)
+    }
+    if (pnlPct >= agent.takeProfitPct) return { proceedsBnb, reason: `take_profit +${pnlPct.toFixed(0)}%`, venue }
+    // Trailing stop: once we've run up past the trail band, exit if we give back
+    // FLEET_TRAIL_PCT points from the peak (locks in a graduated runner).
+    if (peak >= FLEET_TRAIL_PCT && (peak - pnlPct) >= FLEET_TRAIL_PCT) {
+      return { proceedsBnb, reason: `trailing_stop ${pnlPct.toFixed(0)}% (peak +${peak.toFixed(0)}%)`, venue }
+    }
+    const swarmReason = await maybeSwarmExit(p, agent, token, info, venue)
+    if (swarmReason) return { proceedsBnb, reason: swarmReason, venue }
+    return null
+  }
+
+  // ── Still on the bonding curve ──
+  if (pnlPct >= agent.takeProfitPct) return { proceedsBnb, reason: `take_profit +${pnlPct.toFixed(0)}%`, venue }
+  // Pre-migration fill exit — SUPPRESSED for ride-through bags so they're allowed
+  // to graduate and keep running on pancake instead of being sold near the top of
+  // the curve.
+  if (!rideThrough && fillPct >= agent.exitFillPct) {
+    return { proceedsBnb, reason: `pre_migration fill ${fillPct.toFixed(0)}%`, venue }
+  }
+  const swarmReason = await maybeSwarmExit(p, agent, token, info, venue)
+  if (swarmReason) return { proceedsBnb, reason: swarmReason, venue }
   return null
 }
 
-async function closePosition(p: any, agent: FleetAgent, proceedsBnb: number, reason: string, mock: boolean): Promise<boolean> {
+/**
+ * 4-LLM brain exit consult (opt-in). Returns a SELL reason when the swarm
+ * reaches a SELL quorum, else null. Gated by FLEET_SWARM_ENABLED + the agent's
+ * swarm_enabled flag, so with either off this is a no-op (zero cost). Fail-safe:
+ * a thrown brain error never forces a sell — the mechanical TP/SL/trailing layer
+ * (evaluated above, including the unconditional hard stop-loss) always protects
+ * the position. The per-provider votes are logged to the /fleet brain feed.
+ */
+async function maybeSwarmExit(
+  p: any, agent: FleetAgent, token: string, info: any, venue: 'fourmeme' | 'pancake',
+): Promise<string | null> {
+  if (!isFleetSwarmEnabled() || !agent.swarmEnabled) return null
+  let verdict: FleetVerdict<'HOLD' | 'SELL'>
+  try {
+    verdict = await getExitVerdict({
+      tokenAddress: token,
+      symbol: info.symbol ?? null,
+      venue,
+      fillPct: typeof info.fillPct === 'number' ? info.fillPct : 0,
+      graduated: venue === 'pancake',
+    })
+  } catch (err) {
+    await logFleet(agent.id, 'decision',
+      `${agent.strategy} exit-brain error ${token.slice(0, 10)}…: ${(err as Error).message}`,
+      { posId: p.id, token, kind: 'exit' })
+    return null
+  }
+  await logFleet(agent.id, 'decision',
+    `${agent.strategy} exit ${verdict.action ?? 'no-quorum'} ${token.slice(0, 10)}… · ${verdict.summary}`,
+    { posId: p.id, token, kind: 'exit', verdict: verdict.action, agreement: verdict.agreement, confidence: verdict.confidence, votes: verdict.votes })
+  return verdict.action === 'SELL' ? `swarm_exit (${verdict.agreement})` : null
+}
+
+async function closePosition(p: any, agent: FleetAgent, proceedsBnb: number, reason: string, mock: boolean, venue?: 'fourmeme' | 'pancake'): Promise<boolean> {
   const token = ethers.getAddress(p.token_address)
   const tokensWei = BigInt(p.tokens_wei)
+  // Sell venue: explicit (from evaluateExit) wins; otherwise fall back to the
+  // row's persisted venue. Graduated/ride-through bags route to PancakeSwap.
+  const sellVenue: 'fourmeme' | 'pancake' = venue ?? (p.venue === 'pancake' ? 'pancake' : 'fourmeme')
   let txHash: string | null = null
   let finalProceeds = proceedsBnb
 
@@ -349,7 +523,9 @@ async function closePosition(p: any, agent: FleetAgent, proceedsBnb: number, rea
   if (Number(lock) === 0) return false // another worker holds the lock
 
   if (!mock) {
-    if (!__testDeps.isFourMemeEnabled()) {
+    // four.meme master switch only gates four.meme curve sells. A graduated bag
+    // sells on PancakeSwap, so it must NOT be blocked by FOUR_MEME_ENABLED.
+    if (sellVenue === 'fourmeme' && !__testDeps.isFourMemeEnabled()) {
       // Ownership-scoped release: only clear OUR lock.
       await db.$executeRawUnsafe(
         `UPDATE "fleet_positions" SET "claim_token" = NULL WHERE "id" = $1 AND "claim_token" = $2`, p.id, claimTok)
@@ -365,7 +541,16 @@ async function closePosition(p: any, agent: FleetAgent, proceedsBnb: number, rea
     }
     try {
       const pk = __testDeps.decryptFleetAgentKey(agent)
-      const res = await __testDeps.sellTokenForBnb(pk, token, tokensWei, { slippageBps: agent.slippageBps })
+      let res: { txHash?: string | null; estimatedBnbWei?: bigint }
+      if (sellVenue === 'pancake') {
+        // PancakeSwap V2 router enforces a hard slippage ceiling; clamp the
+        // agent's configured slippage so a high four.meme setting can't push a
+        // pancake sell past PANCAKE_HARD_MAX_SLIPPAGE_BPS (which would throw).
+        const slippageBps = Math.min(agent.slippageBps, PANCAKE_HARD_MAX_SLIPPAGE_BPS)
+        res = await __testDeps.pancakeSellTokenForBnb(pk, token, tokensWei, { slippageBps })
+      } else {
+        res = await __testDeps.sellTokenForBnb(pk, token, tokensWei, { slippageBps: agent.slippageBps })
+      }
       txHash = res.txHash ?? null
       if (res.estimatedBnbWei) finalProceeds = Number(ethers.formatEther(res.estimatedBnbWei))
     } catch (err) {

@@ -48,6 +48,7 @@ export interface FleetAgent {
   watchlist: string[] | null
   status: 'active' | 'paused'
   assignedTo: string | null
+  swarmEnabled: boolean
   lastTickAt: Date | null
   createdAt: Date
 }
@@ -249,6 +250,7 @@ function rowToAgent(r: any): FleetAgent {
     watchlist,
     status: (r.status === 'active' ? 'active' : 'paused'),
     assignedTo: r.assigned_to ?? null,
+    swarmEnabled: !!r.swarm_enabled,
     lastTickAt: r.last_tick_at ? new Date(r.last_tick_at) : null,
     createdAt: new Date(r.created_at),
   }
@@ -632,6 +634,18 @@ export async function setAllFleetStatus(status: 'active' | 'paused'): Promise<nu
   return Number(res)
 }
 
+/**
+ * Bulk-toggle the per-agent swarm "brain" opt-in across the whole fleet. The
+ * FLEET_SWARM_ENABLED env gate still has the final say at tick time — this only
+ * flips the per-agent flag so an operator can light up (or dark out) all 50
+ * agents from the panel in one click rather than editing each. Returns the
+ * number of rows updated.
+ */
+export async function setAllFleetSwarm(enabled: boolean): Promise<number> {
+  const res = await db.$executeRawUnsafe(`UPDATE "fleet_agents" SET "swarm_enabled" = $1`, enabled)
+  return Number(res)
+}
+
 /** Allow-listed per-agent config updates from the panel. */
 const AGENT_PATCH_VALIDATORS: Record<string, (v: any) => any | undefined> = {
   maxTradeSizeBnb: (v) => (typeof v === 'number' && v > 0 && v <= 0.5) ? v : undefined,
@@ -647,6 +661,7 @@ const AGENT_PATCH_VALIDATORS: Record<string, (v: any) => any | undefined> = {
   slippageBps: (v) => (Number.isInteger(v) && v >= 1 && v <= 2000) ? v : undefined,
   assignedTo: (v) => (v === null || (typeof v === 'string' && v.length <= 100)) ? v : undefined,
   riskLevel: (v) => (['low', 'medium', 'high'].includes(v)) ? v : undefined,
+  swarmEnabled: (v) => (typeof v === 'boolean') ? v : undefined,
 }
 
 const PATCH_COLUMN: Record<string, string> = {
@@ -663,6 +678,7 @@ const PATCH_COLUMN: Record<string, string> = {
   slippageBps: 'slippage_bps',
   assignedTo: 'assigned_to',
   riskLevel: 'risk_level',
+  swarmEnabled: 'swarm_enabled',
 }
 
 export async function updateFleetAgent(id: string, patch: Record<string, any>): Promise<FleetAgent | null> {
@@ -690,7 +706,7 @@ export async function markFleetTick(id: string): Promise<void> {
 
 // ── Logs ─────────────────────────────────────────────────────────────────
 
-export async function logFleet(agentId: string | null, level: 'info' | 'trade' | 'error', message: string, meta?: Record<string, any>): Promise<void> {
+export async function logFleet(agentId: string | null, level: 'info' | 'trade' | 'error' | 'decision', message: string, meta?: Record<string, any>): Promise<void> {
   try {
     await db.$executeRawUnsafe(
       `INSERT INTO "fleet_logs" ("agent_id","level","message","meta") VALUES ($1,$2,$3,$4)`,

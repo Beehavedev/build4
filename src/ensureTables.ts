@@ -1019,6 +1019,16 @@ export async function ensureNewTables() {
   await run(`CREATE UNIQUE INDEX IF NOT EXISTS "fleet_agents_name_key" ON "fleet_agents" ("name")`)
   await run(`CREATE INDEX IF NOT EXISTS "fleet_agents_strategy_idx" ON "fleet_agents" ("strategy")`)
   await run(`CREATE INDEX IF NOT EXISTS "fleet_agents_status_idx" ON "fleet_agents" ("status")`)
+  // swarm_enabled — per-agent opt-in to the 4-LLM quorum "brain". When the
+  // FLEET_SWARM_ENABLED env gate is on, agents flagged here route entry/exit
+  // decisions through the swarm (confirm/veto + HOLD/SELL); flagged-off agents
+  // stay purely mechanical. Default false so enabling the env gate alone is
+  // inert until an operator opts agents in from the /fleet panel (no surprise
+  // LLM spend). NOTE: fleet_* tables are ensureTables-only (absent from
+  // src/_prisma_bot/schema.prisma), so `db push --accept-data-loss` never
+  // manages — and thus never drops — this column. The Agent/User drift trap
+  // (schemaDrift.test.ts) does not apply here.
+  await run(`ALTER TABLE "fleet_agents" ADD COLUMN IF NOT EXISTS "swarm_enabled" BOOLEAN NOT NULL DEFAULT false`)
 
   // fleet_positions — open/closed bags per (agent, token). mock=true means
   // the position was opened with a real four.meme quote but NO on-chain tx.
@@ -1050,6 +1060,17 @@ export async function ensureNewTables() {
   await run(`CREATE INDEX IF NOT EXISTS "fleet_positions_status_idx" ON "fleet_positions" ("status")`)
   await run(`CREATE UNIQUE INDEX IF NOT EXISTS "fleet_positions_open_unique"
                ON "fleet_positions" ("agent_id", "token_address") WHERE "status" = 'open'`)
+  // Ride-through columns (added for the PancakeSwap-graduation feature).
+  //   ride_through — decided at OPEN: if true the bag is NOT force-sold at
+  //     graduation; it migrates with the token onto PancakeSwap and is managed
+  //     there (TP/SL/trailing). Default false = legacy behavior (sell at grad).
+  //   venue        — 'fourmeme' while on the bonding curve, flips to 'pancake'
+  //     after migration so the exit sweep quotes/sells on the right router.
+  //   peak_pnl_pct — running peak PnL% (post-grad), backs the trailing stop.
+  // Same ensureTables-only safety as swarm_enabled above (no db-push drop).
+  await run(`ALTER TABLE "fleet_positions" ADD COLUMN IF NOT EXISTS "ride_through" BOOLEAN NOT NULL DEFAULT false`)
+  await run(`ALTER TABLE "fleet_positions" ADD COLUMN IF NOT EXISTS "venue" TEXT NOT NULL DEFAULT 'fourmeme'`)
+  await run(`ALTER TABLE "fleet_positions" ADD COLUMN IF NOT EXISTS "peak_pnl_pct" DOUBLE PRECISION`)
 
   // fleet_trades — append-only fill log (buy + sell). The dashboard reads
   // today's buy count + realized PnL per agent from here, so it doubles as

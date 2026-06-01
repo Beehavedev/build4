@@ -25,6 +25,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { db } from '../db'
 import { __test, __testDeps } from './fleetAgent'
+import { __brainTestDeps, __clearVerdictCache } from './fleetBrain'
 import { getTodayStats, getOpenPositionCounts, getOpenTokensByAgent, agentOpenGate } from '../services/fleet'
 import type { FleetAgent, FleetCandidate } from '../services/fleet'
 
@@ -56,6 +57,9 @@ async function ensureFleetTables(): Promise<void> {
     "trust_at_entry" INTEGER,
     "mock" BOOLEAN NOT NULL DEFAULT true,
     "status" TEXT NOT NULL DEFAULT 'open',
+    "ride_through" BOOLEAN NOT NULL DEFAULT false,
+    "venue" TEXT NOT NULL DEFAULT 'fourmeme',
+    "peak_pnl_pct" DOUBLE PRECISION,
     "exit_reason" TEXT,
     "exit_proceeds_bnb" DOUBLE PRECISION,
     "exit_tx" TEXT,
@@ -64,6 +68,10 @@ async function ensureFleetTables(): Promise<void> {
     "opened_at" TIMESTAMPTZ NOT NULL DEFAULT now(),
     "closed_at" TIMESTAMPTZ
   )`)
+  // Idempotent top-ups for pre-existing dev DBs created before these columns.
+  await db.$executeRawUnsafe(`ALTER TABLE "fleet_positions" ADD COLUMN IF NOT EXISTS "ride_through" BOOLEAN NOT NULL DEFAULT false`)
+  await db.$executeRawUnsafe(`ALTER TABLE "fleet_positions" ADD COLUMN IF NOT EXISTS "venue" TEXT NOT NULL DEFAULT 'fourmeme'`)
+  await db.$executeRawUnsafe(`ALTER TABLE "fleet_positions" ADD COLUMN IF NOT EXISTS "peak_pnl_pct" DOUBLE PRECISION`)
   await db.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "fleet_positions_open_unique"
     ON "fleet_positions" ("agent_id", "token_address") WHERE "status" = 'open'`)
   await db.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "fleet_trades" (
@@ -122,6 +130,7 @@ function makeAgent(): FleetAgent {
     slippageBps: 500,
     watchlist: null,
     status: 'active',
+    swarmEnabled: false,
     assignedTo: null,
     lastTickAt: null,
     createdAt: new Date(),
@@ -885,6 +894,313 @@ test('open-gate dedupes held tokens end-to-end: a candidate the agent already ho
     assert.ok(both, 'with a held + a fresh candidate offered, one must still be pickable')
     assert.equal(both!.tokenAddress, FRESH, 'the held candidate is deduped out; only the fresh one is picked')
   } finally {
+    await cleanup()
+  }
+})
+
+// ── Brain (4-LLM swarm) test seam ──────────────────────────────────────────
+// Snapshot + restore the brain's two indirections (swarm runner + provider
+// list) so a test can drive a deterministic quorum without ever hitting an LLM.
+function withBrain(over: Partial<typeof __brainTestDeps>): () => void {
+  const orig: Partial<typeof __brainTestDeps> = {}
+  for (const k of Object.keys(over) as (keyof typeof __brainTestDeps)[]) {
+    orig[k] = __brainTestDeps[k] as any
+    ;(__brainTestDeps as any)[k] = (over as any)[k]
+  }
+  __clearVerdictCache()
+  return () => {
+    for (const k of Object.keys(orig) as (keyof typeof __brainTestDeps)[]) {
+      ;(__brainTestDeps as any)[k] = orig[k]
+    }
+    __clearVerdictCache()
+  }
+}
+
+// N live providers — liveProviders() only reads `.live`, so the exact keys are
+// immaterial; we just need >= quorum (2) of them flagged live.
+function providerStatus(liveCount: number): any {
+  const names = ['anthropic', 'xai', 'hyperbolic', 'akash']
+  const out: any = {}
+  names.forEach((n, i) => { out[n] = { live: i < liveCount, envVar: 'X', defaultModel: 'm' } })
+  return out
+}
+
+// A SwarmResult whose quorum lands on `action` (or no quorum when null). Only
+// the fields fleetBrain reads are populated.
+function swarmResult(action: string | null, total = 4): any {
+  const histogram: Record<string, number> = {}
+  const decisions = Array.from({ length: total }, (_, i) => ({
+    provider: ['anthropic', 'xai', 'hyperbolic', 'akash'][i] ?? `p${i}`,
+    model: 'm', ok: true,
+    decision: action ? { action, confidence: 0.8, reasoning: `vote ${i}` } : null,
+    rawText: '', reasoning: `vote ${i}`, latencyMs: 1,
+    inputTokens: 0, outputTokens: 0, tokensUsed: 0, error: null,
+  }))
+  if (action) histogram[action] = total
+  return {
+    decisions,
+    quorumDecision: action ? { action, confidence: 0.8, reasoning: 'quorum' } : null,
+    divergence: {
+      actionHistogram: histogram, predictionHistogram: {}, agreement: [],
+      successCount: total, totalCount: total,
+      actionConsensus: action, predictionConsensus: null,
+    },
+    error: null,
+  }
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// 12) RIDE-THROUGH routing: a high-trust bag survives graduation and is then
+//     managed on PancakeSwap. evaluateExit must quote/return the PANCAKE venue,
+//     and closePosition must dispatch the sell to pancakeSellTokenForBnb (NOT
+//     the four.meme curve) with the slippage clamped to the pancake ceiling —
+//     and crucially NOT be blocked by the four.meme master switch, since a
+//     graduated bag has no curve liquidity left to sell on.
+// ───────────────────────────────────────────────────────────────────────────
+test('ride-through bag survives graduation and exits on PancakeSwap (venue dispatch + slippage clamp, four.meme switch ignored)', async (t) => {
+  if (!(await dbReachable())) { t.skip('No reachable Postgres (DATABASE_URL) — ride-through routing test skipped'); return }
+  await ensureFleetTables()
+  await cleanup()
+
+  // An open LIVE ride-through bag still tagged venue='fourmeme' (pre-graduation).
+  const posId = `fpos_itest_ride_${SUFFIX}`
+  await db.$executeRawUnsafe(
+    `INSERT INTO "fleet_positions" (
+       "id","agent_id","token_address","version","entry_bnb_wei","entry_cost_bnb",
+       "tokens_wei","entry_fill_pct","trust_at_entry","mock","status","ride_through","venue"
+     ) VALUES ($1,$2,$3,2,'10000000000000000',0.01,'1000000000000000000',0.1,90,false,'open',true,'fourmeme')`,
+    posId, AGENT_ID, TOKEN.toLowerCase(),
+  )
+
+  // Graduated token; pancake quote = 0.02 BNB on a 0.01 entry → +100% ≥ TP 50%.
+  let pancakeQuotes = 0
+  let curveQuotes = 0
+  const restoreQuote = withDeps({
+    getTokenInfo: async () => ({ graduatedToPancake: true, fillPct: 1, symbol: 'TKN', version: 2 } as any),
+    pancakeQuoteSell: async () => { pancakeQuotes += 1; return { estimatedBnbWei: 2n * 10n ** 16n } as any },
+    quoteSell: async () => { curveQuotes += 1; return { fundsWei: 5n * 10n ** 15n } as any },
+  })
+
+  try {
+    const agent = makeAgent()
+    const p = (await db.$queryRawUnsafe<any[]>(`SELECT * FROM "fleet_positions" WHERE "id" = $1`, posId))[0]
+
+    const decision = await __test.evaluateExit(p, agent)
+    assert.ok(decision, 'a graduated ride-through bag at +100% must produce an exit decision (TP)')
+    assert.equal(decision!.venue, 'pancake', 'a graduated bag must route to the PancakeSwap venue')
+    assert.match(decision!.reason, /^take_profit/, 'at +100% (>= TP 50%) the reason must be take_profit')
+    assert.equal(pancakeQuotes, 1, 'the graduated bag must be quoted on PancakeSwap')
+    assert.equal(curveQuotes, 0, 'a graduated bag must NOT be quoted on the closed four.meme curve')
+
+    // The four.meme → pancake transition must be persisted on the row.
+    const persisted = await db.$queryRawUnsafe<any[]>(`SELECT "venue" FROM "fleet_positions" WHERE "id" = $1`, posId)
+    assert.equal(persisted[0].venue, 'pancake', 'evaluateExit must persist the graduated venue=pancake')
+  } finally {
+    restoreQuote()
+  }
+
+  // Now the sell must dispatch to PancakeSwap — NOT the four.meme curve — even
+  // with the four.meme master switch OFF, and with slippage clamped.
+  let pancakeSells = 0
+  let curveSells = 0
+  let sawSlippageBps = -1
+  const HIGH_SLIPPAGE = 9999 // far above the pancake hard ceiling (500 bps)
+  const restoreSell = withDeps({
+    isFourMemeEnabled: () => false, // graduated bag must ignore this switch
+    getFleetSettings: async () => ({ liveTrading: true, globalPaused: false, updatedAt: new Date() }),
+    decryptFleetAgentKey: () => '0x' + '1'.repeat(64),
+    pancakeSellTokenForBnb: async (_pk: any, _t: any, _w: any, opts: any) => {
+      pancakeSells += 1; sawSlippageBps = opts?.slippageBps
+      return { txHash: '0xpancake', estimatedBnbWei: 2n * 10n ** 16n } as any
+    },
+    sellTokenForBnb: async () => { curveSells += 1; return { txHash: '0xcurve', estimatedBnbWei: 2n * 10n ** 16n } as any },
+  })
+
+  try {
+    const agent = makeAgent()
+    agent.slippageBps = HIGH_SLIPPAGE
+    const p = (await db.$queryRawUnsafe<any[]>(`SELECT * FROM "fleet_positions" WHERE "id" = $1`, posId))[0]
+
+    const closed = await __test.closePosition(p, agent, 0.02, 'take_profit +100%', false, 'pancake')
+    assert.equal(closed, true, 'a graduated ride-through bag must close on PancakeSwap')
+    assert.equal(pancakeSells, 1, 'the sell must dispatch to PancakeSwap exactly once')
+    assert.equal(curveSells, 0, 'a graduated bag must NOT sell on the four.meme curve')
+    assert.ok(sawSlippageBps > 0 && sawSlippageBps < HIGH_SLIPPAGE,
+      `the pancake sell must clamp slippage below the agent's ${HIGH_SLIPPAGE} bps (got ${sawSlippageBps})`)
+
+    const rows = await db.$queryRawUnsafe<any[]>(`SELECT "status" FROM "fleet_positions" WHERE "id" = $1`, posId)
+    assert.equal(rows[0].status, 'closed', 'the bag must end closed after the pancake sell')
+  } finally {
+    restoreSell()
+    await cleanup()
+  }
+})
+
+// ───────────────────────────────────────────────────────────────────────────
+// 13) HARD STOP-LOSS overrides ride-through; a non-ride-through graduated bag
+//     is force-sold ('graduated'). The hard SL is evaluated FIRST so neither
+//     ride-through nor the brain can ever block a protective exit.
+// ───────────────────────────────────────────────────────────────────────────
+test('hard stop-loss overrides ride-through; a non-ride-through graduated bag is sold with reason graduated', async (t) => {
+  if (!(await dbReachable())) { t.skip('No reachable Postgres (DATABASE_URL) — ride-through SL test skipped'); return }
+  await ensureFleetTables()
+  await cleanup()
+
+  // (a) Ride-through bag whose pancake price has CRASHED to -50% (≤ -SL 35%).
+  const slPos = `fpos_itest_ridesl_${SUFFIX}`
+  await db.$executeRawUnsafe(
+    `INSERT INTO "fleet_positions" (
+       "id","agent_id","token_address","version","entry_bnb_wei","entry_cost_bnb",
+       "tokens_wei","entry_fill_pct","trust_at_entry","mock","status","ride_through","venue"
+     ) VALUES ($1,$2,$3,2,'10000000000000000',0.01,'1000000000000000000',0.1,90,false,'open',true,'pancake')`,
+    slPos, AGENT_ID, TOKEN.toLowerCase(),
+  )
+  // (b) A different token, NOT ride-through, freshly graduated at a small +10%.
+  const gradPos = `fpos_itest_grad_${SUFFIX}`
+  const TOKEN2 = '0x' + 'b'.repeat(40)
+  await db.$executeRawUnsafe(
+    `INSERT INTO "fleet_positions" (
+       "id","agent_id","token_address","version","entry_bnb_wei","entry_cost_bnb",
+       "tokens_wei","entry_fill_pct","trust_at_entry","mock","status","ride_through","venue"
+     ) VALUES ($1,$2,$3,2,'10000000000000000',0.01,'1000000000000000000',0.1,90,false,'open',false,'fourmeme')`,
+    gradPos, AGENT_ID, TOKEN2.toLowerCase(),
+  )
+
+  const restore = withDeps({
+    getTokenInfo: async () => ({ graduatedToPancake: true, fillPct: 1, symbol: 'TKN', version: 2 } as any),
+    // SL bag quotes 0.005 (−50%); grad bag quotes 0.011 (+10%). The pancake
+    // quote stub keys off which token it's asked about.
+    pancakeQuoteSell: async (token: string) =>
+      (token.toLowerCase() === TOKEN.toLowerCase()
+        ? { estimatedBnbWei: 5n * 10n ** 15n }   // 0.005 → −50%
+        : { estimatedBnbWei: 11n * 10n ** 15n }) as any, // 0.011 → +10%
+  })
+
+  try {
+    const agent = makeAgent() // TP 50, SL 35
+
+    const sl = await __test.evaluateExit(
+      (await db.$queryRawUnsafe<any[]>(`SELECT * FROM "fleet_positions" WHERE "id" = $1`, slPos))[0], agent)
+    assert.ok(sl, 'a ride-through bag at −50% must still produce a protective exit')
+    assert.match(sl!.reason, /^stop_loss/, 'the hard stop-loss must override ride-through (reason stop_loss)')
+
+    const grad = await __test.evaluateExit(
+      (await db.$queryRawUnsafe<any[]>(`SELECT * FROM "fleet_positions" WHERE "id" = $1`, gradPos))[0], agent)
+    assert.ok(grad, 'a non-ride-through graduated bag must be force-sold at migration')
+    assert.equal(grad!.reason, 'graduated', 'a non-ride-through graduated bag sells now with reason graduated')
+    assert.equal(grad!.venue, 'pancake', 'a graduated bag sells on PancakeSwap')
+  } finally {
+    restore()
+    await cleanup()
+  }
+})
+
+// ───────────────────────────────────────────────────────────────────────────
+// 14) BRAIN entry verdict contract (no DB). The mechanical engine buys ONLY on
+//     a real BUY quorum: a SKIP consensus vetoes, and too-few live providers
+//     fail safe to no action. Drives the REAL getEntryVerdict with the swarm +
+//     provider list stubbed, so the quorum→action mapping the gate trusts is
+//     proven without an LLM.
+// ───────────────────────────────────────────────────────────────────────────
+test('brain entry verdict: BUY quorum confirms, SKIP quorum vetoes, sub-quorum providers fail safe', async () => {
+  const { getEntryVerdict } = await import('./fleetBrain')
+  const ctx = {
+    tokenAddress: '0x' + '1'.repeat(40), symbol: 'AAA', version: 2, trustScore: 90,
+    fillPct: 0.5, fundsBnb: 1, buyerCount: 50, buyCount: 80, sellCount: 10,
+    volumeBnb: 5, devHoldsPct: 2, ageMinutes: 10,
+  }
+
+  // BUY quorum → confirm.
+  let restore = withBrain({ getProviderStatus: () => providerStatus(4), runSwarmDecision: async () => swarmResult('BUY') })
+  try {
+    const v = await getEntryVerdict(ctx)
+    assert.equal(v.action, 'BUY', 'a BUY quorum must confirm the mechanical buy')
+    assert.equal(v.reason, 'ok')
+  } finally { restore() }
+
+  // SKIP quorum → veto (action !== 'BUY' ⇒ the gate skips the buy).
+  restore = withBrain({ getProviderStatus: () => providerStatus(4), runSwarmDecision: async () => swarmResult('SKIP') })
+  try {
+    const v = await getEntryVerdict(ctx)
+    assert.equal(v.action, 'SKIP', 'a SKIP quorum must NOT yield BUY (the gate vetoes the buy)')
+    assert.notEqual(v.action, 'BUY', 'fail-safe: anything other than BUY blocks the buy')
+  } finally { restore() }
+
+  // Too few live providers → fail safe (no action, not cached).
+  let swarmCalls = 0
+  restore = withBrain({
+    getProviderStatus: () => providerStatus(1),
+    runSwarmDecision: async () => { swarmCalls += 1; return swarmResult('BUY') },
+  })
+  try {
+    const v = await getEntryVerdict(ctx)
+    assert.equal(v.action, null, 'below quorum the brain must yield no action (fail safe)')
+    assert.equal(v.reason, 'no_providers', 'the fail-safe reason must be no_providers')
+    assert.equal(swarmCalls, 0, 'the swarm must NOT run when providers are below quorum')
+  } finally { restore() }
+})
+
+// ───────────────────────────────────────────────────────────────────────────
+// 15) BRAIN exit through evaluateExit (DB). With the env gate AND the agent flag
+//     on, a SELL quorum adds an early exit (reason swarm_exit); a HOLD quorum
+//     defers to the mechanical layer (no exit). Proves the brain is wired into
+//     the real exit path and only ever ADDS a sell.
+// ───────────────────────────────────────────────────────────────────────────
+test('brain exit: SELL quorum forces an early exit via evaluateExit; HOLD defers to the mechanical layer', async (t) => {
+  if (!(await dbReachable())) { t.skip('No reachable Postgres (DATABASE_URL) — brain exit test skipped'); return }
+  await ensureFleetTables()
+  await cleanup()
+
+  // A plain (non-graduated) bag sitting at a calm +10% — inside the TP/SL band,
+  // so ONLY the brain can move it. Real row so logFleet (brain feed) can write.
+  const posId = `fpos_itest_brainexit_${SUFFIX}`
+  await db.$executeRawUnsafe(
+    `INSERT INTO "fleet_positions" (
+       "id","agent_id","token_address","version","entry_bnb_wei","entry_cost_bnb",
+       "tokens_wei","entry_fill_pct","trust_at_entry","mock","status","ride_through","venue"
+     ) VALUES ($1,$2,$3,2,'10000000000000000',0.01,'1000000000000000000',0.1,80,false,'open',false,'fourmeme')`,
+    posId, AGENT_ID, TOKEN.toLowerCase(),
+  )
+
+  const prevEnv = process.env.FLEET_SWARM_ENABLED
+  process.env.FLEET_SWARM_ENABLED = 'true'
+  const restoreQuote = withDeps({
+    getTokenInfo: async () => ({ graduatedToPancake: false, fillPct: 0.5, symbol: 'TKN', version: 2 } as any),
+    quoteSell: async () => ({ fundsWei: 11n * 10n ** 15n } as any), // 0.011 → +10% (calm)
+  })
+
+  try {
+    const agent = makeAgent()
+    agent.swarmEnabled = true
+    const p = (await db.$queryRawUnsafe<any[]>(`SELECT * FROM "fleet_positions" WHERE "id" = $1`, posId))[0]
+
+    // HOLD quorum → the brain must NOT force an exit; mechanical layer defers.
+    let restore = withBrain({ getProviderStatus: () => providerStatus(4), runSwarmDecision: async () => swarmResult('HOLD') })
+    try {
+      const decision = await __test.evaluateExit(p, agent)
+      assert.equal(decision, null, 'a HOLD quorum must defer — no exit while inside the TP/SL band')
+    } finally { restore() }
+
+    // SELL quorum → the brain ADDS an early exit, surfaced as swarm_exit.
+    restore = withBrain({ getProviderStatus: () => providerStatus(4), runSwarmDecision: async () => swarmResult('SELL') })
+    try {
+      const decision = await __test.evaluateExit(p, agent)
+      assert.ok(decision, 'a SELL quorum must produce an exit decision')
+      assert.match(decision!.reason, /^swarm_exit/, 'a brain SELL must surface as a swarm_exit reason')
+      assert.equal(decision!.venue, 'fourmeme', 'a non-graduated bag still exits on the four.meme curve')
+    } finally { restore() }
+
+    // With the env gate OFF, the same SELL quorum must be ignored entirely.
+    process.env.FLEET_SWARM_ENABLED = 'false'
+    restore = withBrain({ getProviderStatus: () => providerStatus(4), runSwarmDecision: async () => swarmResult('SELL') })
+    try {
+      const decision = await __test.evaluateExit(p, agent)
+      assert.equal(decision, null, 'with FLEET_SWARM_ENABLED off the brain must be a no-op (zero behavior change)')
+    } finally { restore() }
+  } finally {
+    if (prevEnv === undefined) delete process.env.FLEET_SWARM_ENABLED
+    else process.env.FLEET_SWARM_ENABLED = prevEnv
+    restoreQuote()
     await cleanup()
   }
 })

@@ -5791,6 +5791,7 @@ app.get('/api/admin/fleet/state', requireAdmin, async (_req, res) => {
         slippageBps: a.slippageBps,
         watchlist: a.watchlist,
         status: a.status,
+        swarmEnabled: a.swarmEnabled,
         assignedTo: a.assignedTo,
         lastTickAt: a.lastTickAt ? a.lastTickAt.toISOString() : null,
         todayBuys: s?.buys ?? 0,
@@ -5803,6 +5804,7 @@ app.get('/api/admin/fleet/state', requireAdmin, async (_req, res) => {
       ok: true,
       settings,
       liveEnvEnabled: fleet.isFleetLiveTradingEnabled(),
+      swarmEnvEnabled: (await import('./agents/fleetBrain')).isFleetSwarmEnabled(),
       strategies,
       agents: agentsOut,
       totalAgents: agentsOut.length,
@@ -5928,6 +5930,31 @@ app.post('/api/admin/fleet/agents/status', requireAdmin, async (req, res) => {
     res.json({ ok: true, scope: 'all', count: n, status })
   } catch (err) {
     console.error('[API] /admin/fleet/agents/status failed:', err)
+    res.status(500).json({ error: (err as Error).message })
+  }
+})
+
+// POST /api/admin/fleet/agents/swarm  body: { enabled: boolean }
+// Bulk-toggle the per-agent 4-LLM brain (swarm_enabled) across ALL agents. The
+// brain is ALSO gated by the FLEET_SWARM_ENABLED env master switch, so flipping
+// this on alone is a no-op until the env flag is set (intentional fail-closed:
+// the operator must opt in at BOTH layers before any LLM spend happens).
+app.post('/api/admin/fleet/agents/swarm', requireAdmin, async (req, res) => {
+  try {
+    const fleet = await import('./services/fleet')
+    const body = (req.body ?? {}) as { enabled?: unknown }
+    if (typeof body.enabled !== 'boolean') return res.status(400).json({ error: 'enabled must be boolean' })
+    const n = await fleet.setAllFleetSwarm(body.enabled)
+    // Use the SAME canonical gate the runtime brain uses (=== 'true'), so the
+    // panel's "env active?" status can never disagree with whether the brain
+    // actually runs.
+    const envActive = (await import('./agents/fleetBrain')).isFleetSwarmEnabled()
+    await fleet.logFleet(null, 'info',
+      `bulk swarm → ${body.enabled ? 'on' : 'off'} (${n} agents)` +
+      `${body.enabled && !envActive ? ' — NOTE: FLEET_SWARM_ENABLED env is OFF, brain stays inactive' : ''}`)
+    res.json({ ok: true, count: n, enabled: body.enabled, envActive })
+  } catch (err) {
+    console.error('[API] /admin/fleet/agents/swarm failed:', err)
     res.status(500).json({ error: (err as Error).message })
   }
 })
