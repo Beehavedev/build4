@@ -53,6 +53,15 @@ services:
         sync: false
       - key: AKASH_API_KEY
         sync: false
+      # ── Community fleet brain swarm ──────────────────────────────────────
+      # The 50-agent four.meme fleet's entry/exit "brain" runs across this
+      # comma-separated provider allowlist (instead of a single LLM) so no one
+      # model can blanket-veto every buy. fleet_settings.swarm_provider (set via
+      # the /fleet panel) still overrides this to a single model when non-null;
+      # leave it null to use the full swarm below. FLEET_SWARM_ENABLED stays
+      # dashboard-managed.
+      - key: FLEET_SWARM_PROVIDERS
+        value: "xai,hyperbolic,akash"
       - key: WALLET_ENCRYPTION_KEY
         sync: false
       - key: ASTER_BUILDER_ADDRESS

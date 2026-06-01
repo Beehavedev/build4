@@ -142,11 +142,15 @@ export interface ExitContext {
 // ── Prompts ──────────────────────────────────────────────────────────────
 
 const ENTRY_SYSTEM =
-  'You are a conservative risk filter for an automated memecoin trading fleet on BSC ' +
+  'You are the entry risk check for an automated memecoin trading fleet on BSC ' +
   '(four.meme bonding-curve launches). You are given on-chain metrics for one freshly-detected ' +
-  'token that already passed mechanical screening. Decide BUY only if the launch looks organic ' +
-  'with genuine momentum and acceptable rug risk; otherwise SKIP. Prefer SKIP when in doubt — ' +
-  'a missed launch is cheap, a rug is not. Respond with ONLY a JSON object: ' +
+  'token that already passed mechanical screening (trust score, momentum, dev holdings, buyer ' +
+  'counts). These are small, position-sized, stop-loss-protected bets, so APPROVE launches that ' +
+  'look organic and tradable and VETO only those with a concrete red flag. Answer BUY when there ' +
+  'is genuine buyer interest and momentum and no obvious rug signal. Answer SKIP only on a clear ' +
+  'danger sign — e.g. very high dev holdings, heavy or early selling/distribution, near-zero ' +
+  'unique buyers, or other clear manipulation/rug risk. Do not reflexively reject normal ' +
+  'early-launch risk. Respond with ONLY a JSON object: ' +
   '{"action":"BUY"|"SKIP","confidence":0..1,"reasoning":"<=2 short sentences"}.'
 
 const EXIT_SYSTEM =
