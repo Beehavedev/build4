@@ -135,7 +135,7 @@ export const FLEET_STRATEGIES: Record<FleetStrategy, StrategyProfile> = {
     exitFillPct: { min: 88, max: 92 },
     maxDailyLossBnb: 0.04,
     slippageBps: 600,
-    filter: (c) => !c.graduated && c.buyCount > c.sellCount && c.volumeBnb >= 0.1 && c.fillPct >= 0.1 && c.fillPct <= 0.8,
+    filter: (c) => !c.graduated && c.fillPct <= 0.8 && c.buyCount >= c.sellCount && (c.volumeBnb === 0 || c.volumeBnb >= 0.1),
     score: (c) => c.volumeBnb * (1 + (c.buyCount - c.sellCount)) + c.trustScore / 100,
   },
   dip: {
@@ -155,7 +155,7 @@ export const FLEET_STRATEGIES: Record<FleetStrategy, StrategyProfile> = {
     exitFillPct: { min: 85, max: 92 },
     maxDailyLossBnb: 0.03,
     slippageBps: 600,
-    filter: (c) => !c.graduated && c.sellCount >= c.buyCount * 0.6 && c.fundsBnb > 0 && c.fillPct >= 0.05 && c.fillPct <= 0.7,
+    filter: (c) => !c.graduated && c.fillPct <= 0.7 && (c.buyCount + c.sellCount === 0 || c.sellCount >= c.buyCount * 0.6),
     score: (c) => c.trustScore + c.fundsBnb,
   },
   trend: {
@@ -175,7 +175,7 @@ export const FLEET_STRATEGIES: Record<FleetStrategy, StrategyProfile> = {
     exitFillPct: { min: 86, max: 92 },
     maxDailyLossBnb: 0.04,
     slippageBps: 500,
-    filter: (c) => !c.graduated && c.volumeBnb >= 0.05 && c.buyerCount >= 3 && c.fillPct <= 0.85,
+    filter: (c) => !c.graduated && c.fillPct <= 0.85 && (c.volumeBnb === 0 || c.volumeBnb >= 0.05) && (c.buyerCount === 0 || c.buyerCount >= 3),
     score: (c) => c.volumeBnb + c.buyerCount / 10,
   },
   snipe: {
@@ -195,7 +195,7 @@ export const FLEET_STRATEGIES: Record<FleetStrategy, StrategyProfile> = {
     exitFillPct: { min: 80, max: 90 },
     maxDailyLossBnb: 0.05,
     slippageBps: 800,
-    filter: (c) => !c.graduated && c.fillPct < 0.35 && ageMinutes(c) <= 60,
+    filter: (c) => !c.graduated && c.fillPct < 0.5 && ageMinutes(c) <= 240,
     score: (c) => c.trustScore - c.fillPct * 100,
   },
   conservative: {
@@ -215,7 +215,7 @@ export const FLEET_STRATEGIES: Record<FleetStrategy, StrategyProfile> = {
     exitFillPct: { min: 90, max: 95 },
     maxDailyLossBnb: 0.02,
     slippageBps: 400,
-    filter: (c) => !c.graduated && c.fillPct >= 0.05 && c.fillPct <= 0.6 && c.devHoldsPct <= 5,
+    filter: (c) => !c.graduated && c.fillPct <= 0.6 && (c.devHoldsPct === 0 || c.devHoldsPct <= 5),
     score: (c) => c.trustScore,
   },
 }
