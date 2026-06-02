@@ -1239,16 +1239,37 @@ test('evaluateExit clamps the sell to the wallet balance and reaps phantom (dust
   let phantomQuotes = 0
   let restore = withDeps({
     getTokenInfo: async () => ({ graduatedToPancake: false, fillPct: 0.5, symbol: 'TKN', version: 2 } as any),
-    quoteSell: async () => { phantomQuotes += 1; return { fundsWei: 2n * 10n ** 16n } as any },
+    // dust residual quotes to 0.0001 BNB — below the gas-aware reap floor.
+    quoteSell: async () => { phantomQuotes += 1; return { fundsWei: 10n ** 14n } as any },
     tokenBalanceOf: async () => 10n ** 14n, // dust: 0.0001 of the recorded 1e18
   })
   try {
     const agent = makeAgent()
     const decision = await __test.evaluateExit(pPhantom, agent)
-    assert.ok(decision, 'a dust-balance bag must produce a reap decision')
-    assert.equal(decision!.reason, 'reap_empty', 'a phantom bag must be reaped (reason reap_empty)')
+    assert.ok(decision, 'a dust-balance bag worth < gas must produce a reap decision')
+    assert.equal(decision!.reason, 'reap_empty', 'a worthless phantom bag must be reaped (reason reap_empty)')
     assert.equal(decision!.sellWei, 0n, 'a reap carries sellWei=0 so closePosition skips the sell')
-    assert.equal(phantomQuotes, 0, 'a reap must short-circuit BEFORE wasting a sell quote')
+    assert.equal(phantomQuotes, 1, 'the reap is value-gated, so it must quote the residual first')
+  } finally { restore() }
+
+  // ── (a2) DUST THAT MOONED — tiny token balance, but worth real BNB. The
+  //     value gate must NOT reap it; it must fall through to the normal exit and
+  //     be sold (clamped to the dust balance). Guards against abandoning value.
+  let moonQuoted = -1n
+  restore = withDeps({
+    getTokenInfo: async () => ({ graduatedToPancake: false, fillPct: 0.5, symbol: 'TKN', version: 2 } as any),
+    // dust balance but quotes 0.05 BNB (+400% on the 0.01 entry) — well above gas.
+    quoteSell: async (_t: any, amt: bigint) => { moonQuoted = amt; return { fundsWei: 5n * 10n ** 16n } as any },
+    tokenBalanceOf: async () => 10n ** 14n, // same dust balance as the phantom case
+  })
+  try {
+    const agent = makeAgent()
+    const decision = await __test.evaluateExit(pPhantom, agent)
+    assert.ok(decision, 'a dust balance worth real BNB must still exit (take_profit)')
+    assert.notEqual(decision!.reason, 'reap_empty', 'a valuable dust balance must NOT be reaped')
+    assert.match(decision!.reason, /^take_profit/, 'at +400% the valuable dust must take profit')
+    assert.equal(decision!.sellWei, 10n ** 14n, 'the sell must be clamped to the dust balance')
+    assert.equal(moonQuoted, 10n ** 14n, 'the quote must use the actual (dust) balance')
   } finally { restore() }
 
   // The reap must close the bag with NO live sell tx (selling dust only reverts).

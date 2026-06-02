@@ -64,6 +64,14 @@ import {
 // we exit even before the hard stop-loss fires, locking in the run. Default 20.
 const FLEET_TRAIL_PCT = Math.max(1, Math.round(Number(process.env.FLEET_TRAIL_PCT) || 20))
 
+// A bag whose wallet balance has collapsed to a dust fraction of what we recorded
+// buying is a phantom/heavily-taxed buy. We only REAP it (close with no sell tx)
+// when the quoted value of that residual is below this gas-aware BNB floor — i.e.
+// selling it would net less than the sell gas costs. This guards against reaping
+// a tiny token balance that is actually worth real BNB after a large price move.
+// Default 0.0008 BNB (~a BSC sell's gas). Set FLEET_REAP_MIN_BNB to tune.
+const FLEET_REAP_MIN_BNB = Math.max(0, Number(process.env.FLEET_REAP_MIN_BNB) || 0.0008)
+
 // Ride-through master gate. Default OFF — with this unset, NO bag is ever held
 // past graduation: a graduated bag force-sells exactly as before (reason
 // 'graduated'), so the feature is a true zero-behavior-change opt-in. Set
@@ -412,14 +420,22 @@ async function evaluateExit(p: any, agent: FleetAgent): Promise<{ proceedsBnb: n
   // Mock bags hold no real tokens, so they keep using the recorded amount
   // (re-quoted for honest simulated PnL).
   let sellWei = recordedWei
+  let suspectedPhantom = false
   if (!p.mock) {
     let balWei = recordedWei
     try { balWei = await __testDeps.tokenBalanceOf(token, agent.walletAddress) }
     catch { balWei = recordedWei }
     sellWei = balWei < recordedWei ? balWei : recordedWei
-    if (sellWei <= recordedWei / 1000n) {
+    // Nothing left to sell — definitively phantom (the buy never delivered). Reap
+    // now; there's nothing to quote.
+    if (sellWei <= 0n) {
       return { proceedsBnb: 0, reason: 'reap_empty', venue: storedVenue, sellWei: 0n }
     }
+    // Wallet holds only a dust fraction of what we recorded buying. Flag it so we
+    // can reap AFTER quoting — but only if the residual is worth less than gas
+    // (see FLEET_REAP_MIN_BNB). This avoids abandoning a tiny token balance that
+    // is actually worth real BNB after a large price move.
+    suspectedPhantom = sellWei <= recordedWei / 1000n
   }
 
   const info = await __testDeps.getTokenInfo(token)
@@ -438,6 +454,14 @@ async function evaluateExit(p: any, agent: FleetAgent): Promise<{ proceedsBnb: n
     venue = 'fourmeme'
     const q = await __testDeps.quoteSell(token, sellWei)
     proceedsBnb = Number(ethers.formatEther(q.fundsWei))
+  }
+
+  // Value-gated phantom reap: a dust-balance bag whose quoted residual is worth
+  // less than the sell gas is unsellable junk clogging the agent's slot — reap it
+  // (close, no tx). A dust balance that has mooned above the floor is NOT reaped;
+  // it falls through to the normal TP/SL exit logic and is sold (clamped).
+  if (suspectedPhantom && proceedsBnb < FLEET_REAP_MIN_BNB) {
+    return { proceedsBnb: 0, reason: 'reap_empty', venue, sellWei: 0n }
   }
 
   const entryCost = Number(p.entry_cost_bnb) || 0
