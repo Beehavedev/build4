@@ -95,6 +95,17 @@ export interface FleetExitResult { scanned: number; evaluated: number; sold: num
 // as the four.meme snipe-exit reaper.
 const FLEET_CLAIM_LEASE_SEC = Math.max(30, Math.round(Number(process.env.FLEET_CLAIM_LEASE_SEC) || 300))
 
+// Max-hold forced exit. four.meme bags routinely dump rather than tick up to the
+// +TP target, so a position can sit open a long time riding down to the hard
+// stop-loss — freezing the agent's capital (and its one position slot) the whole
+// time. To keep capital RECYCLING (more round-trips = more competition volume),
+// once a bag has been open longer than this many minutes we force-sell it at
+// market regardless of PnL. The hard stop-loss still fires first (it keeps its
+// more informative reason), and phantom-bag reaping still happens above. Set
+// FLEET_MAX_HOLD_MIN=0 to disable. Default 5 minutes.
+const _fleetMaxHoldMin = Number(process.env.FLEET_MAX_HOLD_MIN)
+const FLEET_MAX_HOLD_MIN = Number.isFinite(_fleetMaxHoldMin) && _fleetMaxHoldMin >= 0 ? _fleetMaxHoldMin : 5
+
 // Seam for tests. The no-double-trade guarantees (open-path ON CONFLICT claim,
 // exit-path CAS lock, mid-sweep kill-switch recheck) are pure Postgres
 // semantics, so the concurrency tests in fleetAgent.test.ts drive the REAL
@@ -477,6 +488,19 @@ async function evaluateExit(p: any, agent: FleetAgent): Promise<{ proceedsBnb: n
   // ── HARD STOP-LOSS — unconditional, evaluated FIRST so neither ride-through
   //    nor the LLM brain can ever block a protective exit. ──
   if (pnlPct <= -agent.stopLossPct) return { proceedsBnb, reason: `stop_loss ${pnlPct.toFixed(0)}%`, venue, sellWei }
+
+  // ── MAX-HOLD forced exit — recycle frozen capital. A bag open longer than
+  //    FLEET_MAX_HOLD_MIN is force-sold at market regardless of PnL (and
+  //    regardless of ride-through), so the agent's capital and its position slot
+  //    recycle into the next trade instead of sitting underwater waiting for the
+  //    +TP that four.meme dumps rarely hit. Evaluated after the hard stop-loss so
+  //    a stopped-out bag keeps that more informative reason. ──
+  if (FLEET_MAX_HOLD_MIN > 0 && p.opened_at) {
+    const ageMin = (Date.now() - new Date(p.opened_at).getTime()) / 60000
+    if (ageMin >= FLEET_MAX_HOLD_MIN) {
+      return { proceedsBnb, reason: `max_hold ${ageMin.toFixed(0)}m (PnL ${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(0)}%)`, venue, sellWei }
+    }
+  }
 
   if (graduated) {
     // Non-ride-through bag: legacy behavior — don't hold past migration, exit

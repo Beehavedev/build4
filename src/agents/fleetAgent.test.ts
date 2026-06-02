@@ -1323,3 +1323,65 @@ test('evaluateExit clamps the sell to the wallet balance and reaps phantom (dust
     await cleanup()
   }
 })
+
+// ───────────────────────────────────────────────────────────────────────────
+// 18) MAX-HOLD forced exit (DB). A bag that is neither at the +TP target nor the
+//     hard stop-loss normally returns null (HOLD), freezing the agent's capital
+//     and its one slot while a four.meme dump rides down to the stop. The
+//     max-hold rule force-sells any bag open longer than FLEET_MAX_HOLD_MIN
+//     (default 5m) at market regardless of PnL, so capital recycles into the
+//     next trade — the lever that turns the same BNB into more competition
+//     volume. A fresh bag (age < the window) must still defer to the mechanical
+//     layer (null).
+// ───────────────────────────────────────────────────────────────────────────
+test('evaluateExit force-sells a stale bag (max_hold) but holds a fresh one', async (t) => {
+  if (!(await dbReachable())) { t.skip('No reachable Postgres (DATABASE_URL) — max_hold test skipped'); return }
+  await ensureFleetTables()
+  await cleanup()
+
+  // Distinct token per position: the (agent_id, token_address) partial unique
+  // index forbids two OPEN bags on the same token, and this test keeps both open.
+  const mkPos = async (id: string, ageMin: number, token: string) => {
+    await db.$executeRawUnsafe(
+      `INSERT INTO "fleet_positions" (
+         "id","agent_id","token_address","version","entry_bnb_wei","entry_cost_bnb",
+         "tokens_wei","entry_fill_pct","trust_at_entry","mock","status","ride_through","venue","opened_at"
+       ) VALUES ($1,$2,$3,2,'10000000000000000',0.01,'1000000000000000000',0.1,80,false,'open',false,'fourmeme',$4)`,
+      id, AGENT_ID, token.toLowerCase(), new Date(Date.now() - ageMin * 60000),
+    )
+    return (await db.$queryRawUnsafe<any[]>(`SELECT * FROM "fleet_positions" WHERE "id" = $1`, id))[0]
+  }
+
+  // Quote ≈ entry (PnL ~0): NOT at the +TP target and NOT at the hard stop-loss,
+  // so the ONLY thing that can trigger an exit is the max-hold timer.
+  const neutralDeps = {
+    getTokenInfo: async () => ({ graduatedToPancake: false, fillPct: 0.1, symbol: 'TKN', version: 2 } as any),
+    quoteSell: async () => ({ fundsWei: 10n ** 16n } as any), // 0.01 BNB == entry → PnL ~0
+    tokenBalanceOf: async () => 10n ** 18n,                   // full recorded balance, no tax
+  }
+
+  // ── (a) STALE bag (opened 10m ago, default window 5m) → force-sold. ──
+  const staleId = `fpos_itest_maxhold_${SUFFIX}`
+  const pStale = await mkPos(staleId, 10, '0x' + 'a1'.repeat(20))
+  let restore = withDeps(neutralDeps)
+  try {
+    const agent = makeAgent()
+    const decision = await __test.evaluateExit(pStale, agent)
+    assert.ok(decision, 'a bag past the max-hold window must produce an exit decision')
+    assert.match(decision!.reason, /^max_hold /, 'a neutral-PnL stale bag must exit via max_hold')
+    assert.equal(decision!.sellWei, 10n ** 18n, 'the max_hold sell must carry the (clamped) balance')
+  } finally { restore() }
+
+  // ── (b) FRESH bag (opened ~now) → defers to the mechanical layer (null). ──
+  const freshId = `fpos_itest_fresh_${SUFFIX}`
+  const pFresh = await mkPos(freshId, 0, '0x' + 'b2'.repeat(20))
+  restore = withDeps(neutralDeps)
+  try {
+    const agent = makeAgent()
+    const decision = await __test.evaluateExit(pFresh, agent)
+    assert.equal(decision, null, 'a fresh neutral-PnL bag must HOLD (no max_hold, no TP/SL)')
+  } finally {
+    restore()
+    await cleanup()
+  }
+})
