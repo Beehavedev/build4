@@ -55,6 +55,27 @@ const SCANNER_STATE_ID = 'singleton'
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
 
+// RPC calls over BSC_RPC_URL can hang far longer than ethers' default request
+// timeout (~5min) — a single slow getLogs would otherwise stall the whole
+// scanner tick and jam the runner's single-flight guard, freezing discovery +
+// enrichment indefinitely (observed: scanner_state frozen, 0 tokens scored).
+// withTimeout bounds every RPC await so a hung call rejects fast and flows into
+// the existing fail-soft handling (DexScreener fallback / null activity /
+// deprioritize) instead of blocking the tick. All env-tunable.
+const RPC_BLOCKNUM_TIMEOUT_MS = envInt('FOUR_MEME_SCAN_BLOCKNUM_TIMEOUT_MS', 8_000)
+const RPC_GETLOGS_TIMEOUT_MS = envInt('FOUR_MEME_SCAN_GETLOGS_TIMEOUT_MS', 15_000)
+const RPC_CALL_TIMEOUT_MS = envInt('FOUR_MEME_SCAN_RPC_CALL_TIMEOUT_MS', 8_000)
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`RPC timeout after ${ms}ms: ${label}`)), ms)
+  })
+  // Prevent a late rejection from the (now-abandoned) racing promise from
+  // surfacing as an unhandledRejection once the timeout has already won.
+  void p.catch(() => {})
+  return Promise.race([p, timeout]).finally(() => clearTimeout(timer)) as Promise<T>
+}
+
 const ERC20_MIN_ABI = [
   'function balanceOf(address) view returns (uint256)',
 ] as const
@@ -125,7 +146,11 @@ async function discover(
 ): Promise<void> {
   let currentBlock: number
   try {
-    currentBlock = await provider.getBlockNumber()
+    currentBlock = await withTimeout(
+      provider.getBlockNumber(),
+      RPC_BLOCKNUM_TIMEOUT_MS,
+      'discover.getBlockNumber',
+    )
   } catch (e) {
     console.warn('[fourMemeScanner] getBlockNumber failed:', (e as Error).message)
     await discoverViaDexScreener(result)
@@ -142,12 +167,16 @@ async function discover(
 
   let logs: ethers.Log[]
   try {
-    logs = await provider.getLogs({
-      address: FOUR_MEME_FACTORY_V2,
-      topics: [TOKEN_CREATE_EVENT_TOPIC],
-      fromBlock,
-      toBlock,
-    })
+    logs = await withTimeout(
+      provider.getLogs({
+        address: FOUR_MEME_FACTORY_V2,
+        topics: [TOKEN_CREATE_EVENT_TOPIC],
+        fromBlock,
+        toBlock,
+      }),
+      RPC_GETLOGS_TIMEOUT_MS,
+      'discover.getLogs',
+    )
   } catch (e) {
     console.warn('[fourMemeScanner] getLogs failed:', (e as Error).message)
     result.errors += 1
@@ -235,12 +264,16 @@ async function scanActivity(
   let lastErr: unknown = null
   for (let attempt = 1; attempt <= Math.max(1, ACTIVITY_RETRIES); attempt++) {
     try {
-      logs = await provider.getLogs({
-        address: ethers.getAddress(token),
-        topics: [TRANSFER_TOPIC],
-        fromBlock,
-        toBlock: currentBlock,
-      })
+      logs = await withTimeout(
+        provider.getLogs({
+          address: ethers.getAddress(token),
+          topics: [TRANSFER_TOPIC],
+          fromBlock,
+          toBlock: currentBlock,
+        }),
+        RPC_GETLOGS_TIMEOUT_MS,
+        `scanActivity.getLogs:${token}`,
+      )
       lastErr = null
       break
     } catch (e) {
@@ -301,7 +334,11 @@ async function enrich(
 
   let currentBlock = 0
   try {
-    currentBlock = await provider.getBlockNumber()
+    currentBlock = await withTimeout(
+      provider.getBlockNumber(),
+      RPC_BLOCKNUM_TIMEOUT_MS,
+      'enrich.getBlockNumber',
+    )
   } catch (e) {
     console.warn(
       '[fourMemeScanner] enrich getBlockNumber failed — activity scan will degrade to nulls this tick:',
@@ -316,7 +353,7 @@ async function enrich(
       const token = ethers.getAddress(row.token_address)
       let info
       try {
-        info = await getTokenInfo(token)
+        info = await withTimeout(getTokenInfo(token), RPC_CALL_TIMEOUT_MS, `getTokenInfo:${token}`)
       } catch (e) {
         // Could be a genuinely non-four.meme token (DexScreener false
         // positive) OR a transient RPC hiccup. We must NOT permanently
@@ -338,7 +375,11 @@ async function enrich(
       if (row.creator_wallet && info.maxOffersWei > 0n) {
         try {
           const erc20 = new ethers.Contract(token, ERC20_MIN_ABI, provider)
-          const bal: bigint = await erc20.balanceOf(ethers.getAddress(row.creator_wallet))
+          const bal: bigint = await withTimeout(
+            erc20.balanceOf(ethers.getAddress(row.creator_wallet)) as Promise<bigint>,
+            RPC_CALL_TIMEOUT_MS,
+            `balanceOf:${token}`,
+          )
           devHoldsPct = Number((bal * 10000n) / info.maxOffersWei) / 10000
         } catch {
           devHoldsPct = null
