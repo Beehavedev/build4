@@ -44,8 +44,16 @@ const MAX_BLOCK_SPAN = envInt('FOUR_MEME_SCAN_MAX_SPAN', 2000) // cap per tick
 const ENRICH_LIMIT = envInt('FOUR_MEME_SCAN_ENRICH_LIMIT', 20) // rows scored / tick
 const ENRICH_MIN_INTERVAL_SEC = envInt('FOUR_MEME_SCAN_ENRICH_INTERVAL', 20) // per-token re-scan throttle
 const ACTIVITY_MAX_SPAN = envInt('FOUR_MEME_SCAN_ACTIVITY_SPAN', 5000) // Transfer-log window cap
+// Activity getLogs is the brain's data feed: if it silently fails, every token
+// looks like it has 0 buyers and the fleet brain vetoes everything. Retry with
+// linear backoff to survive transient RPC rate-limits/timeouts under fleet load,
+// and log on final failure instead of degrading silently.
+const ACTIVITY_RETRIES = envInt('FOUR_MEME_SCAN_ACTIVITY_RETRIES', 3) // total getLogs attempts
+const ACTIVITY_RETRY_BASE_MS = envInt('FOUR_MEME_SCAN_ACTIVITY_RETRY_MS', 250) // backoff = base * attempt
 
 const SCANNER_STATE_ID = 'singleton'
+
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
 
 const ERC20_MIN_ABI = [
   'function balanceOf(address) view returns (uint256)',
@@ -216,35 +224,54 @@ async function scanActivity(
   firstSeenBlock: number | null,
   currentBlock: number,
 ): Promise<{ buyerCount: number | null; buyCount: number | null; sellCount: number | null }> {
-  try {
-    const tmTopic = ethers.zeroPadValue(ethers.getAddress(tokenManager), 32).toLowerCase()
-    let fromBlock = firstSeenBlock && firstSeenBlock > 0 ? firstSeenBlock : currentBlock - ACTIVITY_MAX_SPAN
-    if (fromBlock < 0) fromBlock = 0
-    if (currentBlock - fromBlock > ACTIVITY_MAX_SPAN) fromBlock = currentBlock - ACTIVITY_MAX_SPAN
+  const tmTopic = ethers.zeroPadValue(ethers.getAddress(tokenManager), 32).toLowerCase()
+  let fromBlock = firstSeenBlock && firstSeenBlock > 0 ? firstSeenBlock : currentBlock - ACTIVITY_MAX_SPAN
+  if (fromBlock < 0) fromBlock = 0
+  if (currentBlock - fromBlock > ACTIVITY_MAX_SPAN) fromBlock = currentBlock - ACTIVITY_MAX_SPAN
 
-    const logs = await provider.getLogs({
-      address: ethers.getAddress(token),
-      topics: [TRANSFER_TOPIC],
-      fromBlock,
-      toBlock: currentBlock,
-    })
-    const buyers = new Set<string>()
-    let buyCount = 0
-    let sellCount = 0
-    for (const lg of logs) {
-      const fromTopic = (lg.topics[1] ?? '').toLowerCase()
-      const toTopic = (lg.topics[2] ?? '').toLowerCase()
-      if (fromTopic === tmTopic) {
-        buyCount += 1
-        if (toTopic) buyers.add(toTopic)
-      } else if (toTopic === tmTopic) {
-        sellCount += 1
-      }
+  // getLogs is the flaky call under fleet concurrency — retry with backoff and
+  // surface the error on exhaustion rather than silently returning all-nulls.
+  let logs: ethers.Log[] | null = null
+  let lastErr: unknown = null
+  for (let attempt = 1; attempt <= Math.max(1, ACTIVITY_RETRIES); attempt++) {
+    try {
+      logs = await provider.getLogs({
+        address: ethers.getAddress(token),
+        topics: [TRANSFER_TOPIC],
+        fromBlock,
+        toBlock: currentBlock,
+      })
+      lastErr = null
+      break
+    } catch (e) {
+      lastErr = e
+      if (attempt < Math.max(1, ACTIVITY_RETRIES)) await sleep(ACTIVITY_RETRY_BASE_MS * attempt)
     }
-    return { buyerCount: buyers.size, buyCount, sellCount }
-  } catch {
+  }
+
+  if (logs === null) {
+    console.warn(
+      `[fourMemeScanner] activity getLogs failed for ${token} after ${Math.max(1, ACTIVITY_RETRIES)} attempt(s) ` +
+        `(blocks ${fromBlock}-${currentBlock}) — buyer/volume data unavailable, brain will see 0 activity:`,
+      (lastErr as Error)?.message ?? String(lastErr),
+    )
     return { buyerCount: null, buyCount: null, sellCount: null }
   }
+
+  const buyers = new Set<string>()
+  let buyCount = 0
+  let sellCount = 0
+  for (const lg of logs) {
+    const fromTopic = (lg.topics[1] ?? '').toLowerCase()
+    const toTopic = (lg.topics[2] ?? '').toLowerCase()
+    if (fromTopic === tmTopic) {
+      buyCount += 1
+      if (toTopic) buyers.add(toTopic)
+    } else if (toTopic === tmTopic) {
+      sellCount += 1
+    }
+  }
+  return { buyerCount: buyers.size, buyCount, sellCount }
 }
 
 async function enrich(
@@ -275,8 +302,11 @@ async function enrich(
   let currentBlock = 0
   try {
     currentBlock = await provider.getBlockNumber()
-  } catch {
-    /* activity scan will degrade to nulls */
+  } catch (e) {
+    console.warn(
+      '[fourMemeScanner] enrich getBlockNumber failed — activity scan will degrade to nulls this tick:',
+      (e as Error).message,
+    )
   }
 
   const nowSec = Math.floor(Date.now() / 1000)
