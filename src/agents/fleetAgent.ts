@@ -44,6 +44,7 @@ import {
   quoteSell,
   buyTokenWithBnb,
   sellTokenForBnb,
+  tokenBalanceOf,
 } from '../services/fourMemeTrading'
 import { shouldRideThrough } from '../services/fourMemeTrust'
 import {
@@ -100,6 +101,7 @@ export const __testDeps = {
   quoteSell,
   buyTokenWithBnb,
   sellTokenForBnb,
+  tokenBalanceOf,
   pancakeQuoteSell,
   pancakeSellTokenForBnb,
   getFleetSettings,
@@ -378,7 +380,7 @@ export async function tickAllFleetExits(): Promise<FleetExitResult> {
     try {
       const decision = await evaluateExit(p, agent)
       if (decision) {
-        const closed = await closePosition(p, agent, decision.proceedsBnb, decision.reason, !!p.mock, decision.venue)
+        const closed = await closePosition(p, agent, decision.proceedsBnb, decision.reason, !!p.mock, decision.venue, decision.sellWei)
         if (closed) out.sold += 1
       }
     } catch (err) {
@@ -390,13 +392,36 @@ export async function tickAllFleetExits(): Promise<FleetExitResult> {
   return out
 }
 
-async function evaluateExit(p: any, agent: FleetAgent): Promise<{ proceedsBnb: number; reason: string; venue: 'fourmeme' | 'pancake' } | null> {
+async function evaluateExit(p: any, agent: FleetAgent): Promise<{ proceedsBnb: number; reason: string; venue: 'fourmeme' | 'pancake'; sellWei: bigint } | null> {
   const token = ethers.getAddress(p.token_address)
-  const tokensWei = BigInt(p.tokens_wei)
-  if (tokensWei <= 0n) return null
+  const recordedWei = BigInt(p.tokens_wei)
+  if (recordedWei <= 0n) return null
 
   const rideThrough = !!p.ride_through
   const storedVenue: 'fourmeme' | 'pancake' = p.venue === 'pancake' ? 'pancake' : 'fourmeme'
+
+  // ── Sell the wallet's ACTUAL balance, not the recorded buy-quote amount. ──
+  // four.meme tokens routinely apply a transfer tax / deliver a partial fill,
+  // so the wallet ends up holding fewer tokens than the buy quote recorded.
+  // Quoting or selling the recorded amount makes the sell's estimateGas revert
+  // with "ERC20: transfer amount exceeds balance", which strands the bag forever
+  // — it can never exit, so the agent's capital never recycles. Clamp to the
+  // live on-chain balance. A bag whose real balance is a rounding-dust fraction
+  // of what we recorded is phantom (the buy never actually delivered the tokens)
+  // — reap it (close, no sell tx) so the agent's position slot frees at once.
+  // Mock bags hold no real tokens, so they keep using the recorded amount
+  // (re-quoted for honest simulated PnL).
+  let sellWei = recordedWei
+  if (!p.mock) {
+    let balWei = recordedWei
+    try { balWei = await __testDeps.tokenBalanceOf(token, agent.walletAddress) }
+    catch { balWei = recordedWei }
+    sellWei = balWei < recordedWei ? balWei : recordedWei
+    if (sellWei <= recordedWei / 1000n) {
+      return { proceedsBnb: 0, reason: 'reap_empty', venue: storedVenue, sellWei: 0n }
+    }
+  }
+
   const info = await __testDeps.getTokenInfo(token)
   const graduated = !!info.graduatedToPancake || storedVenue === 'pancake'
 
@@ -407,11 +432,11 @@ async function evaluateExit(p: any, agent: FleetAgent): Promise<{ proceedsBnb: n
   let venue: 'fourmeme' | 'pancake'
   if (graduated) {
     venue = 'pancake'
-    const q = await __testDeps.pancakeQuoteSell(token, tokensWei)
+    const q = await __testDeps.pancakeQuoteSell(token, sellWei)
     proceedsBnb = Number(ethers.formatEther(q.estimatedBnbWei))
   } else {
     venue = 'fourmeme'
-    const q = await __testDeps.quoteSell(token, tokensWei)
+    const q = await __testDeps.quoteSell(token, sellWei)
     proceedsBnb = Number(ethers.formatEther(q.fundsWei))
   }
 
@@ -427,12 +452,12 @@ async function evaluateExit(p: any, agent: FleetAgent): Promise<{ proceedsBnb: n
 
   // ── HARD STOP-LOSS — unconditional, evaluated FIRST so neither ride-through
   //    nor the LLM brain can ever block a protective exit. ──
-  if (pnlPct <= -agent.stopLossPct) return { proceedsBnb, reason: `stop_loss ${pnlPct.toFixed(0)}%`, venue }
+  if (pnlPct <= -agent.stopLossPct) return { proceedsBnb, reason: `stop_loss ${pnlPct.toFixed(0)}%`, venue, sellWei }
 
   if (graduated) {
     // Non-ride-through bag: legacy behavior — don't hold past migration, exit
     // now (on pancake). reason kept as 'graduated' for dashboard continuity.
-    if (!rideThrough) return { proceedsBnb, reason: 'graduated', venue }
+    if (!rideThrough) return { proceedsBnb, reason: 'graduated', venue, sellWei }
 
     // Ride-through bag: actively managed on PancakeSwap. Track peak PnL% for the
     // trailing stop (persisted so it survives across exit ticks / redeploys).
@@ -441,27 +466,27 @@ async function evaluateExit(p: any, agent: FleetAgent): Promise<{ proceedsBnb: n
     if (p.peak_pnl_pct == null || peak > prevPeak) {
       await db.$executeRawUnsafe(`UPDATE "fleet_positions" SET "peak_pnl_pct" = $1 WHERE "id" = $2`, peak, p.id)
     }
-    if (pnlPct >= agent.takeProfitPct) return { proceedsBnb, reason: `take_profit +${pnlPct.toFixed(0)}%`, venue }
+    if (pnlPct >= agent.takeProfitPct) return { proceedsBnb, reason: `take_profit +${pnlPct.toFixed(0)}%`, venue, sellWei }
     // Trailing stop: once we've run up past the trail band, exit if we give back
     // FLEET_TRAIL_PCT points from the peak (locks in a graduated runner).
     if (peak >= FLEET_TRAIL_PCT && (peak - pnlPct) >= FLEET_TRAIL_PCT) {
-      return { proceedsBnb, reason: `trailing_stop ${pnlPct.toFixed(0)}% (peak +${peak.toFixed(0)}%)`, venue }
+      return { proceedsBnb, reason: `trailing_stop ${pnlPct.toFixed(0)}% (peak +${peak.toFixed(0)}%)`, venue, sellWei }
     }
     const swarmReason = await maybeSwarmExit(p, agent, token, info, venue)
-    if (swarmReason) return { proceedsBnb, reason: swarmReason, venue }
+    if (swarmReason) return { proceedsBnb, reason: swarmReason, venue, sellWei }
     return null
   }
 
   // ── Still on the bonding curve ──
-  if (pnlPct >= agent.takeProfitPct) return { proceedsBnb, reason: `take_profit +${pnlPct.toFixed(0)}%`, venue }
+  if (pnlPct >= agent.takeProfitPct) return { proceedsBnb, reason: `take_profit +${pnlPct.toFixed(0)}%`, venue, sellWei }
   // Pre-migration fill exit — SUPPRESSED for ride-through bags so they're allowed
   // to graduate and keep running on pancake instead of being sold near the top of
   // the curve.
   if (!rideThrough && fillPct >= agent.exitFillPct) {
-    return { proceedsBnb, reason: `pre_migration fill ${fillPct.toFixed(0)}%`, venue }
+    return { proceedsBnb, reason: `pre_migration fill ${fillPct.toFixed(0)}%`, venue, sellWei }
   }
   const swarmReason = await maybeSwarmExit(p, agent, token, info, venue)
-  if (swarmReason) return { proceedsBnb, reason: swarmReason, venue }
+  if (swarmReason) return { proceedsBnb, reason: swarmReason, venue, sellWei }
   return null
 }
 
@@ -498,9 +523,13 @@ async function maybeSwarmExit(
   return verdict.action === 'SELL' ? `swarm_exit (${verdict.agreement})` : null
 }
 
-async function closePosition(p: any, agent: FleetAgent, proceedsBnb: number, reason: string, mock: boolean, venue?: 'fourmeme' | 'pancake'): Promise<boolean> {
+async function closePosition(p: any, agent: FleetAgent, proceedsBnb: number, reason: string, mock: boolean, venue?: 'fourmeme' | 'pancake', sellWei?: bigint): Promise<boolean> {
   const token = ethers.getAddress(p.token_address)
-  const tokensWei = BigInt(p.tokens_wei)
+  // sellWei (from evaluateExit) is the wallet's ACTUAL clamped balance; callers
+  // that don't pass it (tests) fall back to the recorded amount. A zero amount
+  // is a REAP: the bag holds no real tokens, so we close it WITHOUT a sell tx
+  // (which would only revert) to free the agent's slot and recycle the capital.
+  const tokensWei = sellWei ?? BigInt(p.tokens_wei)
   // Sell venue: explicit (from evaluateExit) wins; otherwise fall back to the
   // row's persisted venue. Graduated/ride-through bags route to PancakeSwap.
   const sellVenue: 'fourmeme' | 'pancake' = venue ?? (p.venue === 'pancake' ? 'pancake' : 'fourmeme')
@@ -522,7 +551,7 @@ async function closePosition(p: any, agent: FleetAgent, proceedsBnb: number, rea
   )
   if (Number(lock) === 0) return false // another worker holds the lock
 
-  if (!mock) {
+  if (!mock && tokensWei > 0n) {
     // four.meme master switch only gates four.meme curve sells. A graduated bag
     // sells on PancakeSwap, so it must NOT be blocked by FOUR_MEME_ENABLED.
     if (sellVenue === 'fourmeme' && !__testDeps.isFourMemeEnabled()) {

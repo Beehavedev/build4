@@ -979,6 +979,7 @@ test('ride-through bag survives graduation and exits on PancakeSwap (venue dispa
     getTokenInfo: async () => ({ graduatedToPancake: true, fillPct: 1, symbol: 'TKN', version: 2 } as any),
     pancakeQuoteSell: async () => { pancakeQuotes += 1; return { estimatedBnbWei: 2n * 10n ** 16n } as any },
     quoteSell: async () => { curveQuotes += 1; return { fundsWei: 5n * 10n ** 15n } as any },
+    tokenBalanceOf: async () => 10n ** 24n, // wallet holds the full bag (no clamp/reap)
   })
 
   try {
@@ -1074,6 +1075,7 @@ test('hard stop-loss overrides ride-through; a non-ride-through graduated bag is
       (token.toLowerCase() === TOKEN.toLowerCase()
         ? { estimatedBnbWei: 5n * 10n ** 15n }   // 0.005 → −50%
         : { estimatedBnbWei: 11n * 10n ** 15n }) as any, // 0.011 → +10%
+    tokenBalanceOf: async () => 10n ** 24n, // wallet holds the full bag (no clamp/reap)
   })
 
   try {
@@ -1167,6 +1169,7 @@ test('brain exit: SELL quorum forces an early exit via evaluateExit; HOLD defers
   const restoreQuote = withDeps({
     getTokenInfo: async () => ({ graduatedToPancake: false, fillPct: 0.5, symbol: 'TKN', version: 2 } as any),
     quoteSell: async () => ({ fundsWei: 11n * 10n ** 15n } as any), // 0.011 → +10% (calm)
+    tokenBalanceOf: async () => 10n ** 24n, // wallet holds the full bag (no clamp/reap)
   })
 
   try {
@@ -1201,6 +1204,101 @@ test('brain exit: SELL quorum forces an early exit via evaluateExit; HOLD defers
     if (prevEnv === undefined) delete process.env.FLEET_SWARM_ENABLED
     else process.env.FLEET_SWARM_ENABLED = prevEnv
     restoreQuote()
+    await cleanup()
+  }
+})
+
+// ───────────────────────────────────────────────────────────────────────────
+// 16) ACTUAL-BALANCE clamp + phantom REAP. four.meme tokens tax / partial-fill,
+//     so the wallet ends up holding fewer tokens than the buy quote recorded.
+//     evaluateExit must (a) clamp the sell to the live on-chain balance, and
+//     (b) REAP a bag whose real balance is dust (a phantom buy that never
+//     delivered) by closing it with NO sell tx — selling the recorded amount
+//     only reverts with "ERC20: transfer amount exceeds balance" and strands the
+//     bag forever, blocking the agent's slot so capital can never recycle.
+// ───────────────────────────────────────────────────────────────────────────
+test('evaluateExit clamps the sell to the wallet balance and reaps phantom (dust-balance) bags', async (t) => {
+  if (!(await dbReachable())) { t.skip('No reachable Postgres (DATABASE_URL) — clamp/reap test skipped'); return }
+  await ensureFleetTables()
+  await cleanup()
+
+  const mkPos = async (id: string) => {
+    await db.$executeRawUnsafe(
+      `INSERT INTO "fleet_positions" (
+         "id","agent_id","token_address","version","entry_bnb_wei","entry_cost_bnb",
+         "tokens_wei","entry_fill_pct","trust_at_entry","mock","status","ride_through","venue"
+       ) VALUES ($1,$2,$3,2,'10000000000000000',0.01,'1000000000000000000',0.1,80,false,'open',false,'fourmeme')`,
+      id, AGENT_ID, TOKEN.toLowerCase(),
+    )
+    return (await db.$queryRawUnsafe<any[]>(`SELECT * FROM "fleet_positions" WHERE "id" = $1`, id))[0]
+  }
+
+  // ── (a) PHANTOM REAP — the wallet holds dust (< 0.1% of the recorded 1e18). ──
+  const phantomId = `fpos_itest_phantom_${SUFFIX}`
+  const pPhantom = await mkPos(phantomId)
+  let phantomQuotes = 0
+  let restore = withDeps({
+    getTokenInfo: async () => ({ graduatedToPancake: false, fillPct: 0.5, symbol: 'TKN', version: 2 } as any),
+    quoteSell: async () => { phantomQuotes += 1; return { fundsWei: 2n * 10n ** 16n } as any },
+    tokenBalanceOf: async () => 10n ** 14n, // dust: 0.0001 of the recorded 1e18
+  })
+  try {
+    const agent = makeAgent()
+    const decision = await __test.evaluateExit(pPhantom, agent)
+    assert.ok(decision, 'a dust-balance bag must produce a reap decision')
+    assert.equal(decision!.reason, 'reap_empty', 'a phantom bag must be reaped (reason reap_empty)')
+    assert.equal(decision!.sellWei, 0n, 'a reap carries sellWei=0 so closePosition skips the sell')
+    assert.equal(phantomQuotes, 0, 'a reap must short-circuit BEFORE wasting a sell quote')
+  } finally { restore() }
+
+  // The reap must close the bag with NO live sell tx (selling dust only reverts).
+  let phantomSells = 0
+  restore = withDeps({
+    getFleetSettings: async () => ({ liveTrading: true, globalPaused: false, swarmProvider: null, updatedAt: new Date() }),
+    decryptFleetAgentKey: () => '0x' + '1'.repeat(64),
+    sellTokenForBnb: async () => { phantomSells += 1; return { txHash: '0xnope', estimatedBnbWei: 0n } as any },
+  })
+  try {
+    const agent = makeAgent()
+    const closed = await __test.closePosition(pPhantom, agent, 0, 'reap_empty', false, 'fourmeme', 0n)
+    assert.equal(closed, true, 'a reap must close the position')
+    assert.equal(phantomSells, 0, 'a reap must NOT fire a live sell (sellWei=0)')
+    const rows = await db.$queryRawUnsafe<any[]>(`SELECT "status" FROM "fleet_positions" WHERE "id" = $1`, phantomId)
+    assert.equal(rows[0].status, 'closed', 'the phantom bag must end closed (agent slot freed)')
+  } finally { restore() }
+
+  // ── (b) CLAMP — the wallet holds HALF the recorded amount (transfer tax). ──
+  const taxedId = `fpos_itest_taxed_${SUFFIX}`
+  const pTaxed = await mkPos(taxedId)
+  let quotedWei = -1n
+  restore = withDeps({
+    getTokenInfo: async () => ({ graduatedToPancake: false, fillPct: 0.5, symbol: 'TKN', version: 2 } as any),
+    quoteSell: async (_t: any, amt: bigint) => { quotedWei = amt; return { fundsWei: 2n * 10n ** 16n } as any }, // +100% ≥ TP
+    tokenBalanceOf: async () => 5n * 10n ** 17n, // 0.5e18 — half the recorded 1e18
+  })
+  try {
+    const agent = makeAgent()
+    const decision = await __test.evaluateExit(pTaxed, agent)
+    assert.ok(decision, 'a taxed bag at +100% must exit (take_profit)')
+    assert.equal(quotedWei, 5n * 10n ** 17n, 'the sell must be quoted on the ACTUAL balance, not the recorded amount')
+    assert.equal(decision!.sellWei, 5n * 10n ** 17n, 'the decision must carry the clamped sell amount')
+  } finally { restore() }
+
+  // closePosition must hand the clamped amount (not the recorded 1e18) to the sell.
+  let soldWei = -1n
+  restore = withDeps({
+    isFourMemeEnabled: () => true, // a four.meme curve sell needs the master switch on
+    getFleetSettings: async () => ({ liveTrading: true, globalPaused: false, swarmProvider: null, updatedAt: new Date() }),
+    decryptFleetAgentKey: () => '0x' + '1'.repeat(64),
+    sellTokenForBnb: async (_pk: any, _t: any, w: bigint) => { soldWei = w; return { txHash: '0xsell', estimatedBnbWei: 2n * 10n ** 16n } as any },
+  })
+  try {
+    const agent = makeAgent()
+    const closed = await __test.closePosition(pTaxed, agent, 0.02, 'take_profit', false, 'fourmeme', 5n * 10n ** 17n)
+    assert.equal(closed, true, 'the taxed bag must close')
+    assert.equal(soldWei, 5n * 10n ** 17n, 'the live sell must use the clamped (actual-balance) amount')
+  } finally {
+    restore()
     await cleanup()
   }
 })

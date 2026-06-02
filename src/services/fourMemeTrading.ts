@@ -503,6 +503,24 @@ export async function sellTokenForBnb(
   }
 }
 
+/**
+ * Live on-chain ERC20 balance of `walletAddress` for `tokenAddress`.
+ *
+ * A pure view call — intentionally does NOT requireFourMemeEnabled(), because
+ * the fleet exit sweep needs it to size/reap bags even when live four.meme
+ * trading is gated off. Used to clamp a sell to what the wallet ACTUALLY holds
+ * (four.meme tokens tax / partial-fill, so the recorded buy-quote amount
+ * over-states the balance and a full-amount sell reverts).
+ */
+export async function tokenBalanceOf(tokenAddress: string, walletAddress: string): Promise<bigint> {
+  const erc20 = new ethers.Contract(
+    ethers.getAddress(tokenAddress),
+    ['function balanceOf(address) view returns (uint256)'],
+    provider(),
+  )
+  return (await erc20.balanceOf(ethers.getAddress(walletAddress))) as bigint
+}
+
 // ── Convenience: load a user's BSC wallet PK ─────────────────────────
 
 /**
