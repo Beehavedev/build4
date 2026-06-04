@@ -1,8 +1,8 @@
 /**
  * Broker spread fees — flat 0.30% (configurable via env) charged on the
  * 4 venues that don't have a native builder/affiliate program (42.space,
- * four.meme, PancakeSwap, Topaz). Aster, Hyperliquid, and Polymarket are
- * already monetized via their respective builder programs.
+ * four.meme, PancakeSwap, Topaz). Aster and Hyperliquid are already
+ * monetized via their respective builder programs.
  *
  * Design choices:
  *  - Pre-deduct on BUYS (input asset known up-front): fee is sent from

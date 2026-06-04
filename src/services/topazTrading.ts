@@ -215,7 +215,7 @@ async function ensureAllowance(
   const current = (await erc.allowance(signer.address, spender)) as bigint
   if (current >= minAmount) return
   // Approve max — fewer txns over the lifetime of the master wallet.
-  // This is the same pattern Polymarket's relayer uses (uint256 max).
+  // Approving uint256 max is the standard ERC-20 allowance pattern.
   const tx = await erc.approve(spender, ethers.MaxUint256)
   await tx.wait(1)
 }

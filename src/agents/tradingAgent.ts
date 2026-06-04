@@ -962,8 +962,8 @@ export async function runAgentTick(agent: Agent): Promise<void> {
     if (agent.exchange === 'fortytwo') {
       // Real 42.space scan path. Pulls the top live markets (by volume)
       // and runs each one through the SHARED prediction-market brain
-      // (predictionBrain.scorePredictionMarket) — same LLM judgement
-      // Polymarket uses, so the user gets {action,side,conviction,reasoning}
+      // (predictionBrain.scorePredictionMarket), so the user gets
+      // {action,side,conviction,reasoning}
       // per market instead of canned "monitoring" boilerplate. Trade
       // execution is still a separate flow in fortyTwoExecutor.ts gated
       // on User.fortyTwoLiveTrade; this block is brain-feed visibility.
@@ -977,10 +977,8 @@ export async function runAgentTick(agent: Agent): Promise<void> {
         const markets = await getAllMarkets({
           status: 'live', limit: 25, order: 'volume', ascending: false,
         })
-        // Crypto + price-target gate. Mirrors polymarketAgent's
-        // POLY_CRYPTO_KW / POLY_PRICE_KW filter so both prediction
-        // venues only score markets that share signals with the rest
-        // of the system.
+        // Crypto + price-target gate so the prediction venue only
+        // scores markets that share signals with the rest of the system.
         const FT_CRYPTO_KW = ['btc','bitcoin','eth','ethereum','sol','solana','bnb','xrp','doge','crypto','altcoin','defi']
         const FT_PRICE_KW  = ['$','price','reach','close above','close below',' above ',' below ','high of','low of','all-time high','ath']
         const isCryptoPriceMarket = (m: Market42): boolean => {

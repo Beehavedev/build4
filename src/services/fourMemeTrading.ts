@@ -17,7 +17,7 @@
 //   • two idempotent ALTERs in src/ensureTables.ts (DEFAULT false)
 //
 // Nothing here imports from or calls into the campaign code, the
-// Polymarket pipeline, the Aster trader, or the HL trader. The
+// Aster trader, or the HL trader. The
 // `FOUR_MEME_ENABLED` env flag is checked at every external entry
 // (bot commands, REST endpoints) and defaults to OFF, so installing
 // this module on Render produces zero behaviour change for users
@@ -412,8 +412,7 @@ interface SellOpts {
  *  • V1 (legacy tokens created before 2024-09-05): the only sell
  *    methods are 2-arg `saleToken(token, amount)` with no `minFunds`
  *    parameter. Since slippage cannot be enforced on-chain we
- *    refuse V1 sells entirely (`V1_SELL_UNSAFE`) — fail-closed,
- *    matching the same philosophy used by the Polymarket integration.
+ *    refuse V1 sells entirely (`V1_SELL_UNSAFE`) — fail-closed.
  *    V1 buys still work because `purchaseTokenAMAP` does take a
  *    `minAmount` arg.
  */
@@ -532,7 +531,7 @@ export async function tokenBalanceOf(tokenAddress: string, walletAddress: string
 export async function loadUserBscPrivateKey(userId: string): Promise<{ address: string; privateKey: string }> {
   // Prefer the *active* BSC wallet so four.meme trades hit the same
   // wallet the user sees in /wallet, /trade, and the mini-app
-  // PolygonCard. If somehow no wallet is flagged active (legacy
+  // Wallet tab. If somehow no wallet is flagged active (legacy
   // accounts, race during wallet swap), fall back to the oldest BSC
   // wallet — deterministic and at least gives a consistent answer
   // across calls instead of a random pick.

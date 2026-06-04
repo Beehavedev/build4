@@ -1,16 +1,15 @@
 // ─────────────────────────────────────────────────────────────────────────
 // predictionBrain — shared LLM scorer for binary prediction markets.
 //
-// One brain, two callers:
-//   • polymarketAgent.ts — Polymarket (Gamma API events, CLOB prices)
+// Caller:
 //   • tradingAgent.ts (fortytwo branch) — 42.space (REST markets, on-chain
 //     marginal prices)
 //
-// Both venues are binary (or multi-binary) prediction markets sorted by
-// 24h volume. Both deserve the SAME judgement: read the question, weigh
+// 42.space markets are binary (or multi-binary) prediction markets sorted
+// by 24h volume. They deserve their own judgement: read the question, weigh
 // the LLM's subjective probability against the market-implied price, emit
 // {action, side, conviction, reasoning}. The Aster perp brain (ADX/RSI/
-// funding-rate) is the wrong tool for either of them.
+// funding-rate) is the wrong tool for them.
 //
 // Provider routing goes through runScanInference: xAI grok-3-mini
 // primary, Sonnet fallback only on fatal status (401/402/403) or
@@ -20,13 +19,13 @@
 
 import { runScanInference } from '../services/inference'
 
-export type PredictionVenue = 'polymarket' | 'fortytwo'
+export type PredictionVenue = 'fortytwo'
 
 export interface PredictionMarketInput {
   venue:        PredictionVenue
-  // Wrapper / event-level title (e.g. Polymarket event title). May equal
-  // the market question on single-market events. Set to null on 42.space
-  // where there is no separate event wrapper.
+  // Wrapper / event-level title. May equal the market question on
+  // single-market events. Set to null on 42.space where there is no
+  // separate event wrapper.
   eventTitle:   string | null
   // The actual binary question being priced ("Will BTC close above $100k
   // by 2026-12-31?"). Always required.
@@ -61,7 +60,7 @@ export interface PredictionDecision {
 export async function scorePredictionMarket(
   input: PredictionMarketInput,
 ): Promise<PredictionDecision> {
-  const venueName = input.venue === 'polymarket' ? 'Polymarket' : '42.space'
+  const venueName = '42.space'
   const endLabel = input.endDateIso
     ? new Date(input.endDateIso).toISOString().slice(0, 10)
     : 'unspecified'

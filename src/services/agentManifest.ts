@@ -113,7 +113,7 @@ export function getAgentManifest(): AgentManifest {
     agent: {
       name: 'BUILD4',
       description:
-        'AI-powered crypto perpetual futures + prediction-market trading agent on Aster DEX, Hyperliquid, 42.space, and Polymarket. Operates as a broker; users deposit USDT, BUILD4 trades.',
+        'AI-powered crypto perpetual futures + prediction-market trading agent on Aster DEX, Hyperliquid, and 42.space. Operates as a broker; users deposit USDT, BUILD4 trades.',
       identityRegistry: '0x8004A169FB4a3325136EB29fA0ceB6D2e539a432',
       homepage,
       telegram,
@@ -123,7 +123,6 @@ export function getAgentManifest(): AgentManifest {
       'perp-trading:aster',
       'perp-trading:hyperliquid',
       'prediction-markets:42.space',
-      'prediction-markets:polymarket',
       'copy-trading',
       'multi-llm-swarm',
       'memory:postgres',

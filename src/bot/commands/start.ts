@@ -144,7 +144,7 @@ You describe your strategy in plain English. The agent monitors markets 24/7 usi
 • *Token launches* — launch your own token or trade fresh listings the moment they drop.
 
 *💰 Pricing*
-BUILD4 Pro is *$19.99/month* (pay in USDT on BNB Chain or USDC on Base). Every account gets a *4-day free trial* — no credit card, no upfront cost. You also pay the standard venue fees (Aster, 42.space, Polymarket, etc.) plus a small builder fee that funds BUILD4. Tap /subscribe to manage your plan.
+BUILD4 Pro is *$19.99/month* (pay in USDT on BNB Chain or USDC on Base). Every account gets a *4-day free trial* — no credit card, no upfront cost. You also pay the standard venue fees (Aster, 42.space, etc.) plus a small builder fee that funds BUILD4. Tap /subscribe to manage your plan.
 
 *🛑 You're in control*
 Pause your agent anytime with /trade. Withdraw your USDT to any external wallet whenever you want. BUILD4 has *zero* ability to move your funds — only sign trades on your behalf.

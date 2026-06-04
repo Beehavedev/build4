@@ -137,7 +137,7 @@ interface LaunchAgentRow {
 // we don't multiply third-party traffic. Any single source failing
 // degrades to null/[] without breaking the others.
 //
-// Pivot 2026-05-11: dropped Aster perps + Polymarket (off-thesis for a
+// Pivot 2026-05-11: dropped Aster perps (off-thesis for a
 // meme-coin launcher) and Reddit (cloud IPs hit Cloudflare 403).
 // Replaced with X/Twitter (twexapi.io scraper) + fresh BSC launches
 // (DexScreener token-profiles/latest filtered to bsc) — both directly
@@ -185,14 +185,13 @@ export async function tickAllFourMemeLaunchAgents(): Promise<{
   let errors = 0
 
   if (!isAgentLaunchEnabled()) {
-    // Master switch off — no-op, no telemetry update. Same shape the
-    // polymarket sweep returns when fully disabled.
+    // Master switch off — no-op, no telemetry update.
     return { scanned, ticked, launchesAttempted, launchesSkipped, errors }
   }
 
   let agents: LaunchAgentRow[] = []
   try {
-    // Raw SQL (mirrors polymarketAgent's defensive pattern) so we don't
+    // Raw SQL (defensive pattern) so we don't
     // depend on the prisma client carrying the new column. Filters at
     // the DB level: only active, unpaused, opted-in agents.
     const rowsRaw = await db.$queryRawUnsafe<any[]>(
@@ -344,7 +343,7 @@ async function tickOneAgent(
   // Demo Day — single tick context object passed to every brain-feed
   // log call. Lets every SKIP/LAUNCH line carry the same multi-source
   // snapshot the agent was looking at this cycle (DexScreener +
-  // GNews + Aster movers + Polymarket events), so judges watching the
+  // GNews + Aster movers), so judges watching the
   // feed see the agent's actual evaluation context. bnbBalance gets
   // filled in below once we've read the wallet.
   const tickCtx: { market: MarketContext; bnbBalance?: number } = { market }
@@ -704,7 +703,7 @@ Respond with strict JSON only. No prose, no markdown fences. Schema:
   "reasoning": string    // ≤ 240 chars, explain the thesis or the skip reason
 }`
 
-  // Demo Day — prompt-injection guard. News headlines + Polymarket
+  // Demo Day — prompt-injection guard. News headlines and other
   // event titles are externally-controlled text reaching the LLM.
   // Wrap each block in opaque delimiters and tell the model never to
   // treat the contents as instructions. Strip any control-like
@@ -1207,7 +1206,7 @@ async function skipWith(
 // so one slow / failed source can't block the others. Called ONCE per
 // sweep; the resulting MarketContext is shared across every agent.
 //
-// Pivot 2026-05-11: dropped Aster perps + Polymarket + Reddit. Now:
+// Pivot 2026-05-11: dropped Aster perps + Reddit. Now:
 //   1. DexScreener BSC trending (existing, kept)
 //   2. GNews crypto sentiment (existing, kept)
 //   3. X/Twitter chatter via twexapi.io (new — paid scraper @ $0.14/1k)

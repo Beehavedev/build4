@@ -14,7 +14,7 @@ interface AgentPositionRow {
   pair: string
   // Perp venues use 'LONG'/'SHORT'; prediction venues use the outcome
   // label (e.g. 'Yes', 'Trump'). Widened from the original perp-only
-  // union when Polymarket/42 were added in Phase 4 (2026-05-01).
+  // union when 42 was added in Phase 4 (2026-05-01).
   side: string
   size: number
   leverage: number
@@ -156,15 +156,14 @@ function AgentPositions({ agentId }: { agentId: string }) {
           // live behind different endpoints and aren't wired into this
           // panel yet.
           const canClose = (p.exchange ?? 'aster') === 'aster'
-          // Phase 4 (2026-05-01) — branch the row chrome on venue. Perp
-          // venues (aster/hyperliquid) keep the original "SIDE · 1x"
-          // header and "size @ entry / mark" subline. Prediction venues
-          // (polymarket/fortytwo) instead show a small venue chip + the
-          // outcome label (no leverage), because "Yes · 1x" is meaningless.
-          const isPrediction = p.exchange === 'polymarket' || p.exchange === 'fortytwo'
+          // Branch the row chrome on venue. Perp venues (aster/hyperliquid)
+          // keep the original "SIDE · 1x" header and "size @ entry / mark"
+          // subline. Prediction venues (fortytwo) instead show a small
+          // venue chip + the outcome label (no leverage), because
+          // "Yes · 1x" is meaningless.
+          const isPrediction = p.exchange === 'fortytwo'
           const venueChip =
-            p.exchange === 'polymarket' ? { label: 'POLY', color: '#3b82f6' }
-            : p.exchange === 'fortytwo'  ? { label: '42',   color: '#a78bfa' }
+            p.exchange === 'fortytwo'  ? { label: '42',   color: '#a78bfa' }
             : p.exchange === 'hyperliquid' ? { label: 'HL', color: '#22d3ee' }
             : { label: 'ASTER', color: '#f97316' }
           // For prediction rows the entry price is in cents (0..1) — show
@@ -245,7 +244,7 @@ interface AgentStudioProps {
 // venue. Same agent can therefore trade on Aster today and (once the user
 // flips Hyperliquid on + finishes onboarding) Hyperliquid tomorrow without
 // having to be re-created.
-type VenueId = 'aster' | 'hyperliquid' | 'fortytwo' | 'polymarket'
+type VenueId = 'aster' | 'hyperliquid' | 'fortytwo'
 interface VenueConfig {
   id: VenueId
   label: string
@@ -256,17 +255,10 @@ const VENUES: VenueConfig[] = [
   { id: 'aster',       label: 'Aster',       sub: 'Perp DEX · BSC',         accent: '#f97316' },
   { id: 'hyperliquid', label: 'Hyperliquid', sub: 'L1 perps',               accent: '#22d3ee' },
   { id: 'fortytwo',    label: '42.space',    sub: 'Prediction markets',     accent: '#a78bfa' },
-  { id: 'polymarket',  label: 'Polymarket',  sub: 'Prediction · Polygon',   accent: '#3b82f6' },
 ]
 
-// Phase 4 (2026-05-01) — Polymarket promoted to a first-class platform
-// toggle alongside aster/hl/42. Backed by User.polymarketAgentTradingEnabled
-// (default true). The per-agent venue chip remains the canonical control,
-// but the platform-level toggle now exists so the user has the same mental
-// model across all 4 venues. `onboarded.polymarket` is derived server-side
-// from PolymarketCreds.safeAddress presence.
-interface VenuePermissions { aster: boolean; hyperliquid: boolean; fortytwo: boolean; polymarket: boolean }
-interface VenueOnboarded   { aster: boolean; hyperliquid: boolean; fortytwo: boolean; polymarket: boolean }
+interface VenuePermissions { aster: boolean; hyperliquid: boolean; fortytwo: boolean }
+interface VenueOnboarded   { aster: boolean; hyperliquid: boolean; fortytwo: boolean }
 
 function timeAgo(iso: string): string {
   const ms = Date.now() - new Date(iso).getTime()
@@ -294,7 +286,6 @@ export function venueChip(ex: string | null | undefined): { label: string; color
   if (x === 'aster')       return { label: 'ASTER', color: '#f97316' }
   if (x === 'hyperliquid') return { label: 'HL',    color: '#22d3ee' }
   if (x === 'fortytwo')    return { label: '42',    color: '#a78bfa' }
-  if (x === 'polymarket')  return { label: 'POLY',  color: '#3b82f6' }
   if (x === 'four_meme')   return { label: 'fourmeme', color: '#22c55e' }
   return null
 }
@@ -351,7 +342,7 @@ export function ScoutBadge({ id }: { id: string }) {
 // so a stray "Aster"/"HyperLiquid" doesn't fall through to "other".
 function venueOf(exchange: string | undefined): VenueId | 'other' {
   const x = (exchange ?? '').toLowerCase()
-  if (x === 'aster' || x === 'hyperliquid' || x === 'fortytwo' || x === 'polymarket') return x as VenueId
+  if (x === 'aster' || x === 'hyperliquid' || x === 'fortytwo') return x as VenueId
   return 'other'
 }
 
@@ -686,17 +677,16 @@ export default function AgentStudio(_props: AgentStudioProps) {
       onboarded: VenueOnboarded
     }>('/api/me/venue-permissions')
       .then(r => {
-        setPerms(r?.permissions ?? { aster: false, hyperliquid: false, fortytwo: false, polymarket: false })
-        setOnboarded(r?.onboarded ?? { aster: false, hyperliquid: false, fortytwo: true, polymarket: false })
+        setPerms(r?.permissions ?? { aster: false, hyperliquid: false, fortytwo: false })
+        setOnboarded(r?.onboarded ?? { aster: false, hyperliquid: false, fortytwo: true })
       })
-      // On lookup failure default conservatively: assume Aster + Polymarket
-      // are allowed (matches the schema default true and what existing
-      // users have today) but 42.space LIVE stays OFF so we never auto-
-      // enable real-money prediction trading because of a transient
-      // network error.
+      // On lookup failure default conservatively: assume Aster is allowed
+      // (matches the schema default true and what existing users have
+      // today) but 42.space LIVE stays OFF so we never auto-enable
+      // real-money prediction trading because of a transient network error.
       .catch(() => {
-        setPerms({ aster: true, hyperliquid: true, fortytwo: false, polymarket: true })
-        setOnboarded({ aster: false, hyperliquid: false, fortytwo: true, polymarket: false })
+        setPerms({ aster: true, hyperliquid: true, fortytwo: false })
+        setOnboarded({ aster: false, hyperliquid: false, fortytwo: true })
       })
   }
 
@@ -799,10 +789,6 @@ export default function AgentStudio(_props: AgentStudioProps) {
   // the toggle never lies about the server state.
   const setVenuePermission = async (venue: VenueId, enabled: boolean) => {
     if (busyVenue) return
-    // Phase 4 (2026-05-01) — polymarket is a first-class allow-list venue;
-    // the server-side endpoint accepts it and writes to
-    // User.polymarketAgentTradingEnabled. The per-agent venue chip remains
-    // the more granular control for individual agents.
     setBusyVenue(venue)
     const previous = perms
     setPerms(p => p ? { ...p, [venue]: enabled } : p)
@@ -842,12 +828,6 @@ export default function AgentStudio(_props: AgentStudioProps) {
   // disables agent trading on it for THIS user, regardless of how many
   // agents the user has — toggles are permissions, not per-agent groups.
   const renderVenueRow = (v: VenueConfig) => {
-    // Phase 4 (2026-05-01) — Polymarket is now rendered as the 4th row;
-    // the server-side User.polymarketAgentTradingEnabled flag is honored
-    // by tickAllPolymarketAgents. The Safe-deployed gate remains the
-    // hard prerequisite for actual order placement; without it, flipping
-    // this on just means "agents will start trading once you complete
-    // setup", which matches the aster/HL semantics exactly.
     const enabled = perms ? perms[v.id] : false
     const isOnboarded = onboarded ? onboarded[v.id] : false
     const hasAgentHere = venuesWithAgent.has(v.id)
@@ -946,17 +926,14 @@ export default function AgentStudio(_props: AgentStudioProps) {
     const venueAccent =
       v === 'aster' ? '#f97316' :
       v === 'hyperliquid' ? '#22d3ee' :
-      v === 'fortytwo' ? '#a78bfa' :
-      v === 'polymarket' ? '#3b82f6' : '#64748b'
+      v === 'fortytwo' ? '#a78bfa' : '#64748b'
     const venueLabel =
       v === 'aster' ? 'Aster' :
       v === 'hyperliquid' ? 'Hyperliquid' :
       v === 'fortytwo' ? '42.space' :
-      v === 'polymarket' ? 'Polymarket' :
       (agent.exchange ?? 'unknown')
-    // Phase 4 (2026-05-01) — Polymarket now has its own per-user flag
-    // and lives in `perms`. Only `other` (the catch-all for legacy /
-    // unknown venues) stays implicit-allow.
+    // Only `other` (the catch-all for legacy / unknown venues) stays
+    // implicit-allow; the rest live in `perms`.
     const platformAllowed = perms == null
       ? true
       : (v === 'other' ? true : perms[v])
@@ -998,10 +975,6 @@ export default function AgentStudio(_props: AgentStudioProps) {
             const enabledHere = Array.isArray(agent.enabledVenues)
               ? agent.enabledVenues.includes(v.id)
               : agent.exchange === v.id  // legacy fallback if backfill hasn't run yet
-            // Phase 4 (2026-05-01) — all 4 venues have a per-user platform
-            // flag now, so the chip respects platformOff identically across
-            // venues. The Safe-deployed gate for polymarket is still
-            // enforced server-side inside the polymarket runner loop.
             const platformOff = perms != null && perms[v.id] === false
             const busy = busyAgentVenue.has(`${agent.id}:${v.id}`)
             const disabled = platformOff || busy
@@ -1566,7 +1539,6 @@ export default function AgentStudio(_props: AgentStudioProps) {
             <option value="aster">ASTER</option>
             <option value="hyperliquid">HL</option>
             <option value="fortytwo">42</option>
-            <option value="polymarket">POLY</option>
             <option value="four_meme">fourmeme</option>
           </select>
         )}

@@ -188,39 +188,6 @@ export function initRunner(bot: Bot) {
     await runSwarmDivergenceWatch()
   })
 
-  // Polymarket autonomous agent (Phase 3). Independent of the perp
-  // tick — a Polymarket agent only acts on markets, never on perps. We
-  // tick every 60s; the agent itself enforces a per-row min interval so
-  // an over-eager runner can't double-fire. Single-flight via
-  // `polymarketTickInflight` so a slow LLM round trip can't pile up.
-  // Phase 4 (2026-05-03): always log the sweep result (not just when
-  // scanned>0), so a user reporting "Polymarket isn't running for my
-  // agent" can be debugged from Render logs alone — the line tells us
-  // whether the sweep is firing AND whether it found the agent.
-  const tickPolymarket = async () => {
-    if (polymarketTickInflight) {
-      console.log('[polymarketAgent] previous tick still running, skipping')
-      return
-    }
-    polymarketTickInflight = true
-    try {
-      const { tickAllPolymarketAgents } = await import('./polymarketAgent')
-      const r = await tickAllPolymarketAgents()
-      console.log(`[polymarketAgent] scanned=${r.scanned} ticked=${r.ticked} placed=${r.ordersPlaced} skipped=${r.ordersSkipped} errors=${r.errors}`)
-    } catch (err) {
-      console.error('[polymarketAgent] sweep failed:', (err as Error).message)
-    } finally {
-      polymarketTickInflight = false
-    }
-  }
-  // Kick the first sweep immediately on boot so users don't wait the
-  // full 60s after a Render deploy to see Polymarket activity start.
-  // Defer by 5s to let the rest of initRunner finish wiring up first.
-  setTimeout(tickPolymarket, 5_000)
-  // 5-min cadence — Polymarket horizons are hours/weeks, shared-scan
-  // refactor means one fetch covers all enabled agents per tick.
-  setInterval(tickPolymarket, 300_000)
-
   // ── Task #149 — four.meme SNIPING (replaces the retired launch loop) ──
   // Agents no longer LAUNCH their own tokens. The autonomous launch
   // decision loop (tickAllFourMemeLaunchAgents) is intentionally NO LONGER
@@ -888,11 +855,6 @@ async function checkCampaignWalletBalance(bot: Bot | null): Promise<void> {
   }
 }
 
-// In-flight guard for the Polymarket autonomous sweep. The sweep is
-// parallel-friendly internally, but we never want two concurrent sweeps
-// because they'd contend for the same polymarketCreds rows + LLM quota.
-let polymarketTickInflight = false
-
 // In-flight guard for the dedicated 42.space regular sweep (*/10 cron).
 let fortyTwoTickInflight = false
 
@@ -1465,17 +1427,6 @@ async function runAllAgents() {
         continue
       }
       for (const venue of venues) {
-        // Phase 4 (2026-05-02) — 'polymarket' is handled by a SEPARATE
-        // runner loop (tickAllPolymarketAgents, see setInterval above)
-        // that reads real prediction markets via the Gamma API and
-        // writes brain-feed rows tagged with the market QUESTION text.
-        // The perp brain (tradingAgent.ts) below would otherwise run its
-        // ADX/RSI/funding-rate pipeline on crypto perp tickers and stamp
-        // them with exchange='polymarket', producing nonsense POLY-tagged
-        // entries like "HOLD ARBUSDT — Funding rate 0.0000%". Skip here
-        // so the dedicated polymarket runner is the only writer for
-        // exchange='polymarket' brain logs.
-        if (venue === 'polymarket') continue
         // 42.space regular (non-campaign) scan is owned by the dedicated
         // tickAllFortyTwoAgents loop on the */10 cron above (Task #90).
         // Campaign agent has its own +5m/+1h30m/+3h/+3h45m scheduler

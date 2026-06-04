@@ -17,7 +17,7 @@ const TRADING_RELEVANT_KEYWORDS = [
   'crypto', 'tge', 'fdv', 'market cap', 'mcap', 'altcoin', 'defi',
   'rate cut', 'fed ', 'cpi', 'inflation', 'fomc', 'recession',
   ' ai ', 'anthropic', 'openai', 'gpt', 'claude', 'llm', 'agi',
-  'polymarket', 'binance', 'coinbase', ' sec ', ' etf', 'spot etf',
+  'binance', 'coinbase', ' sec ', ' etf', 'spot etf',
 ];
 
 export function isTradingRelevant(m: Market42): boolean {

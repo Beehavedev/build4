@@ -863,11 +863,9 @@ app.get('/api/agents/:id/positions', requireTgUser, async (req, res) => {
     }
 
     // Phase 4 (2026-05-01) — multi-venue overlay. The original endpoint
-    // only joined Aster live positions; HL/Polymarket/42 positions were
+    // only joined Aster live positions; HL/42 positions were
     // invisible from this panel. Now we also fetch:
     //   • HL positions via getAccountState (perp, has live mark + PnL)
-    //   • Polymarket positions from db.polymarketPosition (status open/
-    //     placed/matched/filled — entry price only, no live overlay)
     //   • 42.space positions from db.outcomePosition (status='open' —
     //     entry price + sizeUsdt, no live overlay)
     //
@@ -900,14 +898,6 @@ app.get('/api/agents/:id/positions', requireTgUser, async (req, res) => {
       }
     }
 
-    const polymarketPositions = await db.polymarketPosition.findMany({
-      where: {
-        agentId: agent.id,
-        status: { in: ['placed', 'matched', 'filled'] },
-      },
-      orderBy: { openedAt: 'desc' },
-    }).catch(() => [])
-
     const fortyTwoPositions = await db.$queryRawUnsafe<Array<{
       id: string; marketTitle: string; outcomeLabel: string; usdtIn: number;
       entryPrice: number; openedAt: Date;
@@ -923,7 +913,7 @@ app.get('/api/agents/:id/positions', requireTgUser, async (req, res) => {
     //
     // Aster rows: existing logic (live overlay from livePositions).
     // HL rows: live overlay from hlPositions.
-    // Polymarket / 42 rows: no live overlay (no perp-style mark) — show
+    // 42 rows: no live overlay (no perp-style mark) — show
     //   entry price as both entry and mark so the UI doesn't render '—',
     //   and PnL is null (would need a market re-read to compute, deferred).
     const asterAndHlRows = effectiveOpenTrades.map((t) => {
@@ -982,21 +972,6 @@ app.get('/api/agents/:id/positions', requireTgUser, async (req, res) => {
       }
     })
 
-    const polymarketRows = polymarketPositions.map((p) => ({
-      id: p.id,
-      // pair: short market title so the UI's pair cell is informative.
-      pair: (p.marketTitle ?? 'Polymarket').slice(0, 32),
-      side: p.outcomeLabel ?? p.side,
-      size: p.sizeUsdc,
-      leverage: 1,
-      entryPrice: p.entryPrice,
-      exchange: 'polymarket',
-      openedAt: p.openedAt,
-      markPrice: null,
-      unrealizedPnl: null,
-      liveOnVenue: true,
-    }))
-
     const fortyTwoRows = fortyTwoPositions.map((p) => ({
       id: p.id,
       pair: (p.marketTitle ?? '42.space').slice(0, 32),
@@ -1011,7 +986,7 @@ app.get('/api/agents/:id/positions', requireTgUser, async (req, res) => {
       liveOnVenue: true,
     }))
 
-    const positions = [...asterAndHlRows, ...polymarketRows, ...fortyTwoRows]
+    const positions = [...asterAndHlRows, ...fortyTwoRows]
 
     res.json({ positions })
   } catch (err: any) {
@@ -1048,7 +1023,7 @@ app.get('/api/me/wallet', requireTgUser, async (req, res) => {
 
     // ─── Per-section timeout helper ──────────────────────────────────────
     // Each venue read goes out to a different external RPC (BSC dataseed,
-    // Aster tapi, Hyperliquid api, Polygon RPC, etc). Without a timeout, a
+    // Aster tapi, Hyperliquid api, etc). Without a timeout, a
     // single hung endpoint blocks the whole /api/me/wallet response — which
     // is exactly what made the mini-app Wallet tab spin forever in
     // production. The timeout is intentionally short (5s): if a provider
@@ -1316,65 +1291,6 @@ app.get('/api/me/wallet', requireTgUser, async (req, res) => {
       }
     }
 
-    // ── Polygon (chain id 137) — USDC.e + MATIC at custodial EOA + Safe ─
-    // Surfaced so users see Polymarket-relevant balances (USDC.e is the
-    // collateral Polymarket's CTF Exchange uses, MATIC is the gas needed
-    // for the one-tap fund tx that moves USDC.e from the EOA into their
-    // gasless Safe). `safe.usdc` is what's actually tradable on Polymarket.
-    const readPolygon = async (): Promise<{
-      eoa: { address: string; usdcE: number; matic: number; error: string | null }
-      safe: { address: string | null; usdcE: number; deployed: boolean; ready: boolean; error: string | null }
-      hasCreds: boolean
-    }> => {
-      const out = {
-        eoa:  { address: wallet.address, usdcE: 0, matic: 0, error: null as string | null },
-        safe: { address: null as string | null, usdcE: 0, deployed: false, ready: false, error: null as string | null },
-        hasCreds: false,
-      }
-      try {
-        const { getPolygonBalances, getFunderAddress } = await import('./services/polymarketTrading')
-        const [safeAddr, creds] = await Promise.all([
-          withTimeout(getFunderAddress(user.id), 'polygon_funder'),
-          db.polymarketCreds.findUnique({ where: { userId: user.id } }),
-        ])
-        out.hasCreds      = Boolean(creds)
-        out.safe.address  = safeAddr
-        out.safe.deployed = Boolean(creds?.safeDeployedAt)
-
-        const [eoaBal, safeBal] = await Promise.all([
-          withTimeout(getPolygonBalances(wallet.address), 'polygon_eoa').catch((e: any) => {
-            out.eoa.error = e?.shortMessage ?? e?.message ?? 'polygon_rpc_failed'
-            return null
-          }),
-          safeAddr
-            ? withTimeout(getPolygonBalances(safeAddr), 'polygon_safe').catch((e: any) => {
-                out.safe.error = e?.shortMessage ?? e?.message ?? 'polygon_rpc_failed'
-                return null
-              })
-            : Promise.resolve(null),
-        ])
-        if (eoaBal) {
-          out.eoa.usdcE = eoaBal.usdc
-          out.eoa.matic = eoaBal.matic
-        }
-        if (safeBal) {
-          out.safe.usdcE = safeBal.usdc
-          out.safe.ready = Boolean(
-            creds?.allowanceVerifiedAt ||
-            (safeBal.allowanceCtf        >= 1_000_000 &&
-             safeBal.allowanceNeg        >= 1_000_000 &&
-             safeBal.allowanceNegAdapter >= 1_000_000 &&
-             safeBal.ctfApprovedCtfExchange &&
-             safeBal.ctfApprovedNegExchange &&
-             safeBal.ctfApprovedNegAdapter)
-          )
-        }
-      } catch (e: any) {
-        out.eoa.error = out.eoa.error ?? (e?.message ?? 'polygon_unavailable')
-      }
-      return out
-    }
-
     // ─── Fan out all venue reads in parallel ─────────────────────────────
     // allSettled so a thrown reader (shouldn't happen — they all swallow
     // their own errors — but defensive) can never take the response down.
@@ -1382,9 +1298,9 @@ app.get('/api/me/wallet', requireTgUser, async (req, res) => {
     // expects. QR generation runs in the same gather since it's independent
     // and ~50ms, so latency is dominated by the slowest section, not summed.
     const [
-      bscRes, qrRes, asterRes, arbitrumRes, hyperliquidRes, xlayerRes, polygonRes,
+      bscRes, qrRes, asterRes, arbitrumRes, hyperliquidRes, xlayerRes,
     ] = await Promise.allSettled([
-      readBsc(), readQr(), readAster(), readArbitrum(), readHyperliquid(), readXLayer(), readPolygon(),
+      readBsc(), readQr(), readAster(), readArbitrum(), readHyperliquid(), readXLayer(),
     ])
 
     const balances = bscRes.status === 'fulfilled'
@@ -1403,13 +1319,6 @@ app.get('/api/me/wallet', requireTgUser, async (req, res) => {
     const xlayer = xlayerRes.status === 'fulfilled'
       ? xlayerRes.value
       : { okb: 0, error: 'xlayer_unavailable' }
-    const polygon = polygonRes.status === 'fulfilled'
-      ? polygonRes.value
-      : {
-          eoa:  { address: wallet.address, usdcE: 0, matic: 0, error: 'polygon_unavailable' },
-          safe: { address: null, usdcE: 0, deployed: false, ready: false, error: null },
-          hasCreds: false,
-        }
 
     res.json({
       address: wallet.address,
@@ -1421,7 +1330,6 @@ app.get('/api/me/wallet', requireTgUser, async (req, res) => {
       aster,
       hyperliquid,
       xlayer,
-      polygon,
       qrDataUrl
     })
   } catch (err: any) {
@@ -4058,17 +3966,16 @@ app.post('/api/me/agents/onboard', requireTgUser, async (req, res) => {
       const miniBase = process.env.MINIAPP_URL
         || `https://${process.env.REPLIT_DOMAINS?.split(',')[0] || 'build4-1.onrender.com'}/app`
       // List the venues this agent will actually scan. agentCreation seeds
-      // all 4 venues into enabledVenues by default, so the message should
+      // all venues into enabledVenues by default, so the message should
       // say so — saying "Trading on Aster" was lying about scope and made
-      // the user think HL/42/POLY were OFF until manually flipped.
+      // the user think HL/42 were OFF until manually flipped.
       const enabledVenuesLive: string[] = Array.isArray((result.agent as any)?.enabledVenues)
         ? (result.agent as any).enabledVenues
-        : ['aster', 'hyperliquid', 'fortytwo', 'polymarket']
+        : ['aster', 'hyperliquid', 'fortytwo']
       const venueNames = enabledVenuesLive
         .map((v) => v === 'aster' ? 'Aster'
                   : v === 'hyperliquid' ? 'Hyperliquid'
-                  : v === 'fortytwo' ? '42.space'
-                  : v === 'polymarket' ? 'Polymarket' : v)
+                  : v === 'fortytwo' ? '42.space' : v)
       const venueList = venueNames.length > 1
         ? venueNames.slice(0, -1).join(', ') + ' & ' + venueNames[venueNames.length - 1]
         : (venueNames[0] ?? 'Aster')
@@ -4077,9 +3984,7 @@ app.post('/api/me/agents/onboard', requireTgUser, async (req, res) => {
         String(user.telegramId),
         `🚀 ${result.agent.name} is LIVE.\n\n` +
         `Scanning ${venueList} with the ${preset} preset and $${capital.toFixed(2)} per position. ` +
-        `First scan kicks off in ~60 seconds — open BUILD4 to watch it work.\n\n` +
-        `Note: Polymarket needs a one-time Safe setup before it can place orders. ` +
-        `You'll see SKIP rows in the brain feed until you tap Predict → Setup.`,
+        `First scan kicks off in ~60 seconds — open BUILD4 to watch it work.`,
         null,
         { text: '📱 Open BUILD4', url: miniBase },
       ).catch((e) => console.warn('[/api/me/agents/onboard] DM failed (non-fatal):', e?.message ?? e))
@@ -4204,12 +4109,7 @@ app.post('/api/agents/:id/toggle', requireTgUser, async (req, res) => {
 // This keeps the master kill-switch behaviour intact for any legacy
 // code path that still gates on isActive (and for the chat bot's
 // existing "agent is active" copy).
-// Phase 4 (2026-05-01) — 'polymarket' added so per-agent chip toggles work for
-// the 4th venue. The toggle endpoint flips Agent.enabledVenues; the polymarket
-// runner loop honors that array (in addition to the legacy polymarketEnabled
-// boolean) so chip on/off translates directly to "this agent trades Polymarket
-// or it doesn't".
-const ALLOWED_VENUE_TOGGLES = new Set(['aster', 'hyperliquid', 'fortytwo', 'polymarket'])
+const ALLOWED_VENUE_TOGGLES = new Set(['aster', 'hyperliquid', 'fortytwo'])
 app.post('/api/agents/:id/venues/:venue/toggle', requireTgUser, async (req, res) => {
   try {
     const user = (req as any).user
@@ -4243,21 +4143,9 @@ app.post('/api/agents/:id/venues/:venue/toggle', requireTgUser, async (req, res)
     // empty → inactive. Don't touch isPaused — that's reserved for
     // automated stops (daily-loss tripwires) and the user shouldn't be
     // able to override one of those by toggling a venue chip.
-    //
-    // Phase 4 (2026-05-01): Polymarket has its OWN legacy boolean
-    // (`polymarketEnabled`) that the polymarket runner ALSO honors via an
-    // OR clause for backwards compatibility with rows pre-dating
-    // `enabledVenues`. If we don't sync that boolean here, toggling the
-    // chip OFF would leave `polymarketEnabled=true` set at agent-creation
-    // time and the runner would still tick the agent — making the chip a
-    // no-op. Mirror the chip state into the boolean so the chip is the
-    // single canonical control surface.
     const data: Prisma.AgentUpdateInput = {
       enabledVenues: next,
       isActive:      next.length > 0,
-    }
-    if (venue === 'polymarket') {
-      data.polymarketEnabled = enabled
     }
     const updated = await db.agent.update({
       where: { id: agentId },
@@ -4669,66 +4557,6 @@ app.get('/api/leaderboard', async (_req, res) => {
 app.get('/api/me/admin', requireTgUser, async (req, res) => {
   const user = (req as any).user
   res.json({ isAdmin: isAdminTelegramId(user.telegramId) })
-})
-
-// ─── Debug: per-user Polymarket agent state ───
-// Returns the exact filter values the polymarket sweep uses so we can
-// diagnose "Polymarket isn't running for my agent" reports without DB
-// access. Scoped to the calling Telegram user, so safe to expose
-// publicly — they only see their own agents. Hit this from a browser
-// while logged into the mini-app: /api/me/debug-polymarket
-app.get('/api/me/debug-polymarket', requireTgUser, async (req, res) => {
-  try {
-    const user = (req as any).user
-    const u = await db.user.findUnique({
-      where: { id: user.id },
-      select: {
-        id: true, telegramId: true,
-        polymarketAgentTradingEnabled: true,
-      },
-    })
-    // Raw SELECT bypasses any stale-Prisma-client problem and surfaces
-    // every column relevant to the sweep filter.
-    const rows = await db.$queryRawUnsafe<any[]>(
-      `SELECT id, name, "isActive", "isPaused",
-              "polymarketEnabled",
-              "enabledVenues",
-              "venuesAutoExpanded",
-              "lastPolymarketTickAt",
-              "polymarketMaxSizeUsdc",
-              "polymarketEdgeThreshold",
-              "createdAt"
-         FROM "Agent"
-        WHERE "userId" = $1
-        ORDER BY "createdAt" DESC`,
-      user.id,
-    )
-    const polyCreds = await db.polymarketCreds.findUnique({
-      where: { userId: user.id },
-      select: { walletAddress: true, safeAddress: true, createdAt: true },
-    })
-    const wouldMatchSweep = rows
-      .filter((r) => r.isActive && !r.isPaused)
-      .filter((r) => r.polymarketEnabled === true ||
-                     (Array.isArray(r.enabledVenues) && r.enabledVenues.includes('polymarket')))
-      .filter(() => u?.polymarketAgentTradingEnabled !== false)
-    res.json({
-      user: u,
-      agents: rows,
-      polymarketCreds: polyCreds,
-      wouldMatchSweep: wouldMatchSweep.map((r) => ({ id: r.id, name: r.name })),
-      diagnosis:
-        u?.polymarketAgentTradingEnabled === false
-          ? 'BLOCKED: User.polymarketAgentTradingEnabled is false'
-          : wouldMatchSweep.length === 0
-            ? rows.length === 0
-              ? 'BLOCKED: User has no agents'
-              : 'BLOCKED: No agent matches sweep filter — check polymarketEnabled / enabledVenues / isActive'
-            : `OK: ${wouldMatchSweep.length} agent(s) would be picked up by the polymarket sweep`,
-    })
-  } catch (err: any) {
-    res.status(500).json({ error: err?.message ?? 'Internal error' })
-  }
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -7179,332 +7007,6 @@ app.get('/api/predictions/market/:address', async (req, res) => {
   }
 })
 
-// ──────────────────────────────────────────────────────────────────────────
-// Polymarket — Builder Program read-only surfaces (Phase 1).
-//
-// We register as a Polymarket Builder so every order routed through the
-// /predict tab in Phase 2+ accrues to our profile for the leaderboard,
-// weekly USDC rewards and grant eligibility:
-//   https://docs.polymarket.com/builders/overview
-//   https://docs.polymarket.com/builders/tiers
-//
-// Phase 1 is read-only — no signing, no env vars required, no per-user
-// state. Two endpoints:
-//   GET /api/polymarket/events           → trending events list (15s cache)
-//   GET /api/polymarket/orderbook/:tokenId → live orderbook for one outcome
-//                                            token (1s TTL + dedup +
-//                                            serve-stale on 429, mirroring
-//                                            the HL fills cache pattern)
-//
-// Public (no auth) — every field rendered is already public on Polymarket.
-// ──────────────────────────────────────────────────────────────────────────
-const POLY_EVENTS_TTL_MS = 15_000
-// Strict allowlist for Gamma sort orders. Any other value is rejected so
-// (a) we never forward attacker-controlled junk to Gamma and (b) the cache
-// key space is bounded — without this, an attacker could create unlimited
-// distinct cache entries by varying the `order` param.
-const POLY_EVENTS_ORDER_ALLOWLIST = new Set([
-  'volume24hr', 'volume', 'liquidity', 'endDate', 'startDate',
-])
-// Hard cap on distinct (limit, tag, order) cache entries. With the
-// allowlist above + numeric clamps on limit/tag, the natural ceiling is
-// already small; the LRU is belt-and-braces against future param growth.
-const POLY_EVENTS_CACHE_MAX = 64
-type PolyEventsCacheKey = string // serialized query params
-const polyEventsCache = new Map<string, {
-  data: any[]
-  fetchedAt: number
-  inflight?: Promise<any[]>
-}>()
-
-app.get('/api/polymarket/events', async (req, res) => {
-  try {
-    const limit = Math.max(1, Math.min(100, parseInt(String(req.query.limit ?? '20'), 10) || 20))
-    const tagId = req.query.tag ? Math.max(0, parseInt(String(req.query.tag), 10) || 0) : undefined
-    const orderRaw = String(req.query.order ?? 'volume24hr')
-    if (!POLY_EVENTS_ORDER_ALLOWLIST.has(orderRaw)) {
-      return res.status(400).json({ error: 'invalid_order' })
-    }
-    const order = orderRaw
-    const cacheKey: PolyEventsCacheKey = `l=${limit}|t=${tagId ?? ''}|o=${order}`
-    const now = Date.now()
-    const cached = polyEventsCache.get(cacheKey)
-
-    if (cached && cached.data.length > 0 && (now - cached.fetchedAt) < POLY_EVENTS_TTL_MS) {
-      // LRU touch — Map preserves insertion order, so re-inserting moves
-      // this key to the most-recently-used position for our eviction.
-      polyEventsCache.delete(cacheKey)
-      polyEventsCache.set(cacheKey, cached)
-      return res.json({
-        events: cached.data,
-        cached: true,
-        fetchedAt: cached.fetchedAt,
-        builderCode: polymarketConfigBuilderCode(),
-      })
-    }
-
-    const entry = cached ?? { data: [] as any[], fetchedAt: 0 }
-
-    let promise = entry.inflight
-    if (!promise) {
-      promise = (async () => {
-        try {
-          const { listEvents } = await import('./services/polymarket')
-          const events = await listEvents({ limit, tagId, order: order as any })
-          entry.data = events
-          entry.fetchedAt = Date.now()
-          return events
-        } finally {
-          entry.inflight = undefined
-        }
-      })()
-      entry.inflight = promise
-    }
-
-    try {
-      const events = await promise
-      // Only commit successful fetches to the cache so failed upstream
-      // calls can never permanently occupy a slot.
-      polyEventsCache.delete(cacheKey)
-      polyEventsCache.set(cacheKey, entry)
-      while (polyEventsCache.size > POLY_EVENTS_CACHE_MAX) {
-        const oldest = polyEventsCache.keys().next().value
-        if (!oldest) break
-        polyEventsCache.delete(oldest)
-      }
-      return res.json({
-        events,
-        cached: false,
-        fetchedAt: entry.fetchedAt,
-        builderCode: polymarketConfigBuilderCode(),
-      })
-    } catch (gammaErr: any) {
-      // Serve last good payload (≤ 5min) on upstream failure so the
-      // /predict tab stays usable through brief Gamma outages.
-      if (cached && cached.data.length > 0 && (Date.now() - cached.fetchedAt) < 5 * 60_000) {
-        return res.json({
-          events: cached.data,
-          cached: true,
-          stale: true,
-          fetchedAt: cached.fetchedAt,
-          builderCode: polymarketConfigBuilderCode(),
-        })
-      }
-      throw gammaErr
-    }
-  } catch (err: any) {
-    console.warn('[polymarket/events] failed:', err?.message)
-    res.status(502).json({ error: err?.message ?? 'gamma_unavailable' })
-  }
-})
-
-// Per-token orderbook cache. Same shape as the HL fills cache: in-flight
-// dedup so a burst of polls only hits CLOB once, and serve-stale on
-// upstream failure. Capped + LRU-evicted so an attacker spamming random
-// valid-shaped uint256s can't grow memory unbounded.
-const POLY_BOOK_TTL_MS = 1_000
-const POLY_BOOK_STALE_MAX_MS = 60_000
-const POLY_BOOK_CACHE_MAX = 512  // ~512 expanded markets across all users
-type PolyBookCacheEntry = {
-  data: any | null
-  fetchedAt: number
-  inflight?: Promise<any>
-}
-const polyBookCache = new Map<string, PolyBookCacheEntry>()
-
-app.get('/api/polymarket/orderbook/:tokenId', async (req, res) => {
-  // Polymarket token ids are very large numeric strings (uint256). Require
-  // the realistic length range so we don't pass crap to CLOB and don't
-  // accept arbitrarily-short numeric noise. Actual Polymarket CTF token
-  // ids are ~76-78 digits; we accept 60-80 to leave a small safety margin.
-  const tokenId = String(req.params.tokenId ?? '')
-  if (!/^[0-9]{60,80}$/.test(tokenId)) {
-    return res.status(400).json({ error: 'invalid_token_id' })
-  }
-  try {
-    const now = Date.now()
-    const cached = polyBookCache.get(tokenId)
-
-    if (cached && cached.data && (now - cached.fetchedAt) < POLY_BOOK_TTL_MS) {
-      // LRU touch
-      polyBookCache.delete(tokenId)
-      polyBookCache.set(tokenId, cached)
-      return res.json({ book: cached.data, cached: true })
-    }
-
-    const entry = cached ?? { data: null, fetchedAt: 0 }
-
-    let promise = entry.inflight
-    if (!promise) {
-      promise = (async () => {
-        try {
-          const { getOrderbook } = await import('./services/polymarket')
-          const book = await getOrderbook(tokenId)
-          entry.data = book
-          entry.fetchedAt = Date.now()
-          return book
-        } finally {
-          entry.inflight = undefined
-        }
-      })()
-      entry.inflight = promise
-    }
-
-    try {
-      const book = await promise
-      // Commit on success only — failed lookups never occupy a cache slot.
-      polyBookCache.delete(tokenId)
-      polyBookCache.set(tokenId, entry)
-      while (polyBookCache.size > POLY_BOOK_CACHE_MAX) {
-        const oldest = polyBookCache.keys().next().value
-        if (!oldest) break
-        polyBookCache.delete(oldest)
-      }
-      return res.json({ book, cached: false })
-    } catch (clobErr: any) {
-      if (cached && cached.data && (Date.now() - cached.fetchedAt) < POLY_BOOK_STALE_MAX_MS) {
-        return res.json({ book: cached.data, cached: true, stale: true })
-      }
-      throw clobErr
-    }
-  } catch (err: any) {
-    console.warn('[polymarket/orderbook]', tokenId.slice(0, 12) + '…', 'failed:', err?.message)
-    res.status(502).json({ error: err?.message ?? 'clob_unavailable' })
-  }
-})
-
-// Helper so the events endpoint can surface our builder code (or null) to
-// the client without importing the polymarket module synchronously at top
-// of file. Returned in the response so the UI can show a "Powered by
-// Polymarket Builder Program" badge with our short builder code.
-function polymarketConfigBuilderCode(): string | null {
-  // Read directly from env (not the cached config object) so test runs and
-  // dynamic env updates are reflected without a server restart.
-  const code = (process.env.POLY_BUILDER_CODE ?? '').trim()
-  return code.length > 0 ? code : null
-}
-
-// ═══════════════════════════════════════════════════════════════════════
-// Polymarket Phase 2 — manual trading endpoints (custodial PK signing).
-// ───────────────────────────────────────────────────────────────────────
-// These four routes form the full mini-app → Polymarket trading flow:
-//   GET  /api/polymarket/wallet     — wallet status: address, USDC/MATIC
-//                                      balances, allowance flag, has-creds
-//   POST /api/polymarket/setup      — derive L2 API creds + run the
-//                                      one-time USDC->CTF allowance tx
-//   POST /api/polymarket/order      — place a market BUY/SELL on a token
-//   GET  /api/polymarket/positions  — user's Polymarket position history
-//
-// Every order carries our POLY_BUILDER_CODE for grant-eligible volume
-// attribution. Every order also writes an AgentLog row with
-// exchange='polymarket' so the existing brain-feed UI tags the entry
-// with a POLY chip alongside HL / Aster / 42.
-// ───────────────────────────────────────────────────────────────────────
-
-// Translate the raw Polymarket relayer/CLOB SDK error string into a
-// user-facing message. The SDKs throw `new Error(JSON.stringify({
-// error, status, statusText, data }))` from their axios catch blocks,
-// which is fine for ops but useless in a toast. We parse the payload
-// and turn the most common failure modes into something the operator
-// can actually act on.
-//
-// IMPORTANT: 401 "invalid authorization" from relayer-v2.polymarket.com
-// almost always means the POLY_BUILDER_API_KEY/SECRET/PASSPHRASE on the
-// running deployment don't match the builder account on Polymarket's
-// side. We have verified locally (with the Replit secret values) that
-// the same code path successfully deploys a Safe and signs the HMAC,
-// so a 401 in production strongly suggests the secrets on the deploy
-// platform (Render, etc.) are stale or different — not a code bug.
-function humanizeRelayerError(rawMsg: string, stepLabel: string): string {
-  let parsed: any = null
-  try { parsed = JSON.parse(rawMsg) } catch { /* not JSON */ }
-
-  if (parsed && typeof parsed === 'object' && (parsed.status || parsed.error)) {
-    const status = Number(parsed.status) || 0
-    const innerErr =
-      (parsed.data && (parsed.data.error || parsed.data.message)) ||
-      parsed.statusText ||
-      parsed.error ||
-      ''
-
-    if (status === 401 || /invalid authorization/i.test(String(innerErr))) {
-      return (
-        `${stepLabel} failed: Polymarket relayer returned 401 (invalid authorization). ` +
-        `This means the POLY_BUILDER_API_KEY / POLY_BUILDER_SECRET / POLY_BUILDER_PASSPHRASE ` +
-        `secrets on this server do not match the builder account on Polymarket. ` +
-        `Verify those env vars match exactly the values issued by Polymarket and redeploy.`
-      )
-    }
-    if (status === 403) {
-      return (
-        `${stepLabel} failed: Polymarket blocked the request (403). ` +
-        `This is usually a region restriction (try without VPN) or the builder ` +
-        `account has been disabled. If you are on the operator side, check that ` +
-        `POLY_BUILDER_* secrets are not for a revoked builder.`
-      )
-    }
-    if (status === 429) {
-      return `${stepLabel} failed: Polymarket rate-limited the request (429). Wait a moment and try again.`
-    }
-    if (status >= 500) {
-      return `${stepLabel} failed: Polymarket relayer is having issues (${status}). Try again in a moment.`
-    }
-    if (status >= 400) {
-      return `${stepLabel} failed: Polymarket rejected the request (${status}${innerErr ? ` — ${innerErr}` : ''}).`
-    }
-    if (parsed.error === 'connection error') {
-      return `${stepLabel} failed: could not reach Polymarket relayer (network error). Try again.`
-    }
-  }
-
-  // Not a JSON SDK error — surface raw, truncated.
-  return `${stepLabel} failed: ${rawMsg}`
-}
-
-// Tiny helper: write a polymarket-tagged brain-feed log row. AgentLog has
-// a hard FK to Agent so we can only log when there's a real agentId
-// (Phase 3 autonomous path). Manual user trades just write a console line
-// and rely on the PolymarketPosition row itself as the audit trail —
-// the mini-app's positions panel surfaces them directly without going
-// through the brain-feed.
-async function logPolymarketEvent(opts: {
-  userId:    string
-  agentId?:  string
-  action:    string  // 'order_placed' | 'order_failed' | 'wallet_setup' | 'agent_decision'
-  reason:    string
-  pair?:     string
-  price?:    number
-  reasoning?: string
-}) {
-  if (!opts.agentId) {
-    console.log(`[POLY] ${opts.action} user=${opts.userId} ${opts.reason}`)
-    return
-  }
-  try {
-    await db.agentLog.create({
-      data: {
-        agentId:         opts.agentId,
-        userId:          opts.userId,
-        action:          opts.action,
-        rawResponse:     null,
-        parsedAction:    null,
-        executionResult: opts.action,
-        error:           null,
-        pair:            opts.pair ?? null,
-        price:           opts.price ?? null,
-        reason:          opts.reason,
-        adx:             null,
-        rsi:             null,
-        score:           null,
-        regime:          null,
-        exchange:        'polymarket',
-      },
-    })
-  } catch (err) {
-    console.warn('[API] logPolymarketEvent failed:', (err as Error).message)
-  }
-}
-
 // ── /api/fourmeme/* — Module 1 (existing-token trading) ─────────────
 //
 // All endpoints check FOUR_MEME_ENABLED at the top and 503 with a
@@ -8746,376 +8248,6 @@ app.get('/api/fourmeme/agent-status', requireTgUser, async (req, res) => {
   }
 })
 
-app.get('/api/polymarket/wallet', requireTgUser, async (req, res) => {
-  const user = (req as any).user
-  if (!user?.id) return res.status(401).json({ ok: false, error: 'unauthorized' })
-  try {
-    const creds = await db.polymarketCreds.findUnique({ where: { userId: user.id } })
-
-    // EOA — the signing key, derived from the user's BSC wallet PK. We
-    // intentionally prefer the *active* BSC wallet over creds.walletAddress:
-    // the fund helper (`getUserPolygonSigner`) signs with the active wallet,
-    // and `/api/me/wallet` also reports on the active wallet, so all three
-    // surfaces (Wallet card, Predictions panel, fund tx) stay consistent.
-    // (creds.walletAddress is preserved as a fallback for users who haven't
-    // initialised an active BSC wallet yet — extremely rare in practice.)
-    const activeBsc = await db.wallet.findFirst({
-      where: { userId: user.id, isActive: true, chain: 'BSC' },
-    })
-    const walletAddress: string | null =
-      activeBsc?.address ?? creds?.walletAddress ?? null
-
-    // Safe — the funder. This is where users deposit USDC.e and where
-    // Polymarket holds positions. Null until /setup deploys it.
-    const safeAddress: string | null = creds?.safeAddress ?? null
-
-    // Read balances at the SAFE (the trading address) and the EOA (where
-    // the user's external USDC.e lands and where MATIC for the one-tap
-    // fund transfer lives). EOA balances drive the "Fund Polymarket"
-    // CTA — when the EOA holds USDC.e, the UI shows a one-click button
-    // to sweep it into the Safe; when MATIC is missing, the UI prompts
-    // the user to send a small amount for gas.
-    let balances:
-      | {
-          usdc: number
-          allowanceCtf: number
-          allowanceNeg: number
-          allowanceNegAdapter: number
-          ctfApprovedCtfExchange: boolean
-          ctfApprovedNegExchange: boolean
-          ctfApprovedNegAdapter:  boolean
-        }
-      | null = null
-    let eoaBalances: { usdcE: number; matic: number } | null = null
-    if (walletAddress) {
-      try {
-        const { getPolygonBalances } = await import('./services/polymarketTrading')
-        const e = await getPolygonBalances(walletAddress)
-        eoaBalances = { usdcE: e.usdc, matic: e.matic }
-      } catch (e) {
-        console.warn('[API] polymarket/wallet eoa balances failed:', (e as Error).message)
-      }
-    }
-    if (safeAddress) {
-      try {
-        const { getPolygonBalances } = await import('./services/polymarketTrading')
-        const b = await getPolygonBalances(safeAddress)
-        balances = {
-          usdc:                    b.usdc,
-          allowanceCtf:            b.allowanceCtf,
-          allowanceNeg:            b.allowanceNeg,
-          allowanceNegAdapter:     b.allowanceNegAdapter,
-          ctfApprovedCtfExchange:  b.ctfApprovedCtfExchange,
-          ctfApprovedNegExchange:  b.ctfApprovedNegExchange,
-          ctfApprovedNegAdapter:   b.ctfApprovedNegAdapter,
-        }
-      } catch (e) {
-        console.warn('[API] polymarket/wallet balances failed:', (e as Error).message)
-      }
-    }
-
-    const ready = Boolean(
-      creds && safeAddress && balances &&
-      balances.allowanceCtf        >= 1_000_000 &&
-      balances.allowanceNeg        >= 1_000_000 &&
-      balances.allowanceNegAdapter >= 1_000_000 &&
-      balances.ctfApprovedCtfExchange &&
-      balances.ctfApprovedNegExchange &&
-      balances.ctfApprovedNegAdapter,
-    )
-
-    res.json({
-      ok: true,
-      walletAddress,                                        // EOA (signer)
-      safeAddress,                                          // Gnosis Safe (funder, deposit address)
-      hasCreds:          Boolean(creds),
-      safeDeployed:      Boolean(creds?.safeDeployedAt),
-      allowanceVerified: Boolean(creds?.allowanceVerifiedAt),
-      ready,
-      balances,
-      eoaBalances,                                          // Polygon balances at the EOA (for Fund button)
-      builderCode: polymarketConfigBuilderCode(),
-    })
-  } catch (err: any) {
-    console.error('[API] /polymarket/wallet failed:', err)
-    res.status(500).json({ ok: false, error: 'wallet_lookup_failed' })
-  }
-})
-
-app.post('/api/polymarket/setup', requireTgUser, async (req, res) => {
-  const user = (req as any).user
-  if (!user?.id) return res.status(401).json({ ok: false, error: 'unauthorized' })
-  try {
-    const {
-      getOrCreateCreds,
-      deploySafeIfNeeded,
-      ensureUsdcAllowance,
-    } = await import('./services/polymarketTrading')
-
-    // (1) Derive CLOB L2 HMAC creds (one-time, signed by the EOA).
-    const { walletAddress } = await getOrCreateCreds(user.id)
-
-    // (2) Deploy the Gnosis Safe via Polymarket's relayer (gasless).
-    //     Idempotent — returns existing safeAddress if already deployed.
-    let safe: { safeAddress: string; alreadyDeployed: boolean; txHash?: string }
-    try {
-      safe = await deploySafeIfNeeded(user.id)
-    } catch (deployErr: any) {
-      const rawMsg = String(deployErr?.message ?? deployErr)
-      const friendly = humanizeRelayerError(rawMsg, 'Safe deploy')
-      await logPolymarketEvent({
-        userId: user.id,
-        action: 'wallet_setup_failed',
-        reason: `Safe deploy failed: ${rawMsg.slice(0, 300)}`,
-      })
-      return res.status(502).json({
-        ok: false,
-        walletAddress,
-        credsReady: true,
-        error: 'safe_deploy_failed',
-        details: friendly.slice(0, 500),
-      })
-    }
-
-    // (3) Approve USDC + CTF to the three exchange contracts (gasless,
-    //     batched in one relayer transaction).
-    let allowance: { alreadyApproved: boolean; txHashes: string[] } = { alreadyApproved: true, txHashes: [] }
-    try {
-      allowance = await ensureUsdcAllowance(user.id)
-    } catch (allowErr: any) {
-      const rawMsg = String(allowErr?.message ?? allowErr)
-      const friendly = humanizeRelayerError(rawMsg, 'USDC + CTF allowance')
-      await logPolymarketEvent({
-        userId: user.id,
-        action: 'wallet_setup_failed',
-        reason: `Allowance tx failed: ${rawMsg.slice(0, 300)}`,
-      })
-      return res.status(502).json({
-        ok: false,
-        walletAddress,
-        safeAddress: safe.safeAddress,
-        credsReady: true,
-        error: 'allowance_failed',
-        details: friendly.slice(0, 500),
-      })
-    }
-
-    await logPolymarketEvent({
-      userId: user.id,
-      action: 'wallet_setup',
-      reason: [
-        safe.alreadyDeployed
-          ? `Safe already deployed at ${safe.safeAddress.slice(0, 10)}…`
-          : `Safe deployed gaslessly at ${safe.safeAddress.slice(0, 10)}…`,
-        allowance.alreadyApproved
-          ? 'USDC + CTF allowances already in place'
-          : `Approved USDC + CTF gaslessly (${allowance.txHashes.length} relayer tx)`,
-      ].join(' · '),
-    })
-
-    res.json({
-      ok: true,
-      walletAddress,
-      safeAddress: safe.safeAddress,
-      safeNewlyDeployed: !safe.alreadyDeployed,
-      credsReady: true,
-      allowance,
-    })
-  } catch (err: any) {
-    const msg = err?.message ?? String(err)
-    console.error('[API] /polymarket/setup failed:', msg)
-    res.status(500).json({ ok: false, error: 'setup_failed', details: msg.slice(0, 300) })
-  }
-})
-
-// Gasless redeem of a resolved Polymarket position. Routes through CTF
-// for standard binary markets and the NegRiskAdapter for neg-risk
-// markets. Caller specifies which via `isNegRisk`.
-app.post('/api/polymarket/redeem', requireTgUser, async (req, res) => {
-  const user = (req as any).user
-  if (!user?.id) return res.status(401).json({ ok: false, error: 'unauthorized' })
-  try {
-    const body         = req.body ?? {}
-    const conditionId  = String(body.conditionId ?? '')
-    const isNegRisk    = Boolean(body.isNegRisk)
-    const negRiskAmts  = Array.isArray(body.negRiskAmounts)
-      ? body.negRiskAmounts.map((x: any) => BigInt(String(x)))
-      : undefined
-
-    if (!/^0x[0-9a-fA-F]{64}$/.test(conditionId)) {
-      return res.status(400).json({ ok: false, error: 'invalid_condition_id' })
-    }
-
-    const { redeemPositions } = await import('./services/polymarketTrading')
-    const { txHash } = await redeemPositions({
-      userId:     user.id,
-      conditionId,
-      isNegRisk,
-      negRiskAmounts: negRiskAmts,
-    })
-
-    await logPolymarketEvent({
-      userId: user.id,
-      action: 'redeem',
-      reason: `Redeemed positions for condition ${conditionId.slice(0, 10)}… (gasless via relayer)`,
-    })
-
-    res.json({ ok: true, txHash })
-  } catch (err: any) {
-    const msg = err?.message ?? String(err)
-    console.error('[API] /polymarket/redeem failed:', msg)
-    res.status(502).json({ ok: false, error: 'redeem_failed', details: msg.slice(0, 300) })
-  }
-})
-
-// One-tap fund: sweep custodial EOA USDC.e → user's Polymarket Safe.
-// This is the only on-chain action the user themselves pays gas for in
-// the Polymarket flow — every Safe-side action (deploy, approvals, orders,
-// redemptions) is sponsored by Polymarket's relayer. To execute the
-// transfer the user must hold a small amount of MATIC (~0.005) at their
-// custodial EOA; if missing we return a NEED_MATIC code so the UI can
-// show a clear "send MATIC for gas to {address}" prompt.
-app.post('/api/polymarket/fund', requireTgUser, async (req, res) => {
-  const user = (req as any).user
-  if (!user?.id) return res.status(401).json({ ok: false, error: 'unauthorized' })
-  try {
-    const body = req.body ?? {}
-    // Optional explicit amount; absent = sweep entire EOA balance.
-    const amountIn = body.amount === undefined || body.amount === null
-      ? undefined
-      : Number(body.amount)
-    if (amountIn !== undefined && (!Number.isFinite(amountIn) || amountIn <= 0 || amountIn > 100_000)) {
-      return res.status(400).json({ ok: false, error: 'invalid_amount', message: 'amount must be 0..100000' })
-    }
-
-    const { fundSafeFromEoa } = await import('./services/polymarketTrading')
-    const result = await fundSafeFromEoa({ userId: user.id, amountUsdc: amountIn })
-
-    await logPolymarketEvent({
-      userId: user.id,
-      action: 'fund',
-      reason: `Funded Safe with ${result.amountUsdc.toFixed(2)} USDC.e (tx ${result.txHash.slice(0, 10)}…)`,
-    })
-
-    res.json({ ok: true, ...result })
-  } catch (err: any) {
-    const msg = String(err?.message ?? err)
-    // NEED_MATIC is the user-actionable error: surface a structured code
-    // so the UI can show the right prompt instead of an opaque toast.
-    if (msg.includes('NEED_MATIC')) {
-      // EOA address is the user's active BSC wallet address (same secp256k1
-      // key, identical address on every EVM chain). The UI uses this to
-      // show "send MATIC for gas to {address}" with a copy button.
-      const w = await db.wallet.findFirst({
-        where: { userId: user.id, isActive: true, chain: 'BSC' },
-      }).catch(() => null)
-      return res.status(400).json({
-        ok: false, error: 'need_matic', code: 'NEED_MATIC',
-        eoaAddress: w?.address ?? null, details: msg.slice(0, 200),
-      })
-    }
-    if (msg.includes('No USDC.e balance')) {
-      return res.status(400).json({ ok: false, error: 'no_usdc', details: msg.slice(0, 200) })
-    }
-    if (msg.includes('Safe not deployed')) {
-      return res.status(400).json({ ok: false, error: 'no_safe', details: msg.slice(0, 200) })
-    }
-    console.error('[API] /polymarket/fund failed:', msg)
-    res.status(500).json({ ok: false, error: 'fund_failed', details: msg.slice(0, 300) })
-  }
-})
-
-app.post('/api/polymarket/order', requireTgUser, async (req, res) => {
-  const user = (req as any).user
-  if (!user?.id) return res.status(401).json({ ok: false, error: 'unauthorized' })
-  try {
-    const body = req.body ?? {}
-    const tokenId      = String(body.tokenId ?? '')
-    const side         = String(body.side ?? '').toUpperCase()
-    // Frontend sends `sizeUsdc` (clearer name); we accept both for back-compat
-    // with any future caller (e.g. CLI scripts) that uses `amount`.
-    const amount       = Number(body.sizeUsdc ?? body.amount)
-    const conditionId  = String(body.conditionId ?? '')
-    const marketTitle  = String(body.marketTitle ?? '')
-    const marketSlug   = body.marketSlug ? String(body.marketSlug) : undefined
-    const outcomeLabel = String(body.outcomeLabel ?? 'Yes')
-    // Price snapshot the user saw at click time. Used for slippage protection
-    // — if the executable price has moved more than SLIPPAGE_BPS from this
-    // snapshot we refuse the order rather than execute against a worse book.
-    const expectedPrice = Number(body.price)
-
-    if (!/^[0-9]{60,80}$/.test(tokenId)) {
-      return res.status(400).json({ ok: false, error: 'invalid_token_id' })
-    }
-    if (side !== 'BUY' && side !== 'SELL') {
-      return res.status(400).json({ ok: false, error: 'invalid_side' })
-    }
-    if (!Number.isFinite(amount) || amount <= 0 || amount > 10_000) {
-      return res.status(400).json({ ok: false, error: 'invalid_amount', message: 'amount must be 0..10000' })
-    }
-    if (!/^0x[0-9a-fA-F]{2,128}$/.test(conditionId) && conditionId.length > 0) {
-      return res.status(400).json({ ok: false, error: 'invalid_condition_id' })
-    }
-    if (!marketTitle || marketTitle.length > 500) {
-      return res.status(400).json({ ok: false, error: 'invalid_market_title' })
-    }
-
-    const { placeMarketOrder } = await import('./services/polymarketTrading')
-    const result = await placeMarketOrder({
-      userId:  user.id,
-      tokenId,
-      side: side as 'BUY' | 'SELL',
-      amount,
-      marketCtx: { conditionId, marketTitle, marketSlug, outcomeLabel },
-      reasoning: 'Manual mini-app trade',
-      // Server-side slippage cap: refuse if price moved >5% from what user
-      // saw at click time. Polymarket markets move slowly, so a 5% band is
-      // generous for normal use; tightens against a moving book during
-      // adverse selection moments (e.g. during a major news event).
-      expectedPrice: Number.isFinite(expectedPrice) && expectedPrice > 0 && expectedPrice < 1
-        ? expectedPrice
-        : undefined,
-      maxSlippageBps: 500,
-    })
-
-    if (!result.ok) {
-      await logPolymarketEvent({
-        userId: user.id,
-        action: 'order_failed',
-        reason: `${side} ${amount} ${outcomeLabel} on "${marketTitle.slice(0, 60)}" — ${result.error?.slice(0, 120) ?? 'unknown error'}`,
-        pair:   marketSlug ?? marketTitle.slice(0, 60),
-      })
-      return res.status(502).json({ ...result, ok: false })
-    }
-
-    await logPolymarketEvent({
-      userId: user.id,
-      action: 'order_placed',
-      reason: `${side} ${amount} USDC on "${marketTitle.slice(0, 60)}" ${outcomeLabel} @ ~${(result.fillPrice ?? 0).toFixed(3)}`,
-      pair:   marketSlug ?? marketTitle.slice(0, 60),
-      price:  result.fillPrice,
-    })
-    res.json({ ...result, ok: true })
-  } catch (err: any) {
-    const msg = err?.message ?? String(err)
-    console.error('[API] /polymarket/order failed:', msg)
-    res.status(500).json({ ok: false, error: 'order_failed', details: msg.slice(0, 300) })
-  }
-})
-
-app.get('/api/polymarket/positions', requireTgUser, async (req, res) => {
-  const user = (req as any).user
-  if (!user?.id) return res.status(401).json({ ok: false, error: 'unauthorized' })
-  try {
-    const { getUserPositions } = await import('./services/polymarketTrading')
-    const positions = await getUserPositions(user.id)
-    res.json({ ok: true, positions })
-  } catch (err: any) {
-    console.error('[API] /polymarket/positions failed:', err?.message ?? err)
-    res.status(500).json({ ok: false, error: 'positions_lookup_failed' })
-  }
-})
-
 // Manual user-initiated prediction trade. Triggered when a user taps
 // "Place trade" on a market scanner row in the mini-app. Bypasses the
 // swarm/conviction gating used by autonomous agents (the user's tap IS
@@ -9167,35 +8299,17 @@ app.get('/api/me/venue-permissions', requireTgUser, async (req, res) => {
         asterAgentTradingEnabled: true,
         hyperliquidAgentTradingEnabled: true,
         fortyTwoLiveTrade: true,
-        polymarketAgentTradingEnabled: true,
         asterOnboarded: true,
         hyperliquidOnboarded: true,
       },
     })
     if (!u) return res.status(404).json({ ok: false, error: 'user not found' })
-    // Polymarket "onboarded" = the user has a deployed Safe with API
-    // creds registered. We derive it from PolymarketCreds rather than
-    // a User flag so the state is always truthful (a user who deployed
-    // their Safe in another session shows as onboarded immediately).
-    // safeAddress can be null on legacy rows where setup failed midway,
-    // so we require it explicitly to avoid lighting up a non-functional
-    // "ready" state. .catch returns false on any DB hiccup so the whole
-    // permissions endpoint never 500s due to a single missing table.
-    const polyCreds = await db.polymarketCreds
-      .findUnique({
-        where: { userId: user.id },
-        select: { safeAddress: true },
-      })
-      .catch(() => null)
-    const polymarketOnboarded = !!polyCreds?.safeAddress
     res.json({
       ok: true,
       permissions: {
         aster:       !!u.asterAgentTradingEnabled,
         hyperliquid: !!u.hyperliquidAgentTradingEnabled,
         fortytwo:    !!u.fortyTwoLiveTrade,
-        // Phase 4 (2026-05-01) — Polymarket gets a real per-user toggle.
-        polymarket:  !!u.polymarketAgentTradingEnabled,
       },
       onboarded: {
         aster:       !!u.asterOnboarded,
@@ -9203,7 +8317,6 @@ app.get('/api/me/venue-permissions', requireTgUser, async (req, res) => {
         // 42.space requires no per-user onboarding — anyone with a wallet
         // can trade on-chain prediction markets — so it's always "ready".
         fortytwo:    true,
-        polymarket:  polymarketOnboarded,
       },
     })
   } catch (err) {
@@ -9219,8 +8332,8 @@ app.post('/api/me/venue-permissions', requireTgUser, async (req, res) => {
   // mode (especially for 42.space) due to a missing or coerced field.
   const venue = req.body?.venue
   const enabled = req.body?.enabled
-  if (venue !== 'aster' && venue !== 'hyperliquid' && venue !== 'fortytwo' && venue !== 'polymarket') {
-    return res.status(400).json({ ok: false, error: 'venue must be aster | hyperliquid | fortytwo | polymarket' })
+  if (venue !== 'aster' && venue !== 'hyperliquid' && venue !== 'fortytwo') {
+    return res.status(400).json({ ok: false, error: 'venue must be aster | hyperliquid | fortytwo' })
   }
   if (typeof enabled !== 'boolean') {
     return res.status(400).json({ ok: false, error: 'enabled must be boolean' })
@@ -9234,9 +8347,9 @@ app.post('/api/me/venue-permissions', requireTgUser, async (req, res) => {
       await setUserLiveOptIn(user.id, enabled)
     } else {
       const field =
-        venue === 'aster'       ? 'asterAgentTradingEnabled' :
-        venue === 'hyperliquid' ? 'hyperliquidAgentTradingEnabled' :
-        /* polymarket */          'polymarketAgentTradingEnabled'
+        venue === 'aster'
+          ? 'asterAgentTradingEnabled'
+          : 'hyperliquidAgentTradingEnabled'
       await db.user.update({
         where: { id: user.id },
         data: { [field]: enabled },

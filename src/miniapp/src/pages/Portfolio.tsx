@@ -51,37 +51,12 @@ interface PredictionPosition {
   currentValueUsdt: number | null
 }
 
-// Polymarket position row, mirrored from the shape the Predictions
-// Polymarket tab consumes (GET /api/polymarket/positions → raw
-// PolymarketPosition rows). Polymarket positions carry no live
-// mark-to-market, so PnL is only known for resolved rows: a winning
-// outcome pays $1/share (pnl = shares − cost), a losing one forfeits the
-// stake (pnl = −cost). Open rows show entry + size with no live PnL.
-interface PolyPosition {
-  id: string
-  conditionId: string
-  tokenId: string
-  marketTitle: string
-  outcomeLabel: string
-  side: string
-  sizeUsdc: number
-  entryPrice: number
-  fillSize: number | null
-  status: string
-  errorMessage: string | null
-  openedAt: string
-  closedAt?: string | null
-}
-
 export default function Portfolio({ userId }: PortfolioProps) {
   const [data, setData] = useState<any>(null)
   const [range, setRange] = useState<Range>('30d')
   const [loading, setLoading] = useState(true)
   const [wallet, setWallet] = useState<WalletInfo | null>(null)
   const [predictions, setPredictions] = useState<PredictionPosition[]>([])
-  // Polymarket positions — the second prediction venue. Same source the
-  // Predictions Polymarket tab consumes (/api/polymarket/positions).
-  const [polyPositions, setPolyPositions] = useState<PolyPosition[]>([])
   // Per-user paper-vs-live opt-in for 42.space prediction trades. Mirrors
   // the bot's /predictions "Enable LIVE trading" / "Switch to paper-trade"
   // callbacks and the same toggle on the Predictions tab — all three write
@@ -125,19 +100,12 @@ export default function Portfolio({ userId }: PortfolioProps) {
       if (r?.ok) setFourMemeBags(r.positions ?? [])
     } catch { /* keep last good state */ }
   }
-  const loadPolyPositions = async () => {
-    try {
-      const r = await apiFetch<{ ok: boolean; positions: PolyPosition[] }>('/api/polymarket/positions')
-      if (r?.ok) setPolyPositions(r.positions ?? [])
-    } catch { /* keep last good state — e.g. opened outside Telegram */ }
-  }
-
   // Fast group on a 1s cadence; bags ride a slower 5s cadence because each row
   // is N on-chain calls (balanceOf + quoteSell). Both are gated on userId,
   // paused while the paper/live toggle is being written, single-flighted, and
   // skipped while the tab is hidden — all via the shared useAutoRefresh hook.
   useAutoRefresh(
-    async () => { await Promise.allSettled([loadPortfolio(), loadWallet(), loadPredictions(), loadPolyPositions()]) },
+    async () => { await Promise.allSettled([loadPortfolio(), loadWallet(), loadPredictions()]) },
     { intervalMs: 1000, enabled: !!userId, paused: predModeBusy },
   )
   useAutoRefresh(loadBags, { intervalMs: 5000, enabled: !!userId, paused: predModeBusy })
@@ -1081,127 +1049,6 @@ export default function Portfolio({ userId }: PortfolioProps) {
                 })}
               </>
             )}
-          </div>
-        )
-      })()}
-
-      {/* ── Polymarket Positions ───────────────────────────────────────────
-          Sibling to the 42.space panel above so both prediction venues get
-          the same portfolio-level visibility. Backed by the same source the
-          Predictions Polymarket tab consumes (/api/polymarket/positions).
-
-          Polymarket position rows carry NO live mark-to-market (the venue
-          only stores entry price + size + fill), so PnL is only known once a
-          market resolves: a winning outcome redeems at $1/share
-          (pnl = shares − cost), a loss forfeits the stake (pnl = −cost).
-          Open rows therefore show entry price + size with no live PnL,
-          mirroring how the Polymarket tab itself renders them. failed /
-          cancelled orders never deployed capital, so they show no PnL. */}
-      {(() => {
-        // Order: active positions first, then resolved/closed by recency.
-        // 'placed' | 'matched' | 'filled' are all live (book may still be
-        // filling asynchronously — see PredictionsPolymarket SELL comment).
-        const isActive = (s: string) => s === 'placed' || s === 'matched' || s === 'filled'
-        const rows = [...polyPositions].sort((a, b) => {
-          const aOpen = isActive(a.status) ? 1 : 0
-          const bOpen = isActive(b.status) ? 1 : 0
-          if (aOpen !== bOpen) return bOpen - aOpen
-          const ta = a.closedAt ? new Date(a.closedAt).getTime() : new Date(a.openedAt).getTime()
-          const tb = b.closedAt ? new Date(b.closedAt).getTime() : new Date(b.openedAt).getTime()
-          return tb - ta
-        })
-        if (rows.length === 0) return null
-        const openCount = rows.filter((p) => isActive(p.status)).length
-        const resolvedCount = rows.length - openCount
-        const fmtCents = (p: number) =>
-          !isFinite(p) ? '—' : `${Math.max(0, Math.min(100, p * 100)).toFixed(1)}¢`
-        return (
-          <div className="card" style={{ marginBottom: 16 }} data-testid="card-polymarket-positions">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, gap: 10, flexWrap: 'wrap' }}>
-              <div style={{ fontSize: 13, fontWeight: 600 }}>
-                <span style={{
-                  fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 3,
-                  background: '#3b82f622', color: '#60a5fa', letterSpacing: 0.3,
-                  marginRight: 6, verticalAlign: 'middle',
-                }}>POLY</span>
-                Polymarket Positions
-              </div>
-              <div style={{ fontSize: 10, color: '#64748b' }}>
-                {openCount} open · {resolvedCount} resolved
-              </div>
-            </div>
-            {rows.slice(0, 15).map((p) => {
-              // Shares = recorded fill, or implied (cost ÷ entry) when the
-              // SDK didn't report a fill size — same fallback the Polymarket
-              // tab uses to size a SELL.
-              const shares = (p.fillSize && p.fillSize > 0)
-                ? p.fillSize
-                : (p.entryPrice > 0 ? p.sizeUsdc / p.entryPrice : 0)
-              const isResolvedWin  = p.status === 'resolved_win'
-              const isResolvedLoss = p.status === 'resolved_loss'
-              // PnL is only definable for resolved rows; open positions have
-              // no live mark and failed/cancelled never spent capital.
-              const pnl = isResolvedWin
-                ? shares - p.sizeUsdc
-                : isResolvedLoss ? -p.sizeUsdc : null
-              const pnlColor = pnl == null ? '#64748b' : pnl > 0 ? '#10b981' : pnl < 0 ? '#ef4444' : '#64748b'
-              const statusLabel =
-                isResolvedWin ? 'WON' :
-                isResolvedLoss ? 'LOST' :
-                p.status === 'failed' ? 'FAILED' :
-                p.status === 'cancelled' ? 'CANCELLED' :
-                'OPEN'
-              const statusColor =
-                isResolvedWin ? '#10b981' :
-                isResolvedLoss ? '#ef4444' :
-                p.status === 'failed' || p.status === 'cancelled' ? '#94a3b8' :
-                '#60a5fa'
-              return (
-                <div key={p.id} style={{
-                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                  padding: '8px 0', borderBottom: '1px solid #1e1e2e', gap: 10,
-                }} data-testid={`row-poly-portfolio-${p.id}`}>
-                  <div style={{ minWidth: 0, flex: 1 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: 13, fontWeight: 500 }}>
-                        {p.marketTitle.length > 30 ? p.marketTitle.slice(0, 30) + '…' : p.marketTitle}
-                      </span>
-                      <span style={{
-                        fontSize: 10, padding: '1px 6px', borderRadius: 4,
-                        background: '#3b82f615', color: '#60a5fa',
-                      }}>{p.side} {p.outcomeLabel}</span>
-                      <span style={{
-                        fontSize: 9, padding: '1px 6px', borderRadius: 4, fontWeight: 700, letterSpacing: 0.4,
-                        background: '#3b82f622', color: '#60a5fa',
-                      }} data-testid={`badge-poly-venue-${p.id}`}>POLY</span>
-                      <span style={{
-                        fontSize: 9, padding: '1px 6px', borderRadius: 4, fontWeight: 700, letterSpacing: 0.4,
-                        background: `${statusColor}22`, color: statusColor,
-                      }} data-testid={`badge-poly-status-${p.id}`}>{statusLabel}</span>
-                    </div>
-                    <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
-                      Entry <span data-testid={`text-poly-entry-${p.id}`}>{fmtCents(p.entryPrice)}</span>
-                      {' · '}${p.sizeUsdc.toFixed(2)} in
-                    </div>
-                    {p.errorMessage && (
-                      <div style={{ fontSize: 10, color: '#f59e0b', marginTop: 2 }}>{p.errorMessage}</div>
-                    )}
-                  </div>
-                  <div style={{ textAlign: 'right', minWidth: 78 }}>
-                    {pnl != null ? (
-                      <div style={{ fontSize: 13, fontWeight: 700, color: pnlColor }}
-                           data-testid={`text-poly-pnl-${p.id}`}>
-                        {pnl >= 0 ? '+' : '−'}${Math.abs(pnl).toFixed(2)}
-                      </div>
-                    ) : (
-                      <div style={{ fontSize: 11, color: '#64748b' }}>
-                        {isActive(p.status) ? 'open' : '—'}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )
-            })}
           </div>
         )
       })()}

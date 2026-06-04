@@ -81,7 +81,7 @@ async function renderMain(ctx: any) {
       `${statusBlock(view)}\n\n` +
       `*Plan:* Pro — $${PRICE_USD}/month\n` +
       `• Unlimited AI trading agents\n` +
-      `• All venues (Aster, Hyperliquid, 42.space, Polymarket, Topaz)\n` +
+      `• All venues (Aster, Hyperliquid, 42.space, Topaz)\n` +
       `• Multi-LLM swarm decisions\n` +
       `• Smart-money signals + scanners\n\n` +
       (view.enforced
