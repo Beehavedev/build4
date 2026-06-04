@@ -20,6 +20,7 @@ import TokenTrade from './pages/TokenTrade'
 import CampaignBrain from './pages/CampaignBrain'
 import Topaz from './pages/Topaz'
 import PancakeSwap from './pages/PancakeSwap'
+import PayAgent from './pages/pay/PayAgent'
 import { apiFetch, type AgentData } from './api'
 
 declare global {
@@ -28,7 +29,7 @@ declare global {
   }
 }
 
-type Page = 'dashboard' | 'agents' | 'wallet' | 'trade' | 'copy' | 'portfolio' | 'predictions' | 'hyperliquid' | 'admin' | 'aiusage' | 'onboard' | 'launchToken' | 'tokenTrade' | 'brain' | 'topaz' | 'pancakeswap'
+type Page = 'dashboard' | 'agents' | 'wallet' | 'trade' | 'copy' | 'portfolio' | 'predictions' | 'hyperliquid' | 'admin' | 'aiusage' | 'onboard' | 'launchToken' | 'tokenTrade' | 'brain' | 'topaz' | 'pancakeswap' | 'pay'
 
 export default function App() {
   const [page, setPage] = useState<Page>('dashboard')
@@ -165,6 +166,7 @@ export default function App() {
   // having to add another bottom-nav slot for each.
   const overflowItems: { id: Page; label: string; icon: string }[] = [
     ...(launchEnabled ? [{ id: 'launchToken' as Page, label: 'Launch token', icon: '🚀' }] : []),
+    { id: 'pay' as Page, label: 'Pay Agent', icon: '💳' },
     { id: 'topaz' as Page, label: 'Topaz', icon: '💎' },
     { id: 'pancakeswap' as Page, label: 'PancakeSwap', icon: '🥞' },
     ...(isAdmin ? [{ id: 'aiusage' as Page, label: 'AI Usage', icon: '🧠' }] : []),
@@ -305,6 +307,7 @@ export default function App() {
         {page === 'brain' && <CampaignBrain />}
         {page === 'topaz' && <Topaz />}
         {page === 'pancakeswap' && <PancakeSwap />}
+        {page === 'pay' && <PayAgent />}
         {page === 'onboard' && (
           <Onboard
             asterOnboarded={asterOnboarded}

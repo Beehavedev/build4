@@ -9,6 +9,8 @@ import { initRunner } from './agents/runner'
 import { migrateOldUsers, migrateAgentsToAuto } from './migrate'
 import { ensureNewTables } from './ensureTables'
 import { requireTgUser, requireAdmin, isAdminTelegramId } from './services/telegramAuth'
+import { registerPayAgentRoutes, initPayAgent } from './payagent/routes'
+import { runDailyCheck as runPayDailyCheck } from './payagent/services/billEngine'
 // Per-user spot↔perps transfer mutex. Defined in the spotToPerps service so
 // runSpotToPerps and the perps-to-spot / withdraw endpoints all share ONE
 // Set instance (ESM module dedupe), preventing a double-tap across any
@@ -10028,6 +10030,27 @@ async function main() {
 
   // Create new tables safely (no drops, no renames)
   await ensureNewTables()
+
+  // ─── Build4 Pay Agent (isolated `payagent` schema) ─────────────────────
+  // Bill/subscription manager mounted at /api/pay/*. Uses its OWN pg pool +
+  // Postgres schema so the bot's prisma `db push --accept-data-loss` can never
+  // touch it. Boot is fail-soft: a Pay Agent DB hiccup must not stop the
+  // trading bot from coming up.
+  try {
+    await initPayAgent()
+    registerPayAgentRoutes(app)
+    const cron = (await import('node-cron')).default
+    // Daily 09:00 server-time pass: due-soon reminders, overdue marking,
+    // auto-pay where rules allow, approval requests where they don't.
+    cron.schedule('0 9 * * *', () => {
+      runPayDailyCheck().catch((e) =>
+        console.error('[payagent] daily check failed:', e?.message ?? e),
+      )
+    })
+    console.log('[payagent] initialized + daily scheduler armed')
+  } catch (e: any) {
+    console.error('[payagent] init failed (continuing without Pay Agent):', e?.message ?? e)
+  }
 
   // Migrate old users from Drizzle tables to Prisma tables
   await migrateOldUsers()
