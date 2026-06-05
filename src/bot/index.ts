@@ -127,5 +127,16 @@ export function createBot(): Bot {
     { command: 'help',        description: 'Show all commands' },
   ]).catch((err: any) => console.error('[Bot] setMyCommands failed:', err?.message))
 
+  // Persistent menu button — the "Open App" launcher next to the message
+  // field that opens the BUILD4 mini-app. Without this Telegram falls back to
+  // showing the slash-command list instead of the app launcher, which is why
+  // the mini-app "disappears" from the bot. Idempotent + cached server-side so
+  // it persists across restarts.
+  const miniAppUrl = process.env.MINIAPP_URL
+    || `https://${process.env.REPLIT_DOMAINS?.split(',')[0] || 'build4-1.onrender.com'}/app`
+  bot.api.setChatMenuButton({
+    menu_button: { type: 'web_app', text: 'Open App', web_app: { url: miniAppUrl } },
+  }).catch((err: any) => console.error('[Bot] setChatMenuButton failed:', err?.message))
+
   return bot
 }
