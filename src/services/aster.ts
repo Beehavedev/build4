@@ -143,6 +143,15 @@ function ttlForInterval(interval: string): number {
 const klinesCache = new Map<string, { data: OHLCV; ts: number }>()
 const inflightKlines = new Map<string, Promise<OHLCV>>()
 
+// Per-key timestamp of the last upstream FAILURE (e.g. a 429). While inside the
+// cooldown we serve the last known REAL candles (stale) instead of re-hitting
+// the rate-limited endpoint. That retry storm is what turned a transient 429
+// into SUSTAINED mock-data trading: failed fetches were never cached, so every
+// agent tick re-requested the same series, re-failed, and re-fabricated mock
+// candles. The cooldown breaks the storm and lets the limit recover.
+const klinesFailure = new Map<string, number>()
+const KLINES_FAILURE_COOLDOWN_MS = 30_000
+
 // ── Cache eviction (memory-leak fix) ────────────────────────────────────────
 // klinesCache.set was unbounded: keys are `${symbol}:${interval}:${limit}` and
 // each entry stores 6 number arrays of size up to 1500. Aster currently lists
@@ -178,6 +187,10 @@ function evictExpiredKlines(): void {
       if (n++ >= overflow) break
       klinesCache.delete(key)
     }
+  }
+  // Drop stale failure markers so the cooldown map can't grow unbounded.
+  for (const [key, ts] of klinesFailure) {
+    if (now - ts > KLINES_FAILURE_COOLDOWN_MS * 4) klinesFailure.delete(key)
   }
 }
 // Use unref() so the janitor doesn't keep the Node event loop alive on its
@@ -215,44 +228,77 @@ export async function getKlines(
   if (cached && Date.now() - cached.ts < ttlForInterval(intervalNormalized)) {
     return cached.data
   }
-  const inflight = inflightKlines.get(cacheKey)
-  if (inflight) return inflight
-
-  const fetchPromise = (async (): Promise<OHLCV> => {
-    console.log('[Aster] klines fetch (cache miss):', { symbol, interval: intervalNormalized, limit: safeLimit })
-    try {
-      const res = await client(BASE_PUBLIC).get('/fapi/v1/klines', {
-        params: { symbol, interval: intervalNormalized, limit: safeLimit }
-      })
-      const candles = res.data as any[][]
-      const result: OHLCV = {
-        open:       candles.map((c) => parseFloat(c[1])),
-        high:       candles.map((c) => parseFloat(c[2])),
-        low:        candles.map((c) => parseFloat(c[3])),
-        close:      candles.map((c) => parseFloat(c[4])),
-        volume:     candles.map((c) => parseFloat(c[5])),
-        timestamps: candles.map((c) => c[0] as number)
+  // After a recent upstream failure, serve the last known REAL candles during
+  // the cooldown rather than re-hitting the rate-limited endpoint (which just
+  // re-triggers the 429) or fabricating mock data. Only applies when we have
+  // prior real data for this series.
+  const lastFail = klinesFailure.get(cacheKey)
+  if (cached && lastFail && Date.now() - lastFail < KLINES_FAILURE_COOLDOWN_MS) {
+    return cached.data
+  }
+  // Leader builds (and registers) the upstream fetch; concurrent callers reuse
+  // the same in-flight promise. CRITICAL: followers must NOT `return inflight`
+  // raw — if the leader's fetch rejects, every follower would bypass the
+  // stale/mock fallback below and fail hard (the exact high-concurrency path
+  // this fix targets). Instead all callers await the shared promise *inside*
+  // the try/catch so they degrade identically. The leader logs the failure and
+  // stamps the cooldown marker exactly once (inside the promise body).
+  let fetchPromise = inflightKlines.get(cacheKey)
+  if (!fetchPromise) {
+    fetchPromise = (async (): Promise<OHLCV> => {
+      console.log('[Aster] klines fetch (cache miss):', { symbol, interval: intervalNormalized, limit: safeLimit })
+      try {
+        const res = await client(BASE_PUBLIC).get('/fapi/v1/klines', {
+          params: { symbol, interval: intervalNormalized, limit: safeLimit }
+        })
+        const candles = res.data as any[][]
+        const result: OHLCV = {
+          open:       candles.map((c) => parseFloat(c[1])),
+          high:       candles.map((c) => parseFloat(c[2])),
+          low:        candles.map((c) => parseFloat(c[3])),
+          close:      candles.map((c) => parseFloat(c[4])),
+          volume:     candles.map((c) => parseFloat(c[5])),
+          timestamps: candles.map((c) => c[0] as number)
+        }
+        klinesCache.set(cacheKey, { data: result, ts: Date.now() })
+        klinesFailure.delete(cacheKey)
+        return result
+      } catch (err: any) {
+        // Log + stamp once (leader only) so 9k concurrent followers don't each
+        // emit an identical error line or re-stamp the marker.
+        console.error(
+          '[Aster] getKlines failed:',
+          'msg=', err?.message,
+          'status=', err?.response?.status,
+          'detail=', JSON.stringify(err?.response?.data ?? null),
+          'url=', err?.config?.url,
+          'params=', JSON.stringify(err?.config?.params ?? null)
+        )
+        klinesFailure.set(cacheKey, Date.now())
+        throw err
+      } finally {
+        inflightKlines.delete(cacheKey)
       }
-      klinesCache.set(cacheKey, { data: result, ts: Date.now() })
-      return result
-    } finally {
-      inflightKlines.delete(cacheKey)
-    }
-  })()
-  inflightKlines.set(cacheKey, fetchPromise)
+    })()
+    inflightKlines.set(cacheKey, fetchPromise)
+  }
 
   try {
     return await fetchPromise
-  } catch (err: any) {
-    console.error(
-      '[Aster] getKlines failed:',
-      'msg=', err?.message,
-      'status=', err?.response?.status,
-      'detail=', JSON.stringify(err?.response?.data ?? null),
-      'url=', err?.config?.url,
-      'params=', JSON.stringify(err?.config?.params ?? null)
-    )
-    console.error('[Aster] FALLING BACK TO MOCK DATA — agents trading on simulated candles!')
+  } catch {
+    // Every caller (leader + followers) degrades identically. Prefer the most
+    // recent REAL candles (even if stale) over fabricated data so agents keep
+    // deciding on the ACTUAL market. Mock data is the absolute last resort —
+    // only when we have NEVER successfully fetched this series (cold start).
+    // This is the key fix for "agents trading on simulated candles": any pair
+    // fetched at least once now degrades to stale-but-real.
+    const stale = klinesCache.get(cacheKey)
+    if (stale) {
+      const ageS = Math.floor((Date.now() - stale.ts) / 1000)
+      console.warn(`[Aster] serving STALE real candles (age=${ageS}s) instead of mock for ${cacheKey}`)
+      return stale.data
+    }
+    console.error(`[Aster] FALLING BACK TO MOCK DATA — no cached candles for ${cacheKey} (cold start); agents may trade on simulated data!`)
     const { generateMockOHLCV } = await import('../agents/indicators')
     const bases: Record<string, number> = {
       BTCUSDT: 65000, ETHUSDT: 3500, BNBUSDT: 580, SOLUSDT: 170, ARBUSDT: 1.2
