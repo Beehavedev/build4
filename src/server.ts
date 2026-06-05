@@ -4794,6 +4794,118 @@ app.delete('/api/admin/cost-rates/:provider', requireAdmin, async (req, res) => 
 })
 
 // ──────────────────────────────────────────────────────────────────────────
+// Re-home a legacy custodial wallet into the new (Prisma `Wallet`) system.
+//
+// Background: early users were provisioned a BSC custodial wallet by the OLD
+// build4io-site bot, stored in the legacy `telegram_wallets` table
+// (aes-256-gcm, `iv:tag:data` hex, keyed off WALLET_ENCRYPTION_KEY). The new
+// src/ bot mints a SEPARATE wallet in the Prisma `Wallet` table (CryptoJS,
+// keyed off MASTER_ENCRYPTION_KEY/userId). For users who funded their legacy
+// wallet, the new app shows an empty fresh wallet and their funds look
+// "missing". This endpoint decrypts the legacy key (server-side, where the
+// master key lives), re-encrypts it under the new scheme, and makes it the
+// user's active wallet — NO on-chain transfer, the funded address is kept.
+//
+// FAIL-CLOSED: the decrypted key MUST derive to the exact address stored in
+// telegram_wallets, or we refuse to write anything. Idempotent.
+// Gated by requireAdmin (ADMIN_TOKEN or Telegram-admin allowlist).
+app.post('/api/admin/rehome-legacy-wallet', requireAdmin, async (req, res) => {
+  try {
+    const telegramId = String(req.body?.telegramId ?? '').trim()
+    if (!/^\d+$/.test(telegramId)) {
+      return res.status(400).json({ error: 'telegramId required (numeric string)' })
+    }
+
+    const { ethers } = await import('ethers')
+    const crypto = await import('crypto')
+    const { encryptPrivateKey } = await import('./services/wallet')
+
+    const user = await db.user.findUnique({ where: { telegramId: BigInt(telegramId) } })
+    if (!user) return res.status(404).json({ error: 'User not found' })
+
+    // telegram_wallets is NOT in the Prisma schema (legacy table). chat_id is
+    // a TEXT column, so bind the id as a string.
+    const rows = await db.$queryRawUnsafe<Array<{
+      wallet_address: string; encrypted_private_key: string; is_active: boolean
+    }>>(
+      `SELECT wallet_address, encrypted_private_key, is_active
+         FROM telegram_wallets
+        WHERE chat_id = $1
+        ORDER BY is_active DESC, created_at ASC`,
+      telegramId
+    )
+    if (!rows.length) {
+      return res.status(404).json({ error: 'No legacy wallet found for this user' })
+    }
+    const legacy = rows[0]
+
+    const seed = process.env.WALLET_ENCRYPTION_KEY
+    if (!seed) {
+      return res.status(500).json({ error: 'WALLET_ENCRYPTION_KEY unset on server — cannot decrypt legacy key' })
+    }
+
+    const parts = String(legacy.encrypted_private_key).split(':')
+    if (parts.length !== 3) {
+      return res.status(422).json({ error: 'Unexpected legacy ciphertext format (expected iv:tag:data)' })
+    }
+    const iv = Buffer.from(parts[0], 'hex')
+    const tag = Buffer.from(parts[1], 'hex')
+    const data = parts[2]
+
+    // Replicate build4io-site key derivation: PBKDF2 "stable" then sha256 "stable-legacy".
+    const keyStable = crypto.pbkdf2Sync(seed, 'build4-platform-v2', 100000, 32, 'sha512')
+    const keyLegacy = crypto.createHash('sha256').update(seed).digest()
+    let pk: string | null = null
+    for (const key of [keyStable, keyLegacy]) {
+      try {
+        const d = crypto.createDecipheriv('aes-256-gcm', key, iv, { authTagLength: 16 })
+        d.setAuthTag(tag)
+        let out = d.update(data, 'hex', 'utf8'); out += d.final('utf8')
+        if (out && out.startsWith('0x')) { pk = out; break }
+      } catch { /* try next key */ }
+    }
+    if (!pk) {
+      return res.status(422).json({ error: 'Could not decrypt legacy key (WALLET_ENCRYPTION_KEY mismatch)' })
+    }
+
+    // FAIL-CLOSED address check.
+    let derived: string
+    try { derived = new ethers.Wallet(pk).address } catch {
+      return res.status(422).json({ error: 'Decrypted value is not a valid private key' })
+    }
+    if (derived.toLowerCase() !== String(legacy.wallet_address).toLowerCase()) {
+      return res.status(422).json({
+        error: 'Derived address does not match stored legacy address — refusing to import',
+        derived, expected: legacy.wallet_address,
+      })
+    }
+
+    // Idempotent upsert into Prisma Wallet (user has no PIN → no pin arg).
+    const existingForUser = await db.wallet.findMany({ where: { userId: user.id } })
+    let walletRow = existingForUser.find(w => w.address.toLowerCase() === derived.toLowerCase()) ?? null
+    const encryptedPK = encryptPrivateKey(pk, user.id)
+    let created = false
+    if (walletRow) {
+      await db.wallet.update({ where: { id: walletRow.id }, data: { encryptedPK } })
+    } else {
+      walletRow = await db.wallet.create({
+        data: { userId: user.id, chain: 'BSC', address: derived, encryptedPK, label: 'Main Wallet', isActive: false },
+      })
+      created = true
+    }
+
+    // Make ONLY the re-homed wallet active.
+    await db.wallet.updateMany({ where: { userId: user.id }, data: { isActive: false } })
+    await db.wallet.update({ where: { id: walletRow.id }, data: { isActive: true } })
+
+    return res.json({ ok: true, address: derived, walletId: walletRow.id, created })
+  } catch (err: any) {
+    console.error('[API] /admin/rehome-legacy-wallet failed:', err?.message)
+    res.status(500).json({ error: 'Internal error' })
+  }
+})
+
+// ──────────────────────────────────────────────────────────────────────────
 // $B4 buybacks (Task #9). The team performs buybacks manually for now and
 // posts each tx through the admin form. The mini-app's Home tab reads the
 // public stats endpoint to show "$B4 bought back to date" + recent activity.
