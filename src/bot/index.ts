@@ -42,9 +42,14 @@ export function createBot(): Bot {
   // Also catches subscription tx-hash replies (0x…64hex) so they don't get
   // mistaken for an LLM prompt.
   bot.on('message:text', async (ctx, next) => {
-    if (await handleWalletImportReply(ctx)) return
+    // PIN and payment flows take precedence: they only consume when THEIR
+    // pending state is set, so running them first prevents a pending wallet
+    // import from hijacking a PIN reply (digits) or a payment tx hash
+    // (0x+64hex, same shape as a private key). The import handler runs last and
+    // only consumes when it is the sole pending text flow.
     if (await handlePinReply(ctx)) return
     if (await handlePaymentTxReply(ctx)) return
+    if (await handleWalletImportReply(ctx)) return
     await next()
   })
 
