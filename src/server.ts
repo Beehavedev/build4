@@ -5686,6 +5686,86 @@ app.get('/api/admin/fourmeme/health', requireAdmin, async (req, res) => {
   }
 })
 
+// GET /api/admin/bsc-rpc-test — diagnostic, read-only. Proves from THIS
+// deployment's egress whether BSC RPC actually works, and isolates WHY balance
+// reads stall on Render even when the same provider returns in ~150ms from the
+// workspace. Reports (a) env hygiene the dashboard hides (trailing whitespace /
+// surrounding quotes that silently break the URL), (b) plain-fetch JSON-RPC
+// probes against the private RPC and two public nodes (bypassing ethers'
+// FallbackProvider, so we can tell "ethers stalls" from "network blocked"), and
+// (c) a Telegram control that is known to work from Render — if that succeeds
+// but the RPC probes don't, outbound HTTPS is fine and the RPC hosts are the
+// problem.
+app.get('/api/admin/bsc-rpc-test', requireAdmin, async (_req, res) => {
+  const PROBE = '0x000000000000000000000000000000000000dEaD'
+  const USDT = '0x55d398326f99059fF775485246999027B3197955'
+  const callData = '0x70a08231000000000000000000000000' + PROBE.slice(2).toLowerCase()
+  const rpcProbe = async (label: string, url: string, ms = 6000) => {
+    const t0 = Date.now()
+    const ctrl = new AbortController()
+    const timer = setTimeout(() => ctrl.abort(), ms)
+    try {
+      const post = (body: unknown) =>
+        fetch(url, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(body),
+          signal: ctrl.signal,
+        })
+      const [bnbR, usdtR] = await Promise.all([
+        post({ jsonrpc: '2.0', id: 1, method: 'eth_getBalance', params: [PROBE, 'latest'] }),
+        post({ jsonrpc: '2.0', id: 2, method: 'eth_call', params: [{ to: USDT, data: callData }, 'latest'] }),
+      ])
+      const bnbJson: any = await bnbR.json().catch(() => null)
+      const usdtJson: any = await usdtR.json().catch(() => null)
+      return {
+        label,
+        ok: bnbR.ok && usdtR.ok && !!bnbJson?.result && !!usdtJson?.result,
+        ms: Date.now() - t0,
+        httpStatus: `${bnbR.status}/${usdtR.status}`,
+        bnb: bnbJson?.result ?? bnbJson?.error?.message ?? null,
+        usdt: usdtJson?.result ? 'ok' : (usdtJson?.error?.message ?? null),
+      }
+    } catch (e) {
+      return { label, ok: false, ms: Date.now() - t0, error: (e as Error).message }
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+  const raw = process.env.BSC_RPC_URL ?? ''
+  const trimmed = raw.trim()
+  const cleaned = trimmed.replace(/^["']|["']$/g, '')
+  let parsedHost = ''
+  try { parsedHost = new URL(cleaned).host } catch { /* malformed */ }
+  const env = {
+    present: !!raw,
+    rawLen: raw.length,
+    trimmedLen: trimmed.length,
+    hadWhitespace: raw.length !== trimmed.length,
+    hadSurroundingQuotes: cleaned.length !== trimmed.length,
+    parsedHost,
+  }
+  const tests: unknown[] = []
+  if (cleaned) tests.push(await rpcProbe('BSC_RPC_URL(private)', cleaned))
+  tests.push(await rpcProbe('public:publicnode', 'https://bsc.publicnode.com'))
+  tests.push(await rpcProbe('public:binance', 'https://bsc-dataseed.binance.org'))
+  let controlTelegram: unknown
+  {
+    const t0 = Date.now()
+    const ctrl = new AbortController()
+    const timer = setTimeout(() => ctrl.abort(), 5000)
+    try {
+      const r = await fetch('https://api.telegram.org', { signal: ctrl.signal })
+      controlTelegram = { ok: true, ms: Date.now() - t0, status: r.status }
+    } catch (e) {
+      controlTelegram = { ok: false, ms: Date.now() - t0, error: (e as Error).message }
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+  res.json({ ok: true, node: process.version, env, tests, controlTelegram })
+})
+
 // ════════════════════════════════════════════════════════════════════════
 // Community Trading Fleet — admin API (all gated by requireAdmin)
 // Powers the /fleet panel: list agents + their wallets/stats, flip the
