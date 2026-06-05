@@ -21,6 +21,28 @@ import {
   PK_EXPORT_LIMIT_PER_24H
 } from '../../services/security'
 
+/* ────────── Pending wallet-import state ──────────
+ * After /linkwallet or the "🔗 Import" button we mark the user as awaiting a
+ * private key. The next text message they send is captured by
+ * handleWalletImportReply (wired into the bot's message middleware) and turned
+ * into an imported, active wallet. Without this the import prompt was a no-op —
+ * importWallet() was never called by any handler. */
+const pendingWalletImports = new Map<number, number>()
+const WALLET_IMPORT_TTL_MS = 5 * 60 * 1000
+
+function setPendingWalletImport(telegramId: number) {
+  pendingWalletImports.set(telegramId, Date.now() + WALLET_IMPORT_TTL_MS)
+}
+function hasPendingWalletImport(telegramId: number): boolean {
+  const exp = pendingWalletImports.get(telegramId)
+  if (!exp) return false
+  if (Date.now() > exp) { pendingWalletImports.delete(telegramId); return false }
+  return true
+}
+function clearPendingWalletImport(telegramId: number) {
+  pendingWalletImports.delete(telegramId)
+}
+
 export async function handleWalletCommand(ctx: Context) {
   const user = (ctx as any).dbUser
   if (!user) return
@@ -114,8 +136,9 @@ export function registerWallet(bot: Bot) {
   })
 
   bot.command('linkwallet', async (ctx) => {
+    if (ctx.from) setPendingWalletImport(ctx.from.id)
     await ctx.reply(
-      '🔗 *Import Wallet*\n\nPlease send your private key.\n\n⚠️ Your key is encrypted with AES-256 and never stored in plain text. Delete your message after sending.\n\nType /cancel to abort.',
+      '🔗 *Import Wallet*\n\nPlease send your private key as the next message.\n\n⚠️ Your key is encrypted with AES-256 and never stored in plain text. Delete your message after sending.\n\nType /cancel to abort.',
       { parse_mode: 'Markdown' }
     )
   })
@@ -256,10 +279,74 @@ export function registerWallet(bot: Bot) {
 
   bot.callbackQuery('wallet_import', async (ctx) => {
     await ctx.answerCallbackQuery()
+    if (ctx.from) setPendingWalletImport(ctx.from.id)
     await ctx.reply(
       '🔗 Send your private key as the next message.\n\n⚠️ It will be AES-256 encrypted immediately. Delete the message after.\n\n/cancel to abort.'
     )
   })
+}
+
+/* ────────── Wallet-import reply handler — wired into bot text middleware ──────────
+ * Captures the private key the user sends after /linkwallet or the 🔗 Import
+ * button, imports it, and makes it the user's sole active wallet so the
+ * mini-app immediately reflects it. Returns true when it consumed the message. */
+export async function handleWalletImportReply(ctx: Context): Promise<boolean> {
+  if (!ctx.from || !ctx.message?.text) return false
+  if (!hasPendingWalletImport(ctx.from.id)) return false
+
+  const raw = ctx.message.text.trim()
+  if (raw === '/cancel') {
+    clearPendingWalletImport(ctx.from.id)
+    await ctx.reply('Cancelled.')
+    return true
+  }
+
+  const user = (ctx as any).dbUser
+  if (!user) {
+    clearPendingWalletImport(ctx.from.id)
+    return true
+  }
+
+  const key = raw.startsWith('0x') ? raw : `0x${raw}`
+  if (!/^0x[0-9a-fA-F]{64}$/.test(key)) {
+    await ctx.reply('❌ That doesn\'t look like a valid private key (need 64 hex characters). Paste it again or /cancel.')
+    return true
+  }
+
+  // Consume the pending state and delete the key message ASAP for safety.
+  clearPendingWalletImport(ctx.from.id)
+  try { await ctx.deleteMessage() } catch {}
+
+  const result = await importWallet(user.id, key, 'BSC')
+  let address: string
+  if ('error' in result) {
+    if (result.error === 'Wallet already imported') {
+      const { ethers } = await import('ethers')
+      address = new ethers.Wallet(key).address
+    } else {
+      await ctx.reply(`❌ Import failed: ${result.error}`)
+      return true
+    }
+  } else {
+    address = result.address
+  }
+
+  // Make the imported wallet the sole active wallet on its chain.
+  const w = await db.wallet.findFirst({ where: { userId: user.id, address } })
+  if (w) {
+    await db.wallet.updateMany({
+      where: { userId: user.id, chain: w.chain, isActive: true },
+      data: { isActive: false }
+    })
+    await db.wallet.update({ where: { id: w.id }, data: { isActive: true } })
+  }
+  await logSecurityEvent({ userId: user.id, telegramId: ctx.from.id, action: 'wallet_imported', walletId: w?.id })
+
+  await ctx.reply(
+    `✅ *Wallet Imported & Activated*\n\nAddress:\n\`${address}\`\n\nThis is now your active BSC wallet. Open the mini-app to see your balances.`,
+    { parse_mode: 'Markdown' }
+  )
+  return true
 }
 
 /* ────────── PIN reply handler — wired into bot text-message middleware ────────── */

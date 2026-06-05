@@ -1,7 +1,7 @@
 import { Bot, session } from 'grammy'
 import { authMiddleware } from './middleware/auth'
 import { registerStart } from './commands/start'
-import { registerWallet, handlePinReply } from './commands/wallet'
+import { registerWallet, handlePinReply, handleWalletImportReply } from './commands/wallet'
 import { registerTrade } from './commands/trade'
 import { registerSignals } from './commands/signals'
 import { registerScan } from './commands/scan'
@@ -42,6 +42,7 @@ export function createBot(): Bot {
   // Also catches subscription tx-hash replies (0x…64hex) so they don't get
   // mistaken for an LLM prompt.
   bot.on('message:text', async (ctx, next) => {
+    if (await handleWalletImportReply(ctx)) return
     if (await handlePinReply(ctx)) return
     if (await handlePaymentTxReply(ctx)) return
     await next()
