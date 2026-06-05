@@ -132,11 +132,25 @@ export function createBot(): Bot {
   // showing the slash-command list instead of the app launcher, which is why
   // the mini-app "disappears" from the bot. Idempotent + cached server-side so
   // it persists across restarts.
-  const miniAppUrl = process.env.MINIAPP_URL
-    || `https://${process.env.REPLIT_DOMAINS?.split(',')[0] || 'build4-1.onrender.com'}/app`
-  bot.api.setChatMenuButton({
-    menu_button: { type: 'web_app', text: 'Open App', web_app: { url: miniAppUrl } },
-  }).catch((err: any) => console.error('[Bot] setChatMenuButton failed:', err?.message))
+  //
+  // CRITICAL: ONLY the real production bot may set this. The chat menu button is
+  // a single global setting shared by every instance using this token. The
+  // ephemeral workspace/dev instance (REPLIT_DOMAINS=*.replit.dev) or any
+  // stand-down instance (TELEGRAM_BOT_EXTERNAL=true) must NOT set it — otherwise
+  // every workspace restart clobbers the production menu with an unreachable dev
+  // URL and the mini-app "disappears" for real users.
+  const isEphemeralOrStandby =
+    process.env.TELEGRAM_BOT_EXTERNAL === 'true'
+    || (process.env.REPLIT_DOMAINS || '').includes('.replit.dev')
+  if (isEphemeralOrStandby) {
+    console.log('[Bot] Ephemeral/standby instance — NOT setting chat menu button (prod bot owns it)')
+  } else {
+    const miniAppUrl = process.env.MINIAPP_URL
+      || `https://${process.env.REPLIT_DOMAINS?.split(',')[0] || 'build4-1.onrender.com'}/app`
+    bot.api.setChatMenuButton({
+      menu_button: { type: 'web_app', text: 'Open App', web_app: { url: miniAppUrl } },
+    }).catch((err: any) => console.error('[Bot] setChatMenuButton failed:', err?.message))
+  }
 
   return bot
 }
