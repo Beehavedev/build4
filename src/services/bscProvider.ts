@@ -55,10 +55,24 @@ export function buildBscProvider(primaryRpcUrl?: string): ethers.AbstractProvide
     ? [primaryRpcUrl, ...PUBLIC_BSC_RPCS.filter((u) => u !== primaryRpcUrl)]
     : PUBLIC_BSC_RPCS;
 
+  // `batchMaxCount: 1` DISABLES ethers v6's automatic JSON-RPC request
+  // batching. By default ethers coalesces every call made within a tick into
+  // ONE HTTP request carrying many sub-calls. Under the bot's live load
+  // (fortyTwo campaign enumeration, fleet, klines) those batches grow large
+  // and QuickNode rejects the WHOLE batch with
+  // `-32005 method eth_call in batch triggered rate limit` — which fails every
+  // sub-call riding in it, including an unrelated wallet-balance read that just
+  // happened to be coalesced into the same batch. Diagnostic proof (run on
+  // Render under live load via /api/admin/bsc-rpc-test): an isolated, UNbatched
+  // call returns in ~15ms, while the batched provider path times out. So we
+  // send each call as its own request; QuickNode rate-limits batches, not
+  // individual calls, so this is the actual fix — not the URL or the network.
+  const rpcOpts = { staticNetwork: network, batchMaxCount: 1 } as const;
+
   // Single-endpoint case: a bare JsonRpcProvider is lighter and avoids
   // FallbackProvider's quorum/scoring overhead. Still apply staticNetwork.
   if (urls.length === 1) {
-    return new ethers.JsonRpcProvider(urls[0], network, { staticNetwork: network });
+    return new ethers.JsonRpcProvider(urls[0], network, rpcOpts);
   }
 
   // stallTimeout=800ms (was 2000). FallbackProvider only opens the NEXT
@@ -69,7 +83,7 @@ export function buildBscProvider(primaryRpcUrl?: string): ethers.AbstractProvide
   // previous setup was responsible for the production "bsc_bnb_timeout_5000ms"
   // banners users were seeing even though their deposit was on-chain.
   const configs = urls.map((url, i) => ({
-    provider: new ethers.JsonRpcProvider(url, network, { staticNetwork: network }),
+    provider: new ethers.JsonRpcProvider(url, network, rpcOpts),
     priority: i + 1,
     weight: 1,
     stallTimeout: 800,
