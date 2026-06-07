@@ -5763,7 +5763,54 @@ app.get('/api/admin/bsc-rpc-test', requireAdmin, async (_req, res) => {
       clearTimeout(timer)
     }
   }
-  res.json({ ok: true, node: process.version, env, tests, controlTelegram })
+  // (d) The REAL path: exercise buildBscProvider exactly like readBsc does —
+  // a concurrent BNB(getBalance) + USDT(eth_call) read. ethers coalesces these
+  // into ONE JSON-RPC batch; if the deployed build still batches, QuickNode
+  // rejects the whole batch (-32005) and this stalls to the timeout. With
+  // batchMaxCount:1 live, it returns in well under a second. This is the
+  // ground-truth signal for whether the batching fix is actually deployed.
+  let ethersProviderTest: unknown
+  {
+    const t0 = Date.now()
+    try {
+      const { ethers } = await import('ethers')
+      const { buildBscProvider } = await import('./services/bscProvider')
+      const provider = buildBscProvider(cleaned || undefined)
+      const usdt = new ethers.Contract(
+        USDT,
+        ['function balanceOf(address) view returns (uint256)'],
+        provider,
+      )
+      const withTimeout = <T,>(p: Promise<T>, ms: number, label: string) =>
+        Promise.race<T>([
+          p,
+          new Promise<T>((_, rej) =>
+            setTimeout(() => rej(new Error(`${label}_timeout_${ms}ms`)), ms),
+          ),
+        ])
+      const [bnb, bal] = await withTimeout(
+        Promise.all([provider.getBalance(PROBE), usdt.balanceOf(PROBE)]),
+        13000,
+        'ethers_batch',
+      )
+      ethersProviderTest = {
+        ok: true,
+        ms: Date.now() - t0,
+        batchMaxCount: 1,
+        bnb: (bnb as bigint).toString(),
+        usdt: (bal as bigint).toString(),
+        note: 'real readBsc path completed — batching is effectively disabled',
+      }
+    } catch (e) {
+      ethersProviderTest = {
+        ok: false,
+        ms: Date.now() - t0,
+        error: (e as Error).message,
+        note: 'real readBsc path FAILED — deployed build likely still batches (redeploy needed)',
+      }
+    }
+  }
+  res.json({ ok: true, node: process.version, env, tests, controlTelegram, ethersProviderTest })
 })
 
 // ════════════════════════════════════════════════════════════════════════
