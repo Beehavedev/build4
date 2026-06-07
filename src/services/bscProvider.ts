@@ -90,3 +90,34 @@ export function buildBscProvider(primaryRpcUrl?: string): ethers.AbstractProvide
   }));
   return new ethers.FallbackProvider(configs, network, { quorum: 1 });
 }
+
+/**
+ * Build a BARE single-endpoint BSC provider on the configured (keyed) RPC —
+ * NO FallbackProvider fan-out. For low-frequency, latency-sensitive READS like
+ * the mini-app wallet-balance card.
+ *
+ * Why this exists separately from `buildBscProvider`:
+ *   On Render's datacenter egress, the 8-endpoint FallbackProvider stalls for
+ *   7–13s on a single getBalance — ethers scores/aligns providers and waits on
+ *   the public dataseeds, which are aggressively IP-throttled from cloud IPs.
+ *   Diagnostic proof (run ON Render via /api/admin/bsc-rpc-test): in the SAME
+ *   request, a plain unbatched call to the keyed QuickNode endpoint returns in
+ *   ~25ms while the FallbackProvider path times out at the 13s budget. A bare
+ *   keyed provider behaves like that fast plain-fetch.
+ *
+ * Tradeoff: no automatic failover to the public nodes. That is intentional —
+ * on Render the public fallback never actually worked (it stalled), and the
+ * keyed endpoint is the reliable one. When NO keyed URL is configured we fall
+ * back to the multi-endpoint publics provider (best effort).
+ *
+ * Keep `buildBscProvider` (multi-endpoint) for the trading/signer paths, which
+ * are per-wallet serialized and tolerate the extra latency in exchange for
+ * surviving a single-endpoint outage.
+ */
+export function buildBscReadProvider(primaryRpcUrl?: string): ethers.AbstractProvider {
+  const network = new ethers.Network('bnb', 56n);
+  const rpcOpts = { staticNetwork: network, batchMaxCount: 1 } as const;
+  const url = (primaryRpcUrl ?? '').trim().replace(/^["']|["']$/g, '');
+  if (url) return new ethers.JsonRpcProvider(url, network, rpcOpts);
+  return buildBscProvider();
+}

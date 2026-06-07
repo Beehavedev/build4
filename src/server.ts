@@ -1121,8 +1121,8 @@ app.get('/api/me/wallet', requireTgUser, async (req, res) => {
     // rendering at their own faster budgets in parallel.
     const BSC_SECTION_TIMEOUT_MS = 12000
     const readBsc = async () => {
-      const { buildBscProvider } = await import('./services/bscProvider')
-      const provider = buildBscProvider(process.env.BSC_RPC_URL)
+      const { buildBscReadProvider } = await import('./services/bscProvider')
+      const provider = buildBscReadProvider(process.env.BSC_RPC_URL)
       let usdt = 0, bnb = 0, balanceError: string | null = null
       // BNB and USDT calls run in parallel under the section budget so a
       // slow USDT contract call can't take BNB down with it.
@@ -5763,19 +5763,19 @@ app.get('/api/admin/bsc-rpc-test', requireAdmin, async (_req, res) => {
       clearTimeout(timer)
     }
   }
-  // (d) The REAL path: exercise buildBscProvider exactly like readBsc does —
-  // a concurrent BNB(getBalance) + USDT(eth_call) read. ethers coalesces these
-  // into ONE JSON-RPC batch; if the deployed build still batches, QuickNode
-  // rejects the whole batch (-32005) and this stalls to the timeout. With
-  // batchMaxCount:1 live, it returns in well under a second. This is the
-  // ground-truth signal for whether the batching fix is actually deployed.
+  // (d) The REAL path: exercise buildBscReadProvider EXACTLY like readBsc does —
+  // a concurrent BNB(getBalance) + USDT(eth_call) read on the bare keyed
+  // provider (no FallbackProvider fan-out). On Render the old FallbackProvider
+  // path stalled 7–13s on the throttled public dataseeds; the bare keyed
+  // provider should return in well under a second. This is the ground-truth
+  // signal for whether the mini-app wallet card will read balances on Render.
   let ethersProviderTest: unknown
   {
     const t0 = Date.now()
     try {
       const { ethers } = await import('ethers')
-      const { buildBscProvider } = await import('./services/bscProvider')
-      const provider = buildBscProvider(cleaned || undefined)
+      const { buildBscReadProvider } = await import('./services/bscProvider')
+      const provider = buildBscReadProvider(cleaned || undefined)
       const usdt = new ethers.Contract(
         USDT,
         ['function balanceOf(address) view returns (uint256)'],
@@ -5791,22 +5791,23 @@ app.get('/api/admin/bsc-rpc-test', requireAdmin, async (_req, res) => {
       const [bnb, bal] = await withTimeout(
         Promise.all([provider.getBalance(PROBE), usdt.balanceOf(PROBE)]),
         13000,
-        'ethers_batch',
+        'ethers_read',
       )
       ethersProviderTest = {
         ok: true,
         ms: Date.now() - t0,
-        batchMaxCount: 1,
+        path: 'buildBscReadProvider(bare-keyed)',
         bnb: (bnb as bigint).toString(),
         usdt: (bal as bigint).toString(),
-        note: 'real readBsc path completed — batching is effectively disabled',
+        note: 'real readBsc path completed fast — mini-app wallet card will read',
       }
     } catch (e) {
       ethersProviderTest = {
         ok: false,
         ms: Date.now() - t0,
+        path: 'buildBscReadProvider(bare-keyed)',
         error: (e as Error).message,
-        note: 'real readBsc path FAILED — deployed build likely still batches (redeploy needed)',
+        note: 'real readBsc path FAILED — redeploy needed or keyed RPC unhealthy',
       }
     }
   }
