@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { apiFetch } from '../api'
+import { useAutoRefresh } from '../hooks/useAutoRefresh'
 
 // Dedicated four.meme + DEX trading surface. Lets the user paste ANY
 // BSC token address and trade it — auto-routes to the four.meme
@@ -46,6 +47,8 @@ interface RecentLaunch {
 // distinct from RecentLaunch, which is the user's OWN launch history.
 interface DiscoverLaunch {
   tokenAddress: string
+  name: string | null
+  symbol: string | null
   firstSeenAt: string
   fillPct: number | null
   fundsBnb: number | null
@@ -78,6 +81,38 @@ const trustColor = (t: number | null): string => {
 }
 // Preset BNB amounts for one-tap sizing on the buy side.
 const QUICK_BNB = ['0.01', '0.05', '0.1', '0.25']
+
+// DexScreener serves token icons at a deterministic BSC CDN path. Brand-new
+// launches it hasn't indexed yet 404 → we fall back to the symbol initial,
+// so the square always shows something real (never a fake placeholder coin).
+const tokenIcon = (addr: string) =>
+  `https://dd.dexscreener.com/ds-data/tokens/bsc/${addr.toLowerCase()}.png?size=lg`
+
+function LaunchLogo({ addr, label }: { addr: string; label: string }) {
+  const [errored, setErrored] = useState(false)
+  const initial = (label || '?').trim().slice(0, 1).toUpperCase()
+  const box: React.CSSProperties = {
+    width: 40, height: 40, borderRadius: 10, flexShrink: 0,
+    background: 'var(--bg-card)', border: '1px solid var(--border)',
+  }
+  if (errored) {
+    return (
+      <div style={{
+        ...box, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: 16, fontWeight: 800, color: 'var(--text-secondary)',
+      }} data-testid={`logo-fallback-${addr}`}>{initial}</div>
+    )
+  }
+  return (
+    <img
+      src={tokenIcon(addr)}
+      alt={label}
+      onError={() => setErrored(true)}
+      data-testid={`logo-launch-${addr}`}
+      style={{ ...box, objectFit: 'cover' }}
+    />
+  )
+}
 
 export default function TokenTrade() {
   const [address, setAddress] = useState('')
@@ -119,14 +154,18 @@ export default function TokenTrade() {
       .catch(() => { /* silent */ })
   }, [])
 
+  // Silent fetch (no loading flip) so the auto-refresh poll never flickers
+  // the board; the initial discoverLoading=true clears on the first tick and
+  // last-good rows stay put across transient failures.
   function loadDiscover() {
-    setDiscoverLoading(true)
-    apiFetch<{ ok: boolean; launches: DiscoverLaunch[] }>('/api/fourmeme/discover')
+    return apiFetch<{ ok: boolean; launches: DiscoverLaunch[] }>('/api/fourmeme/discover')
       .then((j) => { if (j?.ok) setDiscover(j.launches || []) })
-      .catch(() => { /* silent — empty board */ })
+      .catch(() => { /* silent — keep last-good board */ })
       .finally(() => setDiscoverLoading(false))
   }
-  useEffect(() => { loadDiscover() }, [])
+  // Auto-refresh the launch board every 4s while the tab is visible (no manual
+  // refresh button). Single-flighted + visibility-aware via the shared hook.
+  useAutoRefresh(loadDiscover, { intervalMs: 4000 })
 
   // One-click trade from the launch tracker: load the token into the
   // panel, default to a buy, and scroll the trade ticket into view. We do
@@ -272,18 +311,13 @@ export default function TokenTrade() {
       <div className="card" style={{ marginBottom: 12 }} data-testid="card-launch-tracker">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
           <div style={{ fontSize: 14, fontWeight: 700 }}>🛰 Live launches</div>
-          <button
-            type="button"
-            onClick={loadDiscover}
-            disabled={discoverLoading}
-            data-testid="button-refresh-launches"
-            style={{
-              padding: '4px 10px', fontSize: 11, fontWeight: 600,
-              borderRadius: 8, border: '1px solid var(--border)',
-              background: 'var(--bg-elevated)', color: 'var(--text-secondary)',
-              cursor: discoverLoading ? 'not-allowed' : 'pointer',
-            }}
-          >{discoverLoading ? '…' : '↻ Refresh'}</button>
+          <span
+            data-testid="status-launches-live"
+            style={{ fontSize: 10, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 5 }}
+          >
+            <span style={{ width: 6, height: 6, borderRadius: 999, background: 'var(--green)', display: 'inline-block' }} />
+            live · auto
+          </span>
         </div>
         {discoverLoading && discover.length === 0 ? (
           <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Loading launches…</div>
@@ -303,28 +337,35 @@ export default function TokenTrade() {
                   background: 'var(--bg-elevated)', border: '1px solid var(--border)',
                 }}
               >
-                <div style={{
-                  minWidth: 38, textAlign: 'center', padding: '4px 0', borderRadius: 8,
-                  background: 'var(--bg-card)', border: `1px solid ${trustColor(d.trustScore)}`,
-                }}>
-                  <div style={{ fontSize: 13, fontWeight: 800, color: trustColor(d.trustScore), lineHeight: 1 }}>
-                    {d.trustScore != null ? d.trustScore : '—'}
-                  </div>
-                  <div style={{ fontSize: 8, color: 'var(--text-muted)', marginTop: 2, letterSpacing: 0.4 }}>TRUST</div>
-                </div>
+                <LaunchLogo addr={d.tokenAddress} label={d.symbol || d.name || d.tokenAddress} />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{ fontSize: 12, fontWeight: 700, fontFamily: 'monospace' }}>
-                      {shortAddr(d.tokenAddress)}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                    <span
+                      data-testid={`text-launch-name-${d.tokenAddress}`}
+                      style={{
+                        fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap',
+                        overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 130,
+                      }}
+                    >
+                      {d.name || d.symbol || shortAddr(d.tokenAddress)}
                     </span>
-                    <span style={{
-                      fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 999,
-                      background: d.graduated ? 'rgba(247,147,30,0.15)' : 'rgba(124,58,237,0.15)',
-                      color: d.graduated ? '#f7931e' : 'var(--purple)',
-                    }}>{d.graduated ? '🥞 PCS' : '🚀 curve'}</span>
+                    {d.symbol && d.name && (
+                      <span style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 600, flexShrink: 0 }}>
+                        {d.symbol}
+                      </span>
+                    )}
+                    {d.trustScore != null && (
+                      <span style={{
+                        fontSize: 9, fontWeight: 800, padding: '1px 6px', borderRadius: 999, flexShrink: 0,
+                        background: 'var(--bg-card)', color: trustColor(d.trustScore),
+                        border: `1px solid ${trustColor(d.trustScore)}`, whiteSpace: 'nowrap',
+                      }}>{d.trustScore} trust</span>
+                    )}
                   </div>
                   <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 3 }}>
-                    {!d.graduated && d.fillPct != null && `${(d.fillPct * 100).toFixed(0)}% filled · `}
+                    {d.graduated
+                      ? 'Graduated · '
+                      : (d.fillPct != null ? `${(d.fillPct * 100).toFixed(0)}% filled · ` : '')}
                     {d.volumeBnb != null && `${d.volumeBnb.toFixed(2)} BNB vol · `}
                     {d.buyerCount != null && `${d.buyerCount} buyers · `}
                     {ago(d.firstSeenAt)}

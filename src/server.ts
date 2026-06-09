@@ -7589,6 +7589,75 @@ app.get('/api/fourmeme/launches', requireTgUser, async (req, res) => {
   }
 })
 
+// ── four.meme discover metadata cache ───────────────────────────────────
+// The scanner table (`four_meme_launches_seen`) stores curve/trust stats but
+// no token name/symbol. Rather than block the discover feed on 30 on-chain
+// reads each poll, we lazily read ERC20 name/symbol once per token and cache
+// them here (24h TTL). The endpoint returns whatever is cached immediately
+// and kicks off bounded background fills for misses; the auto-refreshing
+// mini-app board then shows real names within a few seconds. No fakes — a
+// token with no readable name simply stays unnamed (the UI falls back to
+// the symbol initial / short address).
+type FourMemeMeta = { name: string | null; symbol: string | null; ts: number }
+const fourMemeMetaCache = new Map<string, FourMemeMeta>()
+const fourMemeMetaInflight = new Set<string>()
+const FOUR_MEME_META_TTL_MS = 24 * 60 * 60 * 1000
+// Short TTL for an empty (name+symbol both null) result so a transient RPC
+// failure doesn't pin a token unnamed for a full day — it retries in minutes.
+const FOUR_MEME_META_NEG_TTL_MS = 5 * 60 * 1000
+
+async function enrichFourMemeMeta(addresses: string[]): Promise<void> {
+  const now = Date.now()
+  // Normalize to lowercase + de-dup so mixed-case/duplicate inputs never
+  // trigger redundant RPC reads (the cache is keyed by lowercase address).
+  const todo = Array.from(new Set(addresses.map((a) => a.toLowerCase()))).filter((a) => {
+    if (fourMemeMetaInflight.has(a)) return false
+    const c = fourMemeMetaCache.get(a)
+    if (!c) return true
+    const ttl = (c.name == null && c.symbol == null) ? FOUR_MEME_META_NEG_TTL_MS : FOUR_MEME_META_TTL_MS
+    return (now - c.ts) > ttl
+  })
+  if (todo.length === 0) return
+  try {
+    const { ethers } = await import('ethers')
+    const { buildBscProvider } = await import('./services/bscProvider')
+    const provider = buildBscProvider(process.env.BSC_RPC_URL)
+    const abi = [
+      'function name() view returns (string)',
+      'function symbol() view returns (string)',
+    ]
+    const withTimeout = <T>(p: Promise<T>): Promise<T> =>
+      Promise.race([
+        p,
+        new Promise<T>((_, rej) => setTimeout(() => rej(new Error('timeout')), 4000)),
+      ])
+    // Bounded worker pool so we never fan out 30+ simultaneous RPC reads.
+    let i = 0
+    const worker = async () => {
+      while (i < todo.length) {
+        const addr = todo[i++]
+        fourMemeMetaInflight.add(addr)
+        try {
+          const c = new ethers.Contract(addr, abi, provider)
+          let name: string | null = null
+          let symbol: string | null = null
+          try { name = String(await withTimeout(c.name())).trim() || null } catch {}
+          try { symbol = String(await withTimeout(c.symbol())).trim() || null } catch {}
+          fourMemeMetaCache.set(addr, { name, symbol, ts: Date.now() })
+        } catch {
+          // Negative cache so a bad/unreadable token isn't retried every poll.
+          fourMemeMetaCache.set(addr, { name: null, symbol: null, ts: Date.now() })
+        } finally {
+          fourMemeMetaInflight.delete(addr)
+        }
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(4, todo.length) }, worker))
+  } catch {
+    /* provider build failed — leave cache untouched, retry next poll */
+  }
+}
+
 // GET /api/fourmeme/discover — public-ish (auth-gated) feed of recent
 // four.meme launches the scanner has discovered, so the mini-app's
 // four.meme venue can render a "track launches" board. Reads the
@@ -7629,24 +7698,33 @@ app.get('/api/fourmeme/discover', requireTgUser, async (req, res) => {
        ORDER BY "first_seen_at" DESC
        LIMIT ${limit}
     `
-    const launches = rows.map((r) => ({
-      tokenAddress: r.token_address,
-      firstSeenAt: r.first_seen_at instanceof Date
-        ? r.first_seen_at.toISOString()
-        : new Date(r.first_seen_at as any).toISOString(),
-      lastScannedAt: r.last_scanned_at
-        ? (r.last_scanned_at instanceof Date ? r.last_scanned_at.toISOString() : new Date(r.last_scanned_at as any).toISOString())
-        : null,
-      fillPct: r.fill_pct,
-      fundsBnb: r.funds_bnb,
-      volumeBnb: r.volume_bnb,
-      buyerCount: r.buyer_count,
-      buyCount: r.buy_count,
-      sellCount: r.sell_count,
-      graduated: !!r.graduated,
-      trustScore: r.trust_score,
-      verdict: r.verdict,
-    }))
+    const launches = rows.map((r) => {
+      const meta = fourMemeMetaCache.get(r.token_address.toLowerCase())
+      return {
+        tokenAddress: r.token_address,
+        name: meta?.name ?? null,
+        symbol: meta?.symbol ?? null,
+        firstSeenAt: r.first_seen_at instanceof Date
+          ? r.first_seen_at.toISOString()
+          : new Date(r.first_seen_at as any).toISOString(),
+        lastScannedAt: r.last_scanned_at
+          ? (r.last_scanned_at instanceof Date ? r.last_scanned_at.toISOString() : new Date(r.last_scanned_at as any).toISOString())
+          : null,
+        fillPct: r.fill_pct,
+        fundsBnb: r.funds_bnb,
+        volumeBnb: r.volume_bnb,
+        buyerCount: r.buyer_count,
+        buyCount: r.buy_count,
+        sellCount: r.sell_count,
+        graduated: !!r.graduated,
+        trustScore: r.trust_score,
+        verdict: r.verdict,
+      }
+    })
+    // Fire-and-forget: backfill name/symbol for tokens we haven't cached yet
+    // so the auto-refreshing board fills in real on-chain names within a few
+    // seconds — without ever blocking this response on 30 RPC reads.
+    void enrichFourMemeMeta(rows.map((r) => r.token_address))
     res.json({ ok: true, launches })
   } catch (err: any) {
     const msg = String(err?.message ?? err)

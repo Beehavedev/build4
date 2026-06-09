@@ -57,14 +57,6 @@ export default function Portfolio({ userId }: PortfolioProps) {
   const [loading, setLoading] = useState(true)
   const [wallet, setWallet] = useState<WalletInfo | null>(null)
   const [predictions, setPredictions] = useState<PredictionPosition[]>([])
-  // Per-user paper-vs-live opt-in for 42.space prediction trades. Mirrors
-  // the bot's /predictions "Enable LIVE trading" / "Switch to paper-trade"
-  // callbacks and the same toggle on the Predictions tab — all three write
-  // the one User.fortyTwoLiveTrade flag. null = unknown (fetch pending, or
-  // the mini-app was opened outside Telegram and the endpoint 401'd, in
-  // which case we hide the toggle rather than show a misleading default).
-  const [predLiveMode, setPredLiveMode] = useState<boolean | null>(null)
-  const [predModeBusy, setPredModeBusy] = useState(false)
   // four.meme bags the user has launched (and possibly already sold).
   // Refreshed on the same poll cadence as the rest of the page so the
   // live bag value tracks the curve in real time.
@@ -102,25 +94,18 @@ export default function Portfolio({ userId }: PortfolioProps) {
   }
   // Fast group on a 1s cadence; bags ride a slower 5s cadence because each row
   // is N on-chain calls (balanceOf + quoteSell). Both are gated on userId,
-  // paused while the paper/live toggle is being written, single-flighted, and
-  // skipped while the tab is hidden — all via the shared useAutoRefresh hook.
+  // single-flighted, and skipped while the tab is hidden — all via the shared
+  // useAutoRefresh hook.
   useAutoRefresh(
     async () => { await Promise.allSettled([loadPortfolio(), loadWallet(), loadPredictions()]) },
-    { intervalMs: 1000, enabled: !!userId, paused: predModeBusy },
+    { intervalMs: 1000, enabled: !!userId },
   )
-  useAutoRefresh(loadBags, { intervalMs: 5000, enabled: !!userId, paused: predModeBusy })
+  useAutoRefresh(loadBags, { intervalMs: 5000, enabled: !!userId })
 
-  // Paper/live opt-in is read once on mount (and on userId change). It only
-  // changes when the user flips it here or on the Predictions tab, so it
-  // doesn't need the 1s poll cadence the position values ride. Also clears the
-  // initial loading state when there's no userId to load for.
+  // Clear the initial loading state when there's no userId to load for (e.g.
+  // opened outside Telegram).
   useEffect(() => {
-    if (!userId) { setLoading(false); return }
-    let cancelled = false
-    apiFetch<{ ok: boolean; liveOptIn: boolean }>('/api/me/predictions-mode')
-      .then((r) => { if (!cancelled) setPredLiveMode(typeof r?.liveOptIn === 'boolean' ? r.liveOptIn : null) })
-      .catch(() => { if (!cancelled) setPredLiveMode(null) })
-    return () => { cancelled = true }
+    if (!userId) setLoading(false)
   }, [userId])
 
   // ── Inline Sell / Claim on the Prediction Positions panel ──────────
@@ -210,26 +195,6 @@ export default function Portfolio({ userId }: PortfolioProps) {
       setActionMsg({ kind: 'err', text: (e as Error).message })
     } finally {
       setActionBusy(null)
-    }
-  }
-
-  // Flip the per-user 42.space paper/live opt-in. Optimistically reflects
-  // the requested state and reconciles with the server's authoritative
-  // value on response so a rejected/clamped write self-corrects.
-  async function togglePredMode(next: boolean) {
-    if (predModeBusy) return
-    setPredModeBusy(true)
-    try {
-      const r = await apiFetch<{ ok: boolean; liveOptIn: boolean }>('/api/me/predictions-mode', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ enabled: next }),
-      })
-      if (r?.ok) setPredLiveMode(r.liveOptIn === true)
-    } catch {
-      /* keep last good state — a failed flip leaves the toggle as-is */
-    } finally {
-      setPredModeBusy(false)
     }
   }
 
@@ -783,19 +748,17 @@ export default function Portfolio({ userId }: PortfolioProps) {
       {/* ── Prediction Positions ──────────────────────────────────────────
           Dedicated visibility for 42.space outcome-token positions, giving
           predictions the same portfolio surface perps already have. Unlike
-          the Trade History card below (which strips paper rows), this panel
-          shows BOTH paper and live positions, each tagged with a PAPER/LIVE
-          badge, because seeing how the paper book is performing is the whole
-          point of paper mode. Each row surfaces:
+          the Trade History card below, this panel surfaces the user's live
+          42.space outcome-token positions (no paper rows — everything here is
+          a real on-chain position). Each row surfaces:
             - entry probability  (entryPrice — the outcome's implied prob at open)
             - now / implied prob (live curve quote ÷ tokens held)
             - PnL                (live mark-to-market for open rows; realised
-                                  pnl on closed/resolved/claimed rows)
-          A paper/live mode toggle mirrors the bot's /predictions callbacks. */}
+                                  pnl on closed/resolved/claimed rows) */}
       {(() => {
         // Newest first, but float open positions to the top so the user's
         // active exposure is always above the resolved/closed history.
-        const rows = [...predictions].sort((a, b) => {
+        const rows = [...predictions].filter((p) => !p.paperTrade).sort((a, b) => {
           const aOpen = a.status === 'open' ? 1 : 0
           const bOpen = b.status === 'open' ? 1 : 0
           if (aOpen !== bOpen) return bOpen - aOpen
@@ -818,35 +781,6 @@ export default function Portfolio({ userId }: PortfolioProps) {
                 }}>42.space</span>
                 Prediction Positions
               </div>
-              {/* Paper/live mode toggle — only shown once we know the user's
-                  state (hidden when null, i.e. opened outside Telegram). */}
-              {predLiveMode !== null && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }} data-testid="toggle-prediction-mode">
-                  {(['paper', 'live'] as const).map((m) => {
-                    const isLive = m === 'live'
-                    const active = predLiveMode === isLive
-                    return (
-                      <button
-                        key={m}
-                        type="button"
-                        disabled={predModeBusy}
-                        onClick={() => togglePredMode(isLive)}
-                        data-testid={`button-prediction-mode-${m}`}
-                        style={{
-                          padding: '4px 12px', borderRadius: 6, fontSize: 11, fontWeight: 600,
-                          letterSpacing: 0.3, textTransform: 'uppercase',
-                          cursor: predModeBusy ? 'wait' : 'pointer',
-                          border: '1px solid ' + (active ? (isLive ? '#10b981' : '#f59e0b') : '#1e1e2e'),
-                          background: active ? (isLive ? '#10b98122' : '#f59e0b22') : 'transparent',
-                          color: active ? (isLive ? '#10b981' : '#f59e0b') : '#64748b',
-                        }}
-                      >
-                        {m}
-                      </button>
-                    )
-                  })}
-                </div>
-              )}
             </div>
 
             {/* Transient sell/claim feedback — green on success, red on
@@ -917,15 +851,6 @@ export default function Portfolio({ userId }: PortfolioProps) {
                             fontSize: 10, padding: '1px 6px', borderRadius: 4,
                             background: '#3b82f615', color: '#60a5fa',
                           }}>{p.outcomeLabel ?? '—'}</span>
-                          {/* Paper/live badge — the headline distinction this
-                              panel exists to surface. */}
-                          <span style={{
-                            fontSize: 9, padding: '1px 6px', borderRadius: 4, fontWeight: 700, letterSpacing: 0.4,
-                            background: p.paperTrade ? '#f59e0b22' : '#10b98122',
-                            color: p.paperTrade ? '#f59e0b' : '#10b981',
-                          }} data-testid={`badge-mode-${p.id}`}>
-                            {p.paperTrade ? 'PAPER' : 'LIVE'}
-                          </span>
                           <span style={{
                             fontSize: 9, padding: '1px 6px', borderRadius: 4, fontWeight: 700, letterSpacing: 0.4,
                             background: `${statusColor}22`, color: statusColor,
