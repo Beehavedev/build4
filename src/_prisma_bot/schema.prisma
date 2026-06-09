@@ -70,10 +70,14 @@ model User {
   // missing here never reaches the production DB and every read of it
   // throws `column "fortyTwoLiveTrade" does not exist`.
   fortyTwoLiveTrade Boolean   @default(true)
-  // Multi-provider swarm decision-making opt-in (Task #18). Default false →
-  // single-provider Anthropic. When true, every trading tick is run across
-  // all configured providers and the quorum verdict wins.
-  swarmEnabled      Boolean   @default(false)
+  // Multi-provider swarm decision-making opt-in (Task #18). Default true →
+  // every trading tick is run across all configured providers and the quorum
+  // verdict wins (resilient to any single provider being down/out of credits).
+  // When false, falls back to the legacy single-provider Anthropic path.
+  // Default flipped to true so all new user agents get the swarm by default;
+  // the standalone house agent (no User row) and fleet agents (fleet_agents
+  // table) are unaffected by this User-level flag.
+  swarmEnabled      Boolean   @default(true)
   // True once the user has enrolled in the Aster builder program (one-time
   // approveBuilder signature). Added via ALTER in ensureTables.ts — MUST be
   // declared here too or `db push --accept-data-loss` drops it every deploy,

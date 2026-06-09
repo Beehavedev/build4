@@ -628,7 +628,11 @@ export async function ensureNewTables() {
   await run(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "polymarketAgentTradingEnabled" BOOLEAN NOT NULL DEFAULT true`)
   await run(`ALTER TABLE "User" ALTER COLUMN "polymarketAgentTradingEnabled" SET DEFAULT true`)
   // ─── Multi-provider swarm opt-in (Task #18) ───
-  await run(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "swarmEnabled" BOOLEAN NOT NULL DEFAULT false`)
+  // Default flipped to true (2026-06) so every new user agent runs the swarm
+  // across all providers by default; the SET DEFAULT enforces it on the
+  // already-existing column (ADD COLUMN IF NOT EXISTS is a no-op there).
+  await run(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "swarmEnabled" BOOLEAN NOT NULL DEFAULT true`)
+  await run(`ALTER TABLE "User" ALTER COLUMN "swarmEnabled" SET DEFAULT true`)
   // ─── HL Unified Account flag (post-Apr-2026) ───
   // Set true once we've observed HL reject a usdClassTransfer with
   // "Action disabled when unified account is active" for this user. Lives
