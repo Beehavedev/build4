@@ -1,9 +1,5 @@
-import Anthropic from '@anthropic-ai/sdk'
-import type {
-  Message as AnthropicMessage,
-  MessageCreateParamsNonStreaming as AnthropicCreateParams,
-} from '@anthropic-ai/sdk/resources/messages'
 import { Agent } from '@prisma/client'
+import type { Provider } from '../services/inference'
 import { db } from '../db'
 import {
   calculateEMA,
@@ -173,8 +169,6 @@ async function safeAgentLogCreate(args: { data: any; [k: string]: any }): Promis
   }
 }
 import { checkRiskGuard, getTodayPnl } from './riskGuard'
-
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
 export interface AgentDecision {
   regime: 'UPTREND' | 'DOWNTREND' | 'RANGING' | 'TRANSITIONING'
@@ -679,29 +673,49 @@ export function expandPairs(pairs: string[]): string[] {
   return Array.from(expanded)
 }
 
-// ─── Swarm-or-Anthropic decision helper ───────────────────────────────────
-// Extracted from runAgentTick so the three swarm branches can be
-// independently unit-tested without spinning up an entire agent tick:
-//   (a) swarmOn && >=2 live providers && quorum reached → use quorum decision
-//   (b) swarmOn && >=2 live providers && no quorum     → highest-confidence
-//                                                         successful provider
-//                                                         (prefers non-anthropic
-//                                                         since anthropic is the
-//                                                         provider that runs out
-//                                                         of credits in prod).
-//                                                         Per-provider reasoning
-//                                                         preserved in
-//                                                         providersTelemetry.
-//   (c) swarmOn && only 1 live provider                → Anthropic fallback
-//   (d) !swarmOn                                       → Anthropic-only path
+// ─── Swarm / single-provider decision helper ──────────────────────────────
+// Extracted from runAgentTick so the decision branches can be independently
+// unit-tested without spinning up an entire agent tick. Decision providers
+// default to hyperbolic + akash (DEFAULT_DECISION_PROVIDERS, overridable via
+// the DECISION_PROVIDERS env). anthropic/xai are deliberately excluded from
+// the trading brain because in production they go dead (anthropic = out of
+// credits, xai = key disabled).
+//
+//   (a) swarmOn && >=2 live decision providers && UNANIMOUS → that decision
+//   (b) swarmOn && >=2 live decision providers && not unanimous → safe HOLD
+//       (a trade only fires when EVERY live decision provider approves the
+//        same action — there is NO best-of-swarm fallback)
+//   (c) swarmOn && <2 live decision providers → safe HOLD (unanimity is
+//       impossible with a single approval)
+//   (d) !swarmOn → single decision provider (first live, hyperbolic-first)
 // Dependencies are injectable so tests can stub them; defaults wire to the
-// real swarm/inference modules and the module-scoped `anthropic` client.
-export type AnthropicCreateFn = (args: AnthropicCreateParams) => Promise<AnthropicMessage>
+// real swarm/inference modules.
+
+// Default trading-brain providers. Under swarm BOTH must independently approve.
+export const DEFAULT_DECISION_PROVIDERS: Provider[] = ['hyperbolic', 'akash']
+
+const _VALID_PROVIDERS: Provider[] = ['anthropic', 'xai', 'hyperbolic', 'akash']
+
+// Resolve the configured decision providers. Honors a comma-separated
+// DECISION_PROVIDERS env override (validated + de-duped); falls back to the
+// hyperbolic+akash default when unset / empty / all-invalid.
+export function resolveDecisionProviders(): Provider[] {
+  const raw = (process.env.DECISION_PROVIDERS ?? '').trim()
+  if (!raw) return DEFAULT_DECISION_PROVIDERS
+  const parsed = raw
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter((s): s is Provider => (_VALID_PROVIDERS as string[]).includes(s))
+  const deduped = [...new Set(parsed)]
+  return deduped.length ? deduped : DEFAULT_DECISION_PROVIDERS
+}
+
+type CallLLMFn = typeof import('../services/inference').callLLM
 
 export interface RunDecisionLLMDeps {
   runSwarmDecision?: typeof import('../swarm/swarm').runSwarmDecision
   getProviderStatus?: typeof import('../services/inference').getProviderStatus
-  anthropicCreate?: AnthropicCreateFn
+  callLLM?: CallLLMFn
 }
 
 export interface RunDecisionLLMResult {
@@ -731,51 +745,82 @@ export function _resetSwarmQuorumCountersForTest(): void {
   _swarmNoQuorum = 0
 }
 
-async function callAnthropicForDecision(
+// Parse an LLM decision payload, tolerating the markdown fences + JS-literal
+// glitches we see from OpenAI-compatible providers (Hyperbolic occasionally
+// emits `!null`/`!true`/`!false` and trailing commas). Mirrors the swarm
+// schema parser so the single-provider and swarm paths behave identically.
+function parseDecisionJson(text: string): AgentDecision {
+  const cleaned = text
+    .replace(/```json|```/g, '')
+    .trim()
+    .replace(/:\s*!null\b/g, ':null')
+    .replace(/:\s*!true\b/g, ':false')
+    .replace(/:\s*!false\b/g, ':true')
+    .replace(/,(\s*[}\]])/g, '$1')
+  return JSON.parse(cleaned) as AgentDecision
+}
+
+// Single-provider decision (non-swarm path): try the configured decision
+// providers in order (hyperbolic first by default) and use the first one that
+// answers. Returns a safe HOLD if the response is unparseable or no provider
+// is reachable — never throws, so a provider outage degrades to "hold" rather
+// than killing the tick.
+async function callSingleProviderForDecision(
+  providers: Provider[],
   sysPrompt: string,
   userMessage: string,
-  anthropicCreate: AnthropicCreateFn,
+  callLLMFn: CallLLMFn,
 ): Promise<{ decision: AgentDecision; rawResponse: string }> {
-  const response = await anthropicCreate({
-    model: 'claude-sonnet-4-5',
-    // Bumped from 1000 → 1500: production logs showed Anthropic occasionally
-    // truncating JSON mid-string at ~3.2 KB, which triggered an Unterminated
-    // string SyntaxError below and lost the agent's whole tick. 1500 tokens
-    // covers our verbose-reasoning agents with a comfortable margin while
-    // still being a tiny cost bump (~50% of an already-cheap call).
-    max_tokens: 1500,
-    system: sysPrompt,
-    messages: [{ role: 'user', content: userMessage }],
-  })
-  const first = response.content[0]
-  const rawResponse = first && first.type === 'text' ? first.text : '{}'
-  const cleaned = rawResponse.replace(/```json|```/g, '').trim()
-  try {
-    const decision = JSON.parse(cleaned) as AgentDecision
-    return { decision, rawResponse }
-  } catch (parseErr) {
-    // The model returned malformed JSON (most often a truncated response
-    // where max_tokens cut a string mid-character). Don't propagate the raw
-    // SyntaxError — the upstream handler logs it as `[Agent X] LLM error:
-    // SyntaxError: Unterminated string in JSON…`, which looks alarming to
-    // anyone reading prod logs (e.g. partners during live testing). Convert
-    // to a deterministic, safe HOLD decision so the agent simply skips this
-    // tick and tries again next cycle. The structured log line below makes
-    // the underlying cause greppable without scaring anyone.
-    console.warn(
-      '[anthropic-decision] JSON parse failed — returning safe HOLD.',
-      JSON.stringify({
-        error: (parseErr as Error).message,
-        rawLength: cleaned.length,
-        rawTail: cleaned.slice(-120),
-      }),
-    )
-    const fallback: AgentDecision = {
-      action: 'HOLD',
-      confidence: 0,
-      reasoning: 'LLM response unparseable (likely truncated) — holding this tick',
-    } as AgentDecision
-    return { decision: fallback, rawResponse: cleaned }
+  let lastErr: unknown = null
+  for (const provider of providers) {
+    let res
+    try {
+      res = await callLLMFn({
+        provider,
+        system: sysPrompt,
+        user: userMessage,
+        jsonMode: true,
+        // 1500 tokens covers our verbose-reasoning agents with margin while
+        // staying cheap — matches the old Anthropic budget.
+        maxTokens: 1500,
+      })
+    } catch (err) {
+      lastErr = err
+      console.warn(
+        `[decision:${provider}] call failed, trying next provider`,
+        (err as Error)?.message ?? String(err),
+      )
+      continue
+    }
+    try {
+      return { decision: parseDecisionJson(res.text), rawResponse: res.text }
+    } catch (parseErr) {
+      // Malformed JSON (usually a truncated response). Convert to a
+      // deterministic safe HOLD so the agent simply skips this tick.
+      console.warn(
+        `[decision:${provider}] JSON parse failed — returning safe HOLD.`,
+        JSON.stringify({
+          error: (parseErr as Error).message,
+          rawTail: (res.text ?? '').slice(-120),
+        }),
+      )
+      const fallback: AgentDecision = {
+        action: 'HOLD',
+        confidence: 0,
+        reasoning: 'LLM response unparseable (likely truncated) — holding this tick',
+      } as AgentDecision
+      return { decision: fallback, rawResponse: res.text }
+    }
+  }
+  // No provider answered — fail closed to HOLD.
+  const fallback: AgentDecision = {
+    action: 'HOLD',
+    confidence: 0,
+    reasoning: `decision providers unreachable (${(lastErr as Error)?.message ?? 'none configured'}) — holding`,
+  } as AgentDecision
+  return {
+    decision: fallback,
+    rawResponse: '[no-provider] ' + ((lastErr as Error)?.message ?? ''),
   }
 }
 
@@ -785,46 +830,34 @@ export async function runDecisionLLM(
   userMessage: string,
   deps: RunDecisionLLMDeps = {},
 ): Promise<RunDecisionLLMResult> {
-  const anthropicCreate: AnthropicCreateFn =
-    deps.anthropicCreate ?? ((args) => anthropic.messages.create(args))
+  const getProviderStatus =
+    deps.getProviderStatus ?? (await import('../services/inference')).getProviderStatus
+  const callLLM = deps.callLLM ?? (await import('../services/inference')).callLLM
+
+  // The trading brain only ever runs on the configured decision providers
+  // (hyperbolic + akash by default), and only those that are currently live.
+  const status = getProviderStatus()
+  const configured = resolveDecisionProviders()
+  const liveDecisionProviders = configured.filter((p) => status[p]?.live)
 
   if (swarmOn) {
     const runSwarmDecision =
       deps.runSwarmDecision ?? (await import('../swarm/swarm')).runSwarmDecision
-    const getProviderStatus =
-      deps.getProviderStatus ?? (await import('../services/inference')).getProviderStatus
-    const status = getProviderStatus()
-    const liveProviders = (Object.keys(status) as Array<keyof typeof status>)
-      .filter((p) => status[p].live)
 
-    if (liveProviders.length >= 2) {
+    // Strict unanimity: every live decision provider must independently
+    // approve the SAME action, or the agent holds. We need at least two live
+    // providers — a single approval can never satisfy "both approve".
+    if (liveDecisionProviders.length >= 2) {
       const swarm = await runSwarmDecision<AgentDecision>({
-        providers: liveProviders,
+        providers: liveDecisionProviders,
+        // quorum = participant count ⇒ unanimous. If the providers disagree
+        // (or any one fails), pickWinner returns null → no consensus → HOLD.
+        quorum: liveDecisionProviders.length,
         system: sysPrompt,
         user: userMessage,
         jsonMode: true,
         maxTokens: 1000,
-        schema: (t) => {
-          // Strip markdown fences. Some providers (observed in prod with
-          // Hyperbolic) occasionally emit JS-style literals like `!null` or
-          // `!true` instead of valid JSON, which crashes JSON.parse and was
-          // killing our only surviving provider during the credit-outage
-          // window. Normalise the common cases before parsing:
-          //   :!null  → :null   (model meant "no value")
-          //   :!true  → :false
-          //   :!false → :true
-          // Trailing commas inside objects/arrays are also a frequent LLM
-          // glitch — drop those too. All edits are conservative regex passes
-          // that only touch JSON-syntax positions.
-          const cleaned = t
-            .replace(/```json|```/g, '')
-            .trim()
-            .replace(/:\s*!null\b/g, ':null')
-            .replace(/:\s*!true\b/g, ':false')
-            .replace(/:\s*!false\b/g, ':true')
-            .replace(/,(\s*[}\]])/g, '$1')
-          return JSON.parse(cleaned) as AgentDecision
-        },
+        schema: (t) => parseDecisionJson(t),
         getAction: (d) => d.action,
         getPredictionKey: (d) =>
           d.predictionTrade
@@ -850,22 +883,15 @@ export async function runDecisionLLM(
         const rawResponse = JSON.stringify({ swarm: providersTelemetry, consensus: decision }).slice(0, 4000)
         return { decision, rawResponse, providersTelemetry }
       }
-      // No quorum — instead of burning another LLM call, pick the
-      // highest-confidence successful provider from the swarm we already
-      // ran. Prefer non-anthropic decisions because anthropic is the
-      // provider that runs out of credits in production (visible in logs as
-      // repeated 400 "credit balance is too low" errors), which made the
-      // old anthropic-fallback path silently HOLD on every disagreement.
+
+      // Not unanimous → NO TRADE. We deliberately do NOT fall back to a
+      // best-of-swarm pick: the entire point of swarm mode is that a trade
+      // only fires when every decision provider agrees on the same action.
+      // Any disagreement, or any provider failing, means we hold this tick.
       _swarmNoQuorum += 1
       const totalSwarm = _swarmQuorumReached + _swarmNoQuorum
       const noQuorumRate = totalSwarm > 0 ? (_swarmNoQuorum / totalSwarm) : 0
-      // Build a per-provider status string. For failed providers, prefer the
-      // actual error message (truncated) over the generic "err" tag — without
-      // it we can't tell credit-exhausted vs rate-limited vs parse-failed
-      // vs timeout, which means we can't fix anything. The SwarmCall carries
-      // the error string even though ProviderTelemetry drops it for DB
-      // storage, so pull it directly from swarm.decisions here.
-      const status = swarm.decisions.map((c) => {
+      const perProvider = swarm.decisions.map((c) => {
         if (c.ok && c.decision) {
           const action = (c.decision as AgentDecision).action ?? 'parsed-no-action'
           return `${c.provider}:${action}`
@@ -874,58 +900,49 @@ export async function runDecisionLLM(
         return `${c.provider}:ERR(${errMsg})`
       })
       console.warn(
-        `[swarm] no-quorum fallback — providers=${liveProviders.join(',')} ` +
-        `status=${status.join(' | ')} ` +
-        `noQuorumRate=${(_swarmNoQuorum)}/${totalSwarm} (${(noQuorumRate * 100).toFixed(1)}%)`
+        `[swarm] not unanimous — HOLD. providers=${liveDecisionProviders.join(',')} ` +
+        `status=${perProvider.join(' | ')} ` +
+        `noQuorumRate=${_swarmNoQuorum}/${totalSwarm} (${(noQuorumRate * 100).toFixed(1)}%)`
       )
-
-      // Pick the best successful decision: ok=true && decision present.
-      // Sort by (non-anthropic first, then highest confidence). Confidence
-      // can be missing on some agents → treat as 0 so any non-erroring
-      // provider still beats nothing.
-      const successful = swarm.decisions.filter((c) => c.ok && c.decision)
-      successful.sort((a, b) => {
-        const aAnthro = a.provider === 'anthropic' ? 1 : 0
-        const bAnthro = b.provider === 'anthropic' ? 1 : 0
-        if (aAnthro !== bAnthro) return aAnthro - bAnthro
-        const aConf = (a.decision as AgentDecision)?.confidence ?? 0
-        const bConf = (b.decision as AgentDecision)?.confidence ?? 0
-        return bConf - aConf
-      })
-
-      if (successful.length > 0) {
-        const winner = successful[0]
-        const decision = winner.decision as AgentDecision
-        const tagged =
-          '[swarm-no-quorum, best-of-swarm] ' +
-          JSON.stringify({
-            swarm: providersTelemetry,
-            chosen: { provider: winner.provider, model: winner.model, decision },
-          }).slice(0, 3500)
-        return { decision, rawResponse: tagged, providersTelemetry }
-      }
-
-      // Every provider errored — return a safe HOLD with telemetry so the
-      // AgentLog row still records what happened.
       const safeHold: AgentDecision = {
         action: 'HOLD',
         confidence: 0,
-        reasoning: 'swarm: all providers failed this tick',
+        reasoning: 'swarm: decision providers did not unanimously approve — holding',
       } as AgentDecision
       const tagged =
-        '[swarm-no-quorum, all-failed] ' +
+        '[swarm-no-quorum, hold] ' +
         JSON.stringify({ swarm: providersTelemetry }).slice(0, 3500)
       return { decision: safeHold, rawResponse: tagged, providersTelemetry }
     }
-    // swarmOn but only 1 live provider — fall through to the single-provider
-    // Anthropic path. providersTelemetry stays null so the agent log doesn't
-    // claim a swarm ran when only Anthropic answered.
+
+    // swarmOn but fewer than 2 live decision providers — unanimity is
+    // impossible, so HOLD rather than letting a single provider decide.
+    _swarmNoQuorum += 1
+    console.warn(
+      `[swarm] fewer than 2 live decision providers (${liveDecisionProviders.join(',') || 'none'}) — HOLD`,
+    )
+    const safeHold: AgentDecision = {
+      action: 'HOLD',
+      confidence: 0,
+      reasoning: 'swarm: fewer than 2 decision providers live — cannot reach unanimity, holding',
+    } as AgentDecision
+    return {
+      decision: safeHold,
+      rawResponse: '[swarm-insufficient-providers] ' + (liveDecisionProviders.join(',') || 'none'),
+      providersTelemetry: null,
+    }
   }
 
-  const { decision, rawResponse } = await callAnthropicForDecision(
+  // Non-swarm path: single decision provider (hyperbolic-first by default).
+  // If none are live, still attempt the configured set so a transient status
+  // read doesn't permanently silence the agent — callSingleProviderForDecision
+  // fails closed to HOLD if every attempt fails.
+  const soloProviders = liveDecisionProviders.length ? liveDecisionProviders : configured
+  const { decision, rawResponse } = await callSingleProviderForDecision(
+    soloProviders,
     sysPrompt,
     userMessage,
-    anthropicCreate,
+    callLLM,
   )
   return { decision, rawResponse, providersTelemetry: null }
 }
@@ -1537,11 +1554,12 @@ export async function runAgentTick(agent: Agent): Promise<void> {
           : ''
 
       // 2b. Funding rate signal. Aster returns `lastFundingRate` as a decimal
-      // (e.g. 0.0001 == 0.01% per funding interval). Used three ways below:
-      //   • added to the Claude prompt as market-context
-      //   • hard-skip new entries when funding edge is below 0.01%
+      // (e.g. 0.0001 == 0.01% per funding interval). Used two ways below:
+      //   • added to the LLM prompt as market-context
       //   • combined with ADX to avoid an LLM call when the market is
       //     clearly ranging with no funding edge (cost guard, ~60% savings)
+      // (The old standalone "funding edge below 0.01% → skip" gate was
+      //  removed — see the note further down for why.)
       // Funding read is venue-specific. Aster surfaces lastFundingRate on
       // its mark-price endpoint; HL's mark endpoint does not, so we keep
       // funding=0 there for now (the cost guard below degrades gracefully
@@ -1564,8 +1582,9 @@ export async function runAgentTick(agent: Agent): Promise<void> {
       // manage on this pair — if we hold a position, Claude must still
       // decide whether to close it.
       // Threshold note: user spec says `Math.abs(fundingRate) < 0.02`;
-      // interpreted as 0.02% (=0.0002 decimal) to stay consistent with the
-      // 0.01% threshold in the funding-skip rule below.
+      // interpreted as 0.02% (=0.0002 decimal). On venues where funding is 0
+      // (e.g. Hyperliquid) this reduces to a pure low-ADX ranging check, which
+      // is the intended behaviour — only genuinely trendless pairs are skipped.
       if (
         openPositions.length === 0 &&
         snapshot.adx > 0 &&
@@ -1596,32 +1615,14 @@ export async function runAgentTick(agent: Agent): Promise<void> {
         continue
       }
 
-      // Funding-only skip: when funding rate edge is essentially zero
-      // (<0.01%), there is no statistical bias from the perp basis. Skip
-      // new entries to conserve Claude budget. Existing positions still
-      // need management, so don't skip if we hold one on this pair.
-      if (openPositions.length === 0 && Math.abs(fundingRate) < 0.0001) {
-        await safeAgentLogCreate({
-          data: {
-            agentId: agent.id,
-            userId: agent.userId,
-            exchange: agent.exchange,
-            action: 'HOLD',
-            parsedAction: 'HOLD',
-            executionResult: 'Funding edge too small — LLM call skipped',
-            pair,
-            price: snapshot.price || null,
-            reason: `Funding rate ${fundingPct.toFixed(4)}% — no edge`,
-            adx: Number.isFinite(snapshot.adx) ? snapshot.adx : null,
-            rsi: Number.isFinite(snapshot.rsi) ? snapshot.rsi : null,
-            score: 0,
-            regime: snapshot.regime
-          }
-        })
-        // continue (not return) — same reasoning as the regime-skip above:
-        // pre-LLM skips are cheap, so let the loop check remaining pairs.
-        continue
-      }
+      // NOTE: the old "funding-only skip" (skip the LLM whenever
+      // |fundingRate| < 0.01%) was removed. It fired on virtually every major
+      // (funding is almost always a few bps) and ALWAYS on Hyperliquid (where
+      // funding is hard-coded to 0 here), so it silently prevented agents from
+      // ever opening a position even on strong, trending setups. Entry quality
+      // is now governed by the regime gate above, the RSI/volume gate below,
+      // and — critically — the swarm's unanimity requirement, not by the
+      // funding basis alone.
 
       // Cost guard #3: Claude consistently HOLDs on extreme RSI and volume
       // collapse with reasons like "refusing to chase parabolic", "volume

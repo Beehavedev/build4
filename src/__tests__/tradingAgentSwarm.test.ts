@@ -2,6 +2,8 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   runDecisionLLM,
+  resolveDecisionProviders,
+  DEFAULT_DECISION_PROVIDERS,
   getSwarmQuorumCounters,
   _resetSwarmQuorumCountersForTest,
   type AgentDecision,
@@ -44,6 +46,18 @@ function fakeStatus(live: Array<'anthropic' | 'xai' | 'hyperbolic' | 'akash'>) {
   return () => all as any
 }
 
+// A callLLM stub that returns the given decision as JSON text and records calls.
+function fakeCallLLM(byProvider: Record<string, AgentDecision>) {
+  const calls: Array<{ provider: string }> = []
+  const fn = (async (args: any) => {
+    calls.push({ provider: args.provider })
+    const d = byProvider[args.provider]
+    if (!d) throw new Error(`provider ${args.provider} not configured in fakeCallLLM`)
+    return { text: JSON.stringify(d) } as any
+  }) as any
+  return { fn, calls }
+}
+
 function swarmResult(opts: {
   quorum: AgentDecision | null
   decisions: Array<{ provider: string; ok: boolean; decision?: AgentDecision; error?: string }>
@@ -79,177 +93,164 @@ function swarmResult(opts: {
   } as SwarmResult<AgentDecision>
 }
 
-// ─── Branch (a): >=2 live providers + quorum reached ──────────────────────
-test('runDecisionLLM: swarm + quorum reached uses the quorum decision and emits telemetry', async () => {
+// ─── resolveDecisionProviders ─────────────────────────────────────────────
+test('resolveDecisionProviders: defaults to hyperbolic + akash when env unset', () => {
+  const prev = process.env.DECISION_PROVIDERS
+  delete process.env.DECISION_PROVIDERS
+  try {
+    assert.deepEqual(resolveDecisionProviders(), ['hyperbolic', 'akash'])
+    assert.deepEqual(DEFAULT_DECISION_PROVIDERS, ['hyperbolic', 'akash'])
+  } finally {
+    if (prev === undefined) delete process.env.DECISION_PROVIDERS
+    else process.env.DECISION_PROVIDERS = prev
+  }
+})
+
+test('resolveDecisionProviders: honors env override, validates + de-dupes', () => {
+  const prev = process.env.DECISION_PROVIDERS
+  try {
+    process.env.DECISION_PROVIDERS = 'akash, hyperbolic, akash, bogus'
+    assert.deepEqual(resolveDecisionProviders(), ['akash', 'hyperbolic'])
+    process.env.DECISION_PROVIDERS = 'nonsense,only'
+    assert.deepEqual(resolveDecisionProviders(), ['hyperbolic', 'akash'], 'all-invalid falls back to default')
+  } finally {
+    if (prev === undefined) delete process.env.DECISION_PROVIDERS
+    else process.env.DECISION_PROVIDERS = prev
+  }
+})
+
+// ─── Branch (a): >=2 live decision providers + unanimous quorum ────────────
+test('runDecisionLLM: swarm + unanimous quorum uses the quorum decision, runs ONLY decision providers with unanimous quorum', async () => {
   const quorum = decision({ action: 'OPEN_LONG', confidence: 0.8 })
   let receivedProviders: string[] = []
+  let receivedQuorum: number | undefined
+  let llmCalls = 0
   const result = await runDecisionLLM(true, 'sys', 'usr', {
-    getProviderStatus: fakeStatus(['anthropic', 'xai', 'hyperbolic']),
+    // anthropic+xai are live but must be IGNORED — only hyperbolic/akash decide.
+    getProviderStatus: fakeStatus(['anthropic', 'xai', 'hyperbolic', 'akash']),
     runSwarmDecision: (async (args: any) => {
       receivedProviders = args.providers
+      receivedQuorum = args.quorum
       return swarmResult({
         quorum,
         decisions: [
-          { provider: 'anthropic', ok: true, decision: quorum },
-          { provider: 'xai', ok: true, decision: quorum },
-          { provider: 'hyperbolic', ok: true, decision: decision({ action: 'HOLD', confidence: 0.4 }) },
+          { provider: 'hyperbolic', ok: true, decision: quorum },
+          { provider: 'akash', ok: true, decision: quorum },
         ],
       })
     }) as any,
-    anthropicCreate: async () => {
-      throw new Error('anthropicCreate must NOT be called when swarm reaches quorum')
-    },
+    callLLM: (async () => {
+      llmCalls += 1
+      throw new Error('callLLM must NOT be used when swarm reaches quorum')
+    }) as any,
   })
   assert.equal(result.decision.action, 'OPEN_LONG')
   assert.equal(result.decision.confidence, 0.8)
-  assert.deepEqual(receivedProviders.sort(), ['anthropic', 'hyperbolic', 'xai'])
+  assert.deepEqual(receivedProviders, ['hyperbolic', 'akash'], 'swarm must run only the configured decision providers, in order')
+  assert.equal(receivedQuorum, 2, 'quorum must equal participant count (unanimous)')
+  assert.equal(llmCalls, 0)
   assert.ok(result.providersTelemetry, 'telemetry must be present on swarm path')
-  assert.equal(result.providersTelemetry!.length, 3)
-  // Raw response should embed the swarm consensus payload, not be empty.
+  assert.equal(result.providersTelemetry!.length, 2)
   assert.match(result.rawResponse, /consensus/)
   assert.ok(!result.rawResponse.startsWith('[swarm-no-quorum'))
 })
 
-// ─── Branch (b): >=2 live providers + NO quorum → Anthropic fallback ──────
-test('runDecisionLLM: swarm + no quorum picks the highest-confidence NON-anthropic successful decision (no extra Anthropic call)', async () => {
-  // Anthropic returns the highest raw confidence (0.9) but we deliberately
-  // de-prioritize it because in production it is the provider that runs out
-  // of credits. xai (0.6) should win over hyperbolic (0.3).
-  const longHigh = decision({ action: 'OPEN_LONG', confidence: 0.9, reasoning: 'anthropic says long' })
-  const short = decision({ action: 'OPEN_SHORT', confidence: 0.6, reasoning: 'xai says short' })
-  const hold = decision({ action: 'HOLD', confidence: 0.3, reasoning: 'hyperbolic says hold' })
-  let anthropicCalls = 0
+// ─── Branch (b): >=2 live providers + NOT unanimous → safe HOLD ───────────
+test('runDecisionLLM: swarm + no unanimity returns a safe HOLD with telemetry (NO best-of-swarm, NO extra LLM call)', async () => {
+  const long = decision({ action: 'OPEN_LONG', confidence: 0.9, reasoning: 'hyperbolic says long' })
+  const short = decision({ action: 'OPEN_SHORT', confidence: 0.6, reasoning: 'akash says short' })
+  let llmCalls = 0
   const result = await runDecisionLLM(true, 'sys-prompt', 'user-msg', {
-    getProviderStatus: fakeStatus(['anthropic', 'xai', 'hyperbolic']),
+    getProviderStatus: fakeStatus(['hyperbolic', 'akash']),
     runSwarmDecision: (async () =>
       swarmResult({
-        quorum: null, // <-- no quorum
+        quorum: null, // disagreement → no unanimous quorum
         decisions: [
-          { provider: 'anthropic', ok: true, decision: longHigh },
-          { provider: 'xai', ok: true, decision: short },
-          { provider: 'hyperbolic', ok: true, decision: hold },
+          { provider: 'hyperbolic', ok: true, decision: long },
+          { provider: 'akash', ok: true, decision: short },
         ],
       })) as any,
-    anthropicCreate: async () => {
-      anthropicCalls += 1
-      throw new Error('anthropicCreate must NOT be called by the no-quorum branch any more')
-    },
+    callLLM: (async () => {
+      llmCalls += 1
+      throw new Error('callLLM must NOT be issued by the no-quorum branch')
+    }) as any,
   })
-  assert.equal(anthropicCalls, 0, 'no-quorum branch must NOT issue any Anthropic call')
-  assert.equal(result.decision.action, 'OPEN_SHORT', 'best-of-swarm: xai wins over hyperbolic; anthropic is de-prioritized')
-  assert.equal(result.decision.reasoning, 'xai says short')
-  assert.ok(result.providersTelemetry && result.providersTelemetry.length === 3, 'swarm telemetry must still be present')
-  assert.match(result.rawResponse, /^\[swarm-no-quorum, best-of-swarm\]/)
+  assert.equal(llmCalls, 0, 'no-quorum branch must NOT issue any extra LLM call')
+  assert.equal(result.decision.action, 'HOLD', 'disagreement must HOLD — no best-of-swarm pick')
+  assert.equal(result.decision.confidence, 0)
+  assert.ok(result.providersTelemetry && result.providersTelemetry.length === 2, 'swarm telemetry must still be present')
+  assert.match(result.rawResponse, /^\[swarm-no-quorum, hold\]/)
 })
 
-test('runDecisionLLM: swarm + no quorum falls back to anthropic decision only when it is the only successful provider', async () => {
-  // xai and hyperbolic both errored; anthropic is the only provider that
-  // returned a parseable decision. Even though we de-prioritize anthropic,
-  // it wins because there is no non-anthropic alternative.
-  const anthropicOnly = decision({ action: 'HOLD', confidence: 0.55, reasoning: 'only anthropic answered' })
-  let anthropicCalls = 0
+test('runDecisionLLM: swarm + all providers failed → safe HOLD telemetry, no best-of-swarm', async () => {
+  let llmCalls = 0
   const result = await runDecisionLLM(true, 'sys', 'usr', {
-    getProviderStatus: fakeStatus(['anthropic', 'xai', 'hyperbolic']),
+    getProviderStatus: fakeStatus(['hyperbolic', 'akash']),
     runSwarmDecision: (async () =>
       swarmResult({
         quorum: null,
         decisions: [
-          { provider: 'anthropic', ok: true, decision: anthropicOnly },
-          { provider: 'xai', ok: false, error: 'down' },
           { provider: 'hyperbolic', ok: false, error: 'down' },
-        ],
-      })) as any,
-    anthropicCreate: async () => { anthropicCalls += 1; throw new Error('must not call') },
-  })
-  assert.equal(anthropicCalls, 0, 'must not issue an extra Anthropic call — we use the swarm result')
-  assert.equal(result.decision.action, 'HOLD')
-  assert.equal(result.decision.reasoning, 'only anthropic answered')
-})
-
-test('runDecisionLLM: swarm + no quorum returns safe HOLD telemetry when ALL providers failed (no Anthropic call)', async () => {
-  let anthropicCalls = 0
-  const result = await runDecisionLLM(true, 'sys', 'usr', {
-    getProviderStatus: fakeStatus(['anthropic', 'xai']),
-    runSwarmDecision: (async () =>
-      swarmResult({
-        quorum: null,
-        decisions: [
-          { provider: 'anthropic', ok: false, error: 'down' },
-          { provider: 'xai', ok: false, error: 'down' },
+          { provider: 'akash', ok: false, error: 'down' },
         ],
         error: 'all providers failed',
       })) as any,
-    anthropicCreate: async () => { anthropicCalls += 1; throw new Error('must not call') },
+    callLLM: (async () => { llmCalls += 1; throw new Error('must not call') }) as any,
   })
-  assert.equal(anthropicCalls, 0, 'all-failed branch must NOT call Anthropic — we already know it failed')
+  assert.equal(llmCalls, 0)
   assert.equal(result.decision.action, 'HOLD')
-  assert.match(result.rawResponse, /^\[swarm-no-quorum, all-failed\]/)
+  assert.match(result.rawResponse, /^\[swarm-no-quorum, hold\]/)
   assert.ok(result.providersTelemetry && result.providersTelemetry.length === 2)
 })
 
-// ─── Branch (c): swarmOn but only 1 live provider → Anthropic fallback ────
-test('runDecisionLLM: swarm enabled but only 1 live provider falls through to Anthropic single-provider path', async () => {
+// ─── Branch (c): swarmOn but <2 live decision providers → safe HOLD ───────
+test('runDecisionLLM: swarm enabled but only 1 live decision provider HOLDs (unanimity impossible, swarm not run)', async () => {
   let swarmCalls = 0
-  let anthropicCalls = 0
-  const anthropicDecision = decision({ action: 'HOLD', confidence: 0.5 })
+  let llmCalls = 0
   const result = await runDecisionLLM(true, 'sys', 'usr', {
-    getProviderStatus: fakeStatus(['anthropic']), // only one live
+    // anthropic live but it is NOT a decision provider; only hyperbolic is live.
+    getProviderStatus: fakeStatus(['anthropic', 'hyperbolic']),
     runSwarmDecision: (async () => {
       swarmCalls += 1
       return swarmResult({ quorum: null, decisions: [] })
     }) as any,
-    anthropicCreate: async (args) => {
-      anthropicCalls += 1
-      assert.equal(args.system, 'sys')
-      assert.equal((args.messages[0] as any).content, 'usr')
-      return {
-        id: 'm', type: 'message', role: 'assistant', model: 'c', stop_reason: 'end_turn',
-        stop_sequence: null, usage: { input_tokens: 1, output_tokens: 1 },
-        content: [{ type: 'text', text: JSON.stringify(anthropicDecision), citations: null }],
-      } as any
-    },
+    callLLM: (async () => { llmCalls += 1; throw new Error('must not call') }) as any,
   })
-  assert.equal(swarmCalls, 0, 'swarm must NOT run when fewer than 2 live providers')
-  assert.equal(anthropicCalls, 1, 'Anthropic must be the single fallback when swarm cannot run')
+  assert.equal(swarmCalls, 0, 'swarm must NOT run with fewer than 2 live decision providers')
+  assert.equal(llmCalls, 0, 'swarm mode must HOLD, not drop to a single-provider call')
   assert.equal(result.decision.action, 'HOLD')
+  assert.match(result.rawResponse, /^\[swarm-insufficient-providers\]/)
   assert.equal(result.providersTelemetry, null, 'telemetry must be null when swarm did not run')
 })
 
-// ─── Quorum counters: ensure the no-quorum branch is observable ──────────
+// ─── Quorum counters ──────────────────────────────────────────────────────
 test('runDecisionLLM increments quorum counters so operators can see the no-quorum rate', async () => {
   _resetSwarmQuorumCountersForTest()
   const quorum = decision({ action: 'OPEN_LONG' })
-  // 1 quorum-reached call
   await runDecisionLLM(true, 'sys', 'usr', {
-    getProviderStatus: fakeStatus(['anthropic', 'xai', 'hyperbolic']),
+    getProviderStatus: fakeStatus(['hyperbolic', 'akash']),
     runSwarmDecision: (async () =>
       swarmResult({
         quorum,
         decisions: [
-          { provider: 'anthropic', ok: true, decision: quorum },
-          { provider: 'xai', ok: true, decision: quorum },
           { provider: 'hyperbolic', ok: true, decision: quorum },
+          { provider: 'akash', ok: true, decision: quorum },
         ],
       })) as any,
-    anthropicCreate: async () => { throw new Error('should not call') },
+    callLLM: (async () => { throw new Error('should not call') }) as any,
   })
-  // 2 no-quorum fallbacks
   for (let i = 0; i < 2; i++) {
     await runDecisionLLM(true, 'sys', 'usr', {
-      getProviderStatus: fakeStatus(['anthropic', 'xai']),
+      getProviderStatus: fakeStatus(['hyperbolic', 'akash']),
       runSwarmDecision: (async () =>
         swarmResult({
           quorum: null,
           decisions: [
-            { provider: 'anthropic', ok: true, decision: decision({ action: 'OPEN_LONG' }) },
-            { provider: 'xai', ok: true, decision: decision({ action: 'OPEN_SHORT' }) },
+            { provider: 'hyperbolic', ok: true, decision: decision({ action: 'OPEN_LONG' }) },
+            { provider: 'akash', ok: true, decision: decision({ action: 'OPEN_SHORT' }) },
           ],
         })) as any,
-      anthropicCreate: async () => ({
-        id: 'm', type: 'message', role: 'assistant', model: 'c', stop_reason: 'end_turn',
-        stop_sequence: null, usage: { input_tokens: 1, output_tokens: 1 },
-        content: [{ type: 'text', text: JSON.stringify(decision({ action: 'HOLD' })), citations: null }],
-      }) as any,
+      callLLM: (async () => { throw new Error('should not call') }) as any,
     })
   }
   const counters = getSwarmQuorumCounters()
@@ -257,26 +258,40 @@ test('runDecisionLLM increments quorum counters so operators can see the no-quor
   assert.equal(counters.noQuorum, 2)
 })
 
-// ─── Branch (d): swarmOn=false (sanity baseline) ──────────────────────────
-test('runDecisionLLM: swarmOn=false uses Anthropic-only path and never touches swarm/inference', async () => {
-  let touched = false
-  const anthropicDecision = decision({ action: 'OPEN_LONG' })
+// ─── Branch (d): swarmOn=false → single decision provider via callLLM ──────
+test('runDecisionLLM: swarmOn=false uses a single decision provider (hyperbolic-first) and never runs the swarm', async () => {
+  let swarmTouched = false
+  const dec = decision({ action: 'OPEN_LONG', reasoning: 'hyperbolic solo' })
+  const llm = fakeCallLLM({ hyperbolic: dec, akash: decision({ action: 'HOLD' }) })
   const result = await runDecisionLLM(false, 'sys', 'usr', {
-    getProviderStatus: () => {
-      touched = true
-      return {} as any
-    },
+    getProviderStatus: fakeStatus(['hyperbolic', 'akash']),
     runSwarmDecision: (async () => {
-      touched = true
+      swarmTouched = true
       return swarmResult({ quorum: null, decisions: [] })
     }) as any,
-    anthropicCreate: async () => ({
-      id: 'm', type: 'message', role: 'assistant', model: 'c', stop_reason: 'end_turn',
-      stop_sequence: null, usage: { input_tokens: 1, output_tokens: 1 },
-      content: [{ type: 'text', text: JSON.stringify(anthropicDecision), citations: null }],
+    callLLM: llm.fn,
+  })
+  assert.equal(swarmTouched, false, 'swarm must not run when swarmOn=false')
+  assert.equal(llm.calls.length, 1, 'only the first live provider should be called')
+  assert.equal(llm.calls[0].provider, 'hyperbolic', 'hyperbolic is tried first')
+  assert.equal(result.decision.action, 'OPEN_LONG')
+  assert.equal(result.decision.reasoning, 'hyperbolic solo')
+  assert.equal(result.providersTelemetry, null)
+})
+
+test('runDecisionLLM: swarmOn=false falls through to the next provider when the first one throws', async () => {
+  const dec = decision({ action: 'OPEN_SHORT', reasoning: 'akash answered' })
+  const calls: string[] = []
+  const result = await runDecisionLLM(false, 'sys', 'usr', {
+    getProviderStatus: fakeStatus(['hyperbolic', 'akash']),
+    runSwarmDecision: (async () => swarmResult({ quorum: null, decisions: [] })) as any,
+    callLLM: (async (args: any) => {
+      calls.push(args.provider)
+      if (args.provider === 'hyperbolic') throw new Error('hyperbolic down')
+      return { text: JSON.stringify(dec) } as any
     }) as any,
   })
-  assert.equal(touched, false, 'swarm dependencies must not be touched when swarmOn=false')
-  assert.equal(result.decision.action, 'OPEN_LONG')
+  assert.deepEqual(calls, ['hyperbolic', 'akash'], 'must try hyperbolic then fall through to akash')
+  assert.equal(result.decision.action, 'OPEN_SHORT')
   assert.equal(result.providersTelemetry, null)
 })
