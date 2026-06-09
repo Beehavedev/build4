@@ -1657,9 +1657,38 @@ app.post('/api/aster/approve', requireTgUser, async (req, res) => {
           })
         }
 
+        // Partial deposit: the mini-app may pass { amountUsdt } to deposit only
+        // PART of the wallet's BSC USDT balance — the remainder stays in the
+        // user's BSC custodial wallet and can be deposited later via
+        // /api/aster/transfer. When omitted/blank we deposit the full balance
+        // (back-compat with the original one-tap behaviour).
+        let depositWei = usdtBalWei
+        const reqAmt = req.body?.amountUsdt
+        if (reqAmt !== undefined && reqAmt !== null && String(reqAmt).trim() !== '') {
+          let parsed: bigint
+          try {
+            parsed = ethersLib.parseUnits(String(reqAmt).trim(), 18)
+          } catch {
+            userPk = ''
+            return res.status(400).json({ success: false, error: 'Invalid deposit amount.' })
+          }
+          if (parsed <= 0n) {
+            userPk = ''
+            return res.status(400).json({ success: false, error: 'Deposit amount must be greater than 0.' })
+          }
+          if (parsed > usdtBalWei) {
+            userPk = ''
+            return res.status(400).json({
+              success: false,
+              error: `Amount exceeds your BSC USDT balance (${ethersLib.formatUnits(usdtBalWei, 18)} USDT).`
+            })
+          }
+          depositWei = parsed
+        }
+
         const dep = await ensureAndDepositUSDT({
           userPrivateKey: userPk,
-          amountWei:      usdtBalWei,
+          amountWei:      depositWei,
           broker:         0n  // BUILD4 broker id (deposit-side); 0 = none for now
         })
 
@@ -1676,7 +1705,7 @@ app.post('/api/aster/approve', requireTgUser, async (req, res) => {
         bootstrap = {
           approveTx: dep.approveTx,
           depositTx: dep.depositTx,
-          depositedUsdt: (await import('ethers')).ethers.formatUnits(usdtBalWei, 18)
+          depositedUsdt: (await import('ethers')).ethers.formatUnits(depositWei, 18)
         }
 
         // Wait briefly for Aster to index the on-chain Deposit event before

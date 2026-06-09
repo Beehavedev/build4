@@ -189,7 +189,7 @@ export default function Wallet() {
 
       {/* State-specific CTA */}
       {state === 'A' && <FundFlow w={w} copy={copy} copied={copied} onRefresh={load} />}
-      {state === 'B' && <ActivateFlow onActivated={load} />}
+      {state === 'B' && <ActivateFlow w={w} onActivated={load} />}
       {state === 'C' && <TransferFlow w={w} onDone={load} initialDirection="to_aster" />}
       {state === 'D' && <TradingReadyFlow w={w} onDone={load} copy={copy} copied={copied} />}
 
@@ -955,22 +955,42 @@ function FundFlow({ w, copy, copied, onRefresh }:
 
 // ─── State B: BSC has USDT, not onboarded — Activate Trading Account ─────────
 
-function ActivateFlow({ onActivated }: { onActivated: () => void }) {
+function ActivateFlow({ w, onActivated }: { w: WalletInfo; onActivated: () => void }) {
+  const bscUsdt = w.balances.usdt
+  // Prefill with the full BSC USDT balance, but let the user dial it down to
+  // deposit only as much as they want. Blank/invalid is blocked client-side.
+  const [amount, setAmount] = useState<string>(bscUsdt > 0 ? String(bscUsdt) : '')
   const [submitting, setSubmitting] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const [needsBnb, setNeedsBnb] = useState(false)
   const [depositTx, setDepositTx] = useState<string | null>(null)
 
+  const amtNum = Number(amount)
+  const valid = Number.isFinite(amtNum) && amtNum > 0 && amtNum <= bscUsdt + 1e-9
+  const setPct = (pct: number) => {
+    const v = bscUsdt * pct
+    // Floor to 2 dp so we never request more than the on-chain balance.
+    setAmount(String(Math.floor(v * 100) / 100))
+  }
+
   const activate = async () => {
-    if (submitting) return
+    if (submitting || !valid) return
     setSubmitting(true); setErr(null); setNeedsBnb(false); setDepositTx(null)
     try {
+      // When the user keeps/sets the full balance, send an EMPTY payload so the
+      // server deposits the exact on-chain wei. `bscUsdt` is a float-rounded
+      // number, so echoing it back as a decimal string can parseUnits to a hair
+      // ABOVE the true balance and get rejected — the empty-payload default
+      // path sidesteps that. Partial amounts are safely below the balance.
+      const isFull = amtNum >= bscUsdt - 1e-9
       const r = await apiFetch<{
         success: boolean; error?: string; message?: string;
         needsBnb?: boolean; needsAsterAccount?: boolean;
         depositTx?: string; approveTx?: string
       }>('/api/aster/approve', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}'
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(isFull ? {} : { amountUsdt: amount })
       })
       if (r.success) {
         setTimeout(onActivated, 250)
@@ -980,7 +1000,13 @@ function ActivateFlow({ onActivated }: { onActivated: () => void }) {
         if (r.depositTx) setDepositTx(r.depositTx)
       }
     } catch (e: any) {
-      setErr(e?.message ?? 'Activation failed')
+      // apiFetch throws ApiError on non-2xx (e.g. 400) with the parsed JSON
+      // body attached. Surface the server's helpful message (zero balance,
+      // needs-BNB, deposit-still-indexing) instead of a bare "API error: 400".
+      const body = e?.body ?? {}
+      setErr(body.error ?? e?.message ?? 'Activation failed')
+      setNeedsBnb(!!body.needsBnb)
+      if (body.depositTx) setDepositTx(body.depositTx)
     } finally {
       setSubmitting(false)
     }
@@ -993,26 +1019,69 @@ function ActivateFlow({ onActivated }: { onActivated: () => void }) {
         border: '1px solid #7c3aed44', borderRadius: 12, padding: 16, marginBottom: 14
       }}>
         <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 6 }}>
-          🚀 One-tap activation
+          🚀 Deposit & activate
         </div>
         <div style={{ fontSize: 12, color: 'var(--b4-muted)', marginBottom: 14, lineHeight: 1.5 }}>
-          This will deposit your full USDT balance into your Aster trading
-          account and authorise BUILD4 to trade on your behalf. Takes ~15
-          seconds. Requires a small amount of BNB for gas (~0.001 BNB).
-          You can withdraw any time.
+          Choose how much USDT to deposit into your Aster trading account and
+          authorise BUILD4 to trade on your behalf. Anything you don't deposit
+          stays in your wallet — you can add more later. Takes ~15 seconds and a
+          small amount of BNB for gas (~0.001 BNB). You can withdraw any time.
         </div>
+
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
+          <div style={{ fontSize: 11, color: 'var(--b4-muted)' }}>Amount to deposit (USDT)</div>
+          <div style={{ fontSize: 11, color: 'var(--b4-muted)' }} data-testid="text-bsc-usdt-available">
+            Available: {bscUsdt.toFixed(2)}
+          </div>
+        </div>
+        <input
+          type="number"
+          inputMode="decimal"
+          min="0"
+          step="any"
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+          placeholder="0.00"
+          data-testid="input-deposit-amount"
+          style={{
+            width: '100%', boxSizing: 'border-box', padding: '12px 14px',
+            borderRadius: 8, border: '1px solid var(--b4-border)',
+            background: '#0a0a0f', color: 'var(--b4-text)', fontSize: 18, fontWeight: 700,
+            marginBottom: 8
+          }}
+        />
+        <div style={{ display: 'flex', gap: 6, marginBottom: 14 }}>
+          {[['25%', 0.25], ['50%', 0.5], ['Max', 1]].map(([label, pct]) => (
+            <button
+              key={label as string}
+              onClick={() => setPct(pct as number)}
+              disabled={bscUsdt <= 0}
+              data-testid={`button-deposit-pct-${label}`}
+              style={{
+                flex: 1, padding: '7px 0', fontSize: 12, fontWeight: 600, borderRadius: 6,
+                border: '1px solid var(--b4-border)', background: 'transparent',
+                color: 'var(--b4-text)', cursor: bscUsdt > 0 ? 'pointer' : 'not-allowed',
+                opacity: bscUsdt > 0 ? 1 : 0.5
+              }}
+            >{label}</button>
+          ))}
+        </div>
+
         <button
           onClick={activate}
-          disabled={submitting}
+          disabled={submitting || !valid}
           data-testid="button-activate-aster"
           style={{
             width: '100%', padding: 14, borderRadius: 8, border: 'none',
-            background: submitting ? '#5b21b6' : '#7c3aed',
+            background: (submitting || !valid) ? '#5b21b6' : '#7c3aed',
             color: 'white', fontSize: 15, fontWeight: 600,
-            cursor: submitting ? 'wait' : 'pointer'
+            cursor: submitting ? 'wait' : (valid ? 'pointer' : 'not-allowed'),
+            opacity: (!valid && !submitting) ? 0.6 : 1
           }}
         >
-          {submitting ? 'Depositing & activating…' : '⚡ Deposit & Activate'}
+          {submitting
+            ? 'Depositing & activating…'
+            : valid ? `⚡ Deposit ${amtNum.toFixed(2)} USDT & Activate` : '⚡ Deposit & Activate'}
         </button>
       </div>
 
