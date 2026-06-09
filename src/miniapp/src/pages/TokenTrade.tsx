@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { apiFetch } from '../api'
 import { useAutoRefresh } from '../hooks/useAutoRefresh'
 
@@ -49,6 +49,7 @@ interface DiscoverLaunch {
   tokenAddress: string
   name: string | null
   symbol: string | null
+  logo: string | null
   firstSeenAt: string
   fillPct: number | null
   fundsBnb: number | null
@@ -82,20 +83,18 @@ const trustColor = (t: number | null): string => {
 // Preset BNB amounts for one-tap sizing on the buy side.
 const QUICK_BNB = ['0.01', '0.05', '0.1', '0.25']
 
-// DexScreener serves token icons at a deterministic BSC CDN path. Brand-new
-// launches it hasn't indexed yet 404 → we fall back to the symbol initial,
-// so the square always shows something real (never a fake placeholder coin).
-const tokenIcon = (addr: string) =>
-  `https://dd.dexscreener.com/ds-data/tokens/bsc/${addr.toLowerCase()}.png?size=lg`
-
-function LaunchLogo({ addr, label }: { addr: string; label: string }) {
+// Token logos come straight from four.meme's own CDN (the creator-uploaded
+// image, surfaced by the discover endpoint as `logo`). When a token has no
+// four.meme logo yet — or the image fails to load — we fall back to the symbol
+// initial, so the square always shows something real (never a fake coin).
+function LaunchLogo({ src, addr, label }: { src: string | null; addr: string; label: string }) {
   const [errored, setErrored] = useState(false)
   const initial = (label || '?').trim().slice(0, 1).toUpperCase()
   const box: React.CSSProperties = {
     width: 40, height: 40, borderRadius: 10, flexShrink: 0,
     background: 'var(--bg-card)', border: '1px solid var(--border)',
   }
-  if (errored) {
+  if (!src || errored) {
     return (
       <div style={{
         ...box, display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -105,7 +104,7 @@ function LaunchLogo({ addr, label }: { addr: string; label: string }) {
   }
   return (
     <img
-      src={tokenIcon(addr)}
+      src={src}
       alt={label}
       onError={() => setErrored(true)}
       data-testid={`logo-launch-${addr}`}
@@ -139,6 +138,13 @@ export default function TokenTrade() {
   // refreshable. Best-effort — failure just hides the board.
   const [discover, setDiscover] = useState<DiscoverLaunch[]>([])
   const [discoverLoading, setDiscoverLoading] = useState(true)
+  // Sort key for the launch tracker, adapted from four.meme's own board
+  // (New / Top by activity). Driven server-side so "most filled/volume/buyers"
+  // ranks across the whole 7d feed, not just the visible rows. A ref mirrors
+  // it so the auto-refresh poll always reads the latest choice.
+  const [sort, setSort] = useState<'new' | 'filled' | 'volume' | 'buyers'>('new')
+  const sortRef = useRef(sort)
+  sortRef.current = sort
 
   // Load recent launches once for the quick-pick chips. Best-effort —
   // failure just hides the chips row, no error toast.
@@ -158,7 +164,9 @@ export default function TokenTrade() {
   // the board; the initial discoverLoading=true clears on the first tick and
   // last-good rows stay put across transient failures.
   function loadDiscover() {
-    return apiFetch<{ ok: boolean; launches: DiscoverLaunch[] }>('/api/fourmeme/discover')
+    return apiFetch<{ ok: boolean; launches: DiscoverLaunch[] }>(
+      `/api/fourmeme/discover?sort=${sortRef.current}`,
+    )
       .then((j) => { if (j?.ok) setDiscover(j.launches || []) })
       .catch(() => { /* silent — keep last-good board */ })
       .finally(() => setDiscoverLoading(false))
@@ -166,6 +174,8 @@ export default function TokenTrade() {
   // Auto-refresh the launch board every 4s while the tab is visible (no manual
   // refresh button). Single-flighted + visibility-aware via the shared hook.
   useAutoRefresh(loadDiscover, { intervalMs: 4000 })
+  // Re-rank immediately on a sort change rather than waiting for the next poll.
+  useEffect(() => { loadDiscover() }, [sort]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // One-click trade from the launch tracker: load the token into the
   // panel, default to a buy, and scroll the trade ticket into view. We do
@@ -319,6 +329,34 @@ export default function TokenTrade() {
             live · auto
           </span>
         </div>
+        {/* Sort controls — adapted from four.meme's own board (New + Top by
+            activity). Ranked server-side across the whole 7d feed so "most
+            filled/volume/buyers" reflects every launch, not just visible rows. */}
+        <div style={{ display: 'flex', gap: 6, marginBottom: 10, flexWrap: 'wrap' }} data-testid="row-launch-sort">
+          {([
+            ['new', 'Newest'],
+            ['filled', 'Most filled'],
+            ['volume', 'Top volume'],
+            ['buyers', 'Most buyers'],
+          ] as const).map(([key, label]) => {
+            const active = sort === key
+            return (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setSort(key)}
+                data-testid={`button-sort-${key}`}
+                style={{
+                  padding: '5px 10px', fontSize: 11, fontWeight: 700,
+                  borderRadius: 999, cursor: 'pointer', whiteSpace: 'nowrap',
+                  background: active ? 'var(--green)' : 'var(--bg-card)',
+                  color: active ? '#fff' : 'var(--text-secondary)',
+                  border: `1px solid ${active ? 'var(--green)' : 'var(--border)'}`,
+                }}
+              >{label}</button>
+            )
+          })}
+        </div>
         {discoverLoading && discover.length === 0 ? (
           <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Loading launches…</div>
         ) : discover.length === 0 ? (
@@ -337,7 +375,7 @@ export default function TokenTrade() {
                   background: 'var(--bg-elevated)', border: '1px solid var(--border)',
                 }}
               >
-                <LaunchLogo addr={d.tokenAddress} label={d.symbol || d.name || d.tokenAddress} />
+                <LaunchLogo src={d.logo} addr={d.tokenAddress} label={d.symbol || d.name || d.tokenAddress} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
                     <span

@@ -4112,6 +4112,7 @@ app.get('/api/portfolio/:userId', async (req, res) => {
     // (only agent-opened trades are) — were invisible in Portfolio even though
     // the Trade tab showed them live.
     let asterOpenPositions: any[] = []
+    let asterHistory: any[] = []
     if (wallet) {
       try {
         const u = await db.user.findUnique({ where: { id: internalUserId } })
@@ -4126,12 +4127,20 @@ app.get('/api/portfolio/:userId', async (req, res) => {
         // users (the same root cause as the "$9.41 ASTER" bug on
         // /api/me/wallet).
         if (u?.asterOnboarded && (u as any).asterAgentEncryptedPK) {
-          const { resolveAgentCreds, getPositions } = await import('./services/aster')
+          const { resolveAgentCreds, getPositions, getUserTrades } = await import('./services/aster')
           const { reconcileStaleAsterTrades } = await import('./services/asterReconcile')
           const creds = await resolveAgentCreds(u as any, wallet.address)
           if (creds) {
-            const live = await getPositions(creds)
+            // Live open positions + recent fills, fanned out together. The
+            // fills feed the Aster CLOSED-trade surfacing below (mirrors
+            // /api/trades) so SL/TP/manual closes that never wrote back to
+            // our DB still appear in Portfolio's Trade History.
+            const [live, userTrades] = await Promise.all([
+              getPositions(creds),
+              getUserTrades(creds, { limit: 100 }).catch(() => [] as any[]),
+            ])
             asterOpenPositions = live
+            asterHistory = userTrades
             await reconcileStaleAsterTrades(
               internalUserId,
               live.map((p: any) => ({ symbol: p.symbol, side: p.side })),
@@ -4297,6 +4306,46 @@ app.get('/api/portfolio/:userId', async (req, res) => {
         status: 'open',
         openedAt: null,
         closedAt: null,
+        exchange: 'aster',
+      })
+    }
+
+    // ── Aster CLOSED fills (from userTrades)
+    //
+    // Mirror /api/trades: anything with realized PnL is a real close.
+    // Surface as "closed" rows so SL/TP/manual closes that never made it
+    // back to our DB still appear in Trade History — without this, Aster
+    // closes were silently absent (only HL closes + DB rows showed). Dedupe
+    // against DB closed rows by symbol+minute so an agent-recorded close
+    // isn't double-counted. Keyed off the raw DB rows (`dbTrades`), NOT the
+    // post-merge `trades` array — keying off the merged array would let an
+    // HL close on the same symbol+minute silently suppress a real Aster
+    // close. The set is then grown in-loop so duplicate Aster fills within
+    // the same minute still collapse to one row.
+    const dbAsterClosedKeys = new Set(
+      dbTrades
+        .filter(t => t.status === 'closed' && t.closedAt)
+        .map(t => `${String(t.pair).replace('/', '').toUpperCase()}_${Math.floor(new Date(t.closedAt!).getTime() / 60000)}`)
+    )
+    const asterClosingFills = asterHistory
+      .filter((f: any) => f.realizedPnl !== 0)
+      .sort((a: any, b: any) => b.time - a.time)
+      .slice(0, 50)
+    for (const fill of asterClosingFills) {
+      const sym = String(fill.symbol).replace('/', '').toUpperCase()
+      const dedupeKey = `${sym}_${Math.floor(fill.time / 60000)}`
+      if (dbAsterClosedKeys.has(dedupeKey)) continue
+      dbAsterClosedKeys.add(dedupeKey)
+      const side = fill.positionSide === 'LONG' || (fill.positionSide === 'BOTH' && fill.side === 'SELL')
+        ? 'LONG' : 'SHORT'
+      trades.push({
+        id: `aster_${fill.orderId}`,
+        pair: fill.symbol,
+        side,
+        pnl: fill.realizedPnl,
+        status: 'closed',
+        openedAt: new Date(fill.time),
+        closedAt: new Date(fill.time),
         exchange: 'aster',
       })
     }
@@ -7598,64 +7647,70 @@ app.get('/api/fourmeme/launches', requireTgUser, async (req, res) => {
 // mini-app board then shows real names within a few seconds. No fakes — a
 // token with no readable name simply stays unnamed (the UI falls back to
 // the symbol initial / short address).
-type FourMemeMeta = { name: string | null; symbol: string | null; ts: number }
+type FourMemeMeta = { name: string | null; symbol: string | null; logo: string | null; ts: number }
 const fourMemeMetaCache = new Map<string, FourMemeMeta>()
 const fourMemeMetaInflight = new Set<string>()
 const FOUR_MEME_META_TTL_MS = 24 * 60 * 60 * 1000
-// Short TTL for an empty (name+symbol both null) result so a transient RPC
-// failure doesn't pin a token unnamed for a full day — it retries in minutes.
+// Short TTL for an empty (no metadata) result so a transient API failure
+// doesn't pin a token unnamed for a full day — it retries in minutes.
 const FOUR_MEME_META_NEG_TTL_MS = 5 * 60 * 1000
 
+// Pull name / ticker / OFFICIAL LOGO straight from four.meme's own token API
+// (the same data their site renders) rather than reading ERC20 name()/symbol()
+// on-chain — that gives us the creator-uploaded logo too, which on-chain reads
+// can't. One HTTP call per token, cached. `data.name` is the descriptive name,
+// `data.shortName` is the ticker, `data.image` is four.meme's CDN logo URL.
 async function enrichFourMemeMeta(addresses: string[]): Promise<void> {
   const now = Date.now()
   // Normalize to lowercase + de-dup so mixed-case/duplicate inputs never
-  // trigger redundant RPC reads (the cache is keyed by lowercase address).
+  // trigger redundant fetches (the cache is keyed by lowercase address).
   const todo = Array.from(new Set(addresses.map((a) => a.toLowerCase()))).filter((a) => {
     if (fourMemeMetaInflight.has(a)) return false
     const c = fourMemeMetaCache.get(a)
     if (!c) return true
-    const ttl = (c.name == null && c.symbol == null) ? FOUR_MEME_META_NEG_TTL_MS : FOUR_MEME_META_TTL_MS
+    const empty = c.name == null && c.symbol == null && c.logo == null
+    const ttl = empty ? FOUR_MEME_META_NEG_TTL_MS : FOUR_MEME_META_TTL_MS
     return (now - c.ts) > ttl
   })
   if (todo.length === 0) return
-  try {
-    const { ethers } = await import('ethers')
-    const { buildBscProvider } = await import('./services/bscProvider')
-    const provider = buildBscProvider(process.env.BSC_RPC_URL)
-    const abi = [
-      'function name() view returns (string)',
-      'function symbol() view returns (string)',
-    ]
-    const withTimeout = <T>(p: Promise<T>): Promise<T> =>
-      Promise.race([
-        p,
-        new Promise<T>((_, rej) => setTimeout(() => rej(new Error('timeout')), 4000)),
-      ])
-    // Bounded worker pool so we never fan out 30+ simultaneous RPC reads.
-    let i = 0
-    const worker = async () => {
-      while (i < todo.length) {
-        const addr = todo[i++]
-        fourMemeMetaInflight.add(addr)
-        try {
-          const c = new ethers.Contract(addr, abi, provider)
-          let name: string | null = null
-          let symbol: string | null = null
-          try { name = String(await withTimeout(c.name())).trim() || null } catch {}
-          try { symbol = String(await withTimeout(c.symbol())).trim() || null } catch {}
-          fourMemeMetaCache.set(addr, { name, symbol, ts: Date.now() })
-        } catch {
-          // Negative cache so a bad/unreadable token isn't retried every poll.
-          fourMemeMetaCache.set(addr, { name: null, symbol: null, ts: Date.now() })
-        } finally {
-          fourMemeMetaInflight.delete(addr)
+  const withTimeout = <T>(p: Promise<T>): Promise<T> =>
+    Promise.race([
+      p,
+      new Promise<T>((_, rej) => setTimeout(() => rej(new Error('timeout')), 5000)),
+    ])
+  // Bounded worker pool so we never fan out 30+ simultaneous fetches.
+  let i = 0
+  const worker = async () => {
+    while (i < todo.length) {
+      const addr = todo[i++]
+      fourMemeMetaInflight.add(addr)
+      try {
+        const r = await withTimeout(fetch(
+          `https://four.meme/meme-api/v1/private/token/get?address=${addr}`,
+          { headers: { accept: 'application/json' } },
+        ))
+        let name: string | null = null
+        let symbol: string | null = null
+        let logo: string | null = null
+        if (r.ok) {
+          const j: any = await r.json()
+          const d = j?.code === 0 ? j?.data : null
+          if (d) {
+            name = (typeof d.name === 'string' && d.name.trim()) || null
+            symbol = (typeof d.shortName === 'string' && d.shortName.trim()) || null
+            logo = (typeof d.image === 'string' && /^https?:\/\//.test(d.image)) ? d.image : null
+          }
         }
+        fourMemeMetaCache.set(addr, { name, symbol, logo, ts: Date.now() })
+      } catch {
+        // Negative cache so a failed lookup isn't retried every poll (short TTL).
+        fourMemeMetaCache.set(addr, { name: null, symbol: null, logo: null, ts: Date.now() })
+      } finally {
+        fourMemeMetaInflight.delete(addr)
       }
     }
-    await Promise.all(Array.from({ length: Math.min(4, todo.length) }, worker))
-  } catch {
-    /* provider build failed — leave cache untouched, retry next poll */
   }
+  await Promise.all(Array.from({ length: Math.min(4, todo.length) }, worker))
 }
 
 // GET /api/fourmeme/discover — public-ish (auth-gated) feed of recent
@@ -7676,7 +7731,18 @@ app.get('/api/fourmeme/discover', requireTgUser, async (req, res) => {
     // the board reflects live launches, not the whole scan history.
     const rawLimit = Number((req.query.limit as string) ?? '')
     const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(50, Math.floor(rawLimit)) : 30
-    const rows = await db.$queryRaw<Array<{
+    // Sort is picked from a fixed allowlist (never interpolate user input into
+    // SQL). "new" is newest-first; the rest sort the metric DESC with NULLs last
+    // so unscanned rows don't crowd the top, then fall back to recency.
+    const SORTS: Record<string, string> = {
+      new: '"first_seen_at" DESC',
+      filled: '"fill_pct" DESC NULLS LAST, "first_seen_at" DESC',
+      volume: '"volume_bnb" DESC NULLS LAST, "first_seen_at" DESC',
+      buyers: '"buyer_count" DESC NULLS LAST, "first_seen_at" DESC',
+    }
+    const sortKey = String((req.query.sort as string) ?? 'new')
+    const orderBy = SORTS[sortKey] ?? SORTS.new
+    const rows = await db.$queryRawUnsafe<Array<{
       token_address: string
       first_seen_at: Date
       last_scanned_at: Date | null
@@ -7689,21 +7755,22 @@ app.get('/api/fourmeme/discover', requireTgUser, async (req, res) => {
       graduated: boolean | null
       trust_score: number | null
       verdict: string | null
-    }>>`
-      SELECT "token_address","first_seen_at","last_scanned_at","fill_pct",
-             "funds_bnb","volume_bnb","buyer_count","buy_count","sell_count",
-             "graduated","trust_score","verdict"
-        FROM "four_meme_launches_seen"
-       WHERE "first_seen_at" > now() - interval '7 days'
-       ORDER BY "first_seen_at" DESC
-       LIMIT ${limit}
-    `
+    }>>(
+      `SELECT "token_address","first_seen_at","last_scanned_at","fill_pct",
+              "funds_bnb","volume_bnb","buyer_count","buy_count","sell_count",
+              "graduated","trust_score","verdict"
+         FROM "four_meme_launches_seen"
+        WHERE "first_seen_at" > now() - interval '7 days'
+        ORDER BY ${orderBy}
+        LIMIT ${limit}`
+    )
     const launches = rows.map((r) => {
       const meta = fourMemeMetaCache.get(r.token_address.toLowerCase())
       return {
         tokenAddress: r.token_address,
         name: meta?.name ?? null,
         symbol: meta?.symbol ?? null,
+        logo: meta?.logo ?? null,
         firstSeenAt: r.first_seen_at instanceof Date
           ? r.first_seen_at.toISOString()
           : new Date(r.first_seen_at as any).toISOString(),
