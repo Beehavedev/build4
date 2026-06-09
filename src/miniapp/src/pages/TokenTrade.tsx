@@ -41,9 +41,43 @@ interface RecentLaunch {
   status: string
 }
 
+// A scanner-discovered launch (from /api/fourmeme/discover). This is the
+// platform-wide launch feed that powers the "track launches" board — it's
+// distinct from RecentLaunch, which is the user's OWN launch history.
+interface DiscoverLaunch {
+  tokenAddress: string
+  firstSeenAt: string
+  fillPct: number | null
+  fundsBnb: number | null
+  volumeBnb: number | null
+  buyerCount: number | null
+  graduated: boolean
+  trustScore: number | null
+  verdict: string | null
+}
+
 interface Balance { bnbBalance: string; tokenBalance: string }
 
 const isAddr = (s: string) => /^0x[0-9a-fA-F]{40}$/.test(s.trim())
+const shortAddr = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`
+const ago = (iso: string): string => {
+  const ms = Date.now() - new Date(iso).getTime()
+  const s = Math.max(0, Math.floor(ms / 1000))
+  if (s < 60) return `${s}s ago`
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`
+  return `${Math.floor(s / 86400)}d ago`
+}
+// Trust band → colour for the score pill. Mirrors the snipe agent's
+// rough buckets so the board reads the same as the brain feed.
+const trustColor = (t: number | null): string => {
+  if (t == null) return 'var(--text-muted)'
+  if (t >= 70) return 'var(--green)'
+  if (t >= 50) return '#f59e0b'
+  return 'var(--red)'
+}
+// Preset BNB amounts for one-tap sizing on the buy side.
+const QUICK_BNB = ['0.01', '0.05', '0.1', '0.25']
 
 export default function TokenTrade() {
   const [address, setAddress] = useState('')
@@ -66,6 +100,11 @@ export default function TokenTrade() {
 
   const [recent, setRecent] = useState<RecentLaunch[]>([])
 
+  // Platform-wide launch tracker (scanner feed). Loaded once on mount and
+  // refreshable. Best-effort — failure just hides the board.
+  const [discover, setDiscover] = useState<DiscoverLaunch[]>([])
+  const [discoverLoading, setDiscoverLoading] = useState(true)
+
   // Load recent launches once for the quick-pick chips. Best-effort —
   // failure just hides the chips row, no error toast.
   useEffect(() => {
@@ -79,6 +118,30 @@ export default function TokenTrade() {
       })
       .catch(() => { /* silent */ })
   }, [])
+
+  function loadDiscover() {
+    setDiscoverLoading(true)
+    apiFetch<{ ok: boolean; launches: DiscoverLaunch[] }>('/api/fourmeme/discover')
+      .then((j) => { if (j?.ok) setDiscover(j.launches || []) })
+      .catch(() => { /* silent — empty board */ })
+      .finally(() => setDiscoverLoading(false))
+  }
+  useEffect(() => { loadDiscover() }, [])
+
+  // One-click trade from the launch tracker: load the token into the
+  // panel, default to a buy, and scroll the trade ticket into view. We do
+  // NOT auto-submit — the user still confirms the amount + taps Buy, which
+  // keeps a real on-chain spend one deliberate tap away from a fat-finger.
+  function tradeLaunch(addr: string) {
+    setSide('buy')
+    setSuccess(null)
+    setSubmitErr(null)
+    setAddress(addr)
+    setTimeout(() => {
+      document.querySelector('[data-testid="card-token-address"]')
+        ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, 50)
+  }
 
   // Fetch token info whenever the address becomes valid. Resets the
   // dependent UI (quote, balance, success) so a paste of a new address
@@ -198,8 +261,89 @@ export default function TokenTrade() {
           🪙 Trade Tokens
         </div>
         <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 2 }}>
-          Buy & sell any BSC token — bonding curve or PancakeSwap, gasless routing
+          Track launches & trade any BSC token straight from your BNB balance
         </div>
+      </div>
+
+      {/* Launch tracker — platform-wide scanner feed. Lets users browse
+          recent four.meme launches with curve/trust stats and one-tap into
+          the trade ticket. Hidden entirely when the feed is empty (e.g.
+          four.meme disabled) so it never shows a dead card. */}
+      <div className="card" style={{ marginBottom: 12 }} data-testid="card-launch-tracker">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+          <div style={{ fontSize: 14, fontWeight: 700 }}>🛰 Live launches</div>
+          <button
+            type="button"
+            onClick={loadDiscover}
+            disabled={discoverLoading}
+            data-testid="button-refresh-launches"
+            style={{
+              padding: '4px 10px', fontSize: 11, fontWeight: 600,
+              borderRadius: 8, border: '1px solid var(--border)',
+              background: 'var(--bg-elevated)', color: 'var(--text-secondary)',
+              cursor: discoverLoading ? 'not-allowed' : 'pointer',
+            }}
+          >{discoverLoading ? '…' : '↻ Refresh'}</button>
+        </div>
+        {discoverLoading && discover.length === 0 ? (
+          <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Loading launches…</div>
+        ) : discover.length === 0 ? (
+          <div style={{ fontSize: 12, color: 'var(--text-muted)' }} data-testid="text-no-launches">
+            No recent launches detected. Paste a token address below to trade manually.
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {discover.map((d) => (
+              <div
+                key={d.tokenAddress}
+                data-testid={`row-launch-${d.tokenAddress}`}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 10,
+                  padding: '10px 12px', borderRadius: 10,
+                  background: 'var(--bg-elevated)', border: '1px solid var(--border)',
+                }}
+              >
+                <div style={{
+                  minWidth: 38, textAlign: 'center', padding: '4px 0', borderRadius: 8,
+                  background: 'var(--bg-card)', border: `1px solid ${trustColor(d.trustScore)}`,
+                }}>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: trustColor(d.trustScore), lineHeight: 1 }}>
+                    {d.trustScore != null ? d.trustScore : '—'}
+                  </div>
+                  <div style={{ fontSize: 8, color: 'var(--text-muted)', marginTop: 2, letterSpacing: 0.4 }}>TRUST</div>
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, fontFamily: 'monospace' }}>
+                      {shortAddr(d.tokenAddress)}
+                    </span>
+                    <span style={{
+                      fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 999,
+                      background: d.graduated ? 'rgba(247,147,30,0.15)' : 'rgba(124,58,237,0.15)',
+                      color: d.graduated ? '#f7931e' : 'var(--purple)',
+                    }}>{d.graduated ? '🥞 PCS' : '🚀 curve'}</span>
+                  </div>
+                  <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 3 }}>
+                    {!d.graduated && d.fillPct != null && `${(d.fillPct * 100).toFixed(0)}% filled · `}
+                    {d.volumeBnb != null && `${d.volumeBnb.toFixed(2)} BNB vol · `}
+                    {d.buyerCount != null && `${d.buyerCount} buyers · `}
+                    {ago(d.firstSeenAt)}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => tradeLaunch(d.tokenAddress)}
+                  data-testid={`button-trade-launch-${d.tokenAddress}`}
+                  style={{
+                    padding: '8px 12px', fontSize: 12, fontWeight: 700,
+                    borderRadius: 8, border: 'none', cursor: 'pointer',
+                    background: 'var(--green)', color: '#fff', whiteSpace: 'nowrap',
+                  }}
+                >Trade →</button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Address input */}
@@ -418,6 +562,29 @@ export default function TokenTrade() {
               >MAX</button>
             )}
           </div>
+
+          {/* Quick BNB presets — one-tap sizing on the buy side so users
+              can ape a launch from the tracker without typing an amount. */}
+          {side === 'buy' && (
+            <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
+              {QUICK_BNB.map((q) => (
+                <button
+                  key={q}
+                  type="button"
+                  onClick={() => setAmount(q)}
+                  data-testid={`button-quick-bnb-${q}`}
+                  style={{
+                    flex: 1, padding: '7px 0', fontSize: 12, fontWeight: 700,
+                    borderRadius: 8,
+                    border: amount === q ? '1px solid var(--purple)' : '1px solid var(--border)',
+                    background: amount === q ? 'rgba(124,58,237,0.12)' : 'var(--bg-elevated)',
+                    color: amount === q ? 'var(--purple)' : 'var(--text-primary)',
+                    cursor: 'pointer',
+                  }}
+                >{q}</button>
+              ))}
+            </div>
+          )}
 
           {/* Quote summary */}
           <div style={{

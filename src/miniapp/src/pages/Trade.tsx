@@ -393,16 +393,19 @@ export function Trade() {
         <span style={{ fontSize: 11, color: '#9ca3af', fontWeight: 500 }}>BSC · USDT</span>
       </div>
 
-      {/* Venue switcher — Aster (BSC/USDT) is the default, but Hyperliquid
-          (Arbitrum-bridged USDC) is now live with builder fees. Surface it
-          here so users coming to /trade discover the alternative venue. */}
+      {/* Venue switcher — Aster (BSC/USDT) is the default. Hyperliquid
+          (Arbitrum-bridged USDC) and four.meme (BSC bonding-curve / DEX,
+          traded straight from the user's BNB balance) are the alternative
+          venues. Both navigate to their own dedicated page via the shared
+          b4-nav event, mirroring how the dashboard quick-actions route. */}
       <div className="card" style={{ padding: 10, marginBottom: 10 }} data-testid="card-venue-switcher">
         <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 6 }}>VENUE</div>
-        <div style={{ display: 'flex', gap: 6 }}>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           <div
             data-testid="venue-aster-active"
             style={{
-              flex: 1, padding: '8px 10px', borderRadius: 8, fontSize: 12, fontWeight: 600,
+              flex: '1 1 30%', minWidth: 96, padding: '8px 10px', borderRadius: 8,
+              fontSize: 12, fontWeight: 600,
               background: '#7c3aed', color: '#fff', textAlign: 'center',
             }}
           >Aster · BSC</div>
@@ -414,11 +417,26 @@ export function Trade() {
               window.dispatchEvent(new CustomEvent('b4-nav', { detail: 'hyperliquid' }))
             }}
             style={{
-              flex: 1, padding: '8px 10px', borderRadius: 8, fontSize: 12, fontWeight: 600,
+              flex: '1 1 30%', minWidth: 96, padding: '8px 10px', borderRadius: 8,
+              fontSize: 12, fontWeight: 600,
               background: '#1f2937', color: '#cbd5e1', textAlign: 'center',
               textDecoration: 'none', boxSizing: 'border-box',
             }}
           >Hyperliquid · USDC →</a>
+          <a
+            href="#tokenTrade"
+            data-testid="link-venue-fourmeme"
+            onClick={(e) => {
+              e.preventDefault()
+              window.dispatchEvent(new CustomEvent('b4-nav', { detail: 'tokenTrade' }))
+            }}
+            style={{
+              flex: '1 1 30%', minWidth: 96, padding: '8px 10px', borderRadius: 8,
+              fontSize: 12, fontWeight: 600,
+              background: '#1f2937', color: '#cbd5e1', textAlign: 'center',
+              textDecoration: 'none', boxSizing: 'border-box',
+            }}
+          >four.meme · BNB →</a>
         </div>
       </div>
 

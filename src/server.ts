@@ -7589,6 +7589,77 @@ app.get('/api/fourmeme/launches', requireTgUser, async (req, res) => {
   }
 })
 
+// GET /api/fourmeme/discover — public-ish (auth-gated) feed of recent
+// four.meme launches the scanner has discovered, so the mini-app's
+// four.meme venue can render a "track launches" board. Reads the
+// scanner's `four_meme_launches_seen` table (the same source the snipe
+// agents use), newest-first, with the curve/trust stats already
+// captured during enrichment. Unlike /api/fourmeme/launches (which is
+// the caller's OWN launch attempts), this surfaces launches across the
+// platform so a user can browse and one-click-trade them. Returns []
+// (never 500) when four.meme is disabled or the table is absent, so the
+// UI just shows an empty tracker instead of an error.
+app.get('/api/fourmeme/discover', requireTgUser, async (req, res) => {
+  try {
+    const { isFourMemeEnabled } = await import('./services/fourMemeTrading')
+    if (!isFourMemeEnabled()) return res.json({ ok: true, launches: [] })
+    // Optional ?limit (1–50, default 30). Only recent rows (last 7d) so
+    // the board reflects live launches, not the whole scan history.
+    const rawLimit = Number((req.query.limit as string) ?? '')
+    const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(50, Math.floor(rawLimit)) : 30
+    const rows = await db.$queryRaw<Array<{
+      token_address: string
+      first_seen_at: Date
+      last_scanned_at: Date | null
+      fill_pct: number | null
+      funds_bnb: number | null
+      volume_bnb: number | null
+      buyer_count: number | null
+      buy_count: number | null
+      sell_count: number | null
+      graduated: boolean | null
+      trust_score: number | null
+      verdict: string | null
+    }>>`
+      SELECT "token_address","first_seen_at","last_scanned_at","fill_pct",
+             "funds_bnb","volume_bnb","buyer_count","buy_count","sell_count",
+             "graduated","trust_score","verdict"
+        FROM "four_meme_launches_seen"
+       WHERE "first_seen_at" > now() - interval '7 days'
+       ORDER BY "first_seen_at" DESC
+       LIMIT ${limit}
+    `
+    const launches = rows.map((r) => ({
+      tokenAddress: r.token_address,
+      firstSeenAt: r.first_seen_at instanceof Date
+        ? r.first_seen_at.toISOString()
+        : new Date(r.first_seen_at as any).toISOString(),
+      lastScannedAt: r.last_scanned_at
+        ? (r.last_scanned_at instanceof Date ? r.last_scanned_at.toISOString() : new Date(r.last_scanned_at as any).toISOString())
+        : null,
+      fillPct: r.fill_pct,
+      fundsBnb: r.funds_bnb,
+      volumeBnb: r.volume_bnb,
+      buyerCount: r.buyer_count,
+      buyCount: r.buy_count,
+      sellCount: r.sell_count,
+      graduated: !!r.graduated,
+      trustScore: r.trust_score,
+      verdict: r.verdict,
+    }))
+    res.json({ ok: true, launches })
+  } catch (err: any) {
+    const msg = String(err?.message ?? err)
+    if (/relation .*four_meme_launches_seen.* does not exist/i.test(msg)) {
+      return res.json({ ok: true, launches: [] })
+    }
+    // Log the real error server-side but return a generic message so we
+    // don't leak DB/internal details to the client.
+    console.error('[fourmeme/discover] query failed:', msg)
+    res.status(500).json({ ok: false, error: 'Could not load launches' })
+  }
+})
+
 // GET /api/fourmeme/positions — enriched view of every four.meme bag
 // the caller has touched (launched, currently held, or sold). Joins
 // `token_launches` (canonical "user has touched this token" record)
