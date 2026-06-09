@@ -139,10 +139,10 @@ export default function TokenTrade() {
   const [discover, setDiscover] = useState<DiscoverLaunch[]>([])
   const [discoverLoading, setDiscoverLoading] = useState(true)
   // Sort key for the launch tracker, adapted from four.meme's own board
-  // (New / Top by activity). Driven server-side so "most filled/volume/buyers"
-  // ranks across the whole 7d feed, not just the visible rows. A ref mirrors
-  // it so the auto-refresh poll always reads the latest choice.
-  const [sort, setSort] = useState<'new' | 'filled' | 'volume' | 'buyers'>('new')
+  // (New / Top by activity). Driven server-side so "most filled / top BNB /
+  // most buyers" ranks across the whole feed, not just the visible rows. A ref
+  // mirrors it so the auto-refresh poll always reads the latest choice.
+  const [sort, setSort] = useState<'new' | 'filled' | 'funds' | 'buyers'>('new')
   const sortRef = useRef(sort)
   sortRef.current = sort
 
@@ -330,13 +330,13 @@ export default function TokenTrade() {
           </span>
         </div>
         {/* Sort controls — adapted from four.meme's own board (New + Top by
-            activity). Ranked server-side across the whole 7d feed so "most
-            filled/volume/buyers" reflects every launch, not just visible rows. */}
+            activity). Ranked server-side across the whole feed so "most filled /
+            top BNB raised / most buyers" reflects every launch, not just rows. */}
         <div style={{ display: 'flex', gap: 6, marginBottom: 10, flexWrap: 'wrap' }} data-testid="row-launch-sort">
           {([
             ['new', 'Newest'],
             ['filled', 'Most filled'],
-            ['volume', 'Top volume'],
+            ['funds', 'Top BNB'],
             ['buyers', 'Most buyers'],
           ] as const).map(([key, label]) => {
             const active = sort === key
@@ -404,7 +404,7 @@ export default function TokenTrade() {
                     {d.graduated
                       ? 'Graduated · '
                       : (d.fillPct != null ? `${(d.fillPct * 100).toFixed(0)}% filled · ` : '')}
-                    {d.volumeBnb != null && `${d.volumeBnb.toFixed(2)} BNB vol · `}
+                    {d.fundsBnb != null && d.fundsBnb > 0 && `${d.fundsBnb.toFixed(2)} BNB raised · `}
                     {d.buyerCount != null && `${d.buyerCount} buyers · `}
                     {ago(d.firstSeenAt)}
                   </div>

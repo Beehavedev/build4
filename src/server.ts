@@ -7737,7 +7737,15 @@ app.get('/api/fourmeme/discover', requireTgUser, async (req, res) => {
     const SORTS: Record<string, string> = {
       new: '"first_seen_at" DESC',
       filled: '"fill_pct" DESC NULLS LAST, "first_seen_at" DESC',
-      volume: '"volume_bnb" DESC NULLS LAST, "first_seen_at" DESC',
+      // Rank by BNB raised on the bonding curve (funds_bnb) — the scanner
+        // actually populates this during enrichment, so it's a real "how much
+        // money is in this launch" signal. NOTE: the old "volume" key pointed at
+        // volume_bnb, a column the scanner NEVER writes (always NULL), so that
+        // sort silently degraded to newest-first. "volume" is kept as a legacy
+        // alias mapped to funds_bnb so already-cached mini-app clients still get a
+        // meaningful ranking.
+        funds: '"funds_bnb" DESC NULLS LAST, "first_seen_at" DESC',
+        volume: '"funds_bnb" DESC NULLS LAST, "first_seen_at" DESC',
       buyers: '"buyer_count" DESC NULLS LAST, "first_seen_at" DESC',
     }
     const sortKey = String((req.query.sort as string) ?? 'new')
