@@ -1490,29 +1490,16 @@ app.post('/api/me/link-wallet/refresh', requireTgUser, async (req, res) => {
 app.post('/api/aster/approve', requireTgUser, async (req, res) => {
   const user = (req as any).user
   try {
-    // ASTER_BUILDER_ADDRESS env wins for backwards compat; otherwise fall
-    // back to BROKER_FEE_WALLET so a fresh deploy already routes the 30 bps
-    // self-collected broker fee to the right place without extra env wiring.
-    const { brokerFeeWallet } = await import('./services/brokerFees')
-    let builderAddress: string | undefined = process.env.ASTER_BUILDER_ADDRESS
-    if (!builderAddress) {
-      try { builderAddress = brokerFeeWallet() } catch { /* leave undefined */ }
-    }
-    // 30 bps self-collected fee (was 10 bps under the old Aster Builder
-    // Program defaults). This rate becomes the per-order feeRate AND the
-    // maxFeeRate the user signs in approveBuilder.
-    const feeRate        = process.env.ASTER_BUILDER_FEE_RATE ?? '0.003'
-    if (!builderAddress) {
-      return res.status(500).json({ success: false, error: 'Platform not configured (no builder)' })
-    }
-
+    // Builder fees fully removed — onboarding is now a SINGLE seamless
+    // approveAgent signed from the user's BUILD4 custodial wallet. No builder
+    // address, no separate approveBuilder signature, no fee on any trade.
     const wallet = await db.wallet.findFirst({ where: { userId: user.id, isActive: true } })
     if (!wallet || !wallet.encryptedPK) {
       return res.status(404).json({ success: false, error: 'No active wallet' })
     }
 
     const { decryptPrivateKey, encryptPrivateKey } = await import('./services/wallet')
-    const { approveAgent, approveBuilder }      = await import('./services/aster')
+    const { approveAgent }                      = await import('./services/aster')
     const { ensureAndDepositUSDT, USDT_BSC, MIN_BNB_FOR_GAS_WEI, getProvider } = await import('./services/asterDeposit')
     const { ethers: ethersLib } = await import('ethers')
 
@@ -1621,8 +1608,6 @@ app.post('/api/aster/approve', requireTgUser, async (req, res) => {
       userPrivateKey: userPk,
       agentAddress:   agentWallet.address,
       agentName:      'BUILD4Agent',
-      builderAddress,
-      maxFeeRate:     feeRate,
       expiredDays:    365
     })
 
@@ -1732,8 +1717,8 @@ app.post('/api/aster/approve', requireTgUser, async (req, res) => {
       })
     }
 
-    // Persist the per-user agent keypair NOW (before approveBuilder), so even
-    // if approveBuilder fails or the process crashes, we still have a record
+    // Persist the per-user agent keypair NOW, so even if the process crashes
+    // we still have a record
     // of which agent address Aster has registered for this user. Without this,
     // a retry would generate a NEW agent address and Aster would say "Agent
     // address already exists" for the previous one we forgot.
@@ -1746,58 +1731,9 @@ app.post('/api/aster/approve', requireTgUser, async (req, res) => {
       }
     })
 
-    // Best-effort: enroll our broker so trades carry the BUILD4 fee. If this
-    // fails we still mark the user as onboarded — they can trade without a
-    // builder fee, and we can retry later. We don't block activation on it.
-    //
-    // Retry up to 3 times with linear backoff (1s, 3s) before giving up.
-    // Production observation: a single transient Aster API blip during
-    // activation used to leave users in a state where every subsequent
-    // order failed with "Cannot found builder config" — because the order
-    // path attributes to the builder unconditionally, but Aster has no
-    // record of this user authorizing it. Retrying inline fixes that root
-    // cause for the common transient case. The DB flag below records the
-    // outcome so the order path can skip builder attribution for the rare
-    // user where every retry fails.
-    let builderEnrolled = false
-    let lastBuilderErr: string | null = null
-    const userPkForBuilder = userPk || decryptPrivateKey(wallet.encryptedPK, user.id)
-    for (let attempt = 1; attempt <= 3 && !builderEnrolled; attempt++) {
-      try {
-        const br = await approveBuilder({
-          userAddress:    wallet.address,
-          userPrivateKey: userPkForBuilder,
-          builderAddress,
-          maxFeeRate:     feeRate,
-          builderName:    'BUILD4'
-        })
-        if (br.success) {
-          builderEnrolled = true
-          break
-        }
-        lastBuilderErr = br.error ?? 'unknown'
-        console.warn(`[/aster/approve] approveBuilder attempt ${attempt}/3 failed:`, br.error)
-      } catch (e: any) {
-        lastBuilderErr = e?.message ?? 'threw'
-        console.warn(`[/aster/approve] approveBuilder attempt ${attempt}/3 threw:`, e?.message)
-      }
-      if (attempt < 3) {
-        await new Promise(r => setTimeout(r, attempt * 1000))
-      }
-    }
-    // Persist the outcome so /api/aster/order can decide whether to attach
-    // builder+feeRate. Idempotent column (see ensureTables.ts). We update
-    // even on failure (DEFAULT false already covers it, but explicit beats
-    // implicit when an activation retry transitions true→false).
-    try {
-      await db.user.update({
-        where: { id: user.id },
-        data:  { asterBuilderEnrolled: builderEnrolled } as any,
-      })
-    } catch (e: any) {
-      console.warn('[/aster/approve] failed to persist asterBuilderEnrolled:', e?.message)
-    }
-
+    // Builder enrollment removed — BUILD4 takes no fee, so there is no
+    // separate approveBuilder step. The single approveAgent above is all the
+    // on-chain authorization an account needs to trade.
     userPk = ''
 
     await db.user.update({
@@ -1831,7 +1767,6 @@ app.post('/api/aster/approve', requireTgUser, async (req, res) => {
       message: bootstrap
         ? `Deposited ${bootstrap.depositedUsdt} USDT to Aster and activated trading`
         : 'Trading account activated',
-      builderEnrolled,
       ...(bootstrap ?? {})
     })
   } catch (err: any) {
@@ -2266,40 +2201,14 @@ app.post('/api/aster/order', requireTgUser, async (req, res) => {
       console.warn('[API] /aster/order balance pre-check failed:', balErr?.message)
     }
 
-    // Same defaults as the onboarding handler — see /api/aster/approve.
-    const { brokerFeeWallet: _bfw } = await import('./services/brokerFees')
-    let builderAddress: string | undefined = process.env.ASTER_BUILDER_ADDRESS
-    if (!builderAddress) {
-      try { builderAddress = _bfw() } catch { /* leave undefined */ }
-    }
-    const feeRate        = process.env.ASTER_BUILDER_FEE_RATE ?? '0.003'
-    const buySell        = side === 'LONG' ? 'BUY' : 'SELL'
-
-    // Only attribute to the builder if THIS user has actually signed
-    // approveBuilder. Without their signed authorization on file, Aster
-    // rejects the order with "Cannot found builder config" — which is
-    // exactly the production bug this column was added to fix. When the
-    // user isn't enrolled we route through the plain `placeOrder` path
-    // (no builder/feeRate), the trade succeeds without us collecting the
-    // kickback. A background reapprove path will retry enrollment.
-    const builderActive = Boolean(builderAddress) && Boolean((user as any).asterBuilderEnrolled)
-
-    let result
-    if (builderActive && type === 'MARKET') {
-      // Builder route only supports the params we wire; LIMIT routes still go
-      // through the standard endpoint so timeInForce is honored.
-      if (lev > 1) await aster.setLeverage(sym, lev, creds)
-      result = await aster.placeOrderWithBuilderCode({
-        symbol: sym, side: buySell, type: 'MARKET', quantity: qty,
-        builderAddress: builderAddress!, feeRate, creds
-      })
-    } else {
-      result = await aster.placeOrder({
-        symbol: sym, side: buySell, type, quantity: qty,
-        price: type === 'LIMIT' ? limitRounded : undefined,
-        leverage: lev, creds
-      })
-    }
+    // Builder fees fully removed — every order routes through the plain
+    // placeOrder path with no builder/feeRate attached.
+    const buySell = side === 'LONG' ? 'BUY' : 'SELL'
+    const result = await aster.placeOrder({
+      symbol: sym, side: buySell, type, quantity: qty,
+      price: type === 'LIMIT' ? limitRounded : undefined,
+      leverage: lev, creds
+    })
 
     // Optional stop-loss attached to the user's manual entry. Best-effort:
     // if the SL leg fails (bad price, wrong side of mark, etc.) we still
@@ -2330,12 +2239,7 @@ app.post('/api/aster/order', requireTgUser, async (req, res) => {
             stopLoss:       slPx,
             quantity:       qty,
             creds,
-            // Even though closePosition='true' fills are flat-the-book,
-            // route through the builder so BUILD4 earns the broker
-            // kickback on the SL fill the same way we do on the entry.
-            // Gated on `builderActive` (env set AND user enrolled) — see
-            // the entry-leg comment above for why.
-            ...(builderActive ? { builderAddress: builderAddress!, feeRate } : {}),
+            // Builder fees fully removed — no builder/feeRate on the SL leg.
           })
           slStatus = 'placed'
         } catch (slErr: any) {
@@ -2364,22 +2268,6 @@ app.post('/api/aster/order', requireTgUser, async (req, res) => {
     })
   } catch (err: any) {
     const msg = (await import('./services/aster')).friendlyAsterError(err)
-    // Lazy 30-bps re-approval: existing users onboarded under the old
-    // 0.0001 maxFeeRate will hit -4400 on their first 0.003 order. Fire
-    // reapproveAsterForUser in the background so their NEXT manual order
-    // clears, and surface a clear retry hint in the response.
-    const { isAsterFeeOverMaxError, reapproveAsterForUser } = await import('./services/asterReapprove')
-    if (isAsterFeeOverMaxError(err)) {
-      console.warn(`[API] /aster/order fee-over-max for user=${user.id}; firing reapprove`)
-      reapproveAsterForUser(user as any).then(r => {
-        console.log(`[API] /aster/order auto-reapprove → success=${r.success} builderEnrolled=${r.builderEnrolled ?? false} err=${r.error ?? 'none'}`)
-      }).catch(e => console.error('[API] /aster/order auto-reapprove threw:', e?.message))
-      return res.status(503).json({
-        error: 'Fee terms updated to 0.30%. Re-approving your account now — please retry in a few seconds.',
-        retryAfterMs: 5000,
-        reapproving: true,
-      })
-    }
     console.error('[API] /aster/order failed:', msg, '(raw:', err?.message, 'status:', err?.response?.status, ')')
     res.status(502).json({ error: msg })
   }

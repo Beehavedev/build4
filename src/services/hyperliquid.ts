@@ -138,16 +138,11 @@ export function formatHlSize(sz: number, szDecimals: number): string {
 //   - any non-empty string → used verbatim.
 // `??` would silently fall through on "" which is the opposite of what an
 // operator means when they clear the var to disable the feature.
-const _hlBuilderRaw = (process.env.HYPERLIQUID_BUILDER_ADDRESS ?? '').trim().toLowerCase()
-const BUILDER_ADDRESS = (() => {
-  if (process.env.HYPERLIQUID_BUILDER_ADDRESS !== undefined) {
-    if (_hlBuilderRaw === '' || _hlBuilderRaw === 'disabled' || _hlBuilderRaw === 'none' || _hlBuilderRaw === 'off') {
-      return ''
-    }
-    return _hlBuilderRaw
-  }
-  return (process.env.ASTER_BUILDER_ADDRESS ?? '').trim().toLowerCase()
-})()
+// Builder fees fully removed — BUILD4 takes NO fee on Hyperliquid trades.
+// Hardcoded empty so `approveBuilderFee` short-circuits to a no-op and the
+// order payloads below never attach a `builder` field. (To ever re-enable,
+// restore the env-driven resolution from git history.)
+const BUILDER_ADDRESS = ''
 const BUILDER_MAX_RATE   = process.env.HYPERLIQUID_BUILDER_MAX_RATE ?? '0.1%'
 const BUILDER_FEE_TENTHS = Number(process.env.HYPERLIQUID_BUILDER_FEE_TENTHS ?? '100')
 

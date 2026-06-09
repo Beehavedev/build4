@@ -176,21 +176,13 @@ const realAsterOpenServices: AsterOpenServices = {
   placeOrderWithBuilderCode: asterPlaceOrderWithBuilderCode,
   placeBracketOrders:        asterPlaceBracketOrders,
   reapproveAsterForUser,
-  // Resolved at call time so env var changes don't get baked into a constant.
-  // builderAddress: ASTER_BUILDER_ADDRESS env wins; else fall back to
-  // BROKER_FEE_WALLET so the 30 bps self-collected broker fee lands at the
-  // right address without requiring extra env wiring on a fresh deploy.
-  get builderAddress() {
-    const env = process.env.ASTER_BUILDER_ADDRESS
-    if (env) return env
-    try {
-      // Lazy require to avoid pulling brokerFees into the module init graph.
-      const { brokerFeeWallet } = require('../services/brokerFees') as typeof import('../services/brokerFees')
-      return brokerFeeWallet()
-    } catch { return undefined }
-  },
-  // 30 bps self-collected (was 10 bps program default).
-  get feeRate()        { return process.env.ASTER_BUILDER_FEE_RATE ?? '0.003' },
+  // Builder fees fully removed — BUILD4 takes NO fee on Aster trades. The
+  // getters return undefined so executeOpenAster always routes through the
+  // plain `placeOrder`/`placeBracketOrders` path with no `builder`/`feeRate`
+  // attached. (The placeOrderWithBuilderCode branch below is kept only so the
+  // injected-service unit tests still compile; it is unreachable in prod.)
+  get builderAddress(): string | undefined { return undefined },
+  get feeRate():        string | undefined { return undefined },
 }
 
 const realAsterCloseServices: AsterCloseServices = {
@@ -417,11 +409,11 @@ export async function executeOpenAster(
     // reapproveAsterForUser once now so the NEXT tick uses fresh creds
     // and the order succeeds.
     //
-    // ALSO covers the lazy-bump path for the 30 bps Aster fee rollout:
-    // every user onboarded under the old 0.0001 maxFeeRate will see their
-    // first 0.003 order rejected with a fee-exceeds-max error. Same heal:
+    // ALSO covers the lazy re-approval path for the Aster fee rate: any
+    // user whose signed maxFeeRate no longer matches the current env rate
+    // will see their order rejected with a fee-exceeds-max error. Same heal:
     // reapproveAsterForUser re-calls approveBuilder with the new env-default
-    // maxFeeRate (0.003), so the NEXT tick clears. Matches Aster's known
+    // maxFeeRate (0.002), so the NEXT tick clears. Matches Aster's known
     // error shapes plus a loose "builder/fee rate" catch-all to survive
     // wording changes in their error strings.
     const isNoAgent  = /no agent found|-1000/i.test(execMsg)

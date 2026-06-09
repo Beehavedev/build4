@@ -228,19 +228,14 @@ export async function handleAsterConnect(ctx: Context) {
   const user = (ctx as any).dbUser
   if (!user) return
 
-  const builderAddress = process.env.ASTER_BUILDER_ADDRESS
   const agentPrivKey   = process.env.ASTER_AGENT_PRIVATE_KEY
   const agentAddress   = process.env.ASTER_AGENT_ADDRESS
-  // 30 bps self-collected fee (was 10 bps Aster Builder Program default).
-  // Aligned with src/server.ts, web4/server/dapp-server.ts, and asterReapprove.ts
-  // so the legacy /asterconnect command doesn't onboard new users at the old rate.
-  const feeRate        = process.env.ASTER_BUILDER_FEE_RATE ?? '0.003'
 
-  if (!builderAddress || !agentPrivKey || !agentAddress) {
+  // Builder fees removed — onboarding is a single approveAgent, no builder.
+  if (!agentPrivKey || !agentAddress) {
     return ctx.reply(
       '⚠️ Platform not fully configured.\n\n' +
       'The following Replit Secrets are required:\n' +
-      '• `ASTER_BUILDER_ADDRESS`\n' +
       '• `ASTER_AGENT_PRIVATE_KEY`\n' +
       '• `ASTER_AGENT_ADDRESS`',
       { parse_mode: 'Markdown' }
@@ -262,8 +257,6 @@ export async function handleAsterConnect(ctx: Context) {
       userPrivateKey: userPrivKey,
       agentAddress,
       agentName:      'BUILD4 Trading Bot',
-      builderAddress,
-      maxFeeRate:     feeRate,
       expiredDays:    365
     })
 
@@ -283,7 +276,7 @@ export async function handleAsterConnect(ctx: Context) {
         `1. Use /deposit to fund your Aster futures account\n` +
         `2. Use /newagent to create a trading agent\n` +
         `3. The agent trades automatically every 60 seconds\n\n` +
-        `Fee rate: ${parseFloat(feeRate) * 100}% per trade`,
+        `No platform fees on your trades.`,
         { parse_mode: 'Markdown' }
       )
     } else {

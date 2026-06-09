@@ -33,8 +33,8 @@ export interface ReapproveResult {
 
 // Detect Aster's "fee rate exceeds builder-approved max" rejection. Used by
 // every Aster order path (autonomous agent + manual API + dApp API) to decide
-// whether to lazy-fire reapproveAsterForUser. Existing users onboarded under
-// the 0.0001 maxFeeRate will hit this on their first 0.003-bumped order.
+// whether to lazy-fire reapproveAsterForUser. Any user whose signed
+// maxFeeRate no longer matches the current env rate (0.002) hits this.
 //
 // Detection strategy: prefer Aster's structured signals (code -4400 with
 // fee/max wording in the message) over loose text matching, then fall back
@@ -91,26 +91,13 @@ async function _runReapprove(user: {
   asterAgentAddress?: string | null
   asterOnboarded?: boolean
 }): Promise<ReapproveResult> {
-  // Builder address: fall back to BROKER_FEE_WALLET so this works out of
-  // the box once the operator drops the Aster Builder Program and just
-  // wants their own fee-collection address on every order. ASTER_BUILDER_ADDRESS
-  // env still wins when set, for backwards compat with existing deployments.
-  const { brokerFeeWallet } = await import('./brokerFees')
-  let builderAddress = process.env.ASTER_BUILDER_ADDRESS
-  if (!builderAddress) {
-    try { builderAddress = brokerFeeWallet() } catch { /* leave undefined */ }
-  }
-  // Default feeRate bumped 0.0001 → 0.003 (10 bps program rate → 30 bps
-  // self-collected). This is the maxFeeRate the user signs in approveBuilder
-  // AND the per-order feeRate Aster credits to builderAddress on every fill.
-  const feeRate = process.env.ASTER_BUILDER_FEE_RATE ?? '0.003'
-  if (!builderAddress) return { success: false, error: 'no_builder_configured' }
-
+  // Builder fees fully removed — this self-heal only re-mints + re-approves a
+  // fresh agent. No builder address, no fee, no approveBuilder step.
   const wallet = await db.wallet.findFirst({ where: { userId: user.id, isActive: true } })
   if (!wallet?.encryptedPK) return { success: false, error: 'no_active_wallet' }
 
   const { decryptPrivateKey, encryptPrivateKey } = await import('./wallet')
-  const { approveAgent, approveBuilder } = await import('./aster')
+  const { approveAgent } = await import('./aster')
   const { ethers } = await import('ethers')
 
   // Try every plausible decryption candidate — mirrors /api/aster/approve.
@@ -151,8 +138,6 @@ async function _runReapprove(user: {
         userPrivateKey: userPk,
         agentAddress:   agentWallet.address,
         agentName:      'BUILD4Agent',
-        builderAddress,
-        maxFeeRate:     feeRate,
         expiredDays:    365,
       })
     } catch (e: any) {
@@ -180,41 +165,10 @@ async function _runReapprove(user: {
       } as any,
     })
 
-    // Same retry policy as /api/aster/approve: 3 attempts with linear
-    // backoff. Same DB flag persistence so the order path can decide
-    // whether to attach builder+feeRate. See activation handler for the
-    // full rationale on why this matters for "Cannot found builder
-    // config" rejections.
-    let builderEnrolled = false
-    for (let attempt = 1; attempt <= 3 && !builderEnrolled; attempt++) {
-      try {
-        const br = await approveBuilder({
-          userAddress:    wallet.address,
-          userPrivateKey: userPk,
-          builderAddress,
-          maxFeeRate:     feeRate,
-          builderName:    'BUILD4',
-        })
-        if (br.success) {
-          builderEnrolled = true
-          break
-        }
-        console.warn(`[asterReapprove] approveBuilder attempt ${attempt}/3 failed:`, br.error)
-      } catch (e: any) {
-        console.warn(`[asterReapprove] approveBuilder attempt ${attempt}/3 threw:`, e?.message)
-      }
-      if (attempt < 3) {
-        await new Promise(r => setTimeout(r, attempt * 1000))
-      }
-    }
-    try {
-      await db.user.update({
-        where: { id: user.id },
-        data:  { asterBuilderEnrolled: builderEnrolled } as any,
-      })
-    } catch (e: any) {
-      console.warn('[asterReapprove] failed to persist asterBuilderEnrolled:', e?.message)
-    }
+    // Builder enrollment removed — no fee, so no approveBuilder step. Keep
+    // builderEnrolled=false in the result shape for backwards-compatible
+    // callers/tests that still read the field.
+    const builderEnrolled = false
 
     return { success: true, agentAddress: agentWallet.address, builderEnrolled }
   } finally {
