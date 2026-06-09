@@ -26,6 +26,14 @@ function deriveState(w: WalletInfo): WalletState {
   if (!w.aster.onboarded) {
     return w.balances.usdt > 0 ? 'B' : 'A'
   }
+  // Onboarded users: only fall back to the "Transfer to Aster" funding gate
+  // (state C) when we are CONFIDENT the futures account is genuinely empty —
+  // i.e. a clean balance read of 0 with NO error. A failed/transient balance
+  // read (aster.error set) must NOT regress a funded user back to the deposit
+  // prompt: that misread is exactly what made activation ask for the amount a
+  // second time and hid real equity. When the read errored we keep the
+  // trading-ready UI (state D) and surface the read failure inside the card.
+  if (w.aster.error) return 'D'
   return w.aster.usdt > 0 ? 'D' : 'C'
 }
 
@@ -779,16 +787,21 @@ function AsterPrimaryCard({ w }: { w: WalletInfo }) {
         <div>
           <div style={{ fontSize: 11, color: 'var(--b4-muted)' }}>Equity</div>
           <div style={{ fontSize: 28, fontWeight: 800, color: '#10b981' }} data-testid="text-aster-usdt">
-            ${w.aster.usdt.toFixed(2)}
+            {w.aster.error ? '—' : `$${w.aster.usdt.toFixed(2)}`}
           </div>
         </div>
         <div style={{ textAlign: 'right' }}>
           <div style={{ fontSize: 11, color: 'var(--b4-muted)' }}>Available margin</div>
           <div style={{ fontSize: 20, fontWeight: 700 }} data-testid="text-aster-margin">
-            ${w.aster.availableMargin.toFixed(2)}
+            {w.aster.error ? '—' : `$${w.aster.availableMargin.toFixed(2)}`}
           </div>
         </div>
       </div>
+      {w.aster.error && (
+        <div style={{ fontSize: 11, color: 'var(--b4-muted)', marginTop: 8 }} data-testid="text-aster-balance-stale">
+          Balance temporarily unavailable — retrying. Your funds and positions are safe.
+        </div>
+      )}
     </div>
   )
 }

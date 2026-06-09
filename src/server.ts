@@ -4290,6 +4290,13 @@ app.get('/api/portfolio/:userId', async (req, res) => {
     // this, the Portfolio Trade History keeps showing closed-on-venue
     // rows as "Open" until the next agent tick reaches them. Errors
     // here are non-fatal; we still serve the DB rows below.
+    // Live Aster open positions, captured during the reconcile pass below so
+    // we can also surface them as "open" rows in Trade History (mirroring the
+    // Hyperliquid open-position merge further down). Without this, perps opened
+    // manually from the Trade tab — which are NOT written to the `Trade` table
+    // (only agent-opened trades are) — were invisible in Portfolio even though
+    // the Trade tab showed them live.
+    let asterOpenPositions: any[] = []
     if (wallet) {
       try {
         const u = await db.user.findUnique({ where: { id: internalUserId } })
@@ -4308,9 +4315,13 @@ app.get('/api/portfolio/:userId', async (req, res) => {
           const { reconcileStaleAsterTrades } = await import('./services/asterReconcile')
           const creds = await resolveAgentCreds(u as any, wallet.address)
           if (creds) {
-            const raw = await getPositions(creds)
-            const live = raw.map((p: any) => ({ symbol: p.symbol, side: p.side }))
-            await reconcileStaleAsterTrades(internalUserId, live, true)
+            const live = await getPositions(creds)
+            asterOpenPositions = live
+            await reconcileStaleAsterTrades(
+              internalUserId,
+              live.map((p: any) => ({ symbol: p.symbol, side: p.side })),
+              true,
+            )
           }
         }
       } catch (e: any) {
@@ -4412,6 +4423,38 @@ app.get('/api/portfolio/:userId', async (req, res) => {
         openedAt: null,
         closedAt: null,
         exchange: 'hyperliquid',
+      })
+    }
+
+    // ── Aster OPEN positions
+    //
+    // Mirror the Hyperliquid open-position surfacing above. Dedupe by
+    // venue+symbol+side so that (a) a position already represented by an open
+    // DB `Trade` row (agent-opened perps, incl. legacy null-exchange rows)
+    // isn't shown twice, and (b) hedge-mode long+short rows on the same symbol
+    // stay distinct. The `seen` set is updated in-loop so a duplicated venue
+    // payload row can't push a second identical line (which would also collide
+    // on the React key). Manually-opened perps have no DB row and land here.
+    const seenAsterKeys = new Set(
+      trades
+        .filter(t => t.status === 'open' && (t.exchange === 'aster' || !t.exchange))
+        .map(t => `${String(t.pair).replace('/', '').toUpperCase()}:${t.side}`)
+    )
+    for (const p of asterOpenPositions) {
+      if (!p.size) continue
+      const sym = String(p.symbol).replace('/', '').toUpperCase()
+      const key = `${sym}:${p.side}`
+      if (seenAsterKeys.has(key)) continue
+      seenAsterKeys.add(key)
+      trades.push({
+        id: `aster_open_${sym}_${p.side}`,
+        pair: p.symbol,
+        side: p.side,
+        pnl: p.unrealizedPnl,
+        status: 'open',
+        openedAt: null,
+        closedAt: null,
+        exchange: 'aster',
       })
     }
 
