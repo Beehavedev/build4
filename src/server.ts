@@ -2440,6 +2440,14 @@ app.post('/api/hyperliquid/approve', requireTgUser, async (req, res) => {
   try {
     const user = (req as any).user
 
+    // Optional deposit amount (USDC) the user typed in the Activate card.
+    // When omitted we keep the old behavior (bridge whatever's available up
+    // to the cap); when present we bridge exactly that amount so we never
+    // sweep the user's whole Arbitrum balance without consent.
+    const requestedAmountRaw = (req.body ?? {}).amount
+    const requestedAmount = Number(requestedAmountRaw)
+    const hasRequestedAmount = Number.isFinite(requestedAmount) && requestedAmount > 0
+
     // ── Short-circuit if already onboarded with an agent we can decrypt.
     if (user.hyperliquidOnboarded && user.hyperliquidAgentAddress && user.hyperliquidAgentEncryptedPK) {
       return res.json({
@@ -2485,7 +2493,7 @@ app.post('/api/hyperliquid/approve', requireTgUser, async (req, res) => {
     //    is empty AND the user has spendable USDC + a sliver of ETH on
     //    Arbitrum, we auto-bridge it through HL's official bridge contract
     //    and wait for the credit before signing approveAgent.
-    const { approveAgent, approveBuilderFee, getAccountState, getSpotUsdcBalance, waitForHlDeposit } =
+    const { approveAgent, getAccountState, getSpotUsdcBalance, waitForHlDeposit } =
       await import('./services/hyperliquid')
     const { getArbitrumBalances, bridgeArbitrumUsdcToHyperliquid } =
       await import('./services/wallet')
@@ -2528,15 +2536,31 @@ app.post('/api/hyperliquid/approve', requireTgUser, async (req, res) => {
         // bootstrap HL, so we return a clean error.
         const HL_AUTO_BRIDGE_CAP = 500
         const available    = Math.floor(arb.usdc * 100) / 100
-        const bridgeAmount = Math.min(available, HL_AUTO_BRIDGE_CAP)
+
+        // If the user typed an amount, honor it exactly (clamped to the cap).
+        // Reject up-front when they asked for more than they hold so we never
+        // silently bridge less than requested. When no amount was given we
+        // fall back to "bridge what's available up to the cap" (legacy).
+        if (hasRequestedAmount && requestedAmount > available) {
+          return res.status(400).json({
+            success: false,
+            error:   `You asked to deposit $${requestedAmount.toFixed(2)} but only have $${available.toFixed(2)} USDC on Arbitrum (wallet ${wallet.address}). Send more native USDC (not USDC.e) on Arbitrum One, or enter a smaller amount.`,
+          })
+        }
+        const bridgeAmount = hasRequestedAmount
+          ? Math.min(requestedAmount, HL_AUTO_BRIDGE_CAP)
+          : Math.min(available, HL_AUTO_BRIDGE_CAP)
         if (bridgeAmount < 5) {
           return res.status(400).json({
             success: false,
-            error:   `Hyperliquid needs at least $5 USDC to activate. You currently have $${arb.usdc.toFixed(2)} USDC on Arbitrum (wallet ${wallet.address}). Send native USDC (not USDC.e) on Arbitrum One to that address, then tap Activate again.`,
+            error:   hasRequestedAmount
+              ? `Hyperliquid needs at least $5 USDC to activate, but you entered $${requestedAmount.toFixed(2)}. Enter $5 or more.`
+              : `Hyperliquid needs at least $5 USDC to activate. You currently have $${arb.usdc.toFixed(2)} USDC on Arbitrum (wallet ${wallet.address}). Send native USDC (not USDC.e) on Arbitrum One to that address, then tap Activate again.`,
           })
         }
         console.log(
-          `[/hyperliquid/approve] auto-bridge user=${user.id} bridging $${bridgeAmount} of $${available} USDC from Arbitrum`,
+          `[/hyperliquid/approve] auto-bridge user=${user.id} bridging $${bridgeAmount} of $${available} USDC from Arbitrum` +
+          `${hasRequestedAmount ? ` (user-requested $${requestedAmount})` : ''}`,
         )
         const bridge = await bridgeArbitrumUsdcToHyperliquid(userPk, bridgeAmount)
         if (!bridge.success) {
@@ -2569,19 +2593,6 @@ app.post('/api/hyperliquid/approve', requireTgUser, async (req, res) => {
     const result = await approveAgent(userPk, agentAddress)
     if (!result.success) {
       return res.status(400).json({ success: false, error: result.error ?? 'approveAgent failed' })
-    }
-
-    // ── 3b) Authorise BUILD4's builder address to charge per-order kickback.
-    //   Same one-tap flow — master signs ApproveBuilderFee right after the
-    //   agent approval. Failure here is non-fatal: the user is still onboarded
-    //   for trading, we just don't earn revenue on their orders. Logged so
-    //   we can sweep up missed approvals later if it becomes common.
-    const builderResult = await approveBuilderFee(userPk)
-    if (!builderResult.success) {
-      console.warn(
-        `[/hyperliquid/approve] approveBuilderFee failed (non-fatal) user=${user.id} ` +
-        `tg=${user.telegramId} err=${builderResult.error ?? 'unknown'}`,
-      )
     }
 
     // ── 4) Persist. Only flip onboarded=true after on-chain success so a
@@ -2661,55 +2672,6 @@ app.post('/api/hyperliquid/approve', requireTgUser, async (req, res) => {
   }
 })
 
-// POST /api/hyperliquid/approve-builder
-//
-// Manual builder-fee approval. Used when /api/hyperliquid/order's auto-heal
-// can't decrypt the master PK and surfaces { needsBuilderApproval: true } —
-// the UI offers a button that calls this endpoint, after which the user can
-// retry the order. Idempotent: HL silently no-ops a re-approval.
-app.post('/api/hyperliquid/approve-builder', requireTgUser, async (req, res) => {
-  try {
-    const user = (req as any).user
-    if (!user.hyperliquidOnboarded) {
-      return res.status(400).json({ success: false, error: 'Activate Hyperliquid first' })
-    }
-    const wallet = await db.wallet.findFirst({ where: { userId: user.id, isActive: true } })
-    if (!wallet) return res.status(404).json({ success: false, error: 'No active wallet' })
-
-    const { decryptPrivateKey } = await import('./services/wallet')
-    const idCandidates = Array.from(new Set([
-      user.id,
-      user.telegramId?.toString(),
-      wallet.userId,
-    ].filter((v): v is string => Boolean(v))))
-    let userPk: string | null = null
-    let lastErr: any = null
-    for (const candidate of idCandidates) {
-      try {
-        const out = decryptPrivateKey(wallet.encryptedPK, candidate)
-        if (out?.startsWith('0x')) { userPk = out; break }
-      } catch (e) { lastErr = e }
-    }
-    if (!userPk) {
-      console.error(
-        `[/hyperliquid/approve-builder] decrypt wallet PK failed user=${user.id} ` +
-        `wallet=${wallet.address} err=${lastErr?.message ?? 'unknown'}`,
-      )
-      return res.status(500).json({ success: false, error: 'Could not decrypt wallet' })
-    }
-
-    const { approveBuilderFee } = await import('./services/hyperliquid')
-    const r = await approveBuilderFee(userPk)
-    if (!r.success) {
-      return res.status(400).json({ success: false, error: r.error ?? 'Builder approval failed' })
-    }
-    return res.json({ success: true, skipped: r.skipped ?? false })
-  } catch (err: any) {
-    console.error('[API] /hyperliquid/approve-builder failed:', err?.message ?? err)
-    res.status(500).json({ success: false, error: err?.message ?? 'Internal error' })
-  }
-})
-
 // POST /api/hyperliquid/order
 //
 // Place a perp order on Hyperliquid using the user's agent wallet.
@@ -2783,163 +2745,14 @@ app.post('/api/hyperliquid/order', requireTgUser, async (req, res) => {
       limitPx: type === 'LIMIT' ? Number(limitPx) : undefined,
       leverage: leverage ? Number(leverage) : undefined,
     } as const
-    let result = await placeOrder(creds, orderArgs)
-
-    // ── Self-heal: users onboarded before the builder-fee rollout never
-    //   signed approveBuilderFee, so HL rejects their first order with a
-    //   "must approve builder fee" / "builder not approved" style error.
-    //   Catch that on the fly, decrypt master PK, sign the missing approval,
-    //   then retry the order — invisible to the user. One-shot only.
-    const errStr = (result.error ?? '').toLowerCase()
-    const looksLikeBuilderReject =
-      !result.success &&
-      (errStr.includes('builder') || errStr.includes('must approve'))
-
-    // ── Distinct from "user hasn't approved yet": this means the builder
-    //    address itself isn't registered/funded as a builder on HL.
-    //    No amount of user-side approveBuilderFee can fix it. We'll skip
-    //    straight to placing without a builder field below.
-    const builderUnregistered =
-      !result.success &&
-      /insufficient balance|not registered|not a (registered )?builder/i.test(result.error ?? '')
-
-    if (looksLikeBuilderReject && !builderUnregistered) {
-      console.log(
-        `[/hyperliquid/order] builder-rejection detected user=${user.id} — auto-approving and retrying`,
-      )
-      try {
-        const { decryptPrivateKey } = await import('./services/wallet')
-        // Mirror the broader candidate-id set used by /aster/approve so legacy
-        // wallets (encrypted under wallet.userId rather than the new user.id)
-        // still decrypt here. Without this, users onboarded before the userId
-        // migration would silently fall through to the bare "Builder fee
-        // not approved" reject with no path to recover.
-        const idCandidates = Array.from(new Set([
-          user.id,
-          user.telegramId?.toString(),
-          wallet.userId,
-        ].filter((v): v is string => Boolean(v))))
-        let userPk: string | null = null
-        for (const candidate of idCandidates) {
-          try {
-            const out = decryptPrivateKey(wallet.encryptedPK, candidate)
-            if (out?.startsWith('0x')) { userPk = out; break }
-          } catch {}
-        }
-        if (userPk) {
-          const { approveBuilderFee } = await import('./services/hyperliquid')
-          const br = await approveBuilderFee(userPk)
-          if (br.success) {
-            // HL needs a beat for the approval to propagate to the
-            // exchange's order-validation layer before the retry will see
-            // it. Propagation latency is variable, so retry with backoff
-            // (1.5s, 3s, 5s) before giving up — total ≤ ~10s, well under
-            // the Render gateway timeout.
-            const backoffsMs = [1500, 3000, 5000]
-            for (let attempt = 0; attempt < backoffsMs.length; attempt++) {
-              await new Promise(r => setTimeout(r, backoffsMs[attempt]))
-              result = await placeOrder(creds, orderArgs)
-              // If HL starts rate-limiting us mid-retry, STOP. Continuing
-              // to hammer just deepens the 429 backoff window and surfaces
-              // a confusing "429 Too Many Requests - null" to the user
-              // instead of the actionable "Builder fee not approved" they
-              // can recover from with the manual approve button.
-              if (!result.success && /429|too many requests/i.test(result.error ?? '')) {
-                console.warn(
-                  `[/hyperliquid/order] HL rate-limited mid-retry user=${user.id} — bailing out of auto-heal loop`,
-                )
-                break
-              }
-              const stillBuilder = !result.success
-                && /(builder|must approve)/i.test(result.error ?? '')
-              if (!stillBuilder) break
-              console.log(
-                `[/hyperliquid/order] retry ${attempt + 1} still builder-rejected — backing off again`,
-              )
-            }
-          } else {
-            console.warn(
-              `[/hyperliquid/order] auto-approveBuilderFee failed user=${user.id} err=${br.error}`,
-            )
-            // ── BUILDER UNREGISTERED via approve path (operator-side issue)
-            //    "Builder has insufficient balance to be approved" comes back
-            //    on the APPROVE call, not the ORDER call. We deliberately do
-            //    NOT fall back to a no-builder order here. Reasoning below.
-            //    `result` keeps the original order error so the final
-            //    response handler surfaces a clean "service unavailable"
-            //    message and the operator gets a loud log line to act on.
-            const approveErr = (br.error ?? '').toLowerCase()
-            const isBuilderUnregistered = /builder/.test(approveErr)
-              && /insufficient balance|not registered|not a (registered )?builder/.test(approveErr)
-            if (isBuilderUnregistered) {
-              console.error(
-                `[/hyperliquid/order] BUILDER UNREGISTERED via approve path user=${user.id} ` +
-                `approveErr="${br.error}" — failing the order. ACTION: top up USDC on the builder wallet on HL.`,
-              )
-            }
-          }
-        } else {
-          console.warn(
-            `[/hyperliquid/order] could not decrypt master PK for auto-approve user=${user.id}`,
-          )
-        }
-      } catch (e: any) {
-        console.warn('[/hyperliquid/order] auto-approve retry threw:', e?.message ?? e)
-      }
-    }
-
-    // ── INTENTIONAL: NO no-builder fallback on /order
-    //
-    // Earlier revisions of this handler had a "last-resort" fallback that
-    // retried the order with `noBuilder: true` whenever HL rejected because
-    // OUR builder address wasn't registered/funded on HL. That fallback is
-    // DELIBERATELY REMOVED. Reasoning:
-    //
-    //   1. Silent success on the no-builder path means we lose the 0.1%
-    //      kickback on every affected fill while the operator has no signal
-    //      to fix the underlying problem. The order succeeds, the user is
-    //      happy, nobody reports anything, weeks of revenue evaporate.
-    //
-    //   2. Failing loudly on builder issues forces the user to surface the
-    //      problem (via support / Telegram), which alerts the operator
-    //      immediately. Recovery is cheap (top up the builder wallet on HL,
-    //      or rotate HYPERLIQUID_BUILDER_ADDRESS) — typically <5 min.
-    //
-    //   3. Builder revenue is a load-bearing part of the venue's economics.
-    //      Treating it as optional with a quiet fallback signals to the team
-    //      that it's "nice to have" — which it isn't.
-    //
-    // If you ever consider re-adding a no-builder fallback here: don't.
-    // Add an admin-only flag instead so operators can flip it deliberately
-    // during a known incident, with a logged audit trail.
+    const result = await placeOrder(creds, orderArgs)
 
     if (!result.success) {
-      // BUILDER UNREGISTERED — operator-side problem (builder wallet not
-      // funded/registered on HL). The user's approval is irrelevant here, so
-      // showing them an "approve" button would just loop them. Surface a
-      // clean, non-jargon "service unavailable" message instead.
-      const isUnregistered = /insufficient balance|not registered|not a (registered )?builder/i
-        .test(result.error ?? '')
-      if (isUnregistered) {
-        console.error(
-          `[/hyperliquid/order] BUILDER UNREGISTERED — operator must top up the builder wallet on HL ` +
-          `(user=${user.id} err=${result.error})`,
-        )
-        return res.status(503).json({
-          success: false,
-          error:
-            'Trading is temporarily unavailable on Hyperliquid. Please try again in a few minutes. ' +
-            "If this continues, please contact support and we'll take a look.",
-          code: 'service_unavailable',
-        })
-      }
-      // Builder approval missing for THIS user — surface the flag so the
-      // reactive "Approve builder fee & retry" button shows in the UI.
-      const stillBuilder = /(builder|must approve)/i.test(result.error ?? '')
-      return res.status(400).json({
-        ...result,
-        ...(stillBuilder ? { needsBuilderApproval: true } : {}),
-      })
+      // Builder fees were removed venue-wide, so the old builder-rejection
+      // self-heal/retry path is gone. Any remaining failure is a genuine
+      // order error (bad price, insufficient margin, rate-limit, …) —
+      // surface it as-is so the UI can show the actionable message.
+      return res.status(400).json(result)
     }
     // Optional stop-loss attached to the user's manual entry. Best-effort:
     // if the SL leg fails we still return success on the entry — the
@@ -2970,12 +2783,6 @@ app.post('/api/hyperliquid/order', requireTgUser, async (req, res) => {
         const friendlyHlSlError = (raw: string | undefined): string => {
           const s = (raw ?? '').toLowerCase()
           if (!s) return 'Stop loss could not be placed — please try again or add it manually.'
-          if (/(builder|must approve)/.test(s)) {
-            return 'Stop loss could not be placed right now. Please tap "Approve builder fee" and try again.'
-          }
-          if (/(insufficient.*balance|not registered|not a (registered )?builder)/.test(s)) {
-            return 'Stop loss is temporarily unavailable on this venue. Please try again in a few minutes.'
-          }
           if (/(price|tick|decimals|invalid)/.test(s)) {
             return 'That stop-loss price isn\'t valid for this market — try a level a few cents away from the current price.'
           }
@@ -3158,16 +2965,19 @@ app.get('/api/hyperliquid/account', requireTgUser, async (req, res) => {
     const wallet = await db.wallet.findFirst({ where: { userId: user.id, isActive: true } })
     if (!wallet) return res.status(404).json({ error: 'No active wallet' })
 
-    const { getAccountState, getSpotUsdcBalance } = await import('./services/hyperliquid')
-    // Fetch perps state + spot USDC in parallel — both are independent
-    // public reads. We surface spotUsdc so the UI can prompt the user to
-    // do a spot→perps transfer when funds landed on the wrong sub-account.
-    // getAccountState now also queries HL's userAbstraction endpoint in
-    // parallel so we can detect Unified Account mode without waiting for
-    // the user to tap Move and hit a 502.
-    const [state, spotUsdc] = await Promise.all([
+    const { getAccountState, getSpotUsdcBalance, getOpenOrders } = await import('./services/hyperliquid')
+    // Fetch perps state + spot USDC + open orders in parallel — all are
+    // independent public reads. We surface spotUsdc so the UI can prompt the
+    // user to do a spot→perps transfer when funds landed on the wrong
+    // sub-account. getAccountState now also queries HL's userAbstraction
+    // endpoint in parallel so we can detect Unified Account mode without
+    // waiting for the user to tap Move and hit a 502. openOrders surfaces
+    // resting trigger orders (stop-loss / take-profit) which are NOT
+    // positions and were previously invisible in the UI.
+    const [state, spotUsdc, openOrders] = await Promise.all([
       getAccountState(wallet.address),
       getSpotUsdcBalance(wallet.address),
+      getOpenOrders(wallet.address),
     ])
 
     // Source-of-truth resolution for the unified flag:
@@ -3240,6 +3050,11 @@ app.get('/api/hyperliquid/account', requireTgUser, async (req, res) => {
       // persisted DB flag as a fallback for HL outages.
       unifiedAccount,
       spotUsdc,
+      // Resting open orders (incl. stop-loss / take-profit trigger orders).
+      // The HL tab renders these under the positions list so a placed
+      // stop-loss is actually visible — HL trigger orders are open ORDERS,
+      // not positions, so the positions card alone never showed them.
+      openOrders,
     })
   } catch (err: any) {
     console.error('[API] /hyperliquid/account failed:', err?.message)
@@ -4329,7 +4144,7 @@ app.get('/api/portfolio/:userId', async (req, res) => {
       }
     }
 
-    const [portfolio, dbTrades, hlFills, hlState] = await Promise.all([
+    const [portfolio, dbTrades, hlFills, hlState, hlOpenOrders] = await Promise.all([
       db.portfolio.findUnique({ where: { userId: internalUserId } }),
       db.trade.findMany({
         where: { userId: internalUserId },
@@ -4342,6 +4157,9 @@ app.get('/api/portfolio/:userId', async (req, res) => {
       wallet
         ? import('./services/hyperliquid').then(m => m.getAccountState(wallet.address))
         : Promise.resolve({ positions: [] as any[] } as any),
+      wallet
+        ? import('./services/hyperliquid').then(m => m.getOpenOrders(wallet.address))
+        : Promise.resolve([] as any[]),
     ])
 
     // Map DB trades to the shape Portfolio.tsx expects.
@@ -4420,6 +4238,31 @@ app.get('/api/portfolio/:userId', async (req, res) => {
         side: p.szi > 0 ? 'LONG' : 'SHORT',
         pnl: p.unrealizedPnl,
         status: 'open',
+        openedAt: null,
+        closedAt: null,
+        exchange: 'hyperliquid',
+      })
+    }
+
+    // ── Hyperliquid OPEN trigger orders (stop-loss / take-profit)
+    //
+    // HL stop-loss / take-profit orders are resting TRIGGER ORDERS, not
+    // positions — clearinghouseState never returns them, so a placed
+    // stop-loss was invisible in the portfolio. Surface reduce-only trigger
+    // orders as their own "protective" rows so users can confirm their
+    // stop/TP is actually live. These carry no PnL (they haven't fired) and
+    // are tagged with `kind` + `triggerPx` for the UI to render distinctly.
+    for (const o of (hlOpenOrders ?? [])) {
+      if (!o.isTrigger) continue            // skip plain resting limit orders
+      trades.push({
+        id: `hl_trig_${o.oid}`,
+        pair: o.coin,
+        side: o.side,                       // 'BUY' | 'SELL' (close side)
+        pnl: null,
+        status: 'open',
+        kind: o.kind,                       // 'stop' | 'take_profit'
+        triggerPx: o.triggerPx,
+        reduceOnly: o.reduceOnly,
         openedAt: null,
         closedAt: null,
         exchange: 'hyperliquid',

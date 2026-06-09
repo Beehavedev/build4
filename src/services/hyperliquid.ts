@@ -830,6 +830,71 @@ export async function getUserFillsStrict(userAddress: string): Promise<HlFillRow
 }
 
 /**
+ * A single open order on HL, normalized for the mini-app.
+ *
+ * The key reason this exists: HL stop-loss / take-profit orders are *resting
+ * trigger orders*, NOT positions. The positions endpoint (clearinghouseState)
+ * never returns them, so a stop-loss the user placed was invisible in the UI
+ * even though it was live on HL — the user reported "stop loss set at $589"
+ * but couldn't see it anywhere. Surfacing open trigger orders fixes that.
+ */
+export type HlOpenOrder = {
+  coin: string
+  side: 'BUY' | 'SELL'      // B=bid=BUY, A=ask=SELL
+  sz: number                // remaining size (base units)
+  limitPx: number
+  oid: number
+  isTrigger: boolean
+  triggerPx: number         // 0 for non-trigger orders
+  triggerCondition: string  // e.g. "Below"/"Above" — HL's display string
+  reduceOnly: boolean
+  isPositionTpsl: boolean    // true when it's a position-attached TP/SL
+  /** "Stop Market" | "Take Profit Market" | "Limit" | … (HL display string) */
+  orderType: string
+  /** Coarse classification for the UI: stop-loss vs take-profit vs plain. */
+  kind: 'stop' | 'take_profit' | 'limit'
+}
+
+/**
+ * Fetch the user's resting open orders WITH frontend display info (trigger
+ * price, order type, trigger condition). Uses HL's `frontendOpenOrders`
+ * endpoint rather than the bare `openOrders` because only the frontend
+ * variant carries `triggerPx` / `orderType`, which we need to render a
+ * meaningful "🛑 Stop $589" row. Swallows errors to an empty array so a
+ * transient HL outage degrades to "no orders shown" rather than blanking
+ * the whole positions card.
+ */
+export async function getOpenOrders(userAddress: string): Promise<HlOpenOrder[]> {
+  try {
+    const raw = await infoClient.frontendOpenOrders({ user: userAddress as `0x${string}` })
+    return (raw ?? []).map((o: any): HlOpenOrder => {
+      const orderType = String(o.orderType ?? '')
+      const kind: HlOpenOrder['kind'] =
+        /take profit/i.test(orderType) ? 'take_profit'
+          : /stop/i.test(orderType) ? 'stop'
+            : 'limit'
+      return {
+        coin: o.coin,
+        side: o.side === 'B' ? 'BUY' : 'SELL',
+        sz: safeFloat(o.sz),
+        limitPx: safeFloat(o.limitPx),
+        oid: safeInt(o.oid),
+        isTrigger: Boolean(o.isTrigger),
+        triggerPx: safeFloat(o.triggerPx),
+        triggerCondition: String(o.triggerCondition ?? ''),
+        reduceOnly: Boolean(o.reduceOnly),
+        isPositionTpsl: Boolean(o.isPositionTpsl),
+        orderType,
+        kind,
+      }
+    })
+  } catch (err: any) {
+    console.warn('[HL] getOpenOrders failed:', userAddress, err?.message)
+    return []
+  }
+}
+
+/**
  * Poll HL clearinghouse until `address` has at least `minUsdc` of equity,
  * or `timeoutMs` elapses. Used by the auto-bridge flow on /approve to wait
  * for the Arbitrum→HL credit (typically ~30-60s) before calling approveAgent.
@@ -968,7 +1033,15 @@ export async function placeOrder(
      */
     reduceOnly?: boolean;
   },
-): Promise<{ success: boolean; oid?: number; status?: string; error?: string }> {
+): Promise<{
+  success: boolean; oid?: number; status?: string; error?: string;
+  /** Leverage the caller asked for (echoed back so the UI can compare). */
+  requestedLeverage?: number;
+  /** Leverage actually set on HL — clamped to the asset's maxLeverage. */
+  appliedLeverage?: number;
+  /** The asset's HL maxLeverage cap (so the UI can explain the clamp). */
+  maxLeverage?: number;
+}> {
   try {
     const client = exchangeClientFor(creds)
     const sym = args.coin.toUpperCase().replace(/USDT?$/, '').replace(/-USD$/, '')
@@ -1004,13 +1077,37 @@ export async function placeOrder(
       return { success: false, error: `Order size rounds to 0 at szDecimals=${szDecimals}; increase notional.` }
     }
 
-    if (args.leverage && args.leverage > 1) {
+    // ── Leverage: clamp to the asset's HL max BEFORE calling updateLeverage ──
+    // Each perp has its own maxLeverage (BTC=40x, many alts=10x or 5x).
+    // Previously we passed the raw requested leverage straight through; when
+    // it exceeded the asset cap, HL's updateLeverage THREW and we swallowed it
+    // as a non-fatal warn — so the order placed at HL's *default* 10x (or
+    // whatever was last set), silently ignoring the user's "30x". The fix:
+    // read maxLeverage from the meta universe, clamp to it, and report both
+    // the requested and the actually-applied leverage so the UI can say
+    // "BTC max on HL is 40x — opened at 40x" instead of failing silently.
+    const maxLeverage = Number((meta.universe[assetIdx] as any)?.maxLeverage) || 0
+    const requestedLeverage = args.leverage && args.leverage > 0
+      ? Math.floor(args.leverage)
+      : undefined
+    let appliedLeverage: number | undefined
+    if (requestedLeverage && requestedLeverage > 1) {
+      const want = maxLeverage > 0
+        ? Math.min(requestedLeverage, maxLeverage)
+        : requestedLeverage
       try {
-        await client.updateLeverage({ asset: assetIdx, isCross: true, leverage: Math.floor(args.leverage) })
+        await client.updateLeverage({ asset: assetIdx, isCross: true, leverage: want })
+        appliedLeverage = want
       } catch (e: any) {
-        console.warn('[HL] updateLeverage failed (non-fatal):', e?.message)
+        // Even after clamping, updateLeverage can fail (e.g. an open position
+        // already pins a different leverage). Keep it non-fatal — the order
+        // still goes out at whatever leverage is currently in force — but
+        // leave appliedLeverage undefined so the UI doesn't claim a value we
+        // couldn't confirm.
+        console.warn(`[HL] updateLeverage failed (non-fatal) want=${want} max=${maxLeverage}:`, e?.message)
       }
     }
+    const leverageInfo = { requestedLeverage, appliedLeverage, maxLeverage: maxLeverage || undefined }
 
     // Attach builder fee if a builder address is configured. HL routes the
     // configured kickback (BUILDER_FEE_TENTHS) to BUILDER_ADDRESS on every
@@ -1053,7 +1150,12 @@ export async function placeOrder(
     // Order accepted — drop cached account state so the very next
     // /account read returns the fresh post-fill balance + positions.
     invalidateHlAccountCache(creds.userAddress)
-    return { success: true, oid: status?.resting?.oid ?? status?.filled?.oid, status: JSON.stringify(status) }
+    return {
+      success: true,
+      oid: status?.resting?.oid ?? status?.filled?.oid,
+      status: JSON.stringify(status),
+      ...leverageInfo,
+    }
   } catch (err: any) {
     let dump: any
     try { dump = JSON.stringify(err, Object.getOwnPropertyNames(err)) } catch { dump = String(err) }

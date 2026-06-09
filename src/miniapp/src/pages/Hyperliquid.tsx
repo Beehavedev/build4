@@ -104,6 +104,29 @@ interface AccountState {
   // Optional because older deploys won't have the flag set on the User row.
   unifiedAccount?:  boolean
   positions:        HlPosition[]
+  // Resting open orders, including stop-loss / take-profit trigger orders.
+  // HL trigger orders are ORDERS, not positions, so a placed stop-loss never
+  // appears in `positions` — we render these under the positions list so the
+  // user can confirm their protective orders are actually live. Optional
+  // because older server deploys won't include the field.
+  openOrders?:      HlOpenOrder[]
+}
+
+// A resting open order on Hyperliquid (mirrors getOpenOrders in
+// src/services/hyperliquid.ts). Trigger orders (stop-loss / take-profit)
+// carry `triggerPx` and a `kind` discriminator; plain resting limits have
+// kind='limit' and no trigger price.
+interface HlOpenOrder {
+  oid:        number
+  coin:       string
+  side:       'BUY' | 'SELL'
+  sz:         number
+  limitPx:    number
+  kind:       'stop' | 'take_profit' | 'limit'
+  isTrigger:  boolean
+  triggerPx:  number | null
+  reduceOnly: boolean
+  orderType:  string
 }
 
 const cardStyle: React.CSSProperties = {
@@ -119,6 +142,10 @@ export default function Hyperliquid() {
   const [error, setError] = useState<string | null>(null)
   const [activating, setActivating] = useState(false)
   const [activateMsg, setActivateMsg] = useState<string | null>(null)
+  // Optional deposit amount for the bridging-path activation. Blank = bridge
+  // the full available Arbitrum USDC balance (legacy behavior). When set, the
+  // server bridges only min(amount, available, CAP) into HL.
+  const [depositAmount, setDepositAmount] = useState('')
   // Spot → perps in-app transfer state. See moveSpotToPerps below — keeps
   // users from having to leave for app.hyperliquid.xyz when their bridged
   // USDC landed on the spot sub-account instead of perps.
@@ -208,20 +235,15 @@ export default function Hyperliquid() {
   const [orderLimitPx, setOrderLimitPx]   = useState('')
   // Optional stop-loss attached to the user's manual entry. Empty string
   // means "no SL". Server places a reduce-only stop-MARKET trigger order
-  // (with builder fee attribution) after the entry fills.
+  // after the entry fills.
   const [orderStopLoss, setOrderStopLoss] = useState('')
   const [placing, setPlacing]             = useState(false)
   const [orderMsg, setOrderMsg]           = useState<string | null>(null)
   // Explicit success/error tag for orderMsg styling. Using regex on the
-  // message text was fragile — HL's "Builder has insufficient balance to
-  // be approved." error contains the word "approved" and was being styled
-  // as a success (green box). Tagging at the call site removes that class
-  // of bug entirely. Default true (most setOrderMsg calls are errors).
+  // message text was fragile (some error strings contain success-looking
+  // words and got painted green). Tagging at the call site removes that
+  // class of bug entirely. Default true (most setOrderMsg calls are errors).
   const [orderMsgIsErr, setOrderMsgIsErr] = useState<boolean>(true)
-  // Set when the backend's order endpoint reports a builder-fee rejection
-  // it couldn't auto-heal. Surfaces a manual "Approve builder fee" button.
-  const [needsBuilderApproval, setNeedsBuilderApproval] = useState(false)
-  const [approvingBuilder, setApprovingBuilder]         = useState(false)
   // Set when the backend says the user isn't onboarded but our cached
   // account state still says they are (server reboot, DB reset, agent
   // creds invalidated, etc). When true, we override the gating so the
@@ -258,7 +280,6 @@ export default function Hyperliquid() {
     setPlacing(true)
     setOrderMsg(null)
     setOrderMsgIsErr(true)
-    setNeedsBuilderApproval(false)
     try {
       const body: any = {
         coin:         orderCoin,
@@ -285,7 +306,8 @@ export default function Hyperliquid() {
       }
       const r = await apiFetch<{
         success: boolean; error?: string; sz?: number; markPrice?: number;
-        needsBuilderApproval?: boolean; needsApprove?: boolean; needsRecovery?: boolean;
+        needsApprove?: boolean; needsRecovery?: boolean;
+        requestedLeverage?: number; appliedLeverage?: number; maxLeverage?: number;
         stopLoss?: { status: 'placed' | 'skipped' | 'failed'; price?: number; error?: string };
       }>(
         '/api/hyperliquid/order',
@@ -303,10 +325,20 @@ export default function Hyperliquid() {
             : r.stopLoss?.status === 'failed'
               ? ` Stop loss didn't land — ${r.stopLoss.error ?? 'please add it manually'}.`
               : ''
+        // Leverage transparency: HL silently caps leverage at each asset's
+        // max. If we asked for more than the asset allows, the order opens
+        // at the cap — say so explicitly rather than letting the user think
+        // they got 30x when the coin only allows 10x.
+        const levBit =
+          r.appliedLeverage != null &&
+          r.requestedLeverage != null &&
+          r.appliedLeverage < r.requestedLeverage
+            ? ` Note: ${orderCoin} max leverage on Hyperliquid is ${r.maxLeverage ?? r.appliedLeverage}x — opened at ${r.appliedLeverage}x (not ${r.requestedLeverage}x).`
+            : ''
         setOrderMsg(
           `${orderSide} ${r.sz?.toFixed(4) ?? '?'} ${orderCoin} ${orderType} @ $${fmtUsdRaw(px)} ${
             orderType === 'LIMIT' ? 'resting' : 'placed'
-          }.${slBit}`,
+          }.${slBit}${levBit}`,
         )
         setOrderMsgIsErr(r.stopLoss?.status === 'failed')
         if (r.stopLoss?.status !== 'failed') setOrderStopLoss('')
@@ -314,16 +346,6 @@ export default function Hyperliquid() {
       } else {
         setOrderMsg(r.error ?? 'Order failed')
         setOrderMsgIsErr(true)
-        // Defense in depth: surface the manual approve button whenever the
-        // backend flag OR the raw error text indicates a builder rejection.
-        // The flag should always be set by the server, but if a future code
-        // path forgets to set it (or HL changes its error wording slightly),
-        // matching the message text directly keeps users from getting stuck
-        // staring at "Builder fee has not been approved" with no way out.
-        const isBuilderReject =
-          r.needsBuilderApproval ||
-          /(builder|must approve)/i.test(r.error ?? '')
-        if (isBuilderReject) setNeedsBuilderApproval(true)
         // Broken-encryption wallet — route to the shared recovery banner so
         // the hint is consistent across every HL action, not just transfers.
         if (r.needsRecovery) setNeedsRecovery(true)
@@ -339,26 +361,10 @@ export default function Hyperliquid() {
         }
       }
     } catch (e: any) {
-      // CRITICAL: the backend returns HTTP 400 for builder rejections (so
-      // the success branch above NEVER runs for this case). apiFetch then
-      // throws an ApiError, dropping us here. Without inspecting the error
-      // for the builder pattern in this catch block, the purple "Approve
-      // builder fee" button can never appear — users stare at "Builder fee
-      // has not been approved" with no recovery path. We check both the
-      // structured body (preferred — it carries the explicit
-      // needsBuilderApproval flag) AND the message text (fallback for any
-      // future error-shape drift). This was the actual bug behind multiple
-      // user reports of the button never showing despite all upstream
-      // fixes being in production.
       const msg = e?.message ?? 'Order failed'
       setOrderMsg(msg)
       setOrderMsgIsErr(true)
       const body = e?.body
-      const isBuilderReject =
-        body?.needsBuilderApproval ||
-        /(builder|must approve)/i.test(msg) ||
-        /(builder|must approve)/i.test(body?.error ?? '')
-      if (isBuilderReject) setNeedsBuilderApproval(true)
       // Broken-encryption wallet — HTTP 400 lands us here, so check the
       // structured body and light the shared recovery banner.
       if (body?.needsRecovery) setNeedsRecovery(true)
@@ -379,61 +385,6 @@ export default function Hyperliquid() {
     }
   }
 
-  const approveBuilder = async () => {
-    setApprovingBuilder(true)
-    try {
-      const r = await apiFetch<{ success: boolean; error?: string }>(
-        '/api/hyperliquid/approve-builder',
-        { method: 'POST' },
-      )
-      if (r.success) {
-        setNeedsBuilderApproval(false)
-        setOrderMsg('Builder fee approved — placing order...')
-        setOrderMsgIsErr(false)
-        await placeOrder()
-      } else {
-        setOrderMsg(r.error ?? 'Builder approval failed')
-        setOrderMsgIsErr(true)
-      }
-    } catch (e: any) {
-      setOrderMsg(e?.message ?? 'Builder approval failed')
-      setOrderMsgIsErr(true)
-    } finally {
-      setApprovingBuilder(false)
-    }
-  }
-
-  // Standalone "Re-sign builder approval" — same call as approveBuilder above
-  // but does NOT auto-place an order on success. Surfaced as a small always-
-  // visible link in the trade panel footer so users whose approval has gone
-  // stale (e.g. operator rotated the builder treasury wallet) can refresh it
-  // themselves without having to wait for an order to fail and surface the
-  // reactive button. One-shot, idempotent, safe to tap repeatedly.
-  const [resigning, setResigning] = useState(false)
-  const [resignMsg, setResignMsg] = useState<string | null>(null)
-  const [resignMsgIsErr, setResignMsgIsErr] = useState(false)
-  const resignBuilder = async () => {
-    setResigning(true)
-    setResignMsg(null)
-    try {
-      const r = await apiFetch<{ success: boolean; error?: string }>(
-        '/api/hyperliquid/approve-builder',
-        { method: 'POST' },
-      )
-      if (r.success) {
-        setResignMsg('Builder approval refreshed — your next order will route through BUILD4.')
-        setResignMsgIsErr(false)
-      } else {
-        setResignMsg(r.error ?? 'Approval refresh failed — please try again in a moment.')
-        setResignMsgIsErr(true)
-      }
-    } catch (e: any) {
-      setResignMsg(e?.message ?? 'Approval refresh failed — please try again in a moment.')
-      setResignMsgIsErr(true)
-    } finally {
-      setResigning(false)
-    }
-  }
 
   // Prefill the limit input with the live mark the moment the user toggles
   // into LIMIT mode — but ONLY once per toggle. After the first prefill the
@@ -469,13 +420,21 @@ export default function Hyperliquid() {
     return { pct, above, crossable }
   }, [orderType, orderLimitPx, mids, orderCoin, orderSide])
 
-  const activate = async () => {
+  const activate = async (amount?: number) => {
     setActivating(true)
     setActivateMsg(null)
     try {
+      // When `amount` is given (and positive) the server bridges only that
+      // much of the user's Arbitrum USDC into HL. Omitting it preserves the
+      // legacy behavior of bridging the full available balance (capped).
+      const hasAmount = Number.isFinite(amount) && (amount ?? 0) > 0
       const r = await apiFetch<{ success: boolean; agentAddress?: string; error?: string }>(
         '/api/hyperliquid/approve',
-        { method: 'POST' },
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(hasAmount ? { amount } : {}),
+        },
       )
       if (r.success) {
         setActivateMsg('Activated! You can now trade Hyperliquid from BUILD4.')
@@ -815,13 +774,13 @@ export default function Hyperliquid() {
   // Account + all mids + arbitrum on a 5s cadence via the shared hook: loads
   // on mount, single-flighted (a slow HL read can't stack overlapping polls),
   // paused while any HL write is in flight (activate / spot↔perps move / close
-  // / withdraw / order / builder approval / agent resign) so a background poll
-  // never races a mutation, and skipped while the tab is hidden. load()'s own
-  // sticky/transient-zero guards keep the balance card from flickering.
+  // / withdraw / order) so a background poll never races a mutation, and
+  // skipped while the tab is hidden. load()'s own sticky/transient-zero
+  // guards keep the balance card from flickering.
   useAutoRefresh(load, {
     intervalMs: 5000,
     paused: activating || movingSpot || closingCoin !== null || withdrawing
-      || placing || approvingBuilder || resigning,
+      || placing,
   })
 
   // Recent fills polling — kept on its own slow cadence (20s) and gated
@@ -1275,53 +1234,11 @@ export default function Hyperliquid() {
             </div>
           )}
 
-          {needsBuilderApproval && (
-            <button
-              onClick={approveBuilder}
-              disabled={approvingBuilder}
-              data-testid="button-hl-approve-builder"
-              style={{
-                marginTop: 8, width: '100%', padding: '10px', borderRadius: 8,
-                fontSize: 13, fontWeight: 600,
-                background: approvingBuilder ? '#4c1d95' : 'linear-gradient(90deg,#7c3aed,#a78bfa)',
-                color: '#fff', border: 'none', cursor: approvingBuilder ? 'wait' : 'pointer',
-              }}
-            >
-              {approvingBuilder ? 'Approving…' : 'Approve builder fee & retry'}
-            </button>
-          )}
-
           <div style={{ fontSize: 10, color: '#64748b', marginTop: 10, lineHeight: 1.4 }}>
             {orderType === 'MARKET'
               ? 'Market orders execute immediately at best available price (5% slippage cap).'
-              : 'Limit orders rest on the orderbook (GTC) until filled or cancelled.'}{' '}
-            BUILD4 takes a 0.1% builder fee on every fill.{' '}
-            <span
-              onClick={resigning ? undefined : resignBuilder}
-              data-testid="link-hl-resign-builder"
-              style={{
-                color: resigning ? '#475569' : '#a78bfa',
-                cursor: resigning ? 'wait' : 'pointer',
-                textDecoration: 'underline',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {resigning ? 'Refreshing approval…' : 'Refresh approval'}
-            </span>
+              : 'Limit orders rest on the orderbook (GTC) until filled or cancelled.'}
           </div>
-
-          {resignMsg && (
-            <div
-              style={{
-                marginTop: 8, padding: 8, borderRadius: 6, fontSize: 11,
-                background: resignMsgIsErr ? '#7f1d1d' : '#064e3b',
-                color: resignMsgIsErr ? '#fecaca' : '#a7f3d0',
-              }}
-              data-testid="text-hl-resign-msg"
-            >
-              {resignMsg}
-            </div>
-          )}
         </div>
       )}
 
@@ -1461,6 +1378,66 @@ export default function Hyperliquid() {
               {closeMsg}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Open orders — resting stop-loss / take-profit trigger orders and
+          plain limit orders. HL trigger orders are ORDERS, not positions,
+          so a placed stop-loss never shows in the positions card above —
+          this card is the only place the user can confirm their protective
+          orders are actually live on HL. */}
+      {account?.onboarded && !forceActivateUi &&
+        (account.openOrders?.length ?? 0) > 0 && (
+        <div style={cardStyle} data-testid="card-hl-open-orders">
+          <div style={{
+            fontSize: 13, fontWeight: 600, marginBottom: 10,
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          }}>
+            <span>Open orders</span>
+            <span style={{ fontSize: 11, color: '#64748b', fontWeight: 400 }}>
+              {account.openOrders!.length} resting
+            </span>
+          </div>
+          {account.openOrders!.map((o) => {
+            const label =
+              o.kind === 'stop' ? 'Stop loss'
+              : o.kind === 'take_profit' ? 'Take profit'
+              : 'Limit'
+            const labelColor =
+              o.kind === 'stop' ? '#fca5a5'
+              : o.kind === 'take_profit' ? '#86efac'
+              : '#93c5fd'
+            // Trigger orders fire at triggerPx; plain limits rest at limitPx.
+            const px = o.isTrigger ? (o.triggerPx ?? o.limitPx) : o.limitPx
+            return (
+              <div
+                key={o.oid}
+                data-testid={`row-hl-open-order-${o.oid}`}
+                style={{
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  padding: '8px 0', borderTop: '1px solid #1e1e2e', gap: 8,
+                }}
+              >
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  <span style={{ fontSize: 13, fontWeight: 600 }}>
+                    {o.coin}{' '}
+                    <span style={{ color: labelColor, fontSize: 11, fontWeight: 600 }}>
+                      {label}
+                    </span>
+                    {o.reduceOnly && (
+                      <span style={{ color: '#64748b', fontSize: 10, fontWeight: 400 }}>
+                        {' '}· reduce-only
+                      </span>
+                    )}
+                  </span>
+                  <span style={{ fontSize: 11, color: '#9ca3af' }}>
+                    {o.side} {o.sz} @ ${fmtUsdRaw(px)}
+                    {o.isTrigger ? ' (trigger)' : ''}
+                  </span>
+                </div>
+              </div>
+            )
+          })}
         </div>
       )}
 
@@ -1875,11 +1852,67 @@ export default function Hyperliquid() {
               const canActivate = arbReady || spotReady
               const shortAddr =
                 account.walletAddress.slice(0, 6) + '…' + account.walletAddress.slice(-4)
+              // Only the Arbitrum-bridge path honours a deposit amount —
+              // the unified-account spot path collateralises perps directly
+              // and bridges nothing. Parse + clamp the typed amount to the
+              // available Arbitrum balance so the request can't ask for more
+              // than the user holds; blank means "bridge everything (capped)".
+              const arbAvail   = arb?.usdc ?? 0
+              // Server caps each auto-bridge at $500 (HL_AUTO_BRIDGE_CAP). The
+              // effective max the user can deposit in one activation is the
+              // lesser of their Arbitrum balance and that cap — we surface this
+              // so the UI never promises to bridge more than the server will.
+              const HL_CAP     = 500
+              const effMax     = Math.min(arbAvail, HL_CAP)
+              const parsedDep  = depositAmount.trim() === '' ? 0 : Number(depositAmount)
+              const depValid   = depositAmount.trim() === '' ||
+                (Number.isFinite(parsedDep) && parsedDep >= 5 && parsedDep <= effMax)
+              const onActivate = () => {
+                if (!canActivate) return
+                // Pass the typed amount only on the bridge path; on the spot
+                // path the server ignores it anyway, but keep it clean.
+                const amt = arbReady && parsedDep > 0 ? Math.min(parsedDep, effMax) : undefined
+                activate(amt)
+              }
               return (
               <div style={{ marginTop: 12 }} data-testid="card-hl-onboard">
+                {/* Optional deposit amount — only meaningful on the Arbitrum
+                    bridge path. Blank bridges the full available balance
+                    (legacy). Min $5 mirrors the server floor. */}
+                {arbReady && (
+                  <div style={{ marginBottom: 8 }}>
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      min={5}
+                      max={effMax}
+                      step="0.01"
+                      placeholder={`Amount to deposit (max $${effMax.toFixed(2)})`}
+                      value={depositAmount}
+                      onChange={(e) => setDepositAmount(e.target.value)}
+                      disabled={activating}
+                      data-testid="input-hl-deposit-amount"
+                      style={{
+                        width: '100%', padding: '10px 12px', borderRadius: 8,
+                        background: '#0f172a', color: '#fff',
+                        border: '1px solid #4c1d95', fontSize: 13,
+                        boxSizing: 'border-box',
+                      }}
+                    />
+                    <div style={{ fontSize: 10, color: '#64748b', marginTop: 4, lineHeight: 1.4 }}>
+                      {depositAmount.trim() === ''
+                        ? (arbAvail > HL_CAP
+                            ? `Leave blank to bridge $${HL_CAP.toFixed(2)} (max $${HL_CAP} per activation; you have $${arbAvail.toFixed(2)}).`
+                            : `Leave blank to bridge your full $${arbAvail.toFixed(2)} Arbitrum balance.`)
+                        : !depValid
+                          ? `Enter an amount between $5 and $${effMax.toFixed(2)}${arbAvail > HL_CAP ? ` ($${HL_CAP} max per activation)` : ''}.`
+                          : `Bridges $${Math.min(parsedDep, effMax).toFixed(2)} into Hyperliquid.`}
+                    </div>
+                  </div>
+                )}
                 <button
-                  onClick={canActivate ? activate : undefined}
-                  disabled={activating || !canActivate}
+                  onClick={canActivate && depValid ? onActivate : undefined}
+                  disabled={activating || !canActivate || !depValid}
                   data-testid="button-hl-activate"
                   title={
                     canActivate

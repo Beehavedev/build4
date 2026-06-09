@@ -1085,6 +1085,17 @@ export default function Portfolio({ userId }: PortfolioProps) {
                   fg: t.side === 'LONG' ? '#10b981'   : '#ef4444',
                 }
               : { bg: '#3b82f615', fg: '#60a5fa' }
+            // HL protective trigger orders (stop-loss / take-profit) come
+            // through as synthetic open rows tagged with `kind` + `triggerPx`.
+            // They aren't positions — they're resting orders — so we badge
+            // them distinctly and show the trigger price instead of a PnL.
+            const triggerKind: 'stop' | 'take_profit' | null =
+              t.kind === 'stop' || t.kind === 'take_profit' ? t.kind : null
+            const triggerBadge = triggerKind === 'stop'
+              ? { label: 'STOP', bg: '#ef444422', fg: '#fca5a5' }
+              : triggerKind === 'take_profit'
+                ? { label: 'TP', bg: '#10b98122', fg: '#86efac' }
+                : null
             return (
               <div key={t.id} style={{
                 display: 'flex', justifyContent: 'space-between', alignItems: 'center',
@@ -1097,6 +1108,18 @@ export default function Portfolio({ userId }: PortfolioProps) {
                       fontSize: 10, padding: '1px 6px', borderRadius: 4,
                       background: sideStyle.bg, color: sideStyle.fg,
                     }}>{t.side}</span>
+                    {triggerBadge && (
+                      <span
+                        style={{
+                          fontSize: 9, padding: '1px 6px', borderRadius: 4,
+                          background: triggerBadge.bg, color: triggerBadge.fg, fontWeight: 600,
+                          letterSpacing: 0.4,
+                        }}
+                        data-testid={`badge-trigger-${t.id}`}
+                      >
+                        {triggerBadge.label}
+                      </span>
+                    )}
                     <span
                       style={{
                         fontSize: 9, padding: '1px 6px', borderRadius: 4,
@@ -1109,7 +1132,9 @@ export default function Portfolio({ userId }: PortfolioProps) {
                     </span>
                   </div>
                   <div style={{ fontSize: 11, color: '#64748b', marginTop: 1 }}>
-                    {t.closedAt ? new Date(t.closedAt).toLocaleDateString() : 'Open'}
+                    {triggerBadge
+                      ? `Trigger @ $${Number(t.triggerPx ?? 0).toLocaleString(undefined, { maximumFractionDigits: 6 })}`
+                      : t.closedAt ? new Date(t.closedAt).toLocaleDateString() : 'Open'}
                     {t.aiReasoning && (
                       <span style={{ marginLeft: 6, color: '#7c3aed' }}>· AI</span>
                     )}

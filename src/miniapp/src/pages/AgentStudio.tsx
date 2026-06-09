@@ -299,7 +299,7 @@ export interface FeedOnboardedFlags { aster: boolean; hyperliquid: boolean; fort
 // for trading. This is the basis for the "SCOUT" badge: the agent is
 // scanning these venues read-only (public market data) and surfacing
 // decisions in the brain feed, but no orders are placed because the
-// per-venue activation flow (Aster /approve, HL /approve-builder, 42
+// per-venue activation flow (Aster /approve, HL /approve, 42
 // liveTrade toggle) has not run yet. Returns false when the flags are
 // still loading (`null`) so we never falsely mark an entry as "scout"
 // before we know the truth — and false for unknown venues so a missing
