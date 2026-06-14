@@ -15,7 +15,7 @@
 import { ethers } from 'ethers'
 import { db } from '../db'
 import { FortyTwoTrader, USDT_BSC } from './fortyTwoTrader'
-import { readMarketOnchain } from './fortyTwoOnchain'
+import { readMarketOnchain, quoteRedeemValue } from './fortyTwoOnchain'
 import { getMarketByAddress, type Market42 } from './fortyTwo'
 import { getHouseSignerPk, getHouseWalletAddress, logHouseBrain } from './houseAgent'
 
@@ -37,6 +37,9 @@ export interface HouseFortyTwoOpenInput {
   slippageBps?: number
   /** When true, no on-chain calls — synthetic receipt + dry HouseLog row. */
   dryRun?: boolean
+  /** 42.space market contract version. >=2 routes through FTRouterProxy (V2,
+   *  e.g. World Cup). Defaults to 1 (deprecated V1 router) for back-compat. */
+  contractVersion?: number
 }
 
 export interface HouseFortyTwoOpenResult {
@@ -131,7 +134,10 @@ export async function houseOpenFortyTwoPosition(
 
   if (!dryRun) await assertUsdtBalance(usdtWei)
 
-  const trader = new FortyTwoTrader(pk, process.env.BSC_RPC_URL ?? '', { dryRun })
+  const trader = new FortyTwoTrader(pk, process.env.BSC_RPC_URL ?? '', {
+    dryRun,
+    contractVersion: input.contractVersion,
+  })
 
   // Best-effort minOtOut from on-chain marginal price. We accept a wide
   // band (50% default) because outcome curves on sports markets are thin
@@ -216,17 +222,22 @@ export async function houseClaimFortyTwoMarket(
   const market = ethers.getAddress(marketAddress)
   const dryRun = !!opts.dryRun
   const pk = getHouseSignerPk()
-  const trader = new FortyTwoTrader(pk, process.env.BSC_RPC_URL ?? '', { dryRun })
 
   // Sanity check via on-chain meta — if not finalised, surface a clear
   // error instead of letting the router revert with RouterNotClaimableYet.
+  // We also harvest contractVersion here so the trader routes V2 (e.g. World
+  // Cup) claims through the proxy rather than the deprecated V1 router.
   let mState: Awaited<ReturnType<typeof readMarketOnchain>> | null = null
+  let contractVersion = 1
   try {
     const m = await getMarketByAddress(market)
+    contractVersion = m.contractVersion ?? 1
     mState = await readMarketOnchain(m)
   } catch (err) {
     console.warn(`[houseFortyTwoExecutor] pre-claim meta load failed: ${(err as Error).message}`)
   }
+
+  const trader = new FortyTwoTrader(pk, process.env.BSC_RPC_URL ?? '', { dryRun, contractVersion })
   if (!dryRun && mState && !mState.isFinalised) {
     throw new Error(`market ${market} is not yet finalised on-chain — claim refused`)
   }
@@ -256,4 +267,106 @@ export async function houseClaimFortyTwoMarket(
   })
 
   return { ok: true, txHash, dryRun, marketAddress: market }
+}
+
+export interface HouseFortyTwoSellInput {
+  marketAddress: string
+  tokenId: number
+  outcomeLabel: string
+  /** Decision tag for the HouseLog row; defaults to CLOSE_42. */
+  decision?: string
+  reasoning: string
+  meta?: Record<string, unknown>
+  /** Slippage band on minUsdtOut (bps of quoted redeem value); default 50%. */
+  slippageBps?: number
+  dryRun?: boolean
+  /** 42.space market contract version (>=2 → FTRouterProxy). */
+  contractVersion?: number
+}
+
+/**
+ * Sell the house wallet's ENTIRE balance of a single outcome token back to
+ * USDT (used by the World Cup odds-stop exit). No-ops when the wallet holds
+ * zero of the token. Logs CLOSE_42 to HouseLog. Throws on router failure so
+ * callers can decide whether a partial-basket exit should continue.
+ */
+export async function houseSellFortyTwoOutcome(
+  input: HouseFortyTwoSellInput,
+): Promise<{ ok: true; txHash: string | null; dryRun: boolean; sold: boolean; tokenAmount: string }> {
+  const market = ethers.getAddress(input.marketAddress)
+  const dryRun = !!input.dryRun
+  const pk = getHouseSignerPk()
+  const decision = input.decision ?? 'CLOSE_42'
+  const trader = new FortyTwoTrader(pk, process.env.BSC_RPC_URL ?? '', {
+    dryRun,
+    contractVersion: input.contractVersion,
+  })
+
+  // Read the live balance — selling more than we hold reverts, and a zero
+  // balance (e.g. a reverted buy that never minted) means there is nothing
+  // to exit, which is a no-op not an error.
+  let bal = 0n
+  try {
+    bal = await trader.balanceOfOutcome(market, input.tokenId)
+  } catch (err) {
+    console.warn(`[houseFortyTwoExecutor] sell balance read failed: ${(err as Error).message}`)
+  }
+  if (!dryRun && bal <= 0n) {
+    await logHouseBrain({
+      dex: '42',
+      kind: 'info',
+      decision,
+      reasoning: `house 42.space sell SKIPPED (zero balance) market=${market.slice(0, 10)}… outcome=${input.outcomeLabel}`,
+      meta: { marketAddress: market, tokenId: input.tokenId, outcomeLabel: input.outcomeLabel, sold: false, dryRun, ...input.meta },
+    })
+    return { ok: true, txHash: null, dryRun, sold: false, tokenAmount: '0' }
+  }
+
+  // minUsdtOut from the exact curve redeem quote, with a wide default band —
+  // thin sports curves make a tight bound revert with RouterSlippage.
+  let minUsdtOut = 0n
+  try {
+    const quoted = await quoteRedeemValue(market, input.tokenId, bal)
+    if (quoted && quoted > 0n) {
+      const slipBps = BigInt(input.slippageBps ?? 5000)
+      minUsdtOut = (quoted * (10000n - slipBps)) / 10000n
+    }
+  } catch (err) {
+    console.warn(`[houseFortyTwoExecutor] sell minUsdtOut compute failed: ${(err as Error).message}`)
+  }
+
+  let txHash: string | null = null
+  try {
+    const receipt = await trader.sellOutcome(market, input.tokenId, bal, minUsdtOut)
+    txHash = receipt?.hash ?? null
+  } catch (err) {
+    await logHouseBrain({
+      dex: '42',
+      kind: 'error',
+      decision: 'CLOSE_42_FAILED',
+      reasoning: `house 42.space sell FAILED market=${market.slice(0, 10)}… outcome=${input.outcomeLabel}: ${(err as Error).message}`.slice(0, 2000),
+      meta: { marketAddress: market, tokenId: input.tokenId, outcomeLabel: input.outcomeLabel, dryRun, error: (err as Error).message, ...input.meta },
+    })
+    throw err
+  }
+
+  await logHouseBrain({
+    dex: '42',
+    kind: 'trade',
+    decision,
+    reasoning: input.reasoning.slice(0, 2000),
+    txHash,
+    meta: {
+      marketAddress: market,
+      tokenId: input.tokenId,
+      outcomeLabel: input.outcomeLabel,
+      tokenAmount: bal.toString(),
+      minUsdtOut: minUsdtOut.toString(),
+      sold: true,
+      dryRun,
+      ...input.meta,
+    },
+  })
+
+  return { ok: true, txHash, dryRun, sold: true, tokenAmount: bal.toString() }
 }

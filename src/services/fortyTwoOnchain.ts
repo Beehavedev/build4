@@ -1,6 +1,7 @@
 import { ethers } from 'ethers';
 import {
   FTMARKET_CONTROLLER_ADDRESS,
+  FTMARKET_CONTROLLER_V2_ADDRESS,
   POWER_CURVE_ADDRESS,
 } from './fortyTwoTrader';
 import { buildBscProvider } from './bscProvider';
@@ -133,12 +134,17 @@ export function isWinningTokenId(answer: bigint, tokenId: number): boolean {
 
 // ── Reads ──────────────────────────────────────────────────────────────────
 
-async function loadMeta(marketAddress: string): Promise<MarketMetaCache> {
-  const cached = metaCache.get(marketAddress);
+async function loadMeta(marketAddress: string, contractVersion = 1): Promise<MarketMetaCache> {
+  const cacheKey = `${marketAddress}:${contractVersion}`;
+  const cached = metaCache.get(cacheKey);
   if (cached && Date.now() - cached.fetchedAt < META_TTL_MS) return cached;
 
   const p = provider();
-  const controller = new ethers.Contract(FTMARKET_CONTROLLER_ADDRESS, CONTROLLER_ABI, p);
+  // V2 markets (e.g. FIFA World Cup) read config/outcomes from the V2
+  // controller; the deprecated V1 controller silently returns numOutcomes=0
+  // for them. Default to V1 for back-compat with every existing caller.
+  const controllerAddr = contractVersion >= 2 ? FTMARKET_CONTROLLER_V2_ADDRESS : FTMARKET_CONTROLLER_ADDRESS;
+  const controller = new ethers.Contract(controllerAddr, CONTROLLER_ABI, p);
   const market = new ethers.Contract(marketAddress, MARKET_ABI, p);
 
   const [questionId, config] = await Promise.all([
@@ -159,7 +165,7 @@ async function loadMeta(marketAddress: string): Promise<MarketMetaCache> {
     timestampEnd: Number(timestampEnd),
     fetchedAt: Date.now(),
   };
-  metaCache.set(marketAddress, meta);
+  metaCache.set(cacheKey, meta);
   return meta;
 }
 
@@ -172,11 +178,13 @@ export async function getOutcomePrices(
   marketAddress: string,
   curveAddress: string = POWER_CURVE_ADDRESS,
   collateralDecimals = 18,
+  contractVersion = 1,
 ): Promise<OnchainOutcome[]> {
-  const cached = priceCache.get(marketAddress);
+  const cacheKey = `${marketAddress}:${contractVersion}`;
+  const cached = priceCache.get(cacheKey);
   if (cached && Date.now() - cached.fetchedAt < PRICE_TTL_MS) return cached.prices;
 
-  const meta = await loadMeta(marketAddress);
+  const meta = await loadMeta(marketAddress, contractVersion);
   const curve = new ethers.Contract(curveAddress, CURVE_ABI, provider());
   const scale = 10 ** collateralDecimals;
 
@@ -219,7 +227,7 @@ export async function getOutcomePrices(
     };
   });
 
-  priceCache.set(marketAddress, { prices: outcomes, fetchedAt: Date.now() });
+  priceCache.set(cacheKey, { prices: outcomes, fetchedAt: Date.now() });
   return outcomes;
 }
 
@@ -275,8 +283,8 @@ export async function quoteRedeemValue(
 /** Combined market state: metadata + live outcome prices. */
 export async function readMarketOnchain(market: Market42): Promise<OnchainMarketState> {
   const [meta, outcomes] = await Promise.all([
-    loadMeta(market.address),
-    getOutcomePrices(market.address, market.curve, market.collateralDecimals),
+    loadMeta(market.address, market.contractVersion),
+    getOutcomePrices(market.address, market.curve, market.collateralDecimals, market.contractVersion),
   ]);
   return {
     market: market.address,

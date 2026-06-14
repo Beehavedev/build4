@@ -15,8 +15,24 @@ import { buildBscProvider } from './bscProvider';
 // crashed the request BEFORE ethers got far enough to validate the address
 // and try ENS resolution. Fixing the chainId issue exposed this latent typo.
 export const FTROUTER_ADDRESS = '0x88888888338e60bfB4657187169cFFa5c8640E42';
+// FTRouterProxy — supports BOTH V1 and V2 markets (FTMarketController +
+// FTMarketControllerV2). V2 markets (e.g. FIFA World Cup) MUST trade through
+// this proxy; the deprecated FTRouter above only handles V1 markets.
+// Source: https://docs.42.space/for-developers/deployments
+export const FTROUTER_PROXY_ADDRESS = '0x888888886619275d33c00D3BC62DF94D700DCD42';
 export const FTMARKET_CONTROLLER_ADDRESS = '0xF21b2D4F8989b27f732e369907F25f0E8D95Fe62';
+// FTMarketControllerV2 proxy — the V2 equivalent of FTMARKET_CONTROLLER_ADDRESS.
+// getConfig(market) + getOutcomeNames(questionId) work here for V2 markets;
+// the deprecated V1 controller silently returns numOutcomes=0 for them.
+export const FTMARKET_CONTROLLER_V2_ADDRESS = '0x8Fe93361D2B8b9519C4d20d47a319288Feec9072';
 export const POWER_CURVE_ADDRESS = '0x0443E04e70E4285a6cA73eacaC5267f3B4cBb7Da';
+
+/** Pick the correct FTRouter for a market's contract version. V2 markets must
+ *  route through the proxy; everything else stays on the (V1) FTRouter so all
+ *  existing callers are unaffected. */
+export function routerAddressForVersion(contractVersion?: number): string {
+  return (contractVersion ?? 1) >= 2 ? FTROUTER_PROXY_ADDRESS : FTROUTER_ADDRESS;
+}
 // USDT_BSC previously had lowercase 'b' in '...027b3197955' — incorrect EIP-55
 // checksum casing. ethers v6 strict-rejects mis-cased mixed-case addresses
 // with INVALID_ARGUMENT bad-checksum, even though the bytes are correct,
@@ -252,11 +268,15 @@ function extractRevertReason(err: unknown): string {
 export interface FortyTwoTraderOptions {
   /** When true, no on-chain calls are sent — every method returns a DryRunReceipt and logs intent. */
   dryRun?: boolean;
+  /** 42.space market contract version. >=2 routes through FTRouterProxy (V1+V2);
+   *  default 1 keeps the deprecated-but-still-live V1 FTRouter for back-compat. */
+  contractVersion?: number;
 }
 
 export class FortyTwoTrader {
   private router: ethers.Contract;
   private routerIface: ethers.Interface;
+  private routerAddr: string;
   private usdt: ethers.Contract;
   private wallet: ethers.Wallet;
   private dryRun: boolean;
@@ -281,7 +301,8 @@ export class FortyTwoTrader {
     // returning the same value across providers is not a risk in practice.
     const provider = buildBscProvider(rpcUrl);
     this.wallet = new ethers.Wallet(privateKey, provider);
-    this.router = new ethers.Contract(FTROUTER_ADDRESS, ROUTER_ABI, this.wallet);
+    this.routerAddr = routerAddressForVersion(opts.contractVersion);
+    this.router = new ethers.Contract(this.routerAddr, ROUTER_ABI, this.wallet);
     this.routerIface = new ethers.Interface(ROUTER_ABI);
     this.usdt = new ethers.Contract(USDT_BSC, ERC20_ABI, this.wallet);
     this.dryRun = opts.dryRun ?? process.env.FORTYTWO_PAPER_TRADE === '1';
@@ -303,10 +324,10 @@ export class FortyTwoTrader {
       console.log(`[FortyTwoTrader:DRY] approve(USDT → router, MaxUint256) for ${ethers.formatUnits(amount, 18)} USDT`);
       return;
     }
-    const allowance: bigint = await this.usdt.allowance(this.wallet.address, FTROUTER_ADDRESS);
+    const allowance: bigint = await this.usdt.allowance(this.wallet.address, this.routerAddr);
     if (allowance >= amount) return;
 
-    const tx = await this.usdt.approve(FTROUTER_ADDRESS, ethers.MaxUint256);
+    const tx = await this.usdt.approve(this.routerAddr, ethers.MaxUint256);
     await tx.wait();
 
     // Read-after-write race on public BSC RPCs: the approve tx is mined,
@@ -322,7 +343,7 @@ export class FortyTwoTrader {
     for (let i = 0; i < MAX_POLLS; i++) {
       let post: bigint;
       try {
-        post = await this.usdt.allowance(this.wallet.address, FTROUTER_ADDRESS);
+        post = await this.usdt.allowance(this.wallet.address, this.routerAddr);
       } catch {
         post = 0n;
       }
@@ -358,7 +379,7 @@ export class FortyTwoTrader {
     if (this.dryRun) {
       const args = { marketAddress, tokenId, usdtAmountIn, minOtOut: minOtOut.toString() };
       console.log(`[FortyTwoTrader:DRY] buyOutcome ${JSON.stringify(args)}`);
-      return { dryRun: true, hash: dryHash('buy'), from: this.wallet.address, to: FTROUTER_ADDRESS, method: 'buyOutcome', args, status: 1 } as unknown as ethers.TransactionReceipt;
+      return { dryRun: true, hash: dryHash('buy'), from: this.wallet.address, to: this.routerAddr, method: 'buyOutcome', args, status: 1 } as unknown as ethers.TransactionReceipt;
     }
 
     // Wrap swapSimple in the router's multicall(...) — this is what sets
@@ -398,13 +419,13 @@ export class FortyTwoTrader {
    */
   async ensureOutcomeOperator(marketAddress: string): Promise<void> {
     if (this.dryRun) {
-      console.log(`[FortyTwoTrader:DRY] setOperator(${FTROUTER_ADDRESS}, true) on market ${marketAddress}`);
+      console.log(`[FortyTwoTrader:DRY] setOperator(${this.routerAddr}, true) on market ${marketAddress}`);
       return;
     }
     const market = new ethers.Contract(marketAddress, ERC6909_OPERATOR_ABI, this.wallet);
-    const isOp: boolean = await market.isOperator(this.wallet.address, FTROUTER_ADDRESS);
+    const isOp: boolean = await market.isOperator(this.wallet.address, this.routerAddr);
     if (isOp) return;
-    const tx = await market.setOperator(FTROUTER_ADDRESS, true);
+    const tx = await market.setOperator(this.routerAddr, true);
     await tx.wait();
 
     // Same read-after-write race as ensureApproval: setOperator is mined,
@@ -417,7 +438,7 @@ export class FortyTwoTrader {
     for (let i = 0; i < MAX_POLLS; i++) {
       let post: boolean;
       try {
-        post = await market.isOperator(this.wallet.address, FTROUTER_ADDRESS);
+        post = await market.isOperator(this.wallet.address, this.routerAddr);
       } catch {
         post = false;
       }
@@ -450,7 +471,7 @@ export class FortyTwoTrader {
     if (this.dryRun) {
       const args = { marketAddress, tokenId, tokenAmountIn: tokenAmountIn.toString(), minUsdtOut: minUsdtOut.toString() };
       console.log(`[FortyTwoTrader:DRY] sellOutcome ${JSON.stringify(args)}`);
-      return { dryRun: true, hash: dryHash('sell'), from: this.wallet.address, to: FTROUTER_ADDRESS, method: 'sellOutcome', args, status: 1 } as unknown as ethers.TransactionReceipt;
+      return { dryRun: true, hash: dryHash('sell'), from: this.wallet.address, to: this.routerAddr, method: 'sellOutcome', args, status: 1 } as unknown as ethers.TransactionReceipt;
     }
 
     // ERC-6909 spend authorization — router needs operator permission to pull
@@ -501,7 +522,7 @@ export class FortyTwoTrader {
     if (this.dryRun) {
       const args = { marketAddress, tokenIds, otToBurn: otToBurn.map((b) => b.toString()) };
       console.log(`[FortyTwoTrader:DRY] claimResolved ${JSON.stringify(args)}`);
-      return { dryRun: true, hash: dryHash('claim'), from: this.wallet.address, to: FTROUTER_ADDRESS, method: 'claimResolved', args, status: 1 } as unknown as ethers.TransactionReceipt;
+      return { dryRun: true, hash: dryHash('claim'), from: this.wallet.address, to: this.routerAddr, method: 'claimResolved', args, status: 1 } as unknown as ethers.TransactionReceipt;
     }
     await this.ensureOutcomeOperator(marketAddress);
     const tx = await this.router.claimSimple(
@@ -518,7 +539,7 @@ export class FortyTwoTrader {
     if (this.dryRun) {
       const args = { marketAddress };
       console.log(`[FortyTwoTrader:DRY] claimAllResolved ${JSON.stringify(args)}`);
-      return { dryRun: true, hash: dryHash('claimAll'), from: this.wallet.address, to: FTROUTER_ADDRESS, method: 'claimAllResolved', args, status: 1 } as unknown as ethers.TransactionReceipt;
+      return { dryRun: true, hash: dryHash('claimAll'), from: this.wallet.address, to: this.routerAddr, method: 'claimAllResolved', args, status: 1 } as unknown as ethers.TransactionReceipt;
     }
     await this.ensureOutcomeOperator(marketAddress);
     const tx = await this.router.claimAllSimple(marketAddress, this.wallet.address);

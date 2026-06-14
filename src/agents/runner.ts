@@ -497,6 +497,37 @@ export function initRunner(bot: Bot) {
   }
   cron.schedule('*/2 * * * *', () => { void tickHouseUcl() }, { timezone: 'UTC' })
 
+  // ── House Agent × 42.space — autonomous FIFA World Cup "win or draw" ──
+  // Fully autonomous, LIVE + REAL, gated behind HOUSE_WC_ENABLED=true. Each
+  // tick enumerates live goal-differential WC markets, opens a swarm-backed
+  // double-chance basket ($50 default) on any un-entered match, and runs the
+  // odds-stop monitor (default off → hold to settlement) on open positions.
+  // Settlement winnings are harvested by the generic OPEN_42 claim sweep
+  // below (now V2/proxy aware). In-flight guard prevents overlap.
+  let houseWcInflight = false
+  const tickHouseWorldCup = async () => {
+    if (houseWcInflight) return
+    houseWcInflight = true
+    try {
+      if (process.env.HOUSE_WC_ENABLED !== 'true') return
+      const { runHouseWorldCupTick } = await import('./houseWorldCup')
+      const r = await runHouseWorldCupTick()
+      if (r.ran && (r.candidates > 0 || r.reason)) {
+        console.log(
+          `[houseWorldCup] tick: ran=${r.ran} reason=${r.reason ?? '-'} ` +
+            `scanned=${r.scanned} candidates=${r.candidates} processed=${r.processed} ` +
+            `entered=${r.results.filter((x) => x.action === 'entered').length} ` +
+            `exited=${r.results.filter((x) => x.action === 'exit').length}`,
+        )
+      }
+    } catch (err) {
+      console.error('[houseWorldCup] tick crashed:', (err as Error).message)
+    } finally {
+      houseWcInflight = false
+    }
+  }
+  cron.schedule('*/2 * * * *', () => { void tickHouseWorldCup() }, { timezone: 'UTC' })
+
   let houseClaimInflight = false
   const sweepHouseFortyTwoClaims = async () => {
     if (houseClaimInflight) return
