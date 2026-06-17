@@ -12,6 +12,7 @@ import {
   aggregateTeamVotes,
   looksLikeGdMarketMeta,
   looksLikeWorldCupMarket,
+  __testInternals,
   type TeamSwarmVote,
 } from '../agents/houseWorldCup'
 import type { Market42 } from '../services/fortyTwo'
@@ -116,6 +117,40 @@ test('allocateBasket drops sub-$1 dust legs and re-normalises', () => {
 test('allocateBasket returns [] on empty inputs or zero budget', () => {
   assert.deepEqual(allocateBasket([], [0, 1], 50), [])
   assert.deepEqual(allocateBasket([outcome(0, 0.5)], [0], 0), [])
+})
+
+// ── favoriteTeam (force-bet fallback) ─────────────────────────────────────
+
+test('favoriteTeam: picks the side with the higher win-or-draw probability', () => {
+  const parsed = parseGdMarket(GD_LABELS)!
+  // MEX win-or-draw = [0,1,2,3], KOR = [3,4,5,6]. Load MEX side heavier.
+  const outcomes = [
+    outcome(0, 0.30), outcome(1, 0.15), outcome(2, 0.15), // MEX wins = 0.60
+    outcome(3, 0.10),                                      // Draw  = 0.10
+    outcome(4, 0.10), outcome(5, 0.05), outcome(6, 0.05),  // KOR wins = 0.20
+  ]
+  const fav = __testInternals.favoriteTeam(parsed, { outcomes } as any)
+  assert.equal(fav.team, 'MEX')
+  // MEX win-or-draw = 0.60 + 0.10 draw = 0.70
+  assert.ok(Math.abs(fav.prob - 0.70) < 1e-9)
+})
+
+test('favoriteTeam: flips to the other side when its basket is heavier', () => {
+  const parsed = parseGdMarket(GD_LABELS)!
+  const outcomes = [
+    outcome(0, 0.05), outcome(1, 0.05), outcome(2, 0.10), // MEX wins = 0.20
+    outcome(3, 0.10),                                      // Draw  = 0.10
+    outcome(4, 0.20), outcome(5, 0.20), outcome(6, 0.20),  // KOR wins = 0.60
+  ]
+  const fav = __testInternals.favoriteTeam(parsed, { outcomes } as any)
+  assert.equal(fav.team, 'KOR')
+})
+
+// ── deriveMatchSearchTerms (X chatter query) ──────────────────────────────
+
+test('deriveMatchSearchTerms: builds per-match X search terms from both teams', () => {
+  const terms = __testInternals.deriveMatchSearchTerms({ question: 'MEX vs KOR?' } as any, ['MEX', 'KOR'])
+  assert.deepEqual(terms, ['MEX KOR', 'MEX vs KOR', 'MEX World Cup', 'KOR World Cup'])
 })
 
 // ── basketImpliedProb ─────────────────────────────────────────────────────

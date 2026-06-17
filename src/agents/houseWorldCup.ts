@@ -34,8 +34,9 @@
 import { ethers } from 'ethers'
 import { getAllMarkets, type Market42 } from '../services/fortyTwo'
 import { readMarketOnchain, type OnchainMarketState, type OnchainOutcome } from '../services/fortyTwoOnchain'
-import { callLLM, resolveProviders, type Provider } from '../services/inference'
+import { callLLM, type Provider } from '../services/inference'
 import { fetchTrendingNews, type NewsSignal } from '../services/newsService'
+import { fetchXSignal, type XSignal } from '../services/twexApi'
 import {
   houseOpenFortyTwoPosition,
   houseSellFortyTwoOutcome,
@@ -45,11 +46,11 @@ import { db } from '../db'
 import { logHouseBrain, getHouseWalletAddress, getHouseAgent, recordHouseTick } from '../services/houseAgent'
 import { getBot } from './runner'
 
-// Default to hyperbolic: the xai key is disabled at the provider and the
-// anthropic/akash accounts are out of credits, so xai-only fail-closes every
-// match ("0/1 parsed"). hyperbolic is the live provider. Override with
-// HOUSE_SWARM_PROVIDERS (comma-separated) once other providers are restored.
-const SWARM_PROVIDERS: Provider[] = resolveProviders('HOUSE_SWARM_PROVIDERS', ['hyperbolic'])
+// Swarm pinned to hyperbolic ALONE (product decision). xai's key is disabled and
+// anthropic/akash are out of credits; pinning (not env-overridable) prevents a
+// stale HOUSE_SWARM_PROVIDERS on the host from silently re-introducing a dead
+// provider and fail-closing every match again.
+const SWARM_PROVIDERS: Provider[] = ['hyperbolic']
 
 const DEFAULT_BUDGET_USD = 50
 const DEFAULT_HALFTIME_BEFORE_END_MIN = 60
@@ -393,6 +394,7 @@ function buildTeamPrompt(
   state: OnchainMarketState,
   parsed: GdParsed,
   news: NewsSignal[],
+  x: XSignal | null,
 ): { system: string; user: string } {
   const teamLines = parsed.teams
     .map((t) => {
@@ -406,14 +408,21 @@ function buildTeamPrompt(
     ? news.map((n) => `  [${n.source}] ${n.title}${n.description ? ` — ${n.description.slice(0, 160)}` : ''}`).join('\n')
     : '  (no recent news available)'
 
+  const xBlock = x && x.topTweets.length
+    ? x.topTweets.map((t) => `  @${t.author} (${t.likes}♥ ${t.retweets}↺): ${t.text.replace(/\s+/g, ' ').slice(0, 180)}`).join('\n')
+    : '  (no recent X / fan chatter available)'
+
   const system = [
     'You are a senior football (soccer) analyst on the BUILD4 House Agent.',
     'You bet "DOUBLE CHANCE" (a team to WIN OR DRAW) on a 42.space World Cup',
-    'goal-differential market. Pick the ONE team whose win-or-draw outcome is',
-    'the safest value given on-chain crowd odds and any news (injuries, form,',
-    'lineups, motivation). Favour the higher-probability side unless news',
-    'clearly contradicts the market. You may abstain if it is a genuine toss-up',
-    'with no edge. Reply with strict JSON only — no prose, no code fences.',
+    'goal-differential market. You MUST pick exactly ONE of the two teams to back',
+    '— never abstain. Choose the side whose win-or-draw outcome is the safest value,',
+    'weighing ALL of: the on-chain crowd odds, the recent NEWS (injuries, suspensions,',
+    'starting lineups, manager comments, form, head-to-head, motivation, venue), the live',
+    'FAN/PUNDIT CHATTER from X, and your own football knowledge. Default to the higher',
+    'win-or-draw probability side unless the news or chatter gives a clear reason to',
+    'prefer the other. Your thesis MUST cite the concrete factors that drove the pick.',
+    'Reply with strict JSON only — no prose, no code fences.',
   ].join(' ')
 
   const categories = (market.categories ?? []).concat(market.tags ?? []).filter(Boolean).join(', ') || '(none)'
@@ -427,12 +436,15 @@ function buildTeamPrompt(
     'Win-or-draw (double chance) options:',
     teamLines,
     '',
-    `Recent news (last 24h):`,
+    `Recent news (last 72h):`,
     newsBlock,
     '',
+    `Live X / fan & pundit chatter:`,
+    xBlock,
+    '',
     'Reply with JSON exactly:',
-    `{"team": "<one of: ${teamNames.join(' | ')} | none>", "conviction": <int 0..100>, "thesis": "<<= 240 chars>"}`,
-    'Use "none" only for a true no-edge toss-up. conviction is your confidence the chosen team will win OR draw.',
+    `{"team": "<one of: ${teamNames.join(' | ')}>", "conviction": <int 0..100>, "thesis": "<<= 240 chars, cite the key factors>"}`,
+    'You MUST choose one of the two teams — do not reply "none". conviction is your confidence the chosen team will win OR draw.',
   ].join('\n')
 
   return { system, user }
@@ -534,28 +546,50 @@ async function enterMarket(m: Market42, opts: { dryRun: boolean }): Promise<WcMa
   }
 
   const teamNames = parsed.teams.map((t) => t.name)
-  let news: NewsSignal[] = []
-  try {
-    news = await fetchTrendingNews({ query: deriveMatchQuery(m, teamNames), lookbackHours: 24, limit: 6 })
-  } catch (err) {
-    console.warn(`[houseWorldCup] news fetch failed: ${(err as Error).message}`)
-  }
+  // Pull both online signals in parallel: GNews headlines + live X fan/pundit
+  // chatter for THIS match. Both degrade to empty/null so a feed outage never
+  // blocks a bet — the swarm then leans on crowd odds + its own knowledge.
+  const matchQuery = deriveMatchQuery(m, teamNames)
+  const [news, xSignal] = await Promise.all([
+    fetchTrendingNews({ query: matchQuery, lookbackHours: 72, limit: 8 }).catch((err) => {
+      console.warn(`[houseWorldCup] news fetch failed: ${(err as Error).message}`)
+      return [] as NewsSignal[]
+    }),
+    fetchXSignal(deriveMatchSearchTerms(m, teamNames), { maxItems: 40, sortBy: 'Top', topN: 8 }).catch((err) => {
+      console.warn(`[houseWorldCup] X fetch failed: ${(err as Error).message}`)
+      return null
+    }),
+  ])
 
-  const prompt = buildTeamPrompt(m, state, parsed, news)
+  const prompt = buildTeamPrompt(m, state, parsed, news, xSignal)
   const votes = await runTeamSwarm(prompt, teamNames)
-  const decision = aggregateTeamVotes(votes, teamNames)
+  let decision = aggregateTeamVotes(votes, teamNames)
 
+  // FORCE-BET: every open World Cup market must get a bet. When the swarm gives
+  // no usable pick (abstain / unparseable / provider down / no consensus), fall
+  // back to the market favorite — the side with the highest win-or-draw implied
+  // probability — instead of skipping the match.
   if (!decision.team) {
+    const fav = favoriteTeam(parsed, state)
     await logHouseBrain({
-      dex: '42', kind: 'info', decision: 'SKIP_WC',
-      reasoning: `house WC SKIP ${m.question.slice(0, 60)} — ${decision.reason}`,
-      meta: { marketAddress, votes: votes.length, parsed: votes.filter((v) => v.parsed).length, reason: decision.reason },
+      dex: '42', kind: 'info', decision: 'FORCE_WC',
+      reasoning: `house WC FORCE ${m.question.slice(0, 60)} → ${fav.team} (market favorite, win-or-draw ${(fav.prob * 100).toFixed(1)}%) — ${decision.reason}`,
+      meta: { marketAddress, votes: votes.length, parsed: votes.filter((v) => v.parsed).length, fallback: true, team: fav.team, reason: decision.reason },
     })
-    return { ...base, reason: decision.reason }
+    decision = {
+      team: fav.team,
+      avgConviction: Math.round(fav.prob * 100),
+      thesis: `Force-bet fallback: no usable swarm pick (${decision.reason}); backing market favorite ${fav.team} at win-or-draw ${(fav.prob * 100).toFixed(1)}%.`,
+      reason: `force-bet: market favorite (${decision.reason})`,
+    }
   }
 
-  const indices = winOrDrawBasketIndices(parsed, decision.team)
-  if (!indices) return { ...base, action: 'error', reason: `team "${decision.team}" not found in parsed grid` }
+  // After force-bet, a side is always chosen; narrow to non-null for downstream use.
+  const team = decision.team
+  if (!team) return { ...base, action: 'error', reason: 'no team to back (empty parsed grid)' }
+
+  const indices = winOrDrawBasketIndices(parsed, team)
+  if (!indices) return { ...base, action: 'error', reason: `team "${team}" not found in parsed grid` }
 
   const legs = allocateBasket(state.outcomes, indices, budgetUsd())
   if (!legs.length) return { ...base, reason: 'allocation produced no fundable legs' }
@@ -577,10 +611,10 @@ async function enterMarket(m: Market42, opts: { dryRun: boolean }): Promise<WcMa
         contractVersion: m.contractVersion,
         dryRun: opts.dryRun,
         decision: 'OPEN_42',
-        reasoning: `[HOUSE WC ${opts.dryRun ? 'DRY ' : ''}win-or-draw] ${m.question.slice(0, 50)} → back ${decision.team} · leg "${outcomeLabel}" $${leg.usdt.toFixed(2)} — ${decision.thesis}`,
+        reasoning: `[HOUSE WC ${opts.dryRun ? 'DRY ' : ''}win-or-draw] ${m.question.slice(0, 50)} → back ${team} · leg "${outcomeLabel}" $${leg.usdt.toFixed(2)} — ${decision.thesis}`,
         meta: {
           campaign: 'world_cup_double_chance',
-          team: decision.team,
+          team: team,
           basketIndices: indices,
           legIndex: leg.index,
           question: m.question,
@@ -601,13 +635,13 @@ async function enterMarket(m: Market42, opts: { dryRun: boolean }): Promise<WcMa
   // One summary row per match — also the source the odds-stop monitor reads.
   await logHouseBrain({
     dex: '42', kind: 'trade', decision: 'OPEN_WC',
-    reasoning: `🏆 HOUSE WC ${opts.dryRun ? '[DRY] ' : ''}win-or-draw on ${m.question.slice(0, 60)} → ${decision.team} ($${legs.reduce((s, l) => s + l.usdt, 0).toFixed(2)} across ${filled.length} legs) — ${decision.thesis}`.slice(0, 2000),
+    reasoning: `🏆 HOUSE WC ${opts.dryRun ? '[DRY] ' : ''}win-or-draw on ${m.question.slice(0, 60)} → ${team} ($${legs.reduce((s, l) => s + l.usdt, 0).toFixed(2)} across ${filled.length} legs) — ${decision.thesis}`.slice(0, 2000),
     meta: {
       campaign: 'world_cup_double_chance',
       marketAddress,
       question: m.question,
       endDate: m.endDate,
-      team: decision.team,
+      team: team,
       indices,
       entryBasketProb,
       contractVersion: m.contractVersion,
@@ -619,7 +653,7 @@ async function enterMarket(m: Market42, opts: { dryRun: boolean }): Promise<WcMa
     },
   })
 
-  await broadcastWcEntry(m, decision.team, legs, entryBasketProb, decision.thesis, opts.dryRun).catch((err) =>
+  await broadcastWcEntry(m, team, legs, entryBasketProb, decision.thesis, opts.dryRun).catch((err) =>
     console.warn('[houseWorldCup] broadcast failed:', (err as Error).message),
   )
 
@@ -628,7 +662,7 @@ async function enterMarket(m: Market42, opts: { dryRun: boolean }): Promise<WcMa
     question: m.question,
     action: 'entered',
     reason: decision.reason,
-    team: decision.team,
+    team: team,
     legs,
     basketProb: entryBasketProb,
   }
@@ -720,6 +754,31 @@ function deriveMatchQuery(m: Market42, teamNames: string[]): string {
   if (teamNames.length === 2) return `${teamNames[0]} vs ${teamNames[1]} World Cup`
   const q = m.question.replace(/\?+$/, '').trim()
   return q || 'World Cup football'
+}
+
+/** X/Twitter search terms for live fan & pundit chatter on a specific match. */
+function deriveMatchSearchTerms(m: Market42, teamNames: string[]): string[] {
+  if (teamNames.length === 2) {
+    return [
+      `${teamNames[0]} ${teamNames[1]}`,
+      `${teamNames[0]} vs ${teamNames[1]}`,
+      `${teamNames[0]} World Cup`,
+      `${teamNames[1]} World Cup`,
+    ]
+  }
+  const q = m.question.replace(/\?+$/, '').trim()
+  return q ? [q] : ['World Cup football']
+}
+
+/** Deterministic force-bet pick: the side with the highest win-or-draw implied
+ *  probability (the market favorite). Used when the swarm gives no usable pick. */
+function favoriteTeam(parsed: GdParsed, state: OnchainMarketState): { team: string; prob: number } {
+  let best: { team: string; prob: number } | null = null
+  for (const t of parsed.teams) {
+    const prob = basketImpliedProb(state.outcomes, [...t.indices, parsed.drawIndex])
+    if (!best || prob > best.prob) best = { team: t.name, prob }
+  }
+  return best ?? { team: parsed.teams[0]?.name ?? '', prob: 0 }
 }
 
 // ── Public tick ───────────────────────────────────────────────────────────
@@ -847,6 +906,8 @@ export const __testInternals = {
   parseTeamReply,
   buildTeamPrompt,
   deriveMatchQuery,
+  deriveMatchSearchTerms,
+  favoriteTeam,
   looksLikeGdMarketMeta,
   looksLikeWorldCupMarket,
   competitionTokens,
