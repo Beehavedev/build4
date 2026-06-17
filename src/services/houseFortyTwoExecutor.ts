@@ -115,6 +115,60 @@ export async function findOpenHousePosition(marketAddress: string): Promise<{
   return rows[0] ?? null
 }
 
+export interface HouseFortyTwoPosition {
+  venue: '42'
+  id: string
+  marketAddress: string
+  question: string | null
+  team: string | null
+  budgetUsd: number | null
+  entryBasketProb: number | null
+  createdAt: Date
+}
+
+/**
+ * List open 42.space house positions for the panel. State for the house
+ * wallet lives in HouseLog (no OutcomePosition row): each campaign entry
+ * writes an OPEN_WC summary row, and settlement/liquidation writes a
+ * CLAIM_42 row for the same market. A market is "open" when it has an
+ * OPEN_WC row with no paired CLAIM_42 row yet. Latest entry per market.
+ */
+export async function getHouseFortyTwoPositions(): Promise<HouseFortyTwoPosition[]> {
+  const rows = await db.$queryRawUnsafe<Array<{
+    id: string
+    marketAddress: string
+    question: string | null
+    team: string | null
+    budgetUsd: number | null
+    entryBasketProb: number | null
+    createdAt: Date
+  }>>(
+    `SELECT DISTINCT ON (LOWER(meta->>'marketAddress'))
+            id,
+            (meta->>'marketAddress')          AS "marketAddress",
+            (meta->>'question')               AS question,
+            (meta->>'team')                   AS team,
+            (meta->>'budgetUsd')::float       AS "budgetUsd",
+            (meta->>'entryBasketProb')::float AS "entryBasketProb",
+            "createdAt"
+       FROM "HouseLog"
+      WHERE dex = '42'
+        AND decision = 'OPEN_WC'
+        AND meta ? 'marketAddress'
+        AND COALESCE((meta->>'dryRun')::boolean, false) = false
+        AND NOT EXISTS (
+          SELECT 1 FROM "HouseLog" c
+           WHERE c.dex = '42'
+             AND c.decision = 'CLAIM_42'
+             AND c.meta ? 'marketAddress'
+             AND COALESCE((c.meta->>'dryRun')::boolean, false) = false
+             AND LOWER(c.meta->>'marketAddress') = LOWER("HouseLog".meta->>'marketAddress')
+        )
+      ORDER BY LOWER(meta->>'marketAddress'), "createdAt" DESC`,
+  )
+  return rows.map((r) => ({ venue: '42' as const, ...r }))
+}
+
 /**
  * Open a buy-outcome position on a 42.space market from the house wallet.
  * Logs to HouseLog regardless of dry-run. Throws on failure so callers

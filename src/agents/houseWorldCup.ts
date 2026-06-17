@@ -10,7 +10,8 @@
 // the bucket wins, so allocating stake ∝ each leg's price equalises payout
 // across every covered bucket — the natural double-chance bet.
 //
-// Flow (fully autonomous, gated behind HOUSE_WC_ENABLED):
+// Flow (fully autonomous, gated via the House Agent panel state —
+// enabled + mode='campaign' + dex='42'; legacy HOUSE_WC_ENABLED override):
 //   1. Enumerate live GD World Cup markets (42 REST list, V2 contract).
 //   2. Skip markets already entered (HouseLog idempotency).
 //   3. Read on-chain bucket prices via the V2 controller.
@@ -25,7 +26,9 @@
 // covered side's combined implied probability collapses.
 //
 // Trades are LIVE + REAL by default. There is NO paper-trade default —
-// the only gate is HOUSE_WC_ENABLED plus a configured house key.
+// the gate is the House Agent panel state (enabled + mode='campaign' +
+// dex='42') plus a configured house key; HOUSE_WC_ENABLED is a legacy
+// override and opts.force bypasses for admin/tests.
 // =====================================================================
 
 import { ethers } from 'ethers'
@@ -39,7 +42,7 @@ import {
   findOpenHousePosition,
 } from '../services/houseFortyTwoExecutor'
 import { db } from '../db'
-import { logHouseBrain, getHouseWalletAddress } from '../services/houseAgent'
+import { logHouseBrain, getHouseWalletAddress, getHouseAgent } from '../services/houseAgent'
 import { getBot } from './runner'
 
 const SWARM_PROVIDERS: Provider[] = resolveProviders('HOUSE_SWARM_PROVIDERS', ['xai'])
@@ -727,13 +730,21 @@ export interface RunWcTickOptions {
 /**
  * One autonomous World-Cup campaign tick: enumerate live GD markets, enter
  * any un-entered match with a swarm-backed win-or-draw basket, and run the
- * odds-stop monitor on open positions. LIVE by default; the only gate is
- * HOUSE_WC_ENABLED (plus a configured house key).
+ * odds-stop monitor on open positions. LIVE by default; gated via the House
+ * Agent panel state (enabled + mode='campaign' + dex='42'), with a legacy
+ * HOUSE_WC_ENABLED override and opts.force for admin/tests.
  */
 export async function runHouseWorldCupTick(opts: RunWcTickOptions = {}): Promise<WcTickResult> {
-  const enabled = process.env.HOUSE_WC_ENABLED === 'true'
-  if (!enabled && !opts.force) {
-    return { ran: false, reason: 'HOUSE_WC_ENABLED not set to true', scanned: 0, candidates: 0, processed: 0, results: [] }
+  // UI-driven gate: the House Agent panel controls this campaign via the
+  // singleton HouseAgent row (enabled + mode='campaign' + dex='42'). No env
+  // var required. HOUSE_WC_ENABLED=true stays a legacy override, and
+  // opts.force (admin/manual/tests) bypasses the gate entirely.
+  const envOverride = process.env.HOUSE_WC_ENABLED === 'true'
+  if (!opts.force && !envOverride) {
+    const st = await getHouseAgent()
+    if (!st.enabled)            return { ran: false, reason: 'house_disabled', scanned: 0, candidates: 0, processed: 0, results: [] }
+    if (st.mode !== 'campaign') return { ran: false, reason: `mode!=campaign (${st.mode})`, scanned: 0, candidates: 0, processed: 0, results: [] }
+    if (st.dex !== '42')        return { ran: false, reason: `dex!=42 (${st.dex})`, scanned: 0, candidates: 0, processed: 0, results: [] }
   }
   try {
     getHouseWalletAddress()

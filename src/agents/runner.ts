@@ -498,8 +498,10 @@ export function initRunner(bot: Bot) {
   cron.schedule('*/2 * * * *', () => { void tickHouseUcl() }, { timezone: 'UTC' })
 
   // ── House Agent × 42.space — autonomous FIFA World Cup "win or draw" ──
-  // Fully autonomous, LIVE + REAL, gated behind HOUSE_WC_ENABLED=true. Each
-  // tick enumerates live goal-differential WC markets, opens a swarm-backed
+  // Fully autonomous, LIVE + REAL, gated via the House Agent panel state
+  // (enabled + mode='campaign' + dex='42') inside runHouseWorldCupTick;
+  // HOUSE_WC_ENABLED is a legacy override. Cron stays armed unconditionally.
+  // Each tick enumerates live goal-differential WC markets, opens a swarm-backed
   // double-chance basket ($50 default) on any un-entered match, and runs the
   // odds-stop monitor (default off → hold to settlement) on open positions.
   // Settlement winnings are harvested by the generic OPEN_42 claim sweep
@@ -509,7 +511,9 @@ export function initRunner(bot: Bot) {
     if (houseWcInflight) return
     houseWcInflight = true
     try {
-      if (process.env.HOUSE_WC_ENABLED !== 'true') return
+      // No env gate here — runHouseWorldCupTick self-gates on the House Agent
+      // panel state (enabled + mode='campaign' + dex='42'), with a legacy
+      // HOUSE_WC_ENABLED override inside. Cron stays armed unconditionally.
       const { runHouseWorldCupTick } = await import('./houseWorldCup')
       const r = await runHouseWorldCupTick()
       if (r.ran && (r.candidates > 0 || r.reason)) {

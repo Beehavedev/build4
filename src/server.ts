@@ -10406,6 +10406,17 @@ async function main() {
         try { if (walletReady) positions = await getHousePositions() } catch (e: any) {
           console.warn('[house/state] positions failed:', e?.message)
         }
+        // 42.space house positions live in HouseLog (no OutcomePosition row),
+        // so they come from a separate reader and ship as their own array.
+        let fortyTwoPositions: any[] = []
+        try {
+          if (walletReady) {
+            const { getHouseFortyTwoPositions } = await import('./services/houseFortyTwoExecutor')
+            fortyTwoPositions = await getHouseFortyTwoPositions()
+          }
+        } catch (e: any) {
+          console.warn('[house/state] 42 positions failed:', e?.message)
+        }
         // BNB + USDT balances of the house wallet for convenience
         let bnbBalance: string | null = null
         let usdtBalance: string | null = null
@@ -10427,7 +10438,7 @@ async function main() {
             console.warn('[house/state] balance fetch failed:', e?.message)
           }
         }
-        res.json({ ok: true, state: { ...state, walletAddress }, walletReady, bnbBalance, usdtBalance, positions, feed })
+        res.json({ ok: true, state: { ...state, walletAddress }, walletReady, bnbBalance, usdtBalance, positions, fortyTwoPositions, feed })
       } catch (err: any) {
         res.status(500).json({ ok: false, error: err?.message || String(err) })
       }

@@ -119,6 +119,8 @@
   let state = null;
   let feed = [];
   let positions = [];
+  let fortyTwoPositions = [];
+  let posTab = "pancake"; // pancake | 42 | topaz | aster | hyperliquid | polymarket
   let bnbBalance = null;
   let usdtBalance = null;
   let walletReady = false;
@@ -169,6 +171,7 @@
       const r = await api("/api/admin/house/state");
       state = r.state; feed = r.feed || [];
       positions = r.positions || [];
+      fortyTwoPositions = r.fortyTwoPositions || [];
       bnbBalance = r.bnbBalance ?? null;
       usdtBalance = r.usdtBalance ?? null;
       walletReady = !!r.walletReady;
@@ -376,6 +379,48 @@
     </div>`;
   }
 
+  function fortyTwoPositionRow(p) {
+    const stake = p.budgetUsd != null ? `$${fmt(p.budgetUsd, 2)}` : "—";
+    const prob = p.entryBasketProb != null ? `${fmt(p.entryBasketProb * 100, 1)}%` : "—";
+    return `<div class="pos-row">
+      <div>
+        <div class="sym">${esc(p.team || p.question || "42 market")} <span class="tag">42</span></div>
+        <div class="addr mono">${esc(p.marketAddress)}</div>
+        ${p.team && p.question ? `<div style="font-size:10px;color:var(--text-dim);margin-top:2px">${esc(p.question)}</div>` : ""}
+      </div>
+      <div>
+        <div class="label" style="font-size:9px">Stake</div>
+        <div class="mono">${stake}</div>
+      </div>
+      <div>
+        <div class="label" style="font-size:9px">Entry basket prob</div>
+        <div class="mono">${prob}</div>
+      </div>
+      <div style="font-size:10px;color:var(--text-dim);align-self:center">held to settlement</div>
+    </div>`;
+  }
+
+  function topazPositionRow(p) {
+    const key = p.positionType === 'v3-nft' ? p.tokenId : p.poolAddress;
+    return `<div class="pos-row">
+      <div>
+        <div class="sym">${p.positionType === 'v3-nft' ? `v3 NFT #${esc(p.tokenId)}` : `v2 LP ${p.stable ? 'stable' : 'volatile'}`} <span class="tag">topaz</span></div>
+        <div class="addr mono">${esc(p.tokenA || '')}<br>${esc(p.tokenB || '')}</div>
+      </div>
+      <div>
+        <div class="label" style="font-size:9px">Pool / pair</div>
+        <div class="mono" style="font-size:10px;word-break:break-all">${esc(p.poolAddress)}</div>
+      </div>
+      <div>
+        <div class="label" style="font-size:9px">${p.positionType === 'v3-nft' ? 'liquidity' : 'LP amount'}</div>
+        <div class="mono">${esc(p.lpAmount || p.liquidity || '—')}</div>
+      </div>
+      <button class="red small" data-topaz-close="${esc(key)}" ${topazCloseBusy === key ? "disabled" : ""}>
+        ${topazCloseBusy === key ? "Closing…" : "CLOSE"}
+      </button>
+    </div>`;
+  }
+
   function feedRow(r) {
     return `<div class="feed-row">
       <div class="feed-meta">
@@ -402,7 +447,19 @@
 
     // Pancake-only sell hint
     const pcsPositions = positions.filter(p => p.venue === 'pancake');
-    const otherVenues = ['aster', 'hyperliquid', '42', 'polymarket'];
+    // Venue tabs: pancake / 42 / topaz are live; the rest have no house
+    // trading wired yet and are shown disabled + honestly labeled.
+    const venueTabs = [
+      { id: 'pancake',     label: 'PancakeSwap', ready: true,  count: pcsPositions.length },
+      { id: '42',          label: '42.space',    ready: true,  count: fortyTwoPositions.length },
+      { id: 'topaz',       label: 'Topaz',       ready: true,  count: topazPositions.length },
+      { id: 'aster',       label: 'Aster',       ready: false },
+      { id: 'hyperliquid', label: 'Hyperliquid', ready: false },
+      { id: 'polymarket',  label: 'Polymarket',  ready: false },
+    ];
+    const totalPositions = pcsPositions.length + fortyTwoPositions.length + topazPositions.length;
+    // Guard against a stale tab selection pointing at a now-hidden venue.
+    if (!venueTabs.some(t => t.id === posTab)) posTab = 'pancake';
 
     return `
       <div class="wrap">
@@ -434,7 +491,7 @@
             </div>
             <div class="stat">
               <div class="l">Open positions</div>
-              <div class="v mono">${positions.length}</div>
+              <div class="v mono">${totalPositions}</div>
             </div>
             <div class="stat">
               <div class="l">Mode</div>
@@ -449,19 +506,29 @@
 
         <section class="card">
           <div class="label">Open positions</div>
-          <div style="margin:8px 0 6px;display:flex;gap:6px;flex-wrap:wrap">
-            <span class="venue-tab active">PancakeSwap (${pcsPositions.length})</span>
-            ${otherVenues.map(v => `<span class="venue-tab" title="not wired yet" style="opacity:.5">${v} (soon)</span>`).join("")}
+          <div style="margin:8px 0 10px;display:flex;gap:6px;flex-wrap:wrap">
+            ${venueTabs.map(t => t.ready
+              ? `<span class="venue-tab${posTab === t.id ? " active" : ""}" data-postab="${t.id}">${t.label} (${t.count})</span>`
+              : `<span class="venue-tab" title="not available yet" style="opacity:.45;cursor:default">${t.label} · not available yet</span>`
+            ).join("")}
           </div>
-          ${pcsPositions.length === 0
-            ? `<div style="font-size:12px;color:var(--text-dim);padding:8px 0">No open Pancake positions tracked. Use "Track token" below if you bought one before the panel existed.</div>`
-            : pcsPositions.map(positionRow).join("")}
-          <div style="display:flex;gap:6px;margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">
-            <input type="text" id="track-input" class="mono" placeholder="0x… token address to track" value="${esc(trackInput)}" />
-            <button class="primary small" id="track-btn" ${trackBusy || !trackInput ? "disabled" : ""}>
-              ${trackBusy ? "…" : "Track"}
-            </button>
-          </div>
+          ${posTab === 'pancake' ? `
+            ${pcsPositions.length === 0
+              ? `<div style="font-size:12px;color:var(--text-dim);padding:8px 0">No open Pancake positions tracked. Use "Track token" below if you bought one before the panel existed.</div>`
+              : pcsPositions.map(positionRow).join("")}
+            <div style="display:flex;gap:6px;margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">
+              <input type="text" id="track-input" class="mono" placeholder="0x… token address to track" value="${esc(trackInput)}" />
+              <button class="primary small" id="track-btn" ${trackBusy || !trackInput ? "disabled" : ""}>
+                ${trackBusy ? "…" : "Track"}
+              </button>
+            </div>
+          ` : ""}
+          ${posTab === '42' ? (fortyTwoPositions.length === 0
+            ? `<div style="font-size:12px;color:var(--text-dim);padding:8px 0">No open 42.space positions. Enable the agent in Campaign mode with the 42.space DEX selected to let the World Cup brain enter markets.</div>`
+            : fortyTwoPositions.map(fortyTwoPositionRow).join("")) : ""}
+          ${posTab === 'topaz' ? (topazPositions.length === 0
+            ? `<div style="font-size:12px;color:var(--text-dim);padding:8px 0">No open Topaz positions. Open one with the LP form below, or run the agent in Autotrade/Campaign on the Topaz DEX.</div>`
+            : topazPositions.map(topazPositionRow).join("")) : ""}
         </section>
 
         <section class="card">
@@ -531,30 +598,10 @@
           ${tradeResult ? `<div class="mono" style="margin-top:10px;font-size:11px;word-break:break-all;color:${tradeResult.startsWith("✓") ? "var(--green)" : "#ffb4b4"}">${esc(tradeResult)}</div>` : ""}
         </section>
 
-        <section class="card">
-          <div class="label">Topaz DEX (BSC ve3,3) · positions (${topazPositions.length})</div>
-          ${topazPositions.length === 0
-            ? `<div style="font-size:12px;color:var(--text-dim);padding:8px 0">No open Topaz positions. Open one with the LP form below.</div>`
-            : `<div style="margin-top:8px">${topazPositions.map(p => `
-                <div class="pos-row">
-                  <div>
-                    <div class="sym">${p.positionType === 'v3-nft' ? `v3 NFT #${esc(p.tokenId)}` : `v2 LP ${p.stable ? 'stable' : 'volatile'}`} <span class="tag">topaz</span></div>
-                    <div class="addr mono">${esc(p.tokenA || '')}<br>${esc(p.tokenB || '')}</div>
-                  </div>
-                  <div>
-                    <div class="label" style="font-size:9px">Pool / pair</div>
-                    <div class="mono" style="font-size:10px;word-break:break-all">${esc(p.poolAddress)}</div>
-                  </div>
-                  <div>
-                    <div class="label" style="font-size:9px">${p.positionType === 'v3-nft' ? 'liquidity' : 'LP amount'}</div>
-                    <div class="mono">${esc(p.lpAmount || p.liquidity || '—')}</div>
-                  </div>
-                  <button class="red small" data-topaz-close="${esc(p.positionType === 'v3-nft' ? p.tokenId : p.poolAddress)}" ${topazCloseBusy === (p.positionType === 'v3-nft' ? p.tokenId : p.poolAddress) ? "disabled" : ""}>
-                    ${topazCloseBusy === (p.positionType === 'v3-nft' ? p.tokenId : p.poolAddress) ? "Closing…" : "CLOSE"}
-                  </button>
-                </div>`).join("")}</div>`}
-          ${topazResult ? `<div class="mono" style="margin-top:10px;font-size:11px;word-break:break-all;color:${topazResult.startsWith("✓") ? "var(--green)" : "#ffb4b4"}">${esc(topazResult)}</div>` : ""}
-        </section>
+        ${topazResult ? `<section class="card">
+          <div class="label">Topaz · last action</div>
+          <div class="mono" style="margin-top:8px;font-size:11px;word-break:break-all;color:${topazResult.startsWith("✓") ? "var(--green)" : "#ffb4b4"}">${esc(topazResult)}</div>
+        </section>` : ""}
 
         <section class="card">
           <div class="label">Manual swap · Topaz</div>
@@ -666,6 +713,10 @@
 
     document.querySelectorAll("[data-close]").forEach(b => {
       b.onclick = () => closePosition(b.dataset.close, b.dataset.sym);
+    });
+
+    document.querySelectorAll("[data-postab]").forEach(b => {
+      b.onclick = () => { posTab = b.dataset.postab; render(); };
     });
 
     // Topaz handlers

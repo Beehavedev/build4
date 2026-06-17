@@ -350,7 +350,7 @@ async function tickInner(opts: { force?: boolean }): Promise<{
 }> {
   const state = await getHouseAgent()
   if (!state.enabled)          return { ticked: false, reason: 'house_disabled' }
-  if (state.mode !== 'autotrade') return { ticked: false, reason: `mode!=autotrade (${state.mode})` }
+  if (state.mode !== 'autotrade' && state.mode !== 'campaign') return { ticked: false, reason: `mode!=autotrade/campaign (${state.mode})` }
   if (state.dex !== 'topaz')   return { ticked: false, reason: `dex!=topaz (${state.dex})` }
 
   if (!opts.force) {
