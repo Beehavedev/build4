@@ -42,7 +42,7 @@ import {
   findOpenHousePosition,
 } from '../services/houseFortyTwoExecutor'
 import { db } from '../db'
-import { logHouseBrain, getHouseWalletAddress, getHouseAgent } from '../services/houseAgent'
+import { logHouseBrain, getHouseWalletAddress, getHouseAgent, recordHouseTick } from '../services/houseAgent'
 import { getBot } from './runner'
 
 const SWARM_PROVIDERS: Provider[] = resolveProviders('HOUSE_SWARM_PROVIDERS', ['xai'])
@@ -749,6 +749,7 @@ export async function runHouseWorldCupTick(opts: RunWcTickOptions = {}): Promise
   try {
     getHouseWalletAddress()
   } catch (err) {
+    await recordHouseTick(`42:no_wallet:${(err as Error).message.slice(0, 80)}`)
     return { ran: false, reason: `house wallet unavailable: ${(err as Error).message}`, scanned: 0, candidates: 0, processed: 0, results: [] }
   }
 
@@ -758,6 +759,7 @@ export async function runHouseWorldCupTick(opts: RunWcTickOptions = {}): Promise
   try {
     markets = await getAllMarkets({ status: 'live', limit: 100 })
   } catch (err) {
+    await recordHouseTick(`42:market_list_failed:${(err as Error).message.slice(0, 60)}`)
     return { ran: true, reason: `market list failed: ${(err as Error).message}`, scanned: 0, candidates: 0, processed: 0, results: [] }
   }
 
@@ -787,6 +789,10 @@ export async function runHouseWorldCupTick(opts: RunWcTickOptions = {}): Promise
   const exited = results.filter((r) => r.action === 'exit').length
   console.log(
     `[houseWorldCup] tick done — scanned=${markets.length} candidates=${candidates.length} processed=${capped.length} entered=${entered} exited=${exited} dryRun=${dryRun}`,
+  )
+
+  await recordHouseTick(
+    `42:scanned=${markets.length} candidates=${candidates.length} entered=${entered} exited=${exited}${dryRun ? ' (dry)' : ''}`,
   )
 
   return { ran: true, scanned: markets.length, candidates: candidates.length, processed: capped.length, results }
