@@ -45,7 +45,11 @@ import { db } from '../db'
 import { logHouseBrain, getHouseWalletAddress, getHouseAgent, recordHouseTick } from '../services/houseAgent'
 import { getBot } from './runner'
 
-const SWARM_PROVIDERS: Provider[] = resolveProviders('HOUSE_SWARM_PROVIDERS', ['xai'])
+// Default to hyperbolic: the xai key is disabled at the provider and the
+// anthropic/akash accounts are out of credits, so xai-only fail-closes every
+// match ("0/1 parsed"). hyperbolic is the live provider. Override with
+// HOUSE_SWARM_PROVIDERS (comma-separated) once other providers are restored.
+const SWARM_PROVIDERS: Provider[] = resolveProviders('HOUSE_SWARM_PROVIDERS', ['hyperbolic'])
 
 const DEFAULT_BUDGET_USD = 50
 const DEFAULT_HALFTIME_BEFORE_END_MIN = 60
