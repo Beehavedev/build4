@@ -551,6 +551,7 @@ export function initRunner(bot: Bot) {
               SELECT 1 FROM "HouseLog" claim
                WHERE claim.dex = '42'
                  AND claim.decision = 'CLAIM_42'
+                 AND COALESCE((claim.meta->>'dryRun')::boolean, false) = false
                  AND LOWER(claim.meta->>'marketAddress') = LOWER(open.meta->>'marketAddress')
             )`,
       )
