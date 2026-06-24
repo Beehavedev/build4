@@ -10605,6 +10605,20 @@ async function main() {
       } catch (err: any) { res.status(500).json({ ok: false, error: err?.message || String(err) }) }
     })
 
+    // Manual house World Cup (42.space) brain tick. Defaults to DRY-RUN so the
+    // operator can preview the full enter/add/hold/sell flow (swarm picks,
+    // conviction sizing, in-play reassessment) without placing real bets.
+    // Pass {"dryRun": false} to actually trade. Bypasses the 2-min cron and the
+    // house-state gate via force, but still self-gates everything else.
+    app.post('/api/admin/house/worldcup/tick', requireAdmin, async (req, res) => {
+      try {
+        const dryRun = req.body?.dryRun === false ? false : true
+        const { runHouseWorldCupTick } = await import('./agents/houseWorldCup')
+        const r = await runHouseWorldCupTick({ force: true, dryRun })
+        res.json({ ok: true, dryRun, ...r })
+      } catch (err: any) { res.status(500).json({ ok: false, error: err?.message || String(err) }) }
+    })
+
     app.get('/api/admin/house/feed', requireAdmin, async (req, res) => {
       try {
         const limit = parseInt(String(req.query.limit ?? '50'), 10) || 50

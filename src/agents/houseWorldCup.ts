@@ -450,20 +450,52 @@ function buildTeamPrompt(
   return { system, user }
 }
 
+function extractJsonObject(s: string): string | null {
+  const start = s.indexOf('{')
+  if (start < 0) return null
+  let depth = 0
+  let inStr = false
+  let esc = false
+  for (let i = start; i < s.length; i++) {
+    const ch = s[i]
+    if (inStr) {
+      if (esc) esc = false
+      else if (ch === '\\') esc = true
+      else if (ch === '"') inStr = false
+      continue
+    }
+    if (ch === '"') inStr = true
+    else if (ch === '{') depth++
+    else if (ch === '}') {
+      depth--
+      if (depth === 0) return s.slice(start, i + 1)
+    }
+  }
+  return null
+}
+
 function parseTeamReply(raw: string, teamNames: string[]): { team: string | null; conviction: number; thesis: string } | null {
   if (!raw) return null
   const stripped = raw.replace(/```json\s*|\s*```/g, '').trim()
-  try {
-    const j = JSON.parse(stripped)
-    const rawTeam = String(j.team ?? '').trim()
-    const conviction = Number(j.conviction)
-    const thesis = String(j.thesis ?? '').slice(0, 240)
-    if (!Number.isFinite(conviction) || conviction < 0 || conviction > 100) return null
-    const match = teamNames.find((t) => t.toLowerCase() === rawTeam.toLowerCase())
-    return { team: match ?? null, conviction, thesis }
-  } catch {
-    return null
+  // Try the whole string first (clean JSON-mode reply), then fall back to the
+  // first balanced object embedded anywhere in the text.
+  const candidates = [stripped]
+  const extracted = extractJsonObject(stripped)
+  if (extracted && extracted !== stripped) candidates.push(extracted)
+  for (const candidate of candidates) {
+    try {
+      const j = JSON.parse(candidate)
+      const rawTeam = String(j.team ?? '').trim()
+      const conviction = Number(j.conviction)
+      const thesis = String(j.thesis ?? '').slice(0, 240)
+      if (!Number.isFinite(conviction) || conviction < 0 || conviction > 100) continue
+      const match = teamNames.find((t) => t.toLowerCase() === rawTeam.toLowerCase())
+      return { team: match ?? null, conviction, thesis }
+    } catch {
+      continue
+    }
   }
+  return null
 }
 
 async function runTeamSwarm(

@@ -134,6 +134,10 @@
   let trade = { side: "buy", token: "", amount: "0.01", slippage: "1", sellAll: false };
   let trackInput = "";
   let trackBusy = false;
+  // World Cup brain manual tick (42.space) ─────────────────────────────
+  let wcBusy = false;
+  let wcResult = null;
+  let wcNotice = "";
 
   // Topaz state ────────────────────────────────────────────────────────
   // Topaz swap UX uses 18-decimal assumption for amount entry; the server
@@ -156,7 +160,24 @@
     if (!token) throw new Error("not authenticated");
     const headers = Object.assign({ "x-admin-token": token }, init.headers || {});
     if (init.body && !headers["content-type"]) headers["content-type"] = "application/json";
-    const r = await fetch(path, Object.assign({}, init, { headers }));
+    // Optional client-side timeout so a slow/blocked request never leaves the
+    // panel spinning forever. Pass init.timeoutMs to enable; omit for no limit.
+    const { timeoutMs, ...fetchInit } = init;
+    let ctrl, timer;
+    if (timeoutMs) {
+      ctrl = new AbortController();
+      fetchInit.signal = ctrl.signal;
+      timer = setTimeout(() => ctrl.abort(), timeoutMs);
+    }
+    let r;
+    try {
+      r = await fetch(path, Object.assign({}, fetchInit, { headers }));
+    } catch (e) {
+      if (e && e.name === "AbortError") { const err = new Error("timeout"); err.code = "timeout"; throw err; }
+      throw e;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
     const txt = await r.text();
     let json; try { json = txt ? JSON.parse(txt) : {}; } catch { json = { raw: txt }; }
     if (!r.ok) {
@@ -258,6 +279,39 @@
       await refresh();
     } catch (e) { lastErr = e.message; render(); }
     finally { busy = false; }
+  }
+
+  async function runWcTick(dryRun) {
+    wcBusy = true; wcResult = null; wcNotice = ""; lastErr = null; render();
+    try {
+      // A full tick walks every candidate match (on-chain reads + news + X + an
+      // LLM call each) and can take a couple of minutes. Bound the wait so the
+      // button never spins forever; if it times out the tick keeps running on
+      // the server, so we just refresh the brain feed to show the outcome.
+      const r = await api("/api/admin/house/worldcup/tick", { method: "POST", body: JSON.stringify({ dryRun }), timeoutMs: 150000 });
+      const counts = (r.results || []).reduce((acc, x) => { acc[x.action] = (acc[x.action] || 0) + 1; return acc; }, {});
+      wcResult = {
+        dryRun: r.dryRun,
+        ran: r.ran,
+        reason: r.reason || "",
+        scanned: r.scanned, candidates: r.candidates, processed: r.processed,
+        counts,
+        results: (r.results || []).slice(0, 12),
+      };
+      await refresh();
+    } catch (e) {
+      if (e && e.code === "timeout") {
+        wcNotice = "Tick is still running on the server (it can take a couple of minutes). Watch the brain feed below — it refreshes automatically.";
+        // Poll the feed a few times so results surface without a manual reload.
+        for (let i = 0; i < 6; i++) {
+          await new Promise((res) => setTimeout(res, 15000));
+          try { await refresh(); } catch (_) { /* keep polling */ }
+        }
+      } else {
+        lastErr = e.message;
+      }
+    }
+    finally { wcBusy = false; render(); }
   }
 
   function fmt(n, max = 6) {
@@ -552,6 +606,33 @@
         </section>
 
         <section class="card">
+          <div class="label">World Cup brain · 42.space</div>
+          <div style="font-size:11px;color:var(--text-dim);margin:6px 0 10px;line-height:1.5">
+            Manually fire one World Cup campaign tick (enter / top-up / hold / odds-stop sell across live goal-differential markets).
+            <b>Dry-run</b> previews the full flow — swarm picks, conviction sizing, in-play reassessment — without placing real bets.
+            <b>Live</b> trades for real (per-match cap $${(state && state.config && state.config.budgetUsd) || 50}).
+          </div>
+          <div style="display:flex;gap:6px">
+            <button class="primary" id="wc-dry" style="flex:1" ${wcBusy ? "disabled" : ""}>${wcBusy ? "Running…" : "Dry-run preview"}</button>
+            <button class="green" id="wc-live" style="flex:1" ${wcBusy ? "disabled" : ""}>${wcBusy ? "Running…" : "Run live tick"}</button>
+          </div>
+          ${wcBusy ? `
+            <div style="margin-top:10px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:11px;color:var(--text-dim)">Running a tick — this walks every live match and can take up to ~2 minutes…</div>
+          ` : ""}
+          ${wcNotice ? `
+            <div style="margin-top:10px;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:12px;line-height:1.6;color:var(--text-dim)">${esc(wcNotice)}</div>
+          ` : ""}
+          ${wcResult ? `
+            <div style="margin-top:10px;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:12px;line-height:1.6">
+              <div><b>${wcResult.dryRun ? "DRY-RUN" : "LIVE"}</b> · ${wcResult.ran ? "ran" : "did not run"}${wcResult.reason ? ` — ${esc(wcResult.reason)}` : ""}</div>
+              <div class="mono" style="color:var(--text-dim)">scanned ${wcResult.scanned} · candidates ${wcResult.candidates} · processed ${wcResult.processed}</div>
+              <div class="mono">${Object.keys(wcResult.counts).length ? Object.entries(wcResult.counts).map(([k,v]) => `${k}:${v}`).join(" · ") : "no actions"}</div>
+              ${wcResult.results.length ? `<div style="margin-top:6px;display:flex;flex-direction:column;gap:3px">${wcResult.results.map(x => `<div style="font-size:11px"><span class="tag">${esc(x.action)}</span> ${esc((x.team ? x.team + " — " : "") + (x.question || x.marketAddress || ""))}<span style="color:var(--text-dim)"> · ${esc(x.reason || "")}</span></div>`).join("")}</div>` : ""}
+            </div>
+          ` : ""}
+        </section>
+
+        <section class="card">
           <div class="label">Trading config</div>
           <div class="grid2" style="margin-top:8px">
             ${numField("Size (BNB)", "sizeBnb", "0.001", "default trade size")}
@@ -758,6 +839,11 @@
       } finally {
         trackBusy = false; render();
       }
+    };
+
+    const wcDry = $("wc-dry"); if (wcDry) wcDry.onclick = () => runWcTick(true);
+    const wcLive = $("wc-live"); if (wcLive) wcLive.onclick = () => {
+      if (confirm("Run a LIVE World Cup tick? This places REAL bets (per-match cap applies).")) runWcTick(false);
     };
   }
 
