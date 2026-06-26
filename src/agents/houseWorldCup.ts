@@ -15,7 +15,7 @@
 //   1. Enumerate live GD World Cup markets (42 REST list, V2 contract).
 //   2. Skip markets already entered (HouseLog idempotency).
 //   3. Read on-chain bucket prices via the V2 controller.
-//   4. Swarm picks which team to back (win-or-draw); fail-closed.
+//   4. A single LLM picks which team to back (win-or-draw); fail-closed.
 //   5. Basket-buy $50 split ∝ price across the team's buckets + Draw.
 //   6. Hold to full-time settlement; the generic claim sweep harvests.
 //
@@ -33,7 +33,7 @@
 
 import { ethers } from 'ethers'
 import { getAllMarkets, type Market42 } from '../services/fortyTwo'
-import { readMarketOnchain, type OnchainMarketState, type OnchainOutcome } from '../services/fortyTwoOnchain'
+import { readMarketOnchain, type OnchainMarketState } from '../services/fortyTwoOnchain'
 import { callLLM, type Provider } from '../services/inference'
 import { fetchTrendingNews, type NewsSignal } from '../services/newsService'
 import { fetchXSignal, type XSignal } from '../services/twexApi'
@@ -46,17 +46,27 @@ import { db } from '../db'
 import { logHouseBrain, getHouseWalletAddress, getHouseAgent, recordHouseTick } from '../services/houseAgent'
 import { getBot } from './runner'
 
-// Swarm pinned to hyperbolic ALONE (product decision). xai's key is disabled and
-// anthropic/akash are out of credits; pinning (not env-overridable) prevents a
-// stale HOUSE_SWARM_PROVIDERS on the host from silently re-introducing a dead
-// provider and fail-closing every match again.
-const SWARM_PROVIDERS: Provider[] = ['hyperbolic']
+// SINGLE-LLM decision (product decision): ONE model decides each match — there
+// is no swarm, no quorum, no consensus. anthropic/akash are out of credits and
+// xai's key is disabled, so hyperbolic is the only live, funded provider. That
+// one model reads the on-chain crowd odds (the favourite), the recent match
+// news, and live X / fan chatter, and picks the win-or-draw side itself.
+// Hard-pinned (not env-overridable) so a stale host env can't silently swap in a
+// dead provider and fail-close every match again.
+const HOUSE_LLM_PROVIDER: Provider = 'hyperbolic'
+
+// How long to give the single model to answer. Hyperbolic's open-weight endpoint
+// can be slow under load, so we allow a generous budget rather than fail-closing
+// a match on a slow-but-valid reply.
+const HOUSE_LLM_TIMEOUT_MS = 60_000
 
 const DEFAULT_BUDGET_USD = 50
 const DEFAULT_HALFTIME_BEFORE_END_MIN = 60
-const DEFAULT_MAX_MARKETS_PER_TICK = 8
 const DEFAULT_MARKET_TAG = 'soccer_match_gd'
 const MIN_LEG_USD = 1
+// Minutes between in-play reassessments and between entry re-runs of a market
+// we previously skipped (bounds LLM cost without starving any match).
+const DEFAULT_REASSESS_MIN = 15
 
 function envNum(name: string, fallback: number): number {
   const v = Number(process.env[name])
@@ -71,9 +81,6 @@ export function halftimeBeforeEndMin(): number {
   // we always keep a positive cutoff so trading stops before settlement.
   return envNum('HOUSE_WC_HALFTIME_BEFORE_END_MIN', DEFAULT_HALFTIME_BEFORE_END_MIN)
 }
-export function maxMarketsPerTick(): number {
-  return Math.floor(envNum('HOUSE_WC_MAX_MARKETS_PER_TICK', DEFAULT_MAX_MARKETS_PER_TICK))
-}
 export function stopDropPct(): number {
   // Default 0 = odds-stop disabled → hold to settlement.
   const v = Number(process.env.HOUSE_WC_STOP_DROP_PCT)
@@ -81,6 +88,66 @@ export function stopDropPct(): number {
 }
 export function marketTag(): string {
   return (process.env.HOUSE_WC_MARKET_TAG || DEFAULT_MARKET_TAG).toLowerCase()
+}
+/** Minutes between in-play reassessments / entry re-runs of a market. */
+export function reassessMin(): number {
+  return envNum('HOUSE_WC_REASSESS_MIN', DEFAULT_REASSESS_MIN)
+}
+
+/**
+ * Conviction-tier position sizing within a per-match USD cap. A higher score
+ * deploys more of the cap; a low score deploys only a base slice so headroom
+ * remains for in-play top-ups as the read firms up. Fed the model's conviction
+ * at ENTRY (pre-entry context) and the live on-chain win-or-draw probability
+ * during in-play reassessment. Always clamped to [MIN_LEG_USD, cap].
+ */
+export function sizeForConviction(conviction: number, capUsd: number): number {
+  const c = Number.isFinite(conviction) ? Math.max(0, Math.min(100, conviction)) : 0
+  let frac: number
+  if (c >= 80) frac = 1.0
+  else if (c >= 65) frac = 0.75
+  else if (c >= 50) frac = 0.5
+  else frac = 0.3
+  const sized = capUsd * frac
+  return Math.max(MIN_LEG_USD, Math.min(capUsd, sized))
+}
+
+export type ReassessAction = 'add' | 'hold' | 'sell'
+
+/**
+ * Pure in-play decision for an already-open match: ADD (top up toward the
+ * scaled target, never past the per-match cap), HOLD, or SELL — driven by
+ * ON-CHAIN ODDS MOVEMENT ONLY. No LLM / news / sentiment is consulted in the
+ * live loop: external signals are pre-entry context, never live add/exit drivers.
+ *  - odds-stop (covered-side probability collapsed) always forces SELL.
+ *  - otherwise the live target is sized off the covered side's CURRENT on-chain
+ *    win-or-draw probability (sizeForConviction fed the live prob, not an LLM
+ *    score): as the market firms in our favour the prob climbs into a higher
+ *    tier and we top up toward that target while ≥$1 of cap headroom remains.
+ *  - when the current target is already funded (flat/softening odds), HOLD.
+ */
+export function reassessAction(input: {
+  currentProb: number
+  spentUsd: number
+  capUsd: number
+  oddsStop: boolean
+}): { action: ReassessAction; addUsd: number; reason: string } {
+  const { currentProb, spentUsd, capUsd, oddsStop } = input
+  if (oddsStop) {
+    return { action: 'sell', addUsd: 0, reason: 'odds-stop: covered-side probability collapsed — exit' }
+  }
+  const probScore = Math.round(Math.max(0, Math.min(1, currentProb)) * 100)
+  const target = sizeForConviction(probScore, capUsd)
+  const remaining = Math.max(0, capUsd - spentUsd)
+  const addUsd = Math.min(remaining, Math.max(0, target - spentUsd))
+  if (addUsd >= MIN_LEG_USD) {
+    return {
+      action: 'add',
+      addUsd: Math.round(addUsd * 100) / 100,
+      reason: `reassess: on-chain win-or-draw ${probScore}% → target $${target.toFixed(0)} (spent $${spentUsd.toFixed(0)}/$${capUsd.toFixed(0)}) — top up $${addUsd.toFixed(0)}`,
+    }
+  }
+  return { action: 'hold', addUsd: 0, reason: `reassess: target funded (spent $${spentUsd.toFixed(0)}/$${capUsd.toFixed(0)}, on-chain ${probScore}%) — hold` }
 }
 
 // ── Goal-differential market detection + parsing (pure) ───────────────────
@@ -223,84 +290,14 @@ export function oddsStopTriggered(entryProb: number, currentProb: number, dropPc
   return drop >= dropPct
 }
 
-// ── Team-vote aggregation (pure, fail-closed) ─────────────────────────────
-
-export interface TeamSwarmVote {
-  provider: Provider
-  model: string
-  team: string | null
-  conviction: number
-  thesis: string
-  parsed: boolean
-  latencyMs: number
-  inputTokens: number
-  outputTokens: number
-}
+// ── Single-LLM team decision ──────────────────────────────────────────────
 
 export interface TeamDecision {
-  team: string | null
-  avgConviction: number
-  thesis: string
-  reason: string
-}
-
-/**
- * Aggregate the swarm's team picks for a binary "which side to back" choice.
- * STRICT fail-closed (mirrors the sports brain): no consensus ⇒ no team ⇒
- * no trade. Team names are matched case-insensitively against the two GD
- * teams; votes for anything else are discarded.
- */
-export function aggregateTeamVotes(
-  votes: TeamSwarmVote[],
-  teamNames: string[],
-  providerCount = SWARM_PROVIDERS.length,
-): TeamDecision {
-  const canon = new Map<string, string>()
-  for (const t of teamNames) canon.set(t.toLowerCase(), t)
-
-  const parsed = votes.filter(
-    (v) => v.parsed && v.team != null && canon.has(v.team.toLowerCase()),
-  )
-
-  const n = Math.max(1, providerCount)
-  const minParsed = Math.max(1, n - 1)
-  const majorityNeeded = Math.floor(n / 2) + 1
-  const minPlurality = Math.min(2, n)
-
-  if (parsed.length < minParsed) {
-    return { team: null, avgConviction: 0, thesis: '', reason: `fail-closed: only ${parsed.length}/${votes.length} parsed` }
-  }
-
-  const tally = new Map<string, number>()
-  for (const v of parsed) {
-    const key = canon.get(v.team!.toLowerCase())!
-    tally.set(key, (tally.get(key) ?? 0) + 1)
-  }
-  const sorted = [...tally.entries()].sort((a, b) => b[1] - a[1])
-  const topCount = sorted[0][1]
-  const runnerUp = sorted[1]?.[1] ?? 0
-  const hasMajority = topCount >= majorityNeeded
-  const hasClearPlurality = topCount >= minPlurality && topCount > runnerUp
-
-  if (!hasMajority && !hasClearPlurality) {
-    return {
-      team: null,
-      avgConviction: 0,
-      thesis: '',
-      reason: `fail-closed: no consensus (${sorted.map(([t, c]) => `${c}×${t}`).join(', ')})`,
-    }
-  }
-
-  const picked = sorted[0][0]
-  const supporters = parsed.filter((v) => canon.get(v.team!.toLowerCase()) === picked)
-  const avg = supporters.reduce((s, v) => s + v.conviction, 0) / supporters.length
-  const champion = supporters.slice().sort((a, b) => b.conviction - a.conviction)[0]
-  return {
-    team: picked,
-    avgConviction: Math.round(avg),
-    thesis: champion?.thesis || `swarm consensus to back ${picked} (win or draw)`,
-    reason: `consensus: ${topCount}/${parsed.length} for ${picked}`,
-  }
+  team: string | null   // canonical team to back (win-or-draw), or null ⇒ fail-closed (no bet)
+  conviction: number    // 0..100 — the model's confidence the pick wins or draws
+  thesis: string        // short rationale, surfaced in the brain feed
+  reason: string        // human-readable decision / skip reason for the audit trail
+  model: string         // model id that answered (audit trail)
 }
 
 // ── Live-market enumeration ───────────────────────────────────────────────
@@ -387,7 +384,137 @@ async function findWcBasket(marketAddress: string): Promise<WcBasketRecord | nul
   }
 }
 
-// ── Swarm (team pick) ─────────────────────────────────────────────────────
+/** Total REAL (non-dry) USD deployed on a market so far = sum of every OPEN_WC
+ *  entry leg + every ADD_WC top-up leg. Used to enforce the per-match cap. */
+async function marketSpentUsd(marketAddress: string): Promise<number> {
+  const addr = ethers.getAddress(marketAddress)
+  const rows = await db.$queryRawUnsafe<Array<{ spent: any }>>(
+    `SELECT COALESCE(SUM((leg->>'usdt')::numeric), 0) AS spent
+       FROM "HouseLog", jsonb_array_elements(meta->'legs') AS leg
+      WHERE dex = '42'
+        AND decision IN ('OPEN_WC','ADD_WC')
+        AND meta ? 'marketAddress'
+        AND LOWER(meta->>'marketAddress') = LOWER($1)
+        AND COALESCE((meta->>'dryRun')::boolean, false) = false`,
+    addr,
+  )
+  return Number(rows[0]?.spent ?? 0) || 0
+}
+
+/** True if an identical LIVE decision row for this market was logged within the
+ *  window. Used both to de-spam the brain feed AND as the entry skip-cadence
+ *  gate, so it MUST ignore dry-run rows — a dry-run admin tick must never
+ *  suppress real live trading/logging on the next live tick. */
+async function recentlyLoggedWcDecision(marketAddress: string, decision: string, withinMin: number): Promise<boolean> {
+  const addr = ethers.getAddress(marketAddress)
+  const rows = await db.$queryRawUnsafe<Array<{ n: any }>>(
+    `SELECT COUNT(*)::int AS n
+       FROM "HouseLog"
+      WHERE dex = '42'
+        AND decision = $2
+        AND meta ? 'marketAddress'
+        AND LOWER(meta->>'marketAddress') = LOWER($1)
+        AND COALESCE((meta->>'dryRun')::boolean, false) = false
+        AND "createdAt" > NOW() - make_interval(mins => $3::int)`,
+    addr, decision, Math.max(1, Math.floor(withinMin)),
+  )
+  return Number(rows[0]?.n ?? 0) > 0
+}
+
+/** True once this match cycle has already been exited — i.e. there is an
+ *  EXIT_WC row at/after the latest OPEN_WC entry for this market. A 42.space
+ *  market address is unique per match, so an exit is terminal: we must NOT
+ *  re-enter or top up a position we have already sold (the settlement claim
+ *  sweep redeems any residual tokens from a partial liquidation). */
+async function hasExitedWcMarket(marketAddress: string): Promise<boolean> {
+  const addr = ethers.getAddress(marketAddress)
+  const rows = await db.$queryRawUnsafe<Array<{ opened: Date | null; exited: Date | null }>>(
+    `SELECT MAX("createdAt") FILTER (WHERE decision = 'OPEN_WC') AS opened,
+            MAX("createdAt") FILTER (WHERE decision = 'EXIT_WC') AS exited
+       FROM "HouseLog"
+      WHERE dex = '42'
+        AND decision IN ('OPEN_WC','EXIT_WC')
+        AND meta ? 'marketAddress'
+        AND LOWER(meta->>'marketAddress') = LOWER($1)
+        AND COALESCE((meta->>'dryRun')::boolean, false) = false`,
+    addr,
+  )
+  const opened = rows[0]?.opened
+  const exited = rows[0]?.exited
+  if (!exited) return false
+  if (!opened) return true
+  return new Date(exited).getTime() >= new Date(opened).getTime()
+}
+
+/** Persist a per-market SKIP decision to the brain feed (deduped within the
+ *  reassess window so window-closed / non-GD markets don't flood the feed). The
+ *  `dryRun` flag is stamped on the row so the live skip-cadence gate can ignore
+ *  dry-run skips (recentlyLoggedWcDecision filters dryRun=false). */
+async function logWcSkip(marketAddress: string, question: string, reason: string, dryRun: boolean, meta: Record<string, any> = {}): Promise<void> {
+  try {
+    if (await recentlyLoggedWcDecision(marketAddress, 'SKIP_WC', reassessMin())) return
+    await logHouseBrain({
+      dex: '42', kind: 'info', decision: 'SKIP_WC',
+      reasoning: `house WC skip ${question.slice(0, 60)} — ${reason}`,
+      meta: { marketAddress, reason, dryRun, ...meta },
+    })
+  } catch (e) {
+    console.warn('[houseWorldCup] skip-log failed:', (e as Error).message)
+  }
+}
+
+interface FilledLeg { index: number; tokenId: number; outcomeLabel: string; usdt: number; txHash: string | null }
+
+/** Buy a win-or-draw basket across `indices` for `usd`, splitting stake ∝ price.
+ *  Partial fills are acceptable (one reverted leg must not strand the rest).
+ *  Shared by the initial entry and in-play top-ups. */
+async function buyBasketLegs(args: {
+  marketAddress: string
+  m: Market42
+  state: OnchainMarketState
+  indices: number[]
+  usd: number
+  team: string
+  thesis: string
+  phase: 'entry' | 'topup'
+  dryRun: boolean
+}): Promise<{ legs: BasketLeg[]; filled: FilledLeg[] }> {
+  const { marketAddress, m, state, indices, usd, team, thesis, phase, dryRun } = args
+  const legs = allocateBasket(state.outcomes, indices, usd)
+  const labelFor = (idx: number) => state.outcomes.find((o) => o.index === idx)?.label ?? `Outcome ${idx}`
+  const filled: FilledLeg[] = []
+  for (const leg of legs) {
+    const outcomeLabel = labelFor(leg.index)
+    try {
+      const r = await houseOpenFortyTwoPosition({
+        marketAddress,
+        tokenId: leg.tokenId,
+        outcomeLabel,
+        usdtIn: leg.usdt.toFixed(2),
+        contractVersion: m.contractVersion,
+        dryRun,
+        decision: 'OPEN_42',
+        reasoning: `[HOUSE WC ${dryRun ? 'DRY ' : ''}${phase === 'topup' ? 'top-up ' : ''}win-or-draw] ${m.question.slice(0, 50)} → back ${team} · leg "${outcomeLabel}" $${leg.usdt.toFixed(2)} — ${thesis}`,
+        meta: {
+          campaign: 'world_cup_double_chance',
+          phase,
+          team,
+          basketIndices: indices,
+          legIndex: leg.index,
+          question: m.question,
+          endDate: m.endDate,
+          contractVersion: m.contractVersion,
+        },
+      })
+      filled.push({ index: leg.index, tokenId: leg.tokenId, outcomeLabel, usdt: leg.usdt, txHash: r.txHash })
+    } catch (err) {
+      console.warn(`[houseWorldCup] ${phase} leg buy failed market=${marketAddress.slice(0, 10)} idx=${leg.index}: ${(err as Error).message}`)
+    }
+  }
+  return { legs, filled }
+}
+
+// ── Team pick (single-LLM prompt) ─────────────────────────────────────────
 
 function buildTeamPrompt(
   market: Market42,
@@ -450,6 +577,12 @@ function buildTeamPrompt(
   return { system, user }
 }
 
+// Extract the first balanced top-level {...} object from a string. Smaller,
+// open-weight models (e.g. Llama-3.3 via hyperbolic) frequently ignore JSON
+// mode and wrap the object in prose ("Here's my pick: {...}. Hope that helps!"),
+// which a whole-string JSON.parse rejects — that was surfacing as the
+// "fail-closed: only 0/1 parsed" skip on every match. We scan brace depth so a
+// trailing sentence (or a stray "}" in prose) doesn't over-capture.
 function extractJsonObject(s: string): string | null {
   const start = s.indexOf('{')
   if (start < 0) return null
@@ -498,42 +631,48 @@ function parseTeamReply(raw: string, teamNames: string[]): { team: string | null
   return null
 }
 
-async function runTeamSwarm(
+/**
+ * Ask the ONE funded model to pick a win-or-draw side. This is the whole brain —
+ * no swarm, no quorum, no consensus. The model weighs the on-chain crowd odds, the recent
+ * match news, and live X chatter (all baked into `prompt`) and decides itself.
+ * STRICT fail-closed: any error, timeout, unparseable reply, or a team not on
+ * the grid yields team=null (skip). We never bet real money on a failed or
+ * garbage answer.
+ */
+async function decideTeam(
   prompt: { system: string; user: string },
   teamNames: string[],
-): Promise<TeamSwarmVote[]> {
-  const calls = SWARM_PROVIDERS.map(async (provider): Promise<TeamSwarmVote> => {
-    try {
-      const r = await callLLM({
-        provider,
-        system: prompt.system,
-        user: prompt.user,
-        jsonMode: true,
-        maxTokens: 400,
-        temperature: 0.4,
-        timeoutMs: 45_000,
-      })
-      const parsed = parseTeamReply(r.text, teamNames)
-      return {
-        provider,
-        model: r.model,
-        team: parsed?.team ?? null,
-        conviction: parsed?.conviction ?? 0,
-        thesis: parsed?.thesis ?? '',
-        parsed: !!parsed,
-        latencyMs: r.latencyMs,
-        inputTokens: r.inputTokens,
-        outputTokens: r.outputTokens,
-      }
-    } catch (err) {
-      console.warn(`[houseWorldCup] provider ${provider} failed:`, (err as Error).message)
-      return {
-        provider, model: '<error>', team: null, conviction: 0,
-        thesis: `[${provider} unavailable]`, parsed: false, latencyMs: 0, inputTokens: 0, outputTokens: 0,
-      }
+): Promise<TeamDecision> {
+  let model = '<error>'
+  try {
+    const r = await callLLM({
+      provider: HOUSE_LLM_PROVIDER,
+      system: prompt.system,
+      user: prompt.user,
+      jsonMode: true,
+      maxTokens: 400,
+      temperature: 0.4,
+      timeoutMs: HOUSE_LLM_TIMEOUT_MS,
+    })
+    model = r.model
+    const parsed = parseTeamReply(r.text, teamNames)
+    if (!parsed) {
+      return { team: null, conviction: 0, thesis: '', model, reason: `fail-closed: ${HOUSE_LLM_PROVIDER} reply unparseable` }
     }
-  })
-  return Promise.all(calls)
+    if (!parsed.team) {
+      return { team: null, conviction: 0, thesis: parsed.thesis, model, reason: `fail-closed: ${HOUSE_LLM_PROVIDER} picked a team not on the grid` }
+    }
+    return {
+      team: parsed.team,
+      conviction: parsed.conviction,
+      thesis: parsed.thesis || `back ${parsed.team} (win or draw)`,
+      model,
+      reason: `${HOUSE_LLM_PROVIDER} picked ${parsed.team} @ conviction ${parsed.conviction}`,
+    }
+  } catch (err) {
+    console.warn(`[houseWorldCup] ${HOUSE_LLM_PROVIDER} decision failed:`, (err as Error).message)
+    return { team: null, conviction: 0, thesis: '', model, reason: `fail-closed: ${HOUSE_LLM_PROVIDER} unavailable (${(err as Error).message})` }
+  }
 }
 
 // ── Per-market orchestration ──────────────────────────────────────────────
@@ -541,7 +680,7 @@ async function runTeamSwarm(
 export interface WcMarketResult {
   marketAddress: string
   question: string
-  action: 'entered' | 'skip' | 'exit' | 'error'
+  action: 'entered' | 'add' | 'hold' | 'skip' | 'exit' | 'error'
   reason: string
   team?: string
   legs?: BasketLeg[]
@@ -561,26 +700,34 @@ async function enterMarket(m: Market42, opts: { dryRun: boolean }): Promise<WcMa
   const marketAddress = ethers.getAddress(m.address)
   const base: WcMarketResult = { marketAddress, question: m.question, action: 'skip', reason: '' }
 
+  // Bound entry LLM cost without starving any market: every candidate is
+  // still evaluated each tick, but if we already logged a skip for this match
+  // within the reassess window we don't re-read/re-decide it again so soon.
+  if (await recentlyLoggedWcDecision(marketAddress, 'SKIP_WC', reassessMin())) {
+    return { ...base, reason: 'recently skipped — within reassess window' }
+  }
+
   let state: OnchainMarketState
   try {
     state = await readMarketOnchain(m)
   } catch (err) {
     return { ...base, action: 'error', reason: `on-chain read failed: ${(err as Error).message}` }
   }
-  if (state.isFinalised) return { ...base, reason: 'finalised' }
-  if (!state.outcomes.length) return { ...base, reason: 'no outcomes' }
+  if (state.isFinalised) { await logWcSkip(marketAddress, m.question, 'finalised', opts.dryRun); return { ...base, reason: 'finalised' } }
+  if (!state.outcomes.length) { await logWcSkip(marketAddress, m.question, 'no outcomes', opts.dryRun); return { ...base, reason: 'no outcomes' } }
 
   const parsed = parseGdMarket(state.outcomes.map((o) => o.label))
-  if (!parsed) return { ...base, reason: 'not a goal-differential market' }
+  if (!parsed) { await logWcSkip(marketAddress, m.question, 'not a goal-differential market', opts.dryRun); return { ...base, reason: 'not a goal-differential market' } }
 
   if (!tradingWindowOpen(Date.now(), state.timestampEnd, halftimeBeforeEndMin())) {
+    await logWcSkip(marketAddress, m.question, 'trading window closed (past ~halftime cutoff)', opts.dryRun)
     return { ...base, reason: 'trading window closed (past ~halftime cutoff)' }
   }
 
   const teamNames = parsed.teams.map((t) => t.name)
   // Pull both online signals in parallel: GNews headlines + live X fan/pundit
   // chatter for THIS match. Both degrade to empty/null so a feed outage never
-  // blocks a bet — the swarm then leans on crowd odds + its own knowledge.
+  // blocks a bet — the model then leans on crowd odds + its own knowledge.
   const matchQuery = deriveMatchQuery(m, teamNames)
   const [news, xSignal] = await Promise.all([
     fetchTrendingNews({ query: matchQuery, lookbackHours: 72, limit: 8 }).catch((err) => {
@@ -594,72 +741,38 @@ async function enterMarket(m: Market42, opts: { dryRun: boolean }): Promise<WcMa
   ])
 
   const prompt = buildTeamPrompt(m, state, parsed, news, xSignal)
-  const votes = await runTeamSwarm(prompt, teamNames)
-  let decision = aggregateTeamVotes(votes, teamNames)
+  const decision = await decideTeam(prompt, teamNames)
 
-  // FORCE-BET: every open World Cup market must get a bet. When the swarm gives
-  // no usable pick (abstain / unparseable / provider down / no consensus), fall
-  // back to the market favorite — the side with the highest win-or-draw implied
-  // probability — instead of skipping the match.
-  if (!decision.team) {
-    const fav = favoriteTeam(parsed, state)
-    await logHouseBrain({
-      dex: '42', kind: 'info', decision: 'FORCE_WC',
-      reasoning: `house WC FORCE ${m.question.slice(0, 60)} → ${fav.team} (market favorite, win-or-draw ${(fav.prob * 100).toFixed(1)}%) — ${decision.reason}`,
-      meta: { marketAddress, votes: votes.length, parsed: votes.filter((v) => v.parsed).length, fallback: true, team: fav.team, reason: decision.reason },
-    })
-    decision = {
-      team: fav.team,
-      avgConviction: Math.round(fav.prob * 100),
-      thesis: `Force-bet fallback: no usable swarm pick (${decision.reason}); backing market favorite ${fav.team} at win-or-draw ${(fav.prob * 100).toFixed(1)}%.`,
-      reason: `force-bet: market favorite (${decision.reason})`,
-    }
-  }
-
-  // After force-bet, a side is always chosen; narrow to non-null for downstream use.
+  // STRICT FAIL-CLOSED: a single model decides. If it errors, times out, or
+  // returns an unparseable / off-grid answer we sit the match out and persist
+  // the skip to the brain feed for the audit trail — we never force-bet a market
+  // favorite (or any other fallback) into a real-money position.
   const team = decision.team
-  if (!team) return { ...base, action: 'error', reason: 'no team to back (empty parsed grid)' }
+  if (!team) {
+    await logWcSkip(marketAddress, m.question, decision.reason, opts.dryRun, {
+      provider: HOUSE_LLM_PROVIDER, model: decision.model, reason: decision.reason,
+    })
+    return { ...base, action: 'skip', reason: decision.reason }
+  }
 
   const indices = winOrDrawBasketIndices(parsed, team)
   if (!indices) return { ...base, action: 'error', reason: `team "${team}" not found in parsed grid` }
 
-  const legs = allocateBasket(state.outcomes, indices, budgetUsd())
-  if (!legs.length) return { ...base, reason: 'allocation produced no fundable legs' }
+  // Conviction-scaled initial stake within the per-match cap. A low-conviction
+  // entry deploys only a base slice, leaving headroom for the in-play
+  // reassessment loop to top up as the on-chain odds firm up in our favour.
+  const cap = budgetUsd()
+  const entryUsd = sizeForConviction(decision.conviction, cap)
 
   const entryBasketProb = basketImpliedProb(state.outcomes, indices)
-  const labelFor = (idx: number) => state.outcomes.find((o) => o.index === idx)?.label ?? `Outcome ${idx}`
 
   // Buy each leg. Partial success is acceptable — a single reverted leg
   // should not strand the rest of the double-chance basket.
-  const filled: Array<{ index: number; tokenId: number; outcomeLabel: string; usdt: number; txHash: string | null }> = []
-  for (const leg of legs) {
-    const outcomeLabel = labelFor(leg.index)
-    try {
-      const r = await houseOpenFortyTwoPosition({
-        marketAddress,
-        tokenId: leg.tokenId,
-        outcomeLabel,
-        usdtIn: leg.usdt.toFixed(2),
-        contractVersion: m.contractVersion,
-        dryRun: opts.dryRun,
-        decision: 'OPEN_42',
-        reasoning: `[HOUSE WC ${opts.dryRun ? 'DRY ' : ''}win-or-draw] ${m.question.slice(0, 50)} → back ${team} · leg "${outcomeLabel}" $${leg.usdt.toFixed(2)} — ${decision.thesis}`,
-        meta: {
-          campaign: 'world_cup_double_chance',
-          team: team,
-          basketIndices: indices,
-          legIndex: leg.index,
-          question: m.question,
-          endDate: m.endDate,
-          contractVersion: m.contractVersion,
-        },
-      })
-      filled.push({ index: leg.index, tokenId: leg.tokenId, outcomeLabel, usdt: leg.usdt, txHash: r.txHash })
-    } catch (err) {
-      console.warn(`[houseWorldCup] leg buy failed market=${marketAddress.slice(0, 10)} idx=${leg.index}: ${(err as Error).message}`)
-    }
-  }
+  const { legs, filled } = await buyBasketLegs({
+    marketAddress, m, state, indices, usd: entryUsd, team, thesis: decision.thesis, phase: 'entry', dryRun: opts.dryRun,
+  })
 
+  if (!legs.length) return { ...base, reason: 'allocation produced no fundable legs' }
   if (!filled.length) {
     return { ...base, action: 'error', reason: 'all basket legs failed to fill' }
   }
@@ -677,10 +790,11 @@ async function enterMarket(m: Market42, opts: { dryRun: boolean }): Promise<WcMa
       indices,
       entryBasketProb,
       contractVersion: m.contractVersion,
-      budgetUsd: budgetUsd(),
-      avgConviction: decision.avgConviction,
+      budgetUsd: cap,
+      entryUsd,
+      conviction: decision.conviction,
       legs: filled.map((f) => ({ index: f.index, tokenId: f.tokenId, outcomeLabel: f.outcomeLabel, usdt: f.usdt, txHash: f.txHash })),
-      swarm: votes.map((v) => ({ provider: v.provider, model: v.model, team: v.team, conviction: v.conviction, parsed: v.parsed })),
+      llm: { provider: HOUSE_LLM_PROVIDER, model: decision.model, team: decision.team, conviction: decision.conviction },
       dryRun: opts.dryRun,
     },
   })
@@ -700,39 +814,22 @@ async function enterMarket(m: Market42, opts: { dryRun: boolean }): Promise<WcMa
   }
 }
 
-/** Odds-stop monitor for an already-entered market. Only acts when
- *  HOUSE_WC_STOP_DROP_PCT>0 and we are still inside the trading window. */
-async function monitorMarket(m: Market42, opts: { dryRun: boolean }): Promise<WcMarketResult> {
+/** Liquidate every leg of an open WC basket on an odds-stop SELL. Logs EXIT_WC,
+ *  and suppresses the settlement claim sweep ONLY on a fully-liquidated real run
+ *  (a partial/throwing leg leaves the sweep active so residual tokens redeem). */
+async function liquidateWcMarket(
+  m: Market42,
+  record: WcBasketRecord,
+  currentProb: number,
+  opts: { dryRun: boolean },
+  cause: 'odds_stop',
+  exitReason: string,
+): Promise<WcMarketResult> {
   const marketAddress = ethers.getAddress(m.address)
-  const base: WcMarketResult = { marketAddress, question: m.question, action: 'skip', reason: 'holding to settlement' }
-
-  const dropPct = stopDropPct()
-  if (dropPct <= 0) return base // odds-stop disabled → pure hold
-
-  const record = await findWcBasket(marketAddress)
-  if (!record || !record.indices.length) return { ...base, reason: 'no basket record to monitor' }
-
-  let state: OnchainMarketState
-  try {
-    state = await readMarketOnchain(m)
-  } catch (err) {
-    return { ...base, action: 'error', reason: `on-chain read failed: ${(err as Error).message}` }
-  }
-  if (state.isFinalised) return { ...base, reason: 'finalised — claim sweep will settle' }
-  if (!tradingWindowOpen(Date.now(), state.timestampEnd, halftimeBeforeEndMin())) {
-    return { ...base, reason: 'window closed — holding to settlement' }
-  }
-
-  const currentProb = basketImpliedProb(state.outcomes, record.indices)
-  if (!oddsStopTriggered(record.entryBasketProb, currentProb, dropPct)) {
-    return { ...base, reason: `holding (prob ${(currentProb * 100).toFixed(1)}% vs entry ${(record.entryBasketProb * 100).toFixed(1)}%)` }
-  }
-
-  // Exit every leg. Track per-leg outcome: a leg is "cleared" when the sell
-  // call returns ok (either it sold, or it proved a zero balance — nothing
-  // left to claim). A leg that THROWS is "unclear" — we cannot prove the
-  // position is gone, so we must NOT suppress the settlement claim sweep for
-  // it, or stranded outcome tokens would never be redeemed.
+  // Exit every leg. A leg is "cleared" when the sell call returns ok (sold, or
+  // proved a zero balance). A leg that THROWS is "unclear" — we must NOT
+  // suppress the settlement claim sweep for it, or stranded outcome tokens
+  // would never be redeemed.
   const legResults: Array<{ index: number; cleared: boolean; sold: boolean; txHash: string | null }> = []
   for (const leg of record.legs) {
     try {
@@ -743,43 +840,132 @@ async function monitorMarket(m: Market42, opts: { dryRun: boolean }): Promise<Wc
         contractVersion: record.contractVersion,
         dryRun: opts.dryRun,
         decision: 'CLOSE_42',
-        reasoning: `[HOUSE WC odds-stop] exit ${record.team} leg "${leg.outcomeLabel}" — basket prob fell to ${(currentProb * 100).toFixed(1)}% (entry ${(record.entryBasketProb * 100).toFixed(1)}%, stop ${dropPct}%)`,
-        meta: { campaign: 'world_cup_double_chance', reason: 'odds_stop', entryBasketProb: record.entryBasketProb, currentProb },
+        reasoning: `[HOUSE WC odds-stop] exit ${record.team} leg "${leg.outcomeLabel}" — ${exitReason}`,
+        meta: { campaign: 'world_cup_double_chance', reason: cause, entryBasketProb: record.entryBasketProb, currentProb },
       })
       legResults.push({ index: leg.index, cleared: true, sold: r.sold, txHash: r.txHash })
     } catch (err) {
       legResults.push({ index: leg.index, cleared: false, sold: false, txHash: null })
-      console.warn(`[houseWorldCup] odds-stop sell failed idx=${leg.index}: ${(err as Error).message}`)
+      console.warn(`[houseWorldCup] ${cause} sell failed idx=${leg.index}: ${(err as Error).message}`)
     }
   }
 
-  // Full liquidation = every leg cleared on a real (non-dry) run. Only then
-  // is it safe to suppress the settlement claim sweep; otherwise we leave the
+  // Full liquidation = every leg cleared on a real (non-dry) run. Only then is
+  // it safe to suppress the settlement claim sweep; otherwise we leave the
   // sweep active so any residual outcome tokens are still redeemed at FT.
   const fullyLiquidated = !opts.dryRun && legResults.every((r) => r.cleared)
 
   await logHouseBrain({
     dex: '42', kind: 'trade', decision: 'EXIT_WC',
-    reasoning: `🛑 HOUSE WC odds-stop on ${m.question.slice(0, 60)} — ${record.team} basket prob ${(currentProb * 100).toFixed(1)}% < entry ${(record.entryBasketProb * 100).toFixed(1)}% (drop ≥ ${dropPct}%)${fullyLiquidated ? '' : ' [PARTIAL — sweep left active]'}`,
+    reasoning: `🛑 HOUSE WC odds-stop exit on ${m.question.slice(0, 60)} — ${record.team} (prob ${(currentProb * 100).toFixed(1)}%, entry ${(record.entryBasketProb * 100).toFixed(1)}%)${fullyLiquidated ? '' : ' [PARTIAL — sweep left active]'} — ${exitReason}`.slice(0, 2000),
     meta: {
-      campaign: 'world_cup_double_chance', marketAddress, team: record.team,
+      campaign: 'world_cup_double_chance', marketAddress, team: record.team, cause,
       entryBasketProb: record.entryBasketProb, currentProb, dryRun: opts.dryRun,
       fullyLiquidated, legResults,
     },
   })
-  // Mark claim as resolved-by-exit ONLY when fully liquidated, so the sweep
-  // skips a market we have provably emptied. On partial/failed exits we leave
-  // no marker — the (idempotent) claim sweep then redeems any residual tokens
-  // once the market finalises.
   if (fullyLiquidated) {
     await logHouseBrain({
       dex: '42', kind: 'info', decision: 'CLAIM_42',
-      reasoning: `house WC market fully liquidated via odds-stop — no settlement claim needed (${marketAddress.slice(0, 10)}…)`,
-      meta: { marketAddress, exited: true, reason: 'odds_stop' },
+      reasoning: `house WC market fully liquidated via ${cause} — no settlement claim needed (${marketAddress.slice(0, 10)}…)`,
+      meta: { marketAddress, exited: true, reason: cause },
     })
   }
 
-  return { marketAddress, question: m.question, action: 'exit', reason: `odds-stop (prob ${(currentProb * 100).toFixed(1)}%)`, team: record.team, basketProb: currentProb }
+  return { marketAddress, question: m.question, action: 'exit', reason: exitReason, team: record.team, basketProb: currentProb }
+}
+
+/**
+ * In-play reassessment of an already-entered market: ADD / HOLD / SELL — driven
+ * by ON-CHAIN ODDS ONLY. No swarm / news / X is consulted here: external signals
+ * are pre-entry context, never live add/exit drivers. odds-stop forces a SELL on
+ * any tick; otherwise the position scales toward a target sized off the covered
+ * side's CURRENT on-chain win-or-draw probability — never exceeding the per-match
+ * cap — and persists its decision (ADD_WC / HOLD_WC / EXIT_WC) to the brain feed.
+ */
+async function reassessMarket(m: Market42, opts: { dryRun: boolean }): Promise<WcMarketResult> {
+  const marketAddress = ethers.getAddress(m.address)
+  const base: WcMarketResult = { marketAddress, question: m.question, action: 'hold', reason: 'holding to settlement' }
+
+  const record = await findWcBasket(marketAddress)
+  if (!record || !record.indices.length) return { ...base, action: 'skip', reason: 'no basket record to monitor' }
+
+  // An exit is terminal for the match: once we have sold this market we must
+  // never re-enter or top it up on a later tick (the routing probe only sees
+  // the original OPEN_42 row, so it keeps routing here). Any residual tokens
+  // from a partial liquidation are redeemed by the settlement claim sweep.
+  if (await hasExitedWcMarket(marketAddress)) {
+    return { ...base, action: 'skip', reason: 'already exited this match — holding to settlement' }
+  }
+
+  let state: OnchainMarketState
+  try {
+    state = await readMarketOnchain(m)
+  } catch (err) {
+    return { ...base, action: 'error', reason: `on-chain read failed: ${(err as Error).message}` }
+  }
+  if (state.isFinalised) return { ...base, action: 'skip', reason: 'finalised — claim sweep will settle' }
+  if (!tradingWindowOpen(Date.now(), state.timestampEnd, halftimeBeforeEndMin())) {
+    return { ...base, action: 'skip', reason: 'window closed — holding to settlement' }
+  }
+
+  const currentProb = basketImpliedProb(state.outcomes, record.indices)
+  const dropPct = stopDropPct()
+  const oddsStop = dropPct > 0 && oddsStopTriggered(record.entryBasketProb, currentProb, dropPct)
+
+  const spentUsd = await marketSpentUsd(marketAddress)
+  const cap = budgetUsd()
+
+  // In-play decision is ON-CHAIN ODDS ONLY — no swarm / news / X is consulted
+  // here (they are pre-entry context). odds-stop → sell; otherwise top up
+  // toward the live on-chain win-or-draw target while cap headroom remains.
+  const act = reassessAction({ currentProb, spentUsd, capUsd: cap, oddsStop })
+
+  if (act.action === 'sell') {
+    return await liquidateWcMarket(m, record, currentProb, opts, 'odds_stop', act.reason)
+  }
+
+  if (act.action === 'add') {
+    const { filled } = await buyBasketLegs({
+      marketAddress, m, state, indices: record.indices, usd: act.addUsd, team: record.team,
+      thesis: act.reason, phase: 'topup', dryRun: opts.dryRun,
+    })
+    if (!filled.length) {
+      // Top-up failed to fill — record a hold so we don't loop on the same add.
+      await logHouseBrain({
+        dex: '42', kind: 'info', decision: 'HOLD_WC',
+        reasoning: `house WC top-up failed to fill on ${m.question.slice(0, 60)} — holding ${record.team} (spent $${spentUsd.toFixed(0)}/$${cap.toFixed(0)})`,
+        meta: { campaign: 'world_cup_double_chance', marketAddress, team: record.team, spentUsd, budgetUsd: cap, currentProb, dryRun: opts.dryRun, addFailed: true },
+      })
+      return { ...base, action: 'hold', reason: 'top-up failed to fill — holding' }
+    }
+    const added = filled.reduce((s, f) => s + f.usdt, 0)
+    await logHouseBrain({
+      dex: '42', kind: 'trade', decision: 'ADD_WC',
+      reasoning: `➕ HOUSE WC ${opts.dryRun ? '[DRY] ' : ''}top-up ${record.team} on ${m.question.slice(0, 60)} +$${added.toFixed(2)} (now ~$${(spentUsd + added).toFixed(0)}/$${cap.toFixed(0)}, on-chain ${(currentProb * 100).toFixed(1)}%) — ${act.reason}`.slice(0, 2000),
+      meta: {
+        campaign: 'world_cup_double_chance', marketAddress, question: m.question, team: record.team,
+        indices: record.indices, budgetUsd: cap, spentUsd, addUsd: added, currentProb,
+        legs: filled.map((f) => ({ index: f.index, tokenId: f.tokenId, outcomeLabel: f.outcomeLabel, usdt: f.usdt, txHash: f.txHash })),
+        dryRun: opts.dryRun,
+      },
+    })
+    return { marketAddress, question: m.question, action: 'add', reason: act.reason, team: record.team, basketProb: currentProb }
+  }
+
+  // HOLD — persist the (deduped) reassessment to the brain feed.
+  if (!(await recentlyLoggedWcDecision(marketAddress, 'HOLD_WC', reassessMin()))) {
+    await logHouseBrain({
+      dex: '42', kind: 'info', decision: 'HOLD_WC',
+      reasoning: `✋ HOUSE WC hold ${record.team} on ${m.question.slice(0, 60)} (spent $${spentUsd.toFixed(0)}/$${cap.toFixed(0)}, prob ${(currentProb * 100).toFixed(1)}%) — ${act.reason}`.slice(0, 2000),
+      meta: {
+        campaign: 'world_cup_double_chance', marketAddress, question: m.question, team: record.team,
+        budgetUsd: cap, spentUsd, currentProb,
+        dryRun: opts.dryRun,
+      },
+    })
+  }
+  return { marketAddress, question: m.question, action: 'hold', reason: act.reason, team: record.team, basketProb: currentProb }
 }
 
 function deriveMatchQuery(m: Market42, teamNames: string[]): string {
@@ -802,17 +988,6 @@ function deriveMatchSearchTerms(m: Market42, teamNames: string[]): string[] {
   return q ? [q] : ['World Cup football']
 }
 
-/** Deterministic force-bet pick: the side with the highest win-or-draw implied
- *  probability (the market favorite). Used when the swarm gives no usable pick. */
-function favoriteTeam(parsed: GdParsed, state: OnchainMarketState): { team: string; prob: number } {
-  let best: { team: string; prob: number } | null = null
-  for (const t of parsed.teams) {
-    const prob = basketImpliedProb(state.outcomes, [...t.indices, parsed.drawIndex])
-    if (!best || prob > best.prob) best = { team: t.name, prob }
-  }
-  return best ?? { team: parsed.teams[0]?.name ?? '', prob: 0 }
-}
-
 // ── Public tick ───────────────────────────────────────────────────────────
 
 export interface RunWcTickOptions {
@@ -824,11 +999,13 @@ export interface RunWcTickOptions {
 
 /**
  * One autonomous World-Cup campaign tick: enumerate live GD markets, enter
- * any un-entered match with a swarm-backed win-or-draw basket, and run the
+ * any un-entered match with an LLM-backed win-or-draw basket, and run the
  * odds-stop monitor on open positions. LIVE by default; gated via the House
  * Agent panel state (enabled + mode='campaign' + dex='42'), with a legacy
  * HOUSE_WC_ENABLED override and opts.force for admin/tests.
  */
+let wcTickInFlight = false
+
 export async function runHouseWorldCupTick(opts: RunWcTickOptions = {}): Promise<WcTickResult> {
   // UI-driven gate: the House Agent panel controls this campaign via the
   // singleton HouseAgent row (enabled + mode='campaign' + dex='42'). No env
@@ -848,8 +1025,21 @@ export async function runHouseWorldCupTick(opts: RunWcTickOptions = {}): Promise
     return { ran: false, reason: `house wallet unavailable: ${(err as Error).message}`, scanned: 0, candidates: 0, processed: 0, results: [] }
   }
 
-  const dryRun = !!opts.dryRun
+  // Single-flight: the 2-min cron and the admin endpoint share cap accounting
+  // (marketSpentUsd is read per market then spent against), so overlapping runs
+  // could double-add past the per-match cap. Refuse a concurrent run.
+  if (wcTickInFlight) {
+    return { ran: false, reason: 'tick_in_flight', scanned: 0, candidates: 0, processed: 0, results: [] }
+  }
+  wcTickInFlight = true
+  try {
+    return await runWcTickBody(!!opts.dryRun)
+  } finally {
+    wcTickInFlight = false
+  }
+}
 
+async function runWcTickBody(dryRun: boolean): Promise<WcTickResult> {
   let markets: Market42[]
   try {
     markets = await getAllMarkets({ status: 'live', limit: 100 })
@@ -858,15 +1048,19 @@ export async function runHouseWorldCupTick(opts: RunWcTickOptions = {}): Promise
     return { ran: true, reason: `market list failed: ${(err as Error).message}`, scanned: 0, candidates: 0, processed: 0, results: [] }
   }
 
+  // Process EVERY eligible live match each tick — no per-tick slice cap. A cap
+  // would perpetually starve lower-ranked markets (earlier ones keep getting
+  // reassessed every tick), so every candidate is evaluated. Entry LLM cost
+  // is bounded per-market by enterMarket's own skip-cadence gate, not by
+  // dropping markets from the list.
   const candidates = markets.filter((m) => looksLikeGdMarketMeta(m) && looksLikeWorldCupMarket(m))
-  const capped = candidates.slice(0, maxMarketsPerTick())
   const results: WcMarketResult[] = []
 
-  for (const m of capped) {
+  for (const m of candidates) {
     try {
       const existing = await findOpenHousePosition(m.address)
       if (existing) {
-        results.push(await monitorMarket(m, { dryRun }))
+        results.push(await reassessMarket(m, { dryRun }))
       } else {
         results.push(await enterMarket(m, { dryRun }))
       }
@@ -882,15 +1076,17 @@ export async function runHouseWorldCupTick(opts: RunWcTickOptions = {}): Promise
 
   const entered = results.filter((r) => r.action === 'entered').length
   const exited = results.filter((r) => r.action === 'exit').length
+  const added = results.filter((r) => r.action === 'add').length
+  const held = results.filter((r) => r.action === 'hold').length
   console.log(
-    `[houseWorldCup] tick done — scanned=${markets.length} candidates=${candidates.length} processed=${capped.length} entered=${entered} exited=${exited} dryRun=${dryRun}`,
+    `[houseWorldCup] tick done — scanned=${markets.length} candidates=${candidates.length} processed=${candidates.length} entered=${entered} added=${added} held=${held} exited=${exited} dryRun=${dryRun}`,
   )
 
   await recordHouseTick(
-    `42:scanned=${markets.length} candidates=${candidates.length} entered=${entered} exited=${exited}${dryRun ? ' (dry)' : ''}`,
+    `42:scanned=${markets.length} candidates=${candidates.length} entered=${entered} added=${added} held=${held} exited=${exited}${dryRun ? ' (dry)' : ''}`,
   )
 
-  return { ran: true, scanned: markets.length, candidates: candidates.length, processed: capped.length, results }
+  return { ran: true, scanned: markets.length, candidates: candidates.length, processed: candidates.length, results }
 }
 
 // ── Broadcast ─────────────────────────────────────────────────────────────
@@ -939,8 +1135,9 @@ export const __testInternals = {
   buildTeamPrompt,
   deriveMatchQuery,
   deriveMatchSearchTerms,
-  favoriteTeam,
   looksLikeGdMarketMeta,
   looksLikeWorldCupMarket,
   competitionTokens,
+  sizeForConviction,
+  reassessAction,
 }

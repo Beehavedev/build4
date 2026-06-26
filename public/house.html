@@ -202,7 +202,7 @@
       try {
         const tp = await api("/api/admin/house/topaz/positions");
         topazPositions = tp.positions || [];
-      } catch (e) { /* not fatal — Topaz may be unconfigured */ }
+      } catch (e) { topazPositions = []; /* not fatal — Topaz may be unconfigured; clear so the count/rows never show stale data */ }
     } catch (e) {
       lastErr = e.message || String(e);
       if (e.message === "not authenticated") state = null;
@@ -512,8 +512,9 @@
       { id: 'polymarket',  label: 'Polymarket',  ready: false },
     ];
     const totalPositions = pcsPositions.length + fortyTwoPositions.length + topazPositions.length;
-    // Guard against a stale tab selection pointing at a now-hidden venue.
-    if (!venueTabs.some(t => t.id === posTab)) posTab = 'pancake';
+    // Guard against a stale tab selection pointing at a now-hidden or
+    // unavailable venue (only "ready" venues have a real position list).
+    if (!venueTabs.some(t => t.id === posTab && t.ready)) posTab = 'pancake';
 
     return `
       <div class="wrap">

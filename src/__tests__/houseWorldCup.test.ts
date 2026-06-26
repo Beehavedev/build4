@@ -9,11 +9,9 @@ import {
   halftimeCutoffMs,
   tradingWindowOpen,
   oddsStopTriggered,
-  aggregateTeamVotes,
   looksLikeGdMarketMeta,
   looksLikeWorldCupMarket,
   __testInternals,
-  type TeamSwarmVote,
 } from '../agents/houseWorldCup'
 import type { Market42 } from '../services/fortyTwo'
 
@@ -119,33 +117,6 @@ test('allocateBasket returns [] on empty inputs or zero budget', () => {
   assert.deepEqual(allocateBasket([outcome(0, 0.5)], [0], 0), [])
 })
 
-// ── favoriteTeam (force-bet fallback) ─────────────────────────────────────
-
-test('favoriteTeam: picks the side with the higher win-or-draw probability', () => {
-  const parsed = parseGdMarket(GD_LABELS)!
-  // MEX win-or-draw = [0,1,2,3], KOR = [3,4,5,6]. Load MEX side heavier.
-  const outcomes = [
-    outcome(0, 0.30), outcome(1, 0.15), outcome(2, 0.15), // MEX wins = 0.60
-    outcome(3, 0.10),                                      // Draw  = 0.10
-    outcome(4, 0.10), outcome(5, 0.05), outcome(6, 0.05),  // KOR wins = 0.20
-  ]
-  const fav = __testInternals.favoriteTeam(parsed, { outcomes } as any)
-  assert.equal(fav.team, 'MEX')
-  // MEX win-or-draw = 0.60 + 0.10 draw = 0.70
-  assert.ok(Math.abs(fav.prob - 0.70) < 1e-9)
-})
-
-test('favoriteTeam: flips to the other side when its basket is heavier', () => {
-  const parsed = parseGdMarket(GD_LABELS)!
-  const outcomes = [
-    outcome(0, 0.05), outcome(1, 0.05), outcome(2, 0.10), // MEX wins = 0.20
-    outcome(3, 0.10),                                      // Draw  = 0.10
-    outcome(4, 0.20), outcome(5, 0.20), outcome(6, 0.20),  // KOR wins = 0.60
-  ]
-  const fav = __testInternals.favoriteTeam(parsed, { outcomes } as any)
-  assert.equal(fav.team, 'KOR')
-})
-
 // ── deriveMatchSearchTerms (X chatter query) ──────────────────────────────
 
 test('deriveMatchSearchTerms: builds per-match X search terms from both teams', () => {
@@ -187,66 +158,6 @@ test('oddsStopTriggered fires only on a sufficient relative drop', () => {
   assert.equal(oddsStopTriggered(0.6, 0.1, 0), false)
   // No entry baseline → never triggers.
   assert.equal(oddsStopTriggered(0, 0.1, 10), false)
-})
-
-// ── aggregateTeamVotes (fail-closed) ──────────────────────────────────────
-
-function vote(team: string | null, conviction: number, parsed = true): TeamSwarmVote {
-  return {
-    provider: 'xai' as any,
-    model: 'test',
-    team,
-    conviction,
-    thesis: team ? `back ${team}` : '',
-    parsed,
-    latencyMs: 0,
-    inputTokens: 0,
-    outputTokens: 0,
-  }
-}
-
-const TEAMS = ['MEX', 'KOR']
-
-test('aggregateTeamVotes: single-provider swarm trades on the one parsed vote', () => {
-  const d = aggregateTeamVotes([vote('MEX', 80)], TEAMS, 1)
-  assert.equal(d.team, 'MEX')
-  assert.equal(d.avgConviction, 80)
-})
-
-test('aggregateTeamVotes: single-provider swarm fails closed when the vote is unparsed', () => {
-  const d = aggregateTeamVotes([vote(null, 0, false)], TEAMS, 1)
-  assert.equal(d.team, null)
-})
-
-test('aggregateTeamVotes: 4-provider majority wins', () => {
-  const votes = [vote('MEX', 70), vote('MEX', 80), vote('MEX', 60), vote('KOR', 90)]
-  const d = aggregateTeamVotes(votes, TEAMS, 4)
-  assert.equal(d.team, 'MEX')
-  assert.equal(d.avgConviction, 70) // (70+80+60)/3
-})
-
-test('aggregateTeamVotes: split 2-2 fails closed (no consensus)', () => {
-  const votes = [vote('MEX', 70), vote('MEX', 80), vote('KOR', 75), vote('KOR', 85)]
-  const d = aggregateTeamVotes(votes, TEAMS, 4)
-  assert.equal(d.team, null)
-})
-
-test('aggregateTeamVotes: too few parsed votes fails closed', () => {
-  const votes = [vote('MEX', 70), vote(null, 0, false), vote(null, 0, false), vote(null, 0, false)]
-  const d = aggregateTeamVotes(votes, TEAMS, 4)
-  assert.equal(d.team, null)
-})
-
-test('aggregateTeamVotes: votes for off-grid teams are discarded', () => {
-  const votes = [vote('BRA', 99), vote('MEX', 65), vote('MEX', 70)]
-  const d = aggregateTeamVotes(votes, TEAMS, 3)
-  assert.equal(d.team, 'MEX')
-})
-
-test('aggregateTeamVotes: team matching is case-insensitive and canonicalised', () => {
-  const votes = [vote('mex', 60), vote('MEX', 80), vote('KOR', 70)]
-  const d = aggregateTeamVotes(votes, TEAMS, 3)
-  assert.equal(d.team, 'MEX') // canonical casing from teamNames
 })
 
 // ── looksLikeGdMarketMeta ─────────────────────────────────────────────────
@@ -316,4 +227,103 @@ test('looksLikeWorldCupMarket honours a HOUSE_WC_COMPETITION override', () => {
   } finally {
     delete process.env.HOUSE_WC_COMPETITION
   }
+})
+
+// ── Conviction-tier sizing ─────────────────────────────────────────────────
+
+test('sizeForConviction scales the per-match cap by conviction tier', () => {
+  const cap = 50
+  assert.equal(__testInternals.sizeForConviction(85, cap), 50)   // ≥80 → full cap
+  assert.equal(__testInternals.sizeForConviction(80, cap), 50)
+  assert.equal(__testInternals.sizeForConviction(70, cap), 37.5) // ≥65 → 0.75
+  assert.equal(__testInternals.sizeForConviction(65, cap), 37.5)
+  assert.equal(__testInternals.sizeForConviction(55, cap), 25)   // ≥50 → 0.5
+  assert.equal(__testInternals.sizeForConviction(40, cap), 15)   // else → 0.3
+})
+
+test('sizeForConviction clamps to [MIN_LEG_USD, cap] and tolerates junk', () => {
+  // 0.3 * 2 = 0.6 < $1 floor → clamps up to 1
+  assert.equal(__testInternals.sizeForConviction(10, 2), 1)
+  // conviction out of range is clamped, NaN treated as 0 (lowest tier)
+  assert.equal(__testInternals.sizeForConviction(999, 50), 50)
+  assert.equal(__testInternals.sizeForConviction(NaN, 50), 15)
+  assert.equal(__testInternals.sizeForConviction(-5, 50), 15)
+})
+
+// ── In-play reassessment decision (ON-CHAIN ODDS ONLY) ─────────────────────
+
+test('reassessAction: odds-stop always forces a sell', () => {
+  const r = __testInternals.reassessAction({ currentProb: 0.9, spentUsd: 10, capUsd: 50, oddsStop: true })
+  assert.equal(r.action, 'sell')
+  assert.equal(r.addUsd, 0)
+})
+
+test('reassessAction: rising on-chain odds top up toward the live target', () => {
+  // currentProb 0.85 → score 85 → target = full cap 50; spent 15 → add 35
+  const r = __testInternals.reassessAction({ currentProb: 0.85, spentUsd: 15, capUsd: 50, oddsStop: false })
+  assert.equal(r.action, 'add')
+  assert.equal(r.addUsd, 35)
+})
+
+test('reassessAction: already at/above the live target holds (never exceeds cap)', () => {
+  // currentProb 0.55 → score 55 → target 25; already spent 25 → no add
+  const r = __testInternals.reassessAction({ currentProb: 0.55, spentUsd: 25, capUsd: 50, oddsStop: false })
+  assert.equal(r.action, 'hold')
+  assert.equal(r.addUsd, 0)
+})
+
+test('reassessAction: add is capped by remaining headroom under the per-match cap', () => {
+  // currentProb 0.85 → target 50, but only $3 headroom left
+  const r = __testInternals.reassessAction({ currentProb: 0.85, spentUsd: 47, capUsd: 50, oddsStop: false })
+  assert.equal(r.action, 'add')
+  assert.equal(r.addUsd, 3)
+})
+
+test('reassessAction: softening odds below the funded tier just hold (no live external flip/exit)', () => {
+  // currentProb 0.40 → score 40 → low tier target 15; spent 20 already past it → hold, never sells on sentiment
+  const r = __testInternals.reassessAction({ currentProb: 0.40, spentUsd: 20, capUsd: 50, oddsStop: false })
+  assert.equal(r.action, 'hold')
+  assert.equal(r.addUsd, 0)
+})
+
+// ── parseTeamReply: tolerate prose-wrapped JSON from open-weight models ─────
+
+const PT_TEAMS = ['Mexico', 'South Korea']
+
+test('parseTeamReply: clean JSON object parses', () => {
+  const r = __testInternals.parseTeamReply('{"team":"Mexico","conviction":72,"thesis":"home form"}', PT_TEAMS)
+  assert.deepEqual(r, { team: 'Mexico', conviction: 72, thesis: 'home form' })
+})
+
+test('parseTeamReply: JSON wrapped in ```json fences parses', () => {
+  const r = __testInternals.parseTeamReply('```json\n{"team":"South Korea","conviction":40,"thesis":"counter"}\n```', PT_TEAMS)
+  assert.equal(r?.team, 'South Korea')
+  assert.equal(r?.conviction, 40)
+})
+
+test('parseTeamReply: JSON embedded in leading + trailing prose still parses', () => {
+  const raw = 'Sure! Here is my pick: {"team":"Mexico","conviction":61,"thesis":"better xG"} — hope that helps!'
+  const r = __testInternals.parseTeamReply(raw, PT_TEAMS)
+  assert.equal(r?.team, 'Mexico')
+  assert.equal(r?.conviction, 61)
+})
+
+test('parseTeamReply: object with nested braces in thesis is captured whole', () => {
+  const raw = 'Pick below.\n{"team":"South Korea","conviction":55,"thesis":"set-piece edge {corners}"}\nThanks.'
+  const r = __testInternals.parseTeamReply(raw, PT_TEAMS)
+  assert.equal(r?.team, 'South Korea')
+  assert.equal(r?.thesis, 'set-piece edge {corners}')
+})
+
+test('parseTeamReply: prose with no JSON object returns null (fail-closed)', () => {
+  assert.equal(__testInternals.parseTeamReply('I think Mexico will win comfortably.', PT_TEAMS), null)
+})
+
+test('parseTeamReply: out-of-range conviction is rejected', () => {
+  assert.equal(__testInternals.parseTeamReply('{"team":"Mexico","conviction":150,"thesis":"x"}', PT_TEAMS), null)
+})
+
+test('parseTeamReply: unknown team name resolves to null team (no false bet)', () => {
+  const r = __testInternals.parseTeamReply('{"team":"Brazil","conviction":80,"thesis":"x"}', PT_TEAMS)
+  assert.equal(r?.team, null)
 })
